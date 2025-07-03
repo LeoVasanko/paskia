@@ -1,0 +1,6 @@
+Practical checks:
+- Check how user verification works
+
+Details:
+- Extract authenticator type
+- Extract user verified flag (present always required)
