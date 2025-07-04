@@ -7,6 +7,8 @@ This module provides a unified interface for WebAuthn operations including:
 - Credential validation
 """
 
+import json
+
 from webauthn import (
     generate_authentication_options,
     generate_registration_options,
@@ -53,32 +55,32 @@ class Passkey:
         self.origin = origin
         self.supported_pub_key_algs = supported_pub_key_algs or [
             COSEAlgorithmIdentifier.EDDSA,
-            # COSEAlgorithmIdentifier.ECDSA_SHA_256,
-            # COSEAlgorithmIdentifier.RSASSA_PKCS1_v1_5_SHA_256,
+            COSEAlgorithmIdentifier.ECDSA_SHA_256,
+            COSEAlgorithmIdentifier.RSASSA_PKCS1_v1_5_SHA_256,
         ]
 
     ### Registration Methods ###
 
     def reg_generate_options(
-        self, user_id: bytes, username: str, display_name="", **regopts
-    ) -> tuple[str, bytes]:
+        self, user_id: bytes, user_name: str, display_name="", **regopts
+    ) -> tuple[dict, bytes]:
         """
         Generate registration options for WebAuthn registration.
 
         Args:
             user_id: The user ID as bytes
-            username: The username
-            display_name: The display name (defaults to username if empty)
+            user_name: The username
+            display_name: The display name (defaults to user_name if empty)
 
         Returns:
-            JSON string containing registration options
+            JSON dict containing options to be sent to client, challenge bytes to store
         """
         options = generate_registration_options(
             rp_id=self.rp_id,
             rp_name=self.rp_name,
             user_id=user_id,
-            user_name=username,
-            user_display_name=display_name or username,
+            user_name=user_name,
+            user_display_name=display_name or user_name,
             authenticator_selection=AuthenticatorSelectionCriteria(
                 resident_key=ResidentKeyRequirement.REQUIRED,
                 user_verification=UserVerificationRequirement.PREFERRED,
@@ -86,7 +88,7 @@ class Passkey:
             supported_pub_key_algs=self.supported_pub_key_algs,
             **regopts,
         )
-        return options_to_json(options), options.challenge
+        return json.loads(options_to_json(options)), options.challenge
 
     @staticmethod
     def reg_credential(credential: dict | str) -> RegistrationCredential:
@@ -119,14 +121,14 @@ class Passkey:
 
     async def auth_generate_options(
         self, user_verification_required=False, **kwopts
-    ) -> str:
+    ) -> tuple[dict, bytes]:
         """
         Generate authentication options for WebAuthn authentication.
 
         Args:
             user_verification_required: The user will have to re-enter PIN or use biometrics for this operation. Useful when accessing security settings etc.
         Returns:
-            JSON string containing authentication options
+            Tuple of (JSON to be sent to client, challenge bytes to store)
         """
         options = generate_authentication_options(
             rp_id=self.rp_id,
@@ -137,7 +139,7 @@ class Passkey:
             ),
             **kwopts,
         )
-        return options_to_json(options)
+        return json.loads(options_to_json(options)), options.challenge
 
     @staticmethod
     def auth_credential(credential: dict | str) -> AuthenticationCredential:
@@ -148,7 +150,7 @@ class Passkey:
         self,
         credential: AuthenticationCredential,
         expected_challenge: bytes,
-        stored_cred: dict,
+        stored_cred,
     ):
         """
         Verify authentication response against locally stored credential data.
@@ -159,8 +161,8 @@ class Passkey:
             expected_challenge=expected_challenge,
             expected_origin=self.origin,
             expected_rp_id=self.rp_id,
-            credential_public_key=stored_cred["public_key"],
-            credential_current_sign_count=stored_cred["sign_count"],
+            credential_public_key=stored_cred.public_key,
+            credential_current_sign_count=stored_cred.sign_count,
         )
-        stored_cred["sign_count"] = verification.new_sign_count
+        stored_cred.sign_count = verification.new_sign_count
         return verification
