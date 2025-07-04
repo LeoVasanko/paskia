@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>WebAuthn Registration Demo</title>
+    <script src="https://unpkg.com/@simplewebauthn/browser/dist/bundle/index.umd.min.js"></script>
+    <script src="/static/awaitable-websocket.js"></script>
+    <style>
+        body { 
+            font-family: Arial, sans-serif; 
+            max-width: 600px; 
+            margin: 50px auto; 
+            padding: 20px; 
+        }
+        .container { 
+            text-align: center; 
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        input[type="text"] {
+            padding: 10px;
+            border: 2px solid #ddd;
+            border-radius: 5px;
+            font-size: 16px;
+            margin: 10px;
+            width: 250px;
+        }
+        button { 
+            padding: 12px 24px; 
+            margin: 10px; 
+            font-size: 16px; 
+            cursor: pointer;
+            background: #007bff;
+            color: white;
+            border: none;
+            border-radius: 5px;
+        }
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>WebAuthn Demo</h1>
+        
+        <div style="margin-bottom: 30px;">
+            <h2>Register</h2>
+            <form id="registrationForm">
+                <input type="text" name="username" placeholder="Username" required>
+                <br>
+                <button type="submit">Register Passkey</button>
+            </form>
+        </div>
+
+        <div>
+            <h2>Authenticate</h2>
+            <form id="authenticationForm">
+                <button type="submit">Authenticate with Passkey</button>
+            </form>
+        </div>
+    </div>
+
+    <script src="static/app.js"></script>
+</body>
+</html>

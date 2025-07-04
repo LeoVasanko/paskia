@@ -1,0 +1,36 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "passkeyauth"
+version = "0.1.0"
+description = "Minimal FastAPI WebAuthn server with WebSocket support"
+authors = [
+    {name = "User", email = "user@example.com"},
+]
+dependencies = [
+    "fastapi[standard]>=0.104.1",
+    "uvicorn[standard]>=0.24.0",
+    "websockets>=12.0",
+    "webauthn>=1.11.1",
+    "base64url>=1.0.0",
+]
+requires-python = ">=3.10"
+
+[project.optional-dependencies]
+dev = [
+    "ruff>=0.1.0",
+]
+
+[tool.ruff]
+target-version = "py39"
+line-length = 88
+select = ["E", "F", "I", "N", "W", "UP"]
+ignore = ["E501"]  # Line too long
+
+[tool.ruff.isort]
+known-first-party = ["passkeyauth"]
+
+[project.scripts]
+serve = "passkeyauth.main:main"

@@ -1,0 +1,6 @@
+__pycache__/
+dist/
+.*
+!.gitignore
+*.lock
+*.db
