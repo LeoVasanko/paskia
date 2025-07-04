@@ -9,14 +9,17 @@ This module provides a simple WebAuthn implementation that:
 - Enables true passwordless authentication where users don't need to enter a user_name
 """
 
+from contextlib import asynccontextmanager
+from datetime import datetime
 from pathlib import Path
+from uuid import UUID
 
 import uuid7
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from .db import Credential, db
+from .db import Credential, User, db
 from .passkey import Passkey
 
 STATIC_DIR = Path(__file__).parent.parent / "static"
@@ -27,13 +30,14 @@ passkey = Passkey(
     origin="http://localhost:8000",
 )
 
-app = FastAPI(title="Passkey Auth")
 
-
-@app.on_event("startup")
-async def startup_event():
-    """Initialize database on startup."""
+@asynccontextmanager
+async def lifespan(app: FastAPI):
     await db.init_database()
+    yield
+
+
+app = FastAPI(title="Passkey Auth", lifespan=lifespan)
 
 
 @app.websocket("/ws/new_user_registration")
@@ -42,21 +46,23 @@ async def websocket_register_new(ws: WebSocket):
     await ws.accept()
     try:
         form = await ws.receive_json()
-        user_id = uuid7.create().bytes
+        now = datetime.now()
+        user_id = uuid7.create(now).bytes
         user_name = form["user_name"]
 
         # Generate registration options and handle registration
         credential, verified = await register_chat(ws, user_id, user_name)
 
         # Store the user in the database
-        await db.create_user(user_id, user_name)
+        await db.create_user(User(user_id, user_name, now))
         await db.store_credential(
             Credential(
                 credential_id=credential.raw_id,
                 user_id=user_id,
-                aaguid=b"",  # verified.aaguid,
+                aaguid=UUID(verified.aaguid),
                 public_key=verified.credential_public_key,
                 sign_count=verified.sign_count,
+                created_at=now,
             )
         )
         await ws.send_json({"status": "success", "user_id": user_id.hex()})

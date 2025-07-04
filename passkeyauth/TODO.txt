@@ -4,3 +4,5 @@ Practical checks:
 Details:
 - Extract authenticator type
 - Extract user verified flag (present always required)
+- Update user last seen on login
+- Debug why aaguid is stored as zeroes only
