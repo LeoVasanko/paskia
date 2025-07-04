@@ -1,149 +1,167 @@
-import sqlite3
+"""
+Async database implementation for WebAuthn passkey authentication.
+
+This module provides an async database layer using dataclasses and aiosqlite
+for managing users and credentials in a WebAuthn authentication system.
+"""
+
+from dataclasses import dataclass
+from datetime import datetime
+from typing import Optional
+
+import aiosqlite
 
 DB_PATH = "webauthn.db"
 
-
-def init_database():
-    """Initialize the SQLite database with required tables"""
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-
-    # Create users table
-    cursor.execute(
-        """
-        CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            username TEXT UNIQUE NOT NULL,
-            user_id BLOB NOT NULL,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-        """
+# SQL Statements
+SQL_CREATE_USERS = """
+    CREATE TABLE IF NOT EXISTS users (
+        user_id BINARY(16) PRIMARY KEY NOT NULL,
+        user_name TEXT NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
+"""
 
-    # Create credentials table
-    cursor.execute(
-        """
-        CREATE TABLE IF NOT EXISTS credentials (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER NOT NULL,
-            credential_id BLOB NOT NULL,
-            public_key BLOB NOT NULL,
-            sign_count INTEGER DEFAULT 0,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (user_id) REFERENCES users (id),
-            UNIQUE(credential_id)
-        )
-        """
+SQL_CREATE_CREDENTIALS = """
+    CREATE TABLE IF NOT EXISTS credentials (
+        credential_id BINARY(64) PRIMARY KEY NOT NULL,
+        user_id BINARY(16) NOT NULL,
+        aaguid BINARY(16) NOT NULL,
+        public_key BLOB NOT NULL,
+        sign_count INTEGER DEFAULT 0,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        last_used TIMESTAMP NULL,
+        FOREIGN KEY (user_id) REFERENCES users (user_id) ON DELETE CASCADE
     )
+"""
 
-    conn.commit()
-    conn.close()
+SQL_GET_USER_BY_USER_ID = """
+    SELECT * FROM users WHERE user_id = ?
+"""
 
+SQL_CREATE_USER = """
+    INSERT INTO users (user_id, user_name) VALUES (?, ?)
+"""
 
-def get_user_by_username(username: str) -> dict | None:
-    """Get user record by username"""
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute(
-        "SELECT id, username, user_id FROM users WHERE username = ?", (username,)
-    )
-    row = cursor.fetchone()
-    conn.close()
+SQL_STORE_CREDENTIAL = """
+    INSERT INTO credentials (credential_id, user_id, aaguid, public_key, sign_count)
+    VALUES (?, ?, ?, ?, ?)
+"""
 
-    if row:
-        return {"id": row[0], "username": row[1], "user_id": row[2]}
-    return None
+SQL_GET_CREDENTIAL_BY_ID = """
+    SELECT credential_id, user_id, aaguid, public_key, sign_count, created_at, last_used
+    FROM credentials
+    WHERE credential_id = ?
+"""
 
+SQL_GET_USER_CREDENTIALS = """
+    SELECT c.credential_id
+    FROM credentials c
+    JOIN users u ON c.user_id = u.user_id
+    WHERE u.user_name = ?
+"""
 
-def get_user_by_user_id(user_id: bytes) -> dict | None:
-    """Get user record by WebAuthn user ID"""
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute(
-        "SELECT id, username, user_id FROM users WHERE user_id = ?", (user_id,)
-    )
-    row = cursor.fetchone()
-    conn.close()
-
-    if row:
-        return {"id": row[0], "username": row[1], "user_id": row[2]}
-    return None
-
-
-def create_user(username: str, user_id: bytes) -> int:
-    """Create a new user and return the user ID"""
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute(
-        "INSERT INTO users (username, user_id) VALUES (?, ?)", (username, user_id)
-    )
-    user_db_id = cursor.lastrowid
-    conn.commit()
-    conn.close()
-    if user_db_id is None:
-        raise RuntimeError("Failed to create user")
-    return user_db_id
+SQL_UPDATE_CREDENTIAL_SIGN_COUNT = """
+    UPDATE credentials
+    SET sign_count = ?, last_used = CURRENT_TIMESTAMP
+    WHERE credential_id = ?
+"""
 
 
-def store_credential(user_db_id: int, credential_id: bytes, public_key: bytes) -> None:
-    """Store a credential for a user"""
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute(
-        "INSERT INTO credentials (user_id, credential_id, public_key) VALUES (?, ?, ?)",
-        (user_db_id, credential_id, public_key),
-    )
-    conn.commit()
-    conn.close()
+@dataclass
+class User:
+    """User data model."""
+
+    user_id: bytes = b""
+    user_name: str = ""
+    created_at: Optional[datetime] = None
 
 
-def get_credential_by_id(credential_id: bytes) -> dict | None:
-    """Get credential by credential ID"""
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute(
-        """
-        SELECT c.public_key, c.sign_count, u.username
-        FROM credentials c
-        JOIN users u ON c.user_id = u.id
-        WHERE c.credential_id = ?
-        """,
-        (credential_id,),
-    )
-    row = cursor.fetchone()
-    conn.close()
+@dataclass
+class Credential:
+    """Credential data model."""
 
-    if row:
-        return {"public_key": row[0], "sign_count": row[1], "username": row[2]}
-    return None
+    credential_id: bytes = b""
+    user_id: bytes = b""
+    aaguid: bytes = b""
+    public_key: bytes = b""
+    sign_count: int = 0
+    created_at: Optional[datetime] = None
+    last_used: Optional[datetime] = None
 
 
-def get_user_credentials(username: str) -> list[bytes]:
-    """Get all credential IDs for a user"""
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute(
-        """
-        SELECT c.credential_id
-        FROM credentials c
-        JOIN users u ON c.user_id = u.id
-        WHERE u.username = ?
-        """,
-        (username,),
-    )
-    rows = cursor.fetchall()
-    conn.close()
+class Database:
+    """Async database handler for WebAuthn operations."""
 
-    return [row[0] for row in rows]
+    def __init__(self, db_path: str = DB_PATH):
+        self.db_path = db_path
+
+    async def init_database(self):
+        """Initialize the SQLite database with required tables."""
+        async with aiosqlite.connect(self.db_path) as conn:
+            await conn.execute(SQL_CREATE_USERS)
+            await conn.execute(SQL_CREATE_CREDENTIALS)
+            await conn.commit()
+
+    async def get_user_by_user_id(self, user_id: bytes) -> User:
+        """Get user record by WebAuthn user ID."""
+        async with aiosqlite.connect(self.db_path) as conn:
+            async with conn.execute(SQL_GET_USER_BY_USER_ID, (user_id,)) as cursor:
+                row = await cursor.fetchone()
+                if row:
+                    return User(user_id=row[0], user_name=row[1], created_at=row[2])
+                raise ValueError("User not found")
+
+    async def create_user(self, user_id: bytes, user_name: str) -> User:
+        """Create a new user and return the User dataclass."""
+        async with aiosqlite.connect(self.db_path) as conn:
+            await conn.execute(SQL_CREATE_USER, (user_id, user_name))
+            await conn.commit()
+            return User(user_id=user_id, user_name=user_name)
+
+    async def store_credential(self, credential: Credential) -> None:
+        """Store a credential for a user."""
+        async with aiosqlite.connect(self.db_path) as conn:
+            await conn.execute(
+                SQL_STORE_CREDENTIAL,
+                (
+                    credential.credential_id,
+                    credential.user_id,
+                    credential.aaguid,
+                    credential.public_key,
+                    credential.sign_count,
+                ),
+            )
+            await conn.commit()
+
+    async def get_credential_by_id(self, credential_id: bytes) -> Credential:
+        """Get credential by credential ID."""
+        async with aiosqlite.connect(self.db_path) as conn:
+            async with conn.execute(
+                SQL_GET_CREDENTIAL_BY_ID, (credential_id,)
+            ) as cursor:
+                row = await cursor.fetchone()
+                if row:
+                    return Credential(
+                        credential_id=row[0],
+                        user_id=row[1],
+                        aaguid=row[2],
+                        public_key=row[3],
+                        sign_count=row[4],
+                        created_at=row[5],
+                        last_used=row[6],
+                    )
+                raise ValueError("Credential not found")
+
+    async def update_credential(self, credential: Credential) -> None:
+        """Update the sign count for a credential."""
+        async with aiosqlite.connect(self.db_path) as conn:
+            await conn.execute(
+                SQL_UPDATE_CREDENTIAL_SIGN_COUNT,
+                (credential.sign_count, credential.credential_id),
+            )
+            await conn.commit()
 
 
-def update_credential_sign_count(credential_id: bytes, sign_count: int) -> None:
-    """Update the sign count for a credential"""
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute(
-        "UPDATE credentials SET sign_count = ? WHERE credential_id = ?",
-        (sign_count, credential_id),
-    )
-    conn.commit()
-    conn.close()
+# Global database instance
+db = Database()

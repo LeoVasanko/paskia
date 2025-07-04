@@ -1,9 +1,9 @@
 const { startRegistration, startAuthentication } = SimpleWebAuthnBrowser
 
-async function register(username) {
+async function register(user_name) {
+  const ws = await aWebSocket('/ws/new_user_registration')
+  ws.send(JSON.stringify({user_name}))
   // Registration chat
-  const ws = await aWebSocket('/ws/register')
-  ws.send(username)
   const optionsJSON = JSON.parse(await ws.recv())
   if (optionsJSON.error) throw new Error(optionsJSON.error)
   ws.send(JSON.stringify(await startRegistration({optionsJSON})))
@@ -14,10 +14,9 @@ async function register(username) {
 async function authenticate() {
   // Authentication chat
   const ws = await aWebSocket('/ws/authenticate')
-  ws.send('') // Send empty string to trigger authentication
   const optionsJSON = JSON.parse(await ws.recv())
   if (optionsJSON.error) throw new Error(optionsJSON.error)
-  ws.send(JSON.stringify(await startAuthentication({optionsJSON})))
+  await ws.send(JSON.stringify(await startAuthentication({optionsJSON})))
   const result = JSON.parse(await ws.recv())
   if (result.error) throw new Error(`Server: ${result.error}`)
   return result
@@ -29,9 +28,9 @@ async function authenticate() {
   regForm.addEventListener('submit', ev => {
     ev.preventDefault()
     regSubmitBtn.disabled = true
-    const username = (new FormData(regForm)).get('username')
-    register(username).then(() => {
-      alert(`Registration successful for ${username}!`)
+    const user_name = (new FormData(regForm)).get('username')
+    register(user_name).then(() => {
+      alert(`Registration successful for ${user_name}!`)
     }).catch(err => {
       alert(`Registration failed: ${err.message}`)
     }).finally(() => {
@@ -45,7 +44,7 @@ async function authenticate() {
     ev.preventDefault()
     authSubmitBtn.disabled = true
     authenticate().then(result => {
-      alert(`Authentication successful! Welcome ${result.username}`)
+      alert(`Authentication successful!`)
     }).catch(err => {
       alert(`Authentication failed: ${err.message}`)
     }).finally(() => {
