@@ -8,6 +8,8 @@ This module provides a unified interface for WebAuthn operations including:
 """
 
 import json
+from typing import Protocol
+from uuid import UUID
 
 from webauthn import (
     generate_authentication_options,
@@ -24,11 +26,29 @@ from webauthn.helpers.cose import COSEAlgorithmIdentifier
 from webauthn.helpers.structs import (
     AuthenticationCredential,
     AuthenticatorSelectionCriteria,
+    PublicKeyCredentialDescriptor,
     RegistrationCredential,
     ResidentKeyRequirement,
     UserVerificationRequirement,
 )
 from webauthn.registration.verify_registration_response import VerifiedRegistration
+
+
+class StoredCredentialRecord(Protocol):
+    """
+    Protocol for a stored credential record that must have settable attributes:
+    - id: The credential ID as bytes
+    - aaguid: The Authenticator Attestation GUID (AAGUID)
+    - public_key: The public key of the credential
+    - sign_count: The current sign count for the credential
+
+    Note: Can be a dataclass, ORM or any other object that implements these attributes, but not dict.
+    """
+
+    id: bytes
+    aaguid: UUID
+    public_key: bytes
+    sign_count: int
 
 
 class Passkey:
@@ -62,7 +82,7 @@ class Passkey:
     ### Registration Methods ###
 
     def reg_generate_options(
-        self, user_id: bytes, user_name: str, display_name="", **regopts
+        self, user_id: bytes, user_name: str, **regopts
     ) -> tuple[dict, bytes]:
         """
         Generate registration options for WebAuthn registration.
@@ -71,6 +91,7 @@ class Passkey:
             user_id: The user ID as bytes
             user_name: The username
             display_name: The display name (defaults to user_name if empty)
+            regopts: Additional arguments to generate_registration_options.
 
         Returns:
             JSON dict containing options to be sent to client, challenge bytes to store
@@ -80,7 +101,6 @@ class Passkey:
             rp_name=self.rp_name,
             user_id=user_id,
             user_name=user_name,
-            user_display_name=display_name or user_name,
             authenticator_selection=AuthenticatorSelectionCriteria(
                 resident_key=ResidentKeyRequirement.REQUIRED,
                 user_verification=UserVerificationRequirement.PREFERRED,
@@ -117,16 +137,44 @@ class Passkey:
         )
         return registration
 
+    def reg_store_credential(
+        self,
+        stored_credential: StoredCredentialRecord,
+        credential: RegistrationCredential,
+        verified: VerifiedRegistration,
+    ):
+        """
+        Write the verified credential data to the stored credential record.
+
+        Args:
+            stored_credential: A database record being created (dataclass, ORM, etc.)
+            credential: The registration credential response from the client
+            verified: The verified registration data
+
+        This function sets attributes on stored_credential (id, aaguid, public_key, sign_count).
+        """
+        stored_credential.id = credential.raw_id
+        stored_credential.aaguid = UUID(verified.aaguid)
+        stored_credential.public_key = verified.credential_public_key
+        stored_credential.sign_count = verified.sign_count
+
     ### Authentication Methods ###
 
     async def auth_generate_options(
-        self, user_verification_required=False, **kwopts
+        self,
+        *,
+        user_verification_required=False,
+        allow_credential_ids: list[bytes] | None = None,
+        **authopts,
     ) -> tuple[dict, bytes]:
         """
         Generate authentication options for WebAuthn authentication.
 
         Args:
             user_verification_required: The user will have to re-enter PIN or use biometrics for this operation. Useful when accessing security settings etc.
+            allow_credentials: For an already known user, a list of credential IDs associated with the account (less prompts during authentication).
+            authopts: Additional arguments to generate_authentication_options.
+
         Returns:
             Tuple of (JSON to be sent to client, challenge bytes to store)
         """
@@ -137,7 +185,12 @@ class Passkey:
                 if user_verification_required
                 else UserVerificationRequirement.PREFERRED
             ),
-            **kwopts,
+            allow_credentials=(
+                None
+                if allow_credential_ids is None
+                else [PublicKeyCredentialDescriptor(id) for id in allow_credential_ids]
+            ),
+            **authopts,
         )
         return json.loads(options_to_json(options)), options.challenge
 
@@ -150,10 +203,15 @@ class Passkey:
         self,
         credential: AuthenticationCredential,
         expected_challenge: bytes,
-        stored_cred,
+        stored_cred: StoredCredentialRecord,
     ):
         """
         Verify authentication response against locally stored credential data.
+
+        Args:
+            credential: The authentication credential response from the client
+            expected_challenge: The earlier generated challenge bytes
+            stored_cred: The server stored credential record. Must have accessors .public_key and .sign_count, the latter of which is updated by this function!
         """
         # Verify the authentication response
         verification = verify_authentication_response(
