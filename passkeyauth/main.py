@@ -10,7 +10,6 @@ This module provides a simple WebAuthn implementation that:
 """
 
 from contextlib import asynccontextmanager
-from datetime import datetime
 from pathlib import Path
 from uuid import UUID
 
@@ -19,7 +18,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from .db import Credential, User, db
+from .db import User, db
 from .passkey import Passkey
 
 STATIC_DIR = Path(__file__).parent.parent / "static"
@@ -45,42 +44,32 @@ async def websocket_register_new(ws: WebSocket):
     """Register a new user and with a new passkey credential."""
     await ws.accept()
     try:
+        # Data for the new user account
         form = await ws.receive_json()
-        now = datetime.now()
-        user_id = uuid7.create(now).bytes
+        user_id = uuid7.create()
         user_name = form["user_name"]
 
-        # Generate registration options and handle registration
-        credential, verified = await register_chat(ws, user_id, user_name)
+        # WebAuthn registration
+        credential = await register_chat(ws, user_id, user_name)
 
+        credential.created_at = now
         # Store the user in the database
         await db.create_user(User(user_id, user_name, now))
-        await db.store_credential(
-            Credential(
-                credential_id=credential.raw_id,
-                user_id=user_id,
-                aaguid=UUID(verified.aaguid),
-                public_key=verified.credential_public_key,
-                sign_count=verified.sign_count,
-                created_at=now,
-            )
-        )
+        await db.store_credential(credential)
         await ws.send_json({"status": "success", "user_id": user_id.hex()})
     except WebSocketDisconnect:
         pass
 
 
-async def register_chat(ws: WebSocket, user_id: bytes, user_name: str):
+async def register_chat(ws: WebSocket, user_id: UUID, user_name: str):
     """Generate registration options and send them to the client."""
     options, challenge = passkey.reg_generate_options(
         user_id=user_id,
         user_name=user_name,
     )
     await ws.send_json(options)
-    # Wait for the client to use his authenticator to register
-    credential = passkey.reg_credential(await ws.receive_json())
-    verified_registration = passkey.reg_verify(credential, challenge)
-    return credential, verified_registration
+    response = await ws.receive_json()
+    return passkey.reg_verify(response, challenge, user_id)
 
 
 @app.websocket("/ws/authenticate")
@@ -90,11 +79,11 @@ async def websocket_authenticate(ws: WebSocket):
         options, challenge = await passkey.auth_generate_options()
         await ws.send_json(options)
         # Wait for the client to use his authenticator to authenticate
-        credential = passkey.auth_credential(await ws.receive_json())
+        credential = passkey.auth_parse(await ws.receive_json())
         # Fetch from the database by credential ID
         stored_cred = await db.get_credential_by_id(credential.raw_id)
         # Verify the credential matches the stored data
-        _ = await passkey.auth_verify(credential, challenge, stored_cred)
+        await passkey.auth_verify(credential, challenge, stored_cred)
         await db.update_credential(stored_cred)
         await ws.send_json({"status": "success"})
     except WebSocketDisconnect:
