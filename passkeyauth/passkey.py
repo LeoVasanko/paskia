@@ -40,10 +40,12 @@ from webauthn.helpers.structs import (
 class StoredCredential:
     """Credential data stored in the database."""
 
+    # Fields set only at registration time
     credential_id: bytes
     user_id: UUID
     aaguid: UUID
     public_key: bytes
+    # Mutable fields that may be updated during authentication
     sign_count: int
     created_at: datetime
     last_used: datetime | None = None
