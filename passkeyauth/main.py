@@ -11,14 +11,13 @@ This module provides a simple WebAuthn implementation that:
 
 from contextlib import asynccontextmanager
 from pathlib import Path
-from uuid import UUID
+from uuid import UUID, uuid4
 
-import uuid7
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from .db import User, db
+from .db import User, connect
 from .passkey import Passkey
 
 STATIC_DIR = Path(__file__).parent.parent / "static"
@@ -32,7 +31,8 @@ passkey = Passkey(
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    await db.init_database()
+    async with connect() as db:
+        await db.init_db()
     yield
 
 
@@ -46,17 +46,19 @@ async def websocket_register_new(ws: WebSocket):
     try:
         # Data for the new user account
         form = await ws.receive_json()
-        user_id = uuid7.create()
+        user_id = uuid4()
         user_name = form["user_name"]
 
         # WebAuthn registration
         credential = await register_chat(ws, user_id, user_name)
 
-        credential.created_at = now
         # Store the user in the database
-        await db.create_user(User(user_id, user_name, now))
-        await db.store_credential(credential)
-        await ws.send_json({"status": "success", "user_id": user_id.hex()})
+        async with connect() as db:
+            await db.conn.execute("BEGIN")
+            await db.create_user(User(user_id, user_name))
+            await db.create_credential(credential)
+
+        await ws.send_json({"status": "success", "user_id": str(user_id)})
     except WebSocketDisconnect:
         pass
 
@@ -80,12 +82,15 @@ async def websocket_authenticate(ws: WebSocket):
         await ws.send_json(options)
         # Wait for the client to use his authenticator to authenticate
         credential = passkey.auth_parse(await ws.receive_json())
-        # Fetch from the database by credential ID
-        stored_cred = await db.get_credential_by_id(credential.raw_id)
-        # Verify the credential matches the stored data
-        await passkey.auth_verify(credential, challenge, stored_cred)
-        await db.update_credential(stored_cred)
+        async with connect() as db:
+            # Fetch from the database by credential ID
+            stored_cred = await db.get_credential_by_id(credential.raw_id)
+            # Verify the credential matches the stored data
+            await passkey.auth_verify(credential, challenge, stored_cred)
+            await db.update_credential(stored_cred)
         await ws.send_json({"status": "success"})
+    except ValueError as e:
+        await ws.send_json({"error": str(e)})
     except WebSocketDisconnect:
         pass
 
