@@ -12,6 +12,8 @@ from uuid import UUID
 
 import aiosqlite
 
+from .passkey import StoredCredential
+
 DB_PATH = "webauthn.db"
 
 # SQL Statements
@@ -74,23 +76,10 @@ SQL_UPDATE_CREDENTIAL_SIGN_COUNT = """
 class User:
     """User data model."""
 
-    user_id: bytes = b""
-    user_name: str = ""
+    user_id: UUID
+    user_name: str
     created_at: Optional[datetime] = None
     last_seen: Optional[datetime] = None
-
-
-@dataclass
-class Credential:
-    """Credential data model."""
-
-    credential_id: bytes
-    user_id: bytes
-    aaguid: UUID
-    public_key: bytes
-    sign_count: int
-    created_at: datetime
-    last_used: datetime | None = None
 
 
 class Database:
@@ -130,7 +119,7 @@ class Database:
             await conn.commit()
             return user
 
-    async def store_credential(self, credential: Credential) -> None:
+    async def store_credential(self, credential: StoredCredential) -> None:
         """Store a credential for a user."""
         async with aiosqlite.connect(self.db_path) as conn:
             await conn.execute(
@@ -145,7 +134,7 @@ class Database:
             )
             await conn.commit()
 
-    async def get_credential_by_id(self, credential_id: bytes) -> Credential:
+    async def get_credential_by_id(self, credential_id: bytes) -> StoredCredential:
         """Get credential by credential ID."""
         async with aiosqlite.connect(self.db_path) as conn:
             async with conn.execute(
@@ -153,10 +142,10 @@ class Database:
             ) as cursor:
                 row = await cursor.fetchone()
                 if row:
-                    return Credential(
+                    return StoredCredential(
                         credential_id=row[0],
-                        user_id=row[1],
-                        aaguid=UUID(bytes=row[2]),  # Convert bytes to UUID
+                        user_id=UUID(bytes=row[1]),
+                        aaguid=UUID(bytes=row[2]),
                         public_key=row[3],
                         sign_count=row[4],
                         created_at=row[5],
@@ -171,7 +160,7 @@ class Database:
                 rows = await cursor.fetchall()
                 return [row[0] for row in rows]
 
-    async def update_credential(self, credential: Credential) -> None:
+    async def update_credential(self, credential: StoredCredential) -> None:
         """Update the sign count for a credential."""
         async with aiosqlite.connect(self.db_path) as conn:
             await conn.execute(
@@ -180,13 +169,11 @@ class Database:
             )
             await conn.commit()
 
-    async def update_user_last_seen(
-        self, user_id: bytes, last_seen: datetime | None = None
-    ) -> None:
+    async def login(self, user_id: bytes, credential: StoredCredential) -> None:
         """Update the last_seen timestamp for a user."""
-        if last_seen is None:
-            last_seen = datetime.now()
         async with aiosqlite.connect(self.db_path) as conn:
+            # Do these in a single transaction
+            self.store_credential(credential)
             await conn.execute(
                 "UPDATE users SET last_seen = ? WHERE user_id = ?",
                 (last_seen, user_id),
