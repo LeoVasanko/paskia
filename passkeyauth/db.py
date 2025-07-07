@@ -8,7 +8,6 @@ for managing users and credentials in a WebAuthn authentication system.
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Optional
 from uuid import UUID
 
 import aiosqlite
@@ -86,8 +85,8 @@ class User:
 
     user_id: UUID
     user_name: str
-    created_at: Optional[datetime] = None
-    last_seen: Optional[datetime] = None
+    created_at: datetime | None = None
+    last_seen: datetime | None = None
 
 
 @asynccontextmanager
@@ -124,15 +123,14 @@ class DB:
                 )
             raise ValueError("User not found")
 
-    async def create_user(self, user: User) -> User:
+    async def create_user(self, user: User) -> None:
         """Create a new user and return the User dataclass."""
         await self.conn.execute(
             SQL_CREATE_USER,
             (user.user_id.bytes, user.user_name, user.created_at, user.last_seen),
         )
-        return user
 
-    async def store_credential(self, credential: StoredCredential) -> None:
+    async def create_credential(self, credential: StoredCredential) -> None:
         """Store a credential for a user."""
         await self.conn.execute(
             SQL_STORE_CREDENTIAL,
@@ -165,7 +163,7 @@ class DB:
                     last_used=row[6],
                     last_verified=row[7],
                 )
-            raise ValueError("Credential not found")
+            raise ValueError("Credential not registered")
 
     async def get_credentials_by_user_id(self, user_id: bytes) -> list[bytes]:
         """Get all credential IDs for a user."""
@@ -188,9 +186,8 @@ class DB:
 
     async def login(self, user_id: bytes, credential: StoredCredential) -> None:
         """Update the last_seen timestamp for a user and the credential record used for logging in."""
-        # Update credential
+        await self.conn.execute("BEGIN")
         await self.update_credential(credential)
-        # Update user's last_seen timestamp
         await self.conn.execute(
             "UPDATE users SET last_seen = ? WHERE user_id = ?",
             (credential.last_used, user_id),
