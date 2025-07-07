@@ -1,7 +1,7 @@
 """
 Async database implementation for WebAuthn passkey authentication.
 
-This module provides an async database layer using dataclasses and aiosqlite
+This module provides an async database layer using SQLAlchemy async mode
 for managing users and credentials in a WebAuthn authentication system.
 """
 
@@ -10,66 +10,60 @@ from dataclasses import dataclass
 from datetime import datetime
 from uuid import UUID
 
-import aiosqlite
+from sqlalchemy import (
+    DateTime,
+    ForeignKey,
+    Integer,
+    LargeBinary,
+    String,
+    delete,
+    select,
+    update,
+)
+from sqlalchemy.dialects.sqlite import BLOB
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 from .passkey import StoredCredential
 
-DB_PATH = "webauthn.db"
+DB_PATH = "sqlite+aiosqlite:///webauthn.db"
 
-# SQL Statements
-SQL_CREATE_USERS = """
-    CREATE TABLE IF NOT EXISTS users (
-        user_id BINARY(16) PRIMARY KEY NOT NULL,
-        user_name TEXT NOT NULL,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        last_seen TIMESTAMP NULL
+
+# SQLAlchemy Models
+class Base(DeclarativeBase):
+    pass
+
+
+class UserModel(Base):
+    __tablename__ = "users"
+
+    user_id: Mapped[bytes] = mapped_column(LargeBinary(16), primary_key=True)
+    user_name: Mapped[str] = mapped_column(String, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
+    last_seen: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+    # Relationship to credentials
+    credentials: Mapped[list["CredentialModel"]] = relationship(
+        "CredentialModel", back_populates="user", cascade="all, delete-orphan"
     )
-"""
 
-SQL_CREATE_CREDENTIALS = """
-    CREATE TABLE IF NOT EXISTS credentials (
-        credential_id BINARY(64) PRIMARY KEY NOT NULL,
-        user_id BINARY(16) NOT NULL,
-        aaguid BINARY(16) NOT NULL,
-        public_key BLOB NOT NULL,
-        sign_count INTEGER NOT NULL,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        last_used TIMESTAMP NULL,
-        last_verified TIMESTAMP NULL,
-        FOREIGN KEY (user_id) REFERENCES users (user_id) ON DELETE CASCADE
+
+class CredentialModel(Base):
+    __tablename__ = "credentials"
+
+    credential_id: Mapped[bytes] = mapped_column(LargeBinary(64), primary_key=True)
+    user_id: Mapped[bytes] = mapped_column(
+        LargeBinary(16), ForeignKey("users.user_id", ondelete="CASCADE")
     )
-"""
+    aaguid: Mapped[bytes] = mapped_column(LargeBinary(16), nullable=False)
+    public_key: Mapped[bytes] = mapped_column(BLOB, nullable=False)
+    sign_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
+    last_used: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_verified: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
-SQL_GET_USER_BY_USER_ID = """
-    SELECT * FROM users WHERE user_id = ?
-"""
-
-SQL_CREATE_USER = """
-    INSERT INTO users (user_id, user_name, created_at, last_seen) VALUES (?, ?, ?, ?)
-"""
-
-SQL_STORE_CREDENTIAL = """
-    INSERT INTO credentials (credential_id, user_id, aaguid, public_key, sign_count, created_at, last_used, last_verified)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-"""
-
-SQL_GET_CREDENTIAL_BY_ID = """
-    SELECT * FROM credentials WHERE credential_id = ?
-"""
-
-SQL_GET_USER_CREDENTIALS = """
-    SELECT credential_id FROM credentials WHERE user_id = ?
-"""
-
-SQL_UPDATE_CREDENTIAL = """
-    UPDATE credentials
-    SET sign_count = ?, created_at = ?, last_used = ?, last_verified = ?
-    WHERE credential_id = ?
-"""
-
-SQL_DELETE_CREDENTIAL = """
-    DELETE FROM credentials WHERE credential_id = ?
-"""
+    # Relationship to user
+    user: Mapped["UserModel"] = relationship("UserModel", back_populates="credentials")
 
 
 @dataclass
@@ -80,121 +74,181 @@ class User:
     last_seen: datetime | None = None
 
 
+# Global engine and session factory
+engine = create_async_engine(DB_PATH, echo=False)
+async_session_factory = async_sessionmaker(engine, expire_on_commit=False)
+
+
 @asynccontextmanager
 async def connect():
-    conn = await aiosqlite.connect(DB_PATH)
-    try:
-        yield DB(conn)
-        await conn.commit()
-    finally:
-        await conn.close()
+    """Context manager for database connections."""
+    async with async_session_factory() as session:
+        yield DB(session)
+        await session.commit()
 
 
 class DB:
-    def __init__(self, conn: aiosqlite.Connection):
-        self.conn = conn
+    def __init__(self, session: AsyncSession):
+        self.session = session
 
     async def init_db(self) -> None:
         """Initialize database tables."""
-        await self.conn.execute(SQL_CREATE_USERS)
-        await self.conn.execute(SQL_CREATE_CREDENTIALS)
-        await self.conn.commit()
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
 
-    # Database operation functions that work with a connection
-    async def get_user_by_user_id(self, user_id: bytes) -> User:
+    async def get_user_by_user_id(self, user_id: UUID) -> User:
         """Get user record by WebAuthn user ID."""
-        async with self.conn.execute(SQL_GET_USER_BY_USER_ID, (user_id,)) as cursor:
-            row = await cursor.fetchone()
-            if row:
-                return User(
-                    user_id=UUID(bytes=row[0]),
-                    user_name=row[1],
-                    created_at=_convert_datetime(row[2]),
-                    last_seen=_convert_datetime(row[3]),
-                )
-            raise ValueError("User not found")
+        stmt = select(UserModel).where(UserModel.user_id == user_id.bytes)
+        result = await self.session.execute(stmt)
+        user_model = result.scalar_one_or_none()
+
+        if user_model:
+            return User(
+                user_id=UUID(bytes=user_model.user_id),
+                user_name=user_model.user_name,
+                created_at=user_model.created_at,
+                last_seen=user_model.last_seen,
+            )
+        raise ValueError("User not found")
 
     async def create_user(self, user: User) -> None:
-        """Create a new user and return the User dataclass."""
-        await self.conn.execute(
-            SQL_CREATE_USER,
-            (
-                user.user_id.bytes,
-                user.user_name,
-                user.created_at or datetime.now(),
-                user.last_seen,
-            ),
+        """Create a new user."""
+        user_model = UserModel(
+            user_id=user.user_id.bytes,
+            user_name=user.user_name,
+            created_at=user.created_at or datetime.now(),
+            last_seen=user.last_seen,
         )
+        self.session.add(user_model)
+        await self.session.flush()
 
     async def create_credential(self, credential: StoredCredential) -> None:
         """Store a credential for a user."""
-        await self.conn.execute(
-            SQL_STORE_CREDENTIAL,
-            (
-                credential.credential_id,
-                credential.user_id.bytes,
-                credential.aaguid.bytes,
-                credential.public_key,
-                credential.sign_count,
-                credential.created_at,
-                credential.last_used,
-                credential.last_verified,
-            ),
+        credential_model = CredentialModel(
+            credential_id=credential.credential_id,
+            user_id=credential.user_id.bytes,
+            aaguid=credential.aaguid.bytes,
+            public_key=credential.public_key,
+            sign_count=credential.sign_count,
+            created_at=credential.created_at,
+            last_used=credential.last_used,
+            last_verified=credential.last_verified,
         )
+        self.session.add(credential_model)
+        await self.session.flush()
 
     async def get_credential_by_id(self, credential_id: bytes) -> StoredCredential:
         """Get credential by credential ID."""
-        async with self.conn.execute(
-            SQL_GET_CREDENTIAL_BY_ID, (credential_id,)
-        ) as cursor:
-            row = await cursor.fetchone()
-            if row:
-                return StoredCredential(
-                    credential_id=row[0],
-                    user_id=UUID(bytes=row[1]),
-                    aaguid=UUID(bytes=row[2]),
-                    public_key=row[3],
-                    sign_count=row[4],
-                    created_at=datetime.fromisoformat(row[5]),
-                    last_used=_convert_datetime(row[6]),
-                    last_verified=_convert_datetime(row[7]),
-                )
-            raise ValueError("Credential not registered")
+        stmt = select(CredentialModel).where(
+            CredentialModel.credential_id == credential_id
+        )
+        result = await self.session.execute(stmt)
+        credential_model = result.scalar_one_or_none()
 
-    async def get_credentials_by_user_id(self, user_id: bytes) -> list[bytes]:
+        if credential_model:
+            return StoredCredential(
+                credential_id=credential_model.credential_id,
+                user_id=UUID(bytes=credential_model.user_id),
+                aaguid=UUID(bytes=credential_model.aaguid),
+                public_key=credential_model.public_key,
+                sign_count=credential_model.sign_count,
+                created_at=credential_model.created_at,
+                last_used=credential_model.last_used,
+                last_verified=credential_model.last_verified,
+            )
+        raise ValueError("Credential not registered")
+
+    async def get_credentials_by_user_id(self, user_id: UUID) -> list[bytes]:
         """Get all credential IDs for a user."""
-        async with self.conn.execute(SQL_GET_USER_CREDENTIALS, (user_id,)) as cursor:
-            rows = await cursor.fetchall()
-            return [row[0] for row in rows]
+        stmt = select(CredentialModel.credential_id).where(
+            CredentialModel.user_id == user_id.bytes
+        )
+        result = await self.session.execute(stmt)
+        return [row[0] for row in result.fetchall()]
 
     async def update_credential(self, credential: StoredCredential) -> None:
         """Update the sign count, created_at, last_used, and last_verified for a credential."""
-        await self.conn.execute(
-            SQL_UPDATE_CREDENTIAL,
-            (
-                credential.sign_count,
-                credential.created_at,
-                credential.last_used,
-                credential.last_verified,
-                credential.credential_id,
-            ),
+        stmt = (
+            update(CredentialModel)
+            .where(CredentialModel.credential_id == credential.credential_id)
+            .values(
+                sign_count=credential.sign_count,
+                created_at=credential.created_at,
+                last_used=credential.last_used,
+                last_verified=credential.last_verified,
+            )
         )
+        await self.session.execute(stmt)
 
-    async def login(self, user_id: bytes, credential: StoredCredential) -> None:
+    async def login(self, user_id: UUID, credential: StoredCredential) -> None:
         """Update the last_seen timestamp for a user and the credential record used for logging in."""
-        await self.conn.execute("BEGIN")
-        await self.update_credential(credential)
-        await self.conn.execute(
-            "UPDATE users SET last_seen = ? WHERE user_id = ?",
-            (credential.last_used, user_id),
-        )
+        async with self.session.begin():
+            # Update credential
+            await self.update_credential(credential)
+
+            # Update user's last_seen
+            stmt = (
+                update(UserModel)
+                .where(UserModel.user_id == user_id.bytes)
+                .values(last_seen=credential.last_used)
+            )
+            await self.session.execute(stmt)
 
     async def delete_credential(self, credential_id: bytes) -> None:
         """Delete a credential by its ID."""
-        await self.conn.execute(SQL_DELETE_CREDENTIAL, (credential_id,))
-        await self.conn.commit()
+        stmt = delete(CredentialModel).where(
+            CredentialModel.credential_id == credential_id
+        )
+        await self.session.execute(stmt)
+        await self.session.commit()
 
 
-def _convert_datetime(val):
-    """Convert string from SQLite to datetime object (pass through None)."""
-    return val and datetime.fromisoformat(val)
+# Standalone functions that handle database connections internally
+async def init_database() -> None:
+    """Initialize database tables."""
+    async with connect() as db:
+        await db.init_db()
+
+
+async def create_user_and_credential(user: User, credential: StoredCredential) -> None:
+    """Create a new user and their first credential in a single transaction."""
+    async with connect() as db:
+        await db.session.begin()
+        await db.create_user(user)
+        await db.create_credential(credential)
+
+
+async def get_user_by_id(user_id: UUID) -> User:
+    """Get user record by WebAuthn user ID."""
+    async with connect() as db:
+        return await db.get_user_by_user_id(user_id)
+
+
+async def create_credential_for_user(credential: StoredCredential) -> None:
+    """Store a credential for an existing user."""
+    async with connect() as db:
+        await db.create_credential(credential)
+
+
+async def get_credential_by_id(credential_id: bytes) -> StoredCredential:
+    """Get credential by credential ID."""
+    async with connect() as db:
+        return await db.get_credential_by_id(credential_id)
+
+
+async def get_user_credentials(user_id: UUID) -> list[bytes]:
+    """Get all credential IDs for a user."""
+    async with connect() as db:
+        return await db.get_credentials_by_user_id(user_id)
+
+
+async def login_user(user_id: UUID, credential: StoredCredential) -> None:
+    """Update the last_seen timestamp for a user and the credential record used for logging in."""
+    async with connect() as db:
+        await db.login(user_id, credential)
+
+
+async def delete_user_credential(credential_id: bytes) -> None:
+    """Delete a credential by its ID."""
+    async with connect() as db:
+        await db.delete_credential(credential_id)

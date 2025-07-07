@@ -12,7 +12,7 @@ from uuid import UUID
 
 from fastapi import Request, Response
 
-from .db import User, connect
+from .db import User, get_user_by_id
 from .jwt_manager import validate_session_token
 
 COOKIE_NAME = "session_token"
@@ -29,12 +29,11 @@ async def get_current_user(request: Request) -> Optional[User]:
     if not token_data:
         return None
 
-    async with connect() as db:
-        try:
-            user = await db.get_user_by_user_id(token_data["user_id"].bytes)
-            return user
-        except Exception:
-            return None
+    try:
+        user = await get_user_by_id(token_data["user_id"])
+        return user
+    except Exception:
+        return None
 
 
 def set_session_cookie(response: Response, session_token: str) -> None:

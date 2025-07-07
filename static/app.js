@@ -334,7 +334,7 @@ async function addNewCredential() {
     clearStatus('dashboardStatus')
     
   } catch (error) {
-    showStatus('dashboardStatus', `Failed to add new passkey: ${error.message}`, 'error')
+    showStatus('dashboardStatus', 'Registration cancelled', 'error')
   }
 }
 
