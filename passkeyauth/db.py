@@ -54,22 +54,11 @@ SQL_STORE_CREDENTIAL = """
 """
 
 SQL_GET_CREDENTIAL_BY_ID = """
-    SELECT credential_id, user_id, aaguid, public_key, sign_count, created_at, last_used, last_verified
-    FROM credentials
-    WHERE credential_id = ?
+    SELECT * FROM credentials WHERE credential_id = ?
 """
 
 SQL_GET_USER_CREDENTIALS = """
-    SELECT c.credential_id
-    FROM credentials c
-    JOIN users u ON c.user_id = u.user_id
-    WHERE u.user_id = ?
-"""
-
-SQL_UPDATE_CREDENTIAL_SIGN_COUNT = """
-    UPDATE credentials
-    SET sign_count = ?, last_used = CURRENT_TIMESTAMP
-    WHERE credential_id = ?
+    SELECT credential_id FROM credentials WHERE user_id = ?
 """
 
 SQL_UPDATE_CREDENTIAL = """
@@ -78,11 +67,13 @@ SQL_UPDATE_CREDENTIAL = """
     WHERE credential_id = ?
 """
 
+SQL_DELETE_CREDENTIAL = """
+    DELETE FROM credentials WHERE credential_id = ?
+"""
+
 
 @dataclass
 class User:
-    """User data model."""
-
     user_id: UUID
     user_name: str
     created_at: datetime | None = None
@@ -118,8 +109,8 @@ class DB:
                 return User(
                     user_id=UUID(bytes=row[0]),
                     user_name=row[1],
-                    created_at=row[2],
-                    last_seen=row[3],
+                    created_at=_convert_datetime(row[2]),
+                    last_seen=_convert_datetime(row[3]),
                 )
             raise ValueError("User not found")
 
@@ -127,7 +118,12 @@ class DB:
         """Create a new user and return the User dataclass."""
         await self.conn.execute(
             SQL_CREATE_USER,
-            (user.user_id.bytes, user.user_name, user.created_at, user.last_seen),
+            (
+                user.user_id.bytes,
+                user.user_name,
+                user.created_at or datetime.now(),
+                user.last_seen,
+            ),
         )
 
     async def create_credential(self, credential: StoredCredential) -> None:
@@ -159,9 +155,9 @@ class DB:
                     aaguid=UUID(bytes=row[2]),
                     public_key=row[3],
                     sign_count=row[4],
-                    created_at=row[5],
-                    last_used=row[6],
-                    last_verified=row[7],
+                    created_at=datetime.fromisoformat(row[5]),
+                    last_used=_convert_datetime(row[6]),
+                    last_verified=_convert_datetime(row[7]),
                 )
             raise ValueError("Credential not registered")
 
@@ -192,3 +188,13 @@ class DB:
             "UPDATE users SET last_seen = ? WHERE user_id = ?",
             (credential.last_used, user_id),
         )
+
+    async def delete_credential(self, credential_id: bytes) -> None:
+        """Delete a credential by its ID."""
+        await self.conn.execute(SQL_DELETE_CREDENTIAL, (credential_id,))
+        await self.conn.commit()
+
+
+def _convert_datetime(val):
+    """Convert string from SQLite to datetime object (pass through None)."""
+    return val and datetime.fromisoformat(val)

@@ -28,6 +28,7 @@ from webauthn.helpers import (
 )
 from webauthn.helpers.cose import COSEAlgorithmIdentifier
 from webauthn.helpers.structs import (
+    AttestationConveyancePreference,
     AuthenticationCredential,
     AuthenticatorSelectionCriteria,
     PublicKeyCredentialDescriptor,
@@ -109,6 +110,7 @@ class Passkey:
             rp_name=self.rp_name,
             user_id=user_id.bytes,
             user_name=user_name,
+            attestation=AttestationConveyancePreference.DIRECT,
             authenticator_selection=AuthenticatorSelectionCriteria(
                 resident_key=ResidentKeyRequirement.REQUIRED,
                 user_verification=UserVerificationRequirement.PREFERRED,

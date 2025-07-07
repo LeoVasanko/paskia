@@ -10,17 +10,30 @@ This module provides a simple WebAuthn implementation that:
 """
 
 from contextlib import asynccontextmanager
+from datetime import datetime
 from pathlib import Path
 from uuid import UUID, uuid4
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, Request, Response, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
+from .api_handlers import (
+    delete_credential,
+    get_user_credentials,
+    get_user_info,
+    logout,
+    refresh_token,
+    set_session,
+    validate_token,
+)
 from .db import User, connect
+from .jwt_manager import create_session_token
 from .passkey import Passkey
+from .session_manager import get_user_from_cookie_string
 
 STATIC_DIR = Path(__file__).parent.parent / "static"
+
 
 passkey = Passkey(
     rp_id="localhost",
@@ -55,12 +68,64 @@ async def websocket_register_new(ws: WebSocket):
         # Store the user in the database
         async with connect() as db:
             await db.conn.execute("BEGIN")
-            await db.create_user(User(user_id, user_name))
+            await db.create_user(User(user_id, user_name, created_at=datetime.now()))
             await db.create_credential(credential)
 
-        await ws.send_json({"status": "success", "user_id": str(user_id)})
+        # Create a session token for the new user
+        session_token = create_session_token(user_id, credential.credential_id)
+
+        await ws.send_json(
+            {
+                "status": "success",
+                "user_id": str(user_id),
+                "session_token": session_token,
+            }
+        )
+    except ValueError as e:
+        await ws.send_json({"error": str(e)})
     except WebSocketDisconnect:
         pass
+
+
+@app.websocket("/ws/add_credential")
+async def websocket_register_add(ws: WebSocket):
+    """Register a new credential for an existing user."""
+    await ws.accept()
+    try:
+        # Authenticate user via cookie
+        cookie_header = ws.headers.get("cookie", "")
+        user_id = await get_user_from_cookie_string(cookie_header)
+
+        if not user_id:
+            await ws.send_json({"error": "Authentication required"})
+            return
+
+        # Get user information to get the user_name
+        async with connect() as db:
+            user = await db.get_user_by_user_id(user_id.bytes)
+            user_name = user.user_name
+
+        # WebAuthn registration
+        credential = await register_chat(ws, user_id, user_name)
+        print(f"New credential for user {user_id}: {credential}")
+        # Store the new credential in the database
+        async with connect() as db:
+            await db.create_credential(credential)
+
+        await ws.send_json(
+            {
+                "status": "success",
+                "user_id": str(user_id),
+                "credential_id": credential.credential_id.hex(),
+                "message": "New credential added successfully",
+            }
+        )
+    except ValueError as e:
+        await ws.send_json({"error": str(e)})
+    except WebSocketDisconnect:
+        pass
+    except Exception as e:
+        await ws.send_json({"error": f"Server error: {str(e)}"})
 
 
 async def register_chat(ws: WebSocket, user_id: UUID, user_name: str):
@@ -71,6 +136,7 @@ async def register_chat(ws: WebSocket, user_id: UUID, user_name: str):
     )
     await ws.send_json(options)
     response = await ws.receive_json()
+    print(response)
     return passkey.reg_verify(response, challenge, user_id)
 
 
@@ -87,12 +153,67 @@ async def websocket_authenticate(ws: WebSocket):
             stored_cred = await db.get_credential_by_id(credential.raw_id)
             # Verify the credential matches the stored data
             await passkey.auth_verify(credential, challenge, stored_cred)
-            await db.update_credential(stored_cred)
-        await ws.send_json({"status": "success"})
+            # Update both credential and user's last_seen timestamp
+            await db.login(stored_cred.user_id.bytes, stored_cred)
+
+        # Create a session token for the authenticated user
+        session_token = create_session_token(
+            stored_cred.user_id, stored_cred.credential_id
+        )
+
+        await ws.send_json(
+            {
+                "status": "success",
+                "user_id": str(stored_cred.user_id),
+                "session_token": session_token,
+            }
+        )
     except ValueError as e:
         await ws.send_json({"error": str(e)})
     except WebSocketDisconnect:
         pass
+
+
+@app.get("/api/user-info")
+async def api_get_user_info(request: Request):
+    """Get user information from session cookie."""
+    return await get_user_info(request)
+
+
+@app.get("/api/user-credentials")
+async def api_get_user_credentials(request: Request):
+    """Get all credentials for a user using session cookie."""
+    return await get_user_credentials(request)
+
+
+@app.post("/api/refresh-token")
+async def api_refresh_token(request: Request, response: Response):
+    """Refresh the session token."""
+    return await refresh_token(request, response)
+
+
+@app.get("/api/validate-token")
+async def api_validate_token(request: Request):
+    """Validate a session token and return user info."""
+    return await validate_token(request)
+
+
+@app.post("/api/logout")
+async def api_logout(response: Response):
+    """Log out the current user by clearing the session cookie."""
+    return await logout(response)
+
+
+@app.post("/api/set-session")
+async def api_set_session(request: Request, response: Response):
+    """Set session cookie using JWT token from request body or Authorization header."""
+    return await set_session(request, response)
+
+
+@app.post("/api/delete-credential")
+async def api_delete_credential(request: Request):
+    """Delete a specific credential for the current user."""
+    return await delete_credential(request)
 
 
 # Serve static files
