@@ -4,3 +4,4 @@ dist/
 !.gitignore
 *.lock
 *.db
+server-secret.bin
