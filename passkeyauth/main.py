@@ -18,6 +18,7 @@ from fastapi import FastAPI, Request, Response, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
+from . import db
 from .api_handlers import (
     delete_credential,
     get_user_credentials,
@@ -27,7 +28,7 @@ from .api_handlers import (
     set_session,
     validate_token,
 )
-from .db import User, connect
+from .db import User
 from .jwt_manager import create_session_token
 from .passkey import Passkey
 from .session_manager import get_user_from_cookie_string
@@ -44,8 +45,7 @@ passkey = Passkey(
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    async with connect() as db:
-        await db.init_db()
+    await db.init_database()
     yield
 
 
@@ -65,11 +65,11 @@ async def websocket_register_new(ws: WebSocket):
         # WebAuthn registration
         credential = await register_chat(ws, user_id, user_name)
 
-        # Store the user in the database
-        async with connect() as db:
-            await db.conn.execute("BEGIN")
-            await db.create_user(User(user_id, user_name, created_at=datetime.now()))
-            await db.create_credential(credential)
+        # Store the user and credential in the database
+        await db.create_user_and_credential(
+            User(user_id, user_name, created_at=datetime.now()),
+            credential,
+        )
 
         # Create a session token for the new user
         session_token = create_session_token(user_id, credential.credential_id)
@@ -101,16 +101,15 @@ async def websocket_register_add(ws: WebSocket):
             return
 
         # Get user information to get the user_name
-        async with connect() as db:
-            user = await db.get_user_by_user_id(user_id.bytes)
-            user_name = user.user_name
+        user = await db.get_user_by_id(user_id)
+        user_name = user.user_name
+        challenge_ids = await db.get_user_credentials(user_id)
 
         # WebAuthn registration
-        credential = await register_chat(ws, user_id, user_name)
+        credential = await register_chat(ws, user_id, user_name, challenge_ids)
         print(f"New credential for user {user_id}: {credential}")
         # Store the new credential in the database
-        async with connect() as db:
-            await db.create_credential(credential)
+        await db.create_credential_for_user(credential)
 
         await ws.send_json(
             {
@@ -128,11 +127,17 @@ async def websocket_register_add(ws: WebSocket):
         await ws.send_json({"error": f"Server error: {str(e)}"})
 
 
-async def register_chat(ws: WebSocket, user_id: UUID, user_name: str):
+async def register_chat(
+    ws: WebSocket,
+    user_id: UUID,
+    user_name: str,
+    credential_ids: list[bytes] | None = None,
+):
     """Generate registration options and send them to the client."""
     options, challenge = passkey.reg_generate_options(
         user_id=user_id,
         user_name=user_name,
+        credential_ids=credential_ids,
     )
     await ws.send_json(options)
     response = await ws.receive_json()
@@ -144,17 +149,16 @@ async def register_chat(ws: WebSocket, user_id: UUID, user_name: str):
 async def websocket_authenticate(ws: WebSocket):
     await ws.accept()
     try:
-        options, challenge = await passkey.auth_generate_options()
+        options, challenge = passkey.auth_generate_options()
         await ws.send_json(options)
         # Wait for the client to use his authenticator to authenticate
         credential = passkey.auth_parse(await ws.receive_json())
-        async with connect() as db:
-            # Fetch from the database by credential ID
-            stored_cred = await db.get_credential_by_id(credential.raw_id)
-            # Verify the credential matches the stored data
-            await passkey.auth_verify(credential, challenge, stored_cred)
-            # Update both credential and user's last_seen timestamp
-            await db.login(stored_cred.user_id.bytes, stored_cred)
+        # Fetch from the database by credential ID
+        stored_cred = await db.get_credential_by_id(credential.raw_id)
+        # Verify the credential matches the stored data
+        passkey.auth_verify(credential, challenge, stored_cred)
+        # Update both credential and user's last_seen timestamp
+        await db.login_user(stored_cred.user_id, stored_cred)
 
         # Create a session token for the authenticated user
         session_token = create_session_token(

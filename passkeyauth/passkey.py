@@ -155,7 +155,7 @@ class Passkey:
 
     ### Authentication Methods ###
 
-    async def auth_generate_options(
+    def auth_generate_options(
         self,
         *,
         user_verification_required=False,
@@ -178,7 +178,7 @@ class Passkey:
             user_verification=(
                 UserVerificationRequirement.REQUIRED
                 if user_verification_required
-                else UserVerificationRequirement.PREFERRED
+                else UserVerificationRequirement.DISCOURAGED
             ),
             allow_credentials=_convert_credential_ids(credential_ids),
             **authopts,
@@ -188,7 +188,7 @@ class Passkey:
     def auth_parse(self, response: dict | str) -> AuthenticationCredential:
         return parse_authentication_credential_json(response)
 
-    async def auth_verify(
+    def auth_verify(
         self,
         credential: AuthenticationCredential,
         expected_challenge: bytes,

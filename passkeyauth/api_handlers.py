@@ -10,8 +10,8 @@ This module contains all the HTTP API endpoints for:
 
 from fastapi import Request, Response
 
+from . import db
 from .aaguid_manager import get_aaguid_manager
-from .db import connect
 from .jwt_manager import refresh_session_token, validate_session_token
 from .session_manager import (
     clear_session_cookie,
@@ -57,57 +57,54 @@ async def get_user_credentials(request: Request) -> dict:
             if token_data:
                 current_credential_id = token_data.get("credential_id")
 
-        async with connect() as db:
-            # Get all credentials for the user
-            credential_ids = await db.get_credentials_by_user_id(user.user_id.bytes)
+        # Get all credentials for the user
+        credential_ids = await db.get_user_credentials(user.user_id)
 
-            credentials = []
-            user_aaguids = set()
+        credentials = []
+        user_aaguids = set()
 
-            for cred_id in credential_ids:
-                try:
-                    stored_cred = await db.get_credential_by_id(cred_id)
+        for cred_id in credential_ids:
+            try:
+                stored_cred = await db.get_credential_by_id(cred_id)
 
-                    # Convert AAGUID to string format
-                    aaguid_str = str(stored_cred.aaguid)
-                    user_aaguids.add(aaguid_str)
+                # Convert AAGUID to string format
+                aaguid_str = str(stored_cred.aaguid)
+                user_aaguids.add(aaguid_str)
 
-                    # Check if this is the current session credential
-                    is_current_session = (
-                        current_credential_id == stored_cred.credential_id
-                    )
+                # Check if this is the current session credential
+                is_current_session = current_credential_id == stored_cred.credential_id
 
-                    credentials.append(
-                        {
-                            "credential_id": stored_cred.credential_id.hex(),
-                            "aaguid": aaguid_str,
-                            "created_at": stored_cred.created_at.isoformat(),
-                            "last_used": stored_cred.last_used.isoformat()
-                            if stored_cred.last_used
-                            else None,
-                            "last_verified": stored_cred.last_verified.isoformat()
-                            if stored_cred.last_verified
-                            else None,
-                            "sign_count": stored_cred.sign_count,
-                            "is_current_session": is_current_session,
-                        }
-                    )
-                except ValueError:
-                    # Skip invalid credentials
-                    continue
+                credentials.append(
+                    {
+                        "credential_id": stored_cred.credential_id.hex(),
+                        "aaguid": aaguid_str,
+                        "created_at": stored_cred.created_at.isoformat(),
+                        "last_used": stored_cred.last_used.isoformat()
+                        if stored_cred.last_used
+                        else None,
+                        "last_verified": stored_cred.last_verified.isoformat()
+                        if stored_cred.last_verified
+                        else None,
+                        "sign_count": stored_cred.sign_count,
+                        "is_current_session": is_current_session,
+                    }
+                )
+            except ValueError:
+                # Skip invalid credentials
+                continue
 
-            # Get AAGUID information for only the AAGUIDs that the user has
-            aaguid_manager = get_aaguid_manager()
-            aaguid_info = aaguid_manager.get_relevant_aaguids(user_aaguids)
+        # Get AAGUID information for only the AAGUIDs that the user has
+        aaguid_manager = get_aaguid_manager()
+        aaguid_info = aaguid_manager.get_relevant_aaguids(user_aaguids)
 
-            # Sort credentials by creation date (earliest first, most recently created last)
-            credentials.sort(key=lambda cred: cred["created_at"])
+        # Sort credentials by creation date (earliest first, most recently created last)
+        credentials.sort(key=lambda cred: cred["created_at"])
 
-            return {
-                "status": "success",
-                "credentials": credentials,
-                "aaguid_info": aaguid_info,
-            }
+        return {
+            "status": "success",
+            "credentials": credentials,
+            "aaguid_info": aaguid_info,
+        }
     except Exception as e:
         return {"error": f"Failed to get credentials: {str(e)}"}
 
@@ -212,36 +209,30 @@ async def delete_credential(request: Request) -> dict:
         except ValueError:
             return {"error": "Invalid credential_id format"}
 
-        async with connect() as db:
-            # First, verify the credential belongs to the current user
-            try:
-                stored_cred = await db.get_credential_by_id(credential_id_bytes)
-                if stored_cred.user_id != user.user_id:
-                    return {"error": "Credential not found or access denied"}
-            except ValueError:
-                return {"error": "Credential not found"}
+        # First, verify the credential belongs to the current user
+        try:
+            stored_cred = await db.get_credential_by_id(credential_id_bytes)
+            if stored_cred.user_id != user.user_id:
+                return {"error": "Credential not found or access denied"}
+        except ValueError:
+            return {"error": "Credential not found"}
 
-            # Check if this is the current session credential
-            session_token = get_session_token_from_request(request)
-            if session_token:
-                token_data = validate_session_token(session_token)
-                if (
-                    token_data
-                    and token_data.get("credential_id") == credential_id_bytes
-                ):
-                    return {"error": "Cannot delete current session credential"}
+        # Check if this is the current session credential
+        session_token = get_session_token_from_request(request)
+        if session_token:
+            token_data = validate_session_token(session_token)
+            if token_data and token_data.get("credential_id") == credential_id_bytes:
+                return {"error": "Cannot delete current session credential"}
 
-            # Get user's remaining credentials count
-            remaining_credentials = await db.get_credentials_by_user_id(
-                user.user_id.bytes
-            )
-            if len(remaining_credentials) <= 1:
-                return {"error": "Cannot delete last remaining credential"}
+        # Get user's remaining credentials count
+        remaining_credentials = await db.get_user_credentials(user.user_id)
+        if len(remaining_credentials) <= 1:
+            return {"error": "Cannot delete last remaining credential"}
 
-            # Delete the credential
-            await db.delete_credential(credential_id_bytes)
+        # Delete the credential
+        await db.delete_user_credential(credential_id_bytes)
 
-            return {"status": "success", "message": "Credential deleted successfully"}
+        return {"status": "success", "message": "Credential deleted successfully"}
 
     except Exception as e:
         return {"error": f"Failed to delete credential: {str(e)}"}
