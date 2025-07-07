@@ -191,7 +191,7 @@ async def get_index():
 <html>
 <head>
     <title>WebAuthn Registration Demo</title>
-    <script src="https://unpkg.com/@simplewebauthn/browser/dist/bundle/index.umd.min.js"></script>
+    <script src="/static/simplewebauthn-browser.min.js"></script>
     <style>
         body { font-family: Arial, sans-serif; max-width: 600px; margin: 50px auto; padding: 20px; }
         .container { text-align: center; }

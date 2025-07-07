@@ -51,32 +51,51 @@ async function setSessionCookie(sessionToken) {
 
 function showView(viewId) {
   document.querySelectorAll('.view').forEach(view => view.classList.remove('active'))
-  document.getElementById(viewId).classList.add('active')
+  const targetView = document.getElementById(viewId)
+  if (targetView) {
+    targetView.classList.add('active')
+  }
 }
 
 function showLoginView() {
+  if (window.location.pathname !== '/auth/login') {
+    window.location.href = '/auth/login'
+    return
+  }
   showView('loginView')
   clearStatus('loginStatus')
 }
 
 function showRegisterView() {
+  if (window.location.pathname !== '/auth/register') {
+    window.location.href = '/auth/register'
+    return
+  }
   showView('registerView')
   clearStatus('registerStatus')
 }
 
 function showDeviceAdditionView() {
-  showView('deviceAdditionView')
-  clearStatus('deviceAdditionStatus')
+  // This function is no longer needed as device addition is now a dialog
+  // Redirect to profile page if someone tries to access the old route
+  if (window.location.pathname === '/auth/add-device') {
+    window.location.href = '/auth/profile'
+    return
+  }
 }
 
 function showDashboardView() {
-  showView('dashboardView')
-  clearStatus('dashboardStatus')
+  if (window.location.pathname !== '/auth/profile') {
+    window.location.href = '/auth/profile'
+    return
+  }
+  showView('profileView')
+  clearStatus('profileStatus')
   loadUserInfo().then(() => {
     updateUserInfo()
     loadCredentials()
   }).catch(error => {
-    showStatus('dashboardStatus', `Failed to load user info: ${error.message}`, 'error')
+    showStatus('profileStatus', `Failed to load user info: ${error.message}`, 'error')
   })
 }
 
@@ -96,61 +115,6 @@ function clearStatus(elementId) {
 // ========================================
 // Device Addition & QR Code
 // ========================================
-
-async function generateAndShowDeviceLink() {
-  showView('deviceAdditionView')
-  clearStatus('deviceAdditionStatus')
-  
-  try {
-    showStatus('deviceAdditionStatus', 'Generating device link...', 'info')
-    
-    const response = await fetch('/api/create-device-link', {
-      method: 'POST',
-      credentials: 'include'
-    })
-    
-    const result = await response.json()
-    if (result.error) throw new Error(result.error)
-    
-    // Update UI with the link
-    document.getElementById('deviceLinkText').textContent = result.addition_link
-    document.getElementById('deviceToken').textContent = result.token
-    
-    // Store link globally for copy function
-    window.currentDeviceLink = result.addition_link
-    
-    // Generate QR code
-    const qrCodeContainer = document.getElementById('qrCode')
-    try {
-      if (typeof QRCode === 'undefined') {
-        throw new Error('QRCode library not loaded')
-      }
-      
-      qrCodeContainer.innerHTML = ''
-      
-      new QRCode(qrCodeContainer, {
-        text: result.addition_link,
-        width: 200,
-        height: 200,
-        colorDark: '#000000',
-        colorLight: '#ffffff',
-        correctLevel: QRCode.CorrectLevel.M
-      })
-    } catch (qrError) {
-      console.error('QR code generation failed:', qrError)
-      qrCodeContainer.innerHTML = `
-        <div style="font-family: monospace; font-size: 12px; line-height: 1; background: white; padding: 10px; border: 1px solid #ccc; display: inline-block;">
-          QR Code generation failed. Use the link below instead.
-        </div>
-      `
-    }
-    
-    showStatus('deviceAdditionStatus', 'Device link generated successfully!', 'success')
-    
-  } catch (error) {
-    showStatus('deviceAdditionStatus', `Failed to generate device link: ${error.message}`, 'error')
-  }
-}
 
 async function copyDeviceLink() {
   try {
@@ -324,7 +288,8 @@ async function authenticate() {
 // Load user credentials
 async function loadCredentials() {
   try {
-    showStatus('dashboardStatus', 'Loading credentials...', 'info')
+    const statusElement = document.getElementById('profileStatus') ? 'profileStatus' : 'dashboardStatus'
+    showStatus(statusElement, 'Loading credentials...', 'info')
     
     const response = await fetch('/api/user-credentials', {
       method: 'GET',
@@ -337,9 +302,10 @@ async function loadCredentials() {
     currentCredentials = result.credentials
     aaguidInfo = result.aaguid_info || {}
     updateCredentialList()
-    clearStatus('dashboardStatus')
+    clearStatus(statusElement)
   } catch (error) {
-    showStatus('dashboardStatus', `Failed to load credentials: ${error.message}`, 'error')
+    const statusElement = document.getElementById('profileStatus') ? 'profileStatus' : 'dashboardStatus'
+    showStatus(statusElement, `Failed to load credentials: ${error.message}`, 'error')
   }
 }
 
@@ -459,72 +425,108 @@ async function logout() {
   currentUser = null
   currentCredentials = []
   aaguidInfo = {}
-  showLoginView()
+  window.location.href = '/auth/login'
 }
 
 // Check if user is already logged in on page load
 async function checkExistingSession() {
-  if (await validateStoredToken()) {
-    showDashboardView()
+  const isLoggedIn = await validateStoredToken()
+  const path = window.location.pathname
+  
+  // Protected routes that require authentication
+  const protectedRoutes = ['/auth/profile']
+  
+  if (isLoggedIn) {
+    // User is logged in
+    if (path === '/auth/login' || path === '/auth/register' || path === '/') {
+      // Redirect to profile if accessing login/register pages while logged in
+      window.location.href = '/auth/profile'
+    } else if (path === '/auth/add-device') {
+      // Redirect old add-device route to profile
+      window.location.href = '/auth/profile'
+    } else if (protectedRoutes.includes(path)) {
+      // Stay on current protected page and load user data
+      if (path === '/auth/profile') {
+        loadUserInfo().then(() => {
+          updateUserInfo()
+          loadCredentials()
+        }).catch(error => {
+          showStatus('profileStatus', `Failed to load user info: ${error.message}`, 'error')
+        })
+      }
+    }
   } else {
-    showLoginView()
+    // User is not logged in
+    if (protectedRoutes.includes(path) || path === '/auth/add-device') {
+      // Redirect to login if accessing protected pages without authentication
+      window.location.href = '/auth/login'
+    }
   }
+}
+
+// Initialize the app based on current page
+function initializeApp() {
+  checkExistingSession()
 }
 
 // Form event handlers
 document.addEventListener('DOMContentLoaded', function() {
   // Check for existing session on page load
-  checkExistingSession()
+  initializeApp()
   
   // Registration form
   const regForm = document.getElementById('registrationForm')
-  const regSubmitBtn = regForm.querySelector('button[type="submit"]')
-  
-  regForm.addEventListener('submit', async (ev) => {
-    ev.preventDefault()
-    regSubmitBtn.disabled = true
-    clearStatus('registerStatus')
+  if (regForm) {
+    const regSubmitBtn = regForm.querySelector('button[type="submit"]')
     
-    const user_name = (new FormData(regForm)).get('username')
-    
-    try {
-      showStatus('registerStatus', 'Starting registration...', 'info')
-      await register(user_name)
-      showStatus('registerStatus', `Registration successful for ${user_name}!`, 'success')
+    regForm.addEventListener('submit', async (ev) => {
+      ev.preventDefault()
+      regSubmitBtn.disabled = true
+      clearStatus('registerStatus')
       
-      // Auto-login after successful registration
-      setTimeout(() => {
-        showDashboardView()
-      }, 1500)
-    } catch (err) {
-      showStatus('registerStatus', `Registration failed: ${err.message}`, 'error')
-    } finally {
-      regSubmitBtn.disabled = false
-    }
-  })
+      const user_name = (new FormData(regForm)).get('username')
+      
+      try {
+        showStatus('registerStatus', 'Starting registration...', 'info')
+        await register(user_name)
+        showStatus('registerStatus', `Registration successful for ${user_name}!`, 'success')
+        
+        // Auto-login after successful registration
+        setTimeout(() => {
+          window.location.href = '/auth/profile'
+        }, 1500)
+      } catch (err) {
+        showStatus('registerStatus', `Registration failed: ${err.message}`, 'error')
+      } finally {
+        regSubmitBtn.disabled = false
+      }
+    })
+  }
 
   // Authentication form
   const authForm = document.getElementById('authenticationForm')
-  const authSubmitBtn = authForm.querySelector('button[type="submit"]')
-  
-  authForm.addEventListener('submit', async (ev) => {
-    ev.preventDefault()
-    authSubmitBtn.disabled = true
-    clearStatus('loginStatus')
+  if (authForm) {
+    const authSubmitBtn = authForm.querySelector('button[type="submit"]')
     
-    try {
-      showStatus('loginStatus', 'Starting authentication...', 'info')
-      await authenticate()
-      showStatus('loginStatus', 'Authentication successful!', 'success')
+    authForm.addEventListener('submit', async (ev) => {
+      ev.preventDefault()
+      authSubmitBtn.disabled = true
+      clearStatus('loginStatus')
       
-      // Navigate to dashboard
-      setTimeout(() => {
-        showDashboardView()
-      }, 1000)
-    } catch (err) {
-      showStatus('loginStatus', `Authentication failed: ${err.message}`, 'error')
-    } finally {
-      authSubmitBtn.disabled = false
-    }
-  })
+      try {
+        showStatus('loginStatus', 'Starting authentication...', 'info')
+        await authenticate()
+        showStatus('loginStatus', 'Authentication successful!', 'success')
+        
+        // Navigate to profile
+        setTimeout(() => {
+          window.location.href = '/auth/profile'
+        }, 1000)
+      } catch (err) {
+        showStatus('loginStatus', `Authentication failed: ${err.message}`, 'error')
+      } finally {
+        authSubmitBtn.disabled = false
+      }
+    })
+  }
 })

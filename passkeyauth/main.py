@@ -297,8 +297,42 @@ app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 @app.get("/")
 async def get_index():
-    """Serve the main HTML page"""
-    return FileResponse(STATIC_DIR / "index.html")
+    """Redirect to login page"""
+    from fastapi.responses import RedirectResponse
+
+    return RedirectResponse(url="/auth/login", status_code=302)
+
+
+@app.get("/auth/login")
+async def get_login_page():
+    """Serve the login page"""
+    return FileResponse(STATIC_DIR / "login.html")
+
+
+@app.get("/auth/register")
+async def get_register_page():
+    """Serve the register page"""
+    return FileResponse(STATIC_DIR / "register.html")
+
+
+@app.get("/auth/dashboard")
+async def get_dashboard_page():
+    """Redirect to profile (dashboard is now profile)"""
+    from fastapi.responses import RedirectResponse
+
+    return RedirectResponse(url="/auth/profile", status_code=302)
+
+
+@app.get("/auth/profile")
+async def get_profile_page():
+    """Serve the profile page"""
+    return FileResponse(STATIC_DIR / "profile.html")
+
+
+@app.get("/auth/reset")
+async def get_reset_page_without_token():
+    """Serve the reset page without a token"""
+    return FileResponse(STATIC_DIR / "reset.html")
 
 
 @app.get("/reset/{token}")
