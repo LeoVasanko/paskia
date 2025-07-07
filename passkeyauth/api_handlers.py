@@ -36,6 +36,7 @@ async def get_user_info(request: Request) -> dict:
                 "user_name": user.user_name,
                 "created_at": user.created_at.isoformat() if user.created_at else None,
                 "last_seen": user.last_seen.isoformat() if user.last_seen else None,
+                "visits": user.visits,
             },
         }
     except Exception as e:

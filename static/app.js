@@ -5,7 +5,10 @@ let currentUser = null
 let currentCredentials = []
 let aaguidInfo = {}
 
-// Session management - now using HTTP-only cookies
+// ========================================
+// Session Management
+// ========================================
+
 async function validateStoredToken() {
   try {
     const response = await fetch('/api/validate-token', {
@@ -14,18 +17,12 @@ async function validateStoredToken() {
     })
     
     const result = await response.json()
-    
-    if (result.status === 'success') {
-      return true
-    } else {
-      return false
-    }
+    return result.status === 'success'
   } catch (error) {
     return false
   }
 }
 
-// Helper function to set session cookie using JWT token
 async function setSessionCookie(sessionToken) {
   try {
     const response = await fetch('/api/set-session', {
@@ -48,7 +45,10 @@ async function setSessionCookie(sessionToken) {
   }
 }
 
-// View management
+// ========================================
+// View Management
+// ========================================
+
 function showView(viewId) {
   document.querySelectorAll('.view').forEach(view => view.classList.remove('active'))
   document.getElementById(viewId).classList.add('active')
@@ -64,7 +64,11 @@ function showRegisterView() {
   clearStatus('registerStatus')
 }
 
-// Update dashboard view to load user info
+function showDeviceAdditionView() {
+  showView('deviceAdditionView')
+  clearStatus('deviceAdditionStatus')
+}
+
 function showDashboardView() {
   showView('dashboardView')
   clearStatus('dashboardStatus')
@@ -76,7 +80,10 @@ function showDashboardView() {
   })
 }
 
-// Status management
+// ========================================
+// Status Management
+// ========================================
+
 function showStatus(elementId, message, type = 'info') {
   const statusEl = document.getElementById(elementId)
   statusEl.innerHTML = `<div class="status ${type}">${message}</div>`
@@ -85,6 +92,161 @@ function showStatus(elementId, message, type = 'info') {
 function clearStatus(elementId) {
   document.getElementById(elementId).innerHTML = ''
 }
+
+// ========================================
+// Device Addition & QR Code
+// ========================================
+
+async function generateAndShowDeviceLink() {
+  showView('deviceAdditionView')
+  clearStatus('deviceAdditionStatus')
+  
+  try {
+    showStatus('deviceAdditionStatus', 'Generating device link...', 'info')
+    
+    const response = await fetch('/api/create-device-link', {
+      method: 'POST',
+      credentials: 'include'
+    })
+    
+    const result = await response.json()
+    if (result.error) throw new Error(result.error)
+    
+    // Update UI with the link
+    document.getElementById('deviceLinkText').textContent = result.addition_link
+    document.getElementById('deviceToken').textContent = result.token
+    
+    // Store link globally for copy function
+    window.currentDeviceLink = result.addition_link
+    
+    // Generate QR code
+    const qrCodeContainer = document.getElementById('qrCode')
+    try {
+      if (typeof QRCode === 'undefined') {
+        throw new Error('QRCode library not loaded')
+      }
+      
+      qrCodeContainer.innerHTML = ''
+      
+      new QRCode(qrCodeContainer, {
+        text: result.addition_link,
+        width: 200,
+        height: 200,
+        colorDark: '#000000',
+        colorLight: '#ffffff',
+        correctLevel: QRCode.CorrectLevel.M
+      })
+    } catch (qrError) {
+      console.error('QR code generation failed:', qrError)
+      qrCodeContainer.innerHTML = `
+        <div style="font-family: monospace; font-size: 12px; line-height: 1; background: white; padding: 10px; border: 1px solid #ccc; display: inline-block;">
+          QR Code generation failed. Use the link below instead.
+        </div>
+      `
+    }
+    
+    showStatus('deviceAdditionStatus', 'Device link generated successfully!', 'success')
+    
+  } catch (error) {
+    showStatus('deviceAdditionStatus', `Failed to generate device link: ${error.message}`, 'error')
+  }
+}
+
+async function copyDeviceLink() {
+  try {
+    if (window.currentDeviceLink) {
+      await navigator.clipboard.writeText(window.currentDeviceLink)
+      
+      const copyButton = document.querySelector('.copy-button')
+      const originalText = copyButton.textContent
+      copyButton.textContent = 'Copied!'
+      copyButton.style.background = '#28a745'
+      
+      setTimeout(() => {
+        copyButton.textContent = originalText
+        copyButton.style.background = '#28a745'
+      }, 2000)
+    }
+  } catch (error) {
+    console.error('Failed to copy link:', error)
+    const linkText = document.getElementById('deviceLinkText')
+    const range = document.createRange()
+    range.selectNode(linkText)
+    window.getSelection().removeAllRanges()
+    window.getSelection().addRange(range)
+  }
+}
+
+// ========================================
+// WebAuthn Operations
+// ========================================
+
+async function register(user_name) {
+  const ws = await aWebSocket('/ws/new_user_registration')
+  
+  ws.send(JSON.stringify({ user_name }))
+  
+  const optionsJSON = JSON.parse(await ws.recv())
+  if (optionsJSON.error) throw new Error(optionsJSON.error)
+  
+  const registrationResponse = await startRegistration({ optionsJSON })
+  ws.send(JSON.stringify(registrationResponse))
+  
+  const result = JSON.parse(await ws.recv())
+  if (result.error) throw new Error(`Server: ${result.error}`)
+  
+  await setSessionCookie(result.session_token)
+  ws.close()
+}
+
+async function authenticate() {
+  const ws = await aWebSocket('/ws/authenticate')
+  
+  const optionsJSON = JSON.parse(await ws.recv())
+  if (optionsJSON.error) throw new Error(optionsJSON.error)
+  
+  const authenticationResponse = await startAuthentication({ optionsJSON })
+  ws.send(JSON.stringify(authenticationResponse))
+  
+  const result = JSON.parse(await ws.recv())
+  if (result.error) throw new Error(`Server: ${result.error}`)
+  
+  await setSessionCookie(result.session_token)
+  ws.close()
+}
+
+async function addNewCredential() {
+  try {
+    showStatus('dashboardStatus', 'Adding new passkey...', 'info')
+    
+    const ws = await aWebSocket('/ws/add_credential')
+    
+    const optionsJSON = JSON.parse(await ws.recv())
+    if (optionsJSON.error) throw new Error(optionsJSON.error)
+    
+    const registrationResponse = await startRegistration({ optionsJSON })
+    ws.send(JSON.stringify(registrationResponse))
+    
+    const result = JSON.parse(await ws.recv())
+    if (result.error) throw new Error(`Server: ${result.error}`)
+    
+    ws.close()
+    
+    showStatus('dashboardStatus', 'New passkey added successfully!', 'success')
+    
+    setTimeout(() => {
+      loadCredentials()
+      clearStatus('dashboardStatus')
+    }, 2000)
+    
+  } catch (error) {
+    showStatus('dashboardStatus', `Failed to add passkey: ${error.message}`, 'error')
+  }
+}
+
+// ========================================
+// User Data Management
+// ========================================
 
 // User registration
 async function register(user_name) {
@@ -204,6 +366,9 @@ function updateUserInfo() {
   if (currentUser) {
     userInfoEl.innerHTML = `
       <h3>👤 ${currentUser.user_name}</h3>
+      <p><strong>Visits:</strong> ${currentUser.visits || 0}</p>
+      <p><strong>Member since:</strong> ${currentUser.created_at ? formatHumanReadableDate(currentUser.created_at) : 'N/A'}</p>
+      <p><strong>Last seen:</strong> ${currentUser.last_seen ? formatHumanReadableDate(currentUser.last_seen) : 'N/A'}</p>
     `
   }
 }
@@ -303,75 +468,6 @@ async function checkExistingSession() {
     showDashboardView()
   } else {
     showLoginView()
-  }
-}
-
-// Add new credential for logged-in user
-async function addNewCredential() {
-  try {
-    showStatus('dashboardStatus', 'Starting new passkey registration...', 'info')
-    
-    const ws = await aWebSocket('/ws/add_credential')
-    
-    // Registration chat - no need to send user data since we're authenticated
-    const optionsJSON = JSON.parse(await ws.recv())
-    if (optionsJSON.error) throw new Error(optionsJSON.error)
-    
-    showStatus('dashboardStatus', 'Save new passkey to your authenticator...', 'info')
-    
-    const registrationResponse = await startRegistration({optionsJSON})
-    ws.send(JSON.stringify(registrationResponse))
-    
-    const result = JSON.parse(await ws.recv())
-    if (result.error) throw new Error(`Server: ${result.error}`)
-    
-    ws.close()
-    
-    showStatus('dashboardStatus', 'New passkey added successfully!', 'success')
-    
-    // Refresh credentials list to show the new credential
-    await loadCredentials()
-    clearStatus('dashboardStatus')
-    
-  } catch (error) {
-    showStatus('dashboardStatus', 'Registration cancelled', 'error')
-  }
-}
-
-// Delete credential
-async function deleteCredential(credentialId) {
-  if (!confirm('Are you sure you want to delete this passkey? This action cannot be undone.')) {
-    return
-  }
-
-  try {
-    showStatus('dashboardStatus', 'Deleting passkey...', 'info')
-    
-    const response = await fetch('/api/delete-credential', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      credentials: 'include',
-      body: JSON.stringify({
-        credential_id: credentialId
-      })
-    })
-    
-    const result = await response.json()
-    
-    if (result.error) {
-      throw new Error(result.error)
-    }
-    
-    showStatus('dashboardStatus', 'Passkey deleted successfully!', 'success')
-    
-    // Refresh credentials list
-    await loadCredentials()
-    clearStatus('dashboardStatus')
-    
-  } catch (error) {
-    showStatus('dashboardStatus', `Failed to delete passkey: ${error.message}`, 'error')
   }
 }
 
