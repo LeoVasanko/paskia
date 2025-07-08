@@ -84,19 +84,21 @@ function showDeviceAdditionView() {
   }
 }
 
-function showDashboardView() {
+async function showDashboardView() {
   if (window.location.pathname !== '/auth/profile') {
     window.location.href = '/auth/profile'
     return
   }
   showView('profileView')
   clearStatus('profileStatus')
-  loadUserInfo().then(() => {
+
+  try {
+    await loadUserInfo()
     updateUserInfo()
-    loadCredentials()
-  }).catch(error => {
+    await loadCredentials()
+  } catch (error) {
     showStatus('profileStatus', `Failed to load user info: ${error.message}`, 'error')
-  })
+  }
 }
 
 // ========================================
