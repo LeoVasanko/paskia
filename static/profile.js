@@ -3,7 +3,7 @@
 document.addEventListener('DOMContentLoaded', function() {
   // Initialize the app
   initializeApp()
-  
+
   // Setup dialog event handlers
   setupDialogHandlers()
 })
@@ -19,7 +19,7 @@ function setupDialogHandlers() {
       }
     })
   }
-  
+
   // Close dialog when pressing Escape key
   document.addEventListener('keydown', function(e) {
     const dialog = document.getElementById('deviceLinkDialog')
@@ -34,12 +34,12 @@ function openDeviceLinkDialog() {
   const dialog = document.getElementById('deviceLinkDialog')
   const container = document.querySelector('.container')
   const body = document.body
-  
+
   if (dialog && container && body) {
     // Add blur and disable effects
     container.classList.add('dialog-open')
     body.classList.add('dialog-open')
-    
+
     dialog.showModal()
     generateDeviceLink()
   }
@@ -50,12 +50,12 @@ function closeDeviceLinkDialog() {
   const dialog = document.getElementById('deviceLinkDialog')
   const container = document.querySelector('.container')
   const body = document.body
-  
+
   if (dialog && container && body) {
     // Remove blur and disable effects
     container.classList.remove('dialog-open')
     body.classList.remove('dialog-open')
-    
+
     dialog.close()
   }
 }
@@ -64,7 +64,7 @@ function closeDeviceLinkDialog() {
 function generateDeviceLink() {
   clearStatus('deviceAdditionStatus')
   showStatus('deviceAdditionStatus', 'Generating device link...', 'info')
-  
+
   fetch('/api/create-device-link', {
     method: 'POST',
     credentials: 'include'
@@ -72,22 +72,22 @@ function generateDeviceLink() {
   .then(response => response.json())
   .then(result => {
     if (result.error) throw new Error(result.error)
-    
+
     // Update UI with the link
     const deviceLinkText = document.getElementById('deviceLinkText')
     const deviceToken = document.getElementById('deviceToken')
-    
+
     if (deviceLinkText) {
       deviceLinkText.textContent = result.addition_link
     }
-    
+
     if (deviceToken) {
       deviceToken.textContent = result.token
     }
-    
+
     // Store link globally for copy function
     window.currentDeviceLink = result.addition_link
-    
+
     // Generate QR code
     const qrCodeEl = document.getElementById('qrCode')
     if (qrCodeEl && typeof QRCode !== 'undefined') {
@@ -97,9 +97,12 @@ function generateDeviceLink() {
         width: 200,
         height: 200,
         colorDark: '#000000',
-        colorLight: '#ffffff'
+        colorLight: '#ffffff',
+        correctLevel: QRCode.CorrectLevel.M
       })
     }
+
+    clearStatus('deviceAdditionStatus')
   })
   .catch(error => {
     showStatus('deviceAdditionStatus', `Failed to generate device link: ${error.message}`, 'error')

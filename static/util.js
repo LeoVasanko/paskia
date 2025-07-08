@@ -40,12 +40,13 @@ async function checkExistingSession() {
     } else if (protectedRoutes.includes(path)) {
       // Stay on current protected page and load user data
       if (path === '/auth/profile') {
-        loadUserInfo().then(() => {
+        try {
+          await loadUserInfo()
           updateUserInfo()
-          loadCredentials()
-        }).catch(error => {
+          await loadCredentials()
+        } catch (error) {
           showStatus('profileStatus', `Failed to load user info: ${error.message}`, 'error')
-        })
+        }
       }
     }
   } else {
