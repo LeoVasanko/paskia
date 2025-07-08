@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Add Device - Passkey Authentication</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <script src="/static/simplewebauthn-browser.min.js"></script>
+    <script src="/static/qrcodejs/qrcode.min.js"></script>
+    <script src="/static/awaitable-websocket.js"></script>
+</head>
+<body>
+    <div class="container">
+        <!-- Device Addition View -->
+        <div id="deviceAdditionView" class="view active">
+            <h1>📱 Add Device</h1>
+            <div id="deviceAdditionStatus"></div>
+            
+            <div id="deviceLinkSection">
+                <h2>Device Addition Link</h2>
+                <div class="token-info">
+                    <p><strong>Share this link to add this account to another device:</strong></p>
+                    
+                    <div class="qr-container">
+                        <div id="qrCode" class="qr-code"></div>
+                        <p><small>Scan this QR code with your other device</small></p>
+                    </div>
+                    
+                    <div class="link-container">
+                        <p class="link-text" id="deviceLinkText">Loading...</p>
+                        <button class="copy-button" onclick="copyDeviceLink()">Copy Link</button>
+                    </div>
+                    
+                    <p><small>⚠️ This link expires in 24 hours and can only be used once.</small></p>
+                    <p><strong>Human-readable code:</strong> <code id="deviceToken"></code></p>
+                </div>
+            </div>
+            
+            <button onclick="window.location.href='/auth/profile'" class="btn-secondary">
+                Back to Profile
+            </button>
+        </div>
+    </div>
+
+    <script src="/static/app.js"></script>
+    <script>
+        // Initialize the device addition view when page loads
+        document.addEventListener('DOMContentLoaded', function() {
+            initializeApp();
+            // Auto-generate device link when page loads
+            generateDeviceLink();
+        });
+        
+        // Generate device link function
+        function generateDeviceLink() {
+            clearStatus('deviceAdditionStatus');
+            showStatus('deviceAdditionStatus', 'Generating device link...', 'info');
+            
+            fetch('/api/create-device-link', {
+                method: 'POST',
+                credentials: 'include'
+            })
+            .then(response => response.json())
+            .then(result => {
+                if (result.error) throw new Error(result.error);
+                
+                // Update UI with the link
+                document.getElementById('deviceLinkText').textContent = result.addition_link;
+                document.getElementById('deviceToken').textContent = result.token;
+                
+                // Store link globally for copy function
+                window.currentDeviceLink = result.addition_link;
+                
+                // Generate QR code
+                const qrCodeEl = document.getElementById('qrCode');
+                qrCodeEl.innerHTML = '';
+                new QRCode(qrCodeEl, {
+                    text: result.addition_link,
+                    width: 200,
+                    height: 200,
+                    colorDark: '#000000',
+                    colorLight: '#ffffff',
+                    correctLevel: QRCode.CorrectLevel.M
+                });
+                
+                showStatus('deviceAdditionStatus', 'Device link generated successfully!', 'success');
+            })
+            .catch(error => {
+                console.error('Error generating device link:', error);
+                showStatus('deviceAdditionStatus', `Failed to generate device link: ${error.message}`, 'error');
+            });
+        }
+    </script>
+</body>
+</html>

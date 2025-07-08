@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Profile - Passkey Authentication</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <script src="/static/simplewebauthn-browser.min.js"></script>
+    <script src="/static/qrcodejs/qrcode.min.js"></script>
+    <script src="/static/awaitable-websocket.js"></script>
+    <style>
+        /* Dialog backdrop and blur effects */
+        .dialog-backdrop {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            backdrop-filter: blur(4px);
+            z-index: 998;
+            display: none;
+        }
+        
+        .dialog-backdrop.active {
+            display: block;
+        }
+        
+        .container.dialog-open {
+            filter: blur(2px);
+            pointer-events: none;
+            user-select: none;
+        }
+        
+        /* Dialog styling */
+        #deviceLinkDialog {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 999;
+            background: white;
+            border: none;
+            border-radius: 8px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+            padding: 2rem;
+            max-width: 500px;
+            width: 90%;
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+        
+        #deviceLinkDialog::backdrop {
+            background: rgba(0, 0, 0, 0.5);
+            backdrop-filter: blur(4px);
+        }
+        
+        /* Dark mode dialog styling */
+        @media (prefers-color-scheme: dark) {
+            #deviceLinkDialog {
+                background: #1a1a1a;
+                color: white;
+            }
+        }
+        
+        /* Prevent scrolling when dialog is open */
+        body.dialog-open {
+            overflow: hidden;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Profile View -->
+        <div id="profileView" class="view active">
+            <h1>👋 Welcome!</h1>
+            <div id="userInfo" class="user-info"></div>
+            <div id="profileStatus"></div>
+            
+            <h2>Your Passkeys</h2>
+            <div id="credentialList" class="credential-list">
+                <p>Loading credentials...</p>
+            </div>
+            
+            <button onclick="addNewCredential()" class="btn-primary">
+                Add New Passkey
+            </button>
+            <button onclick="openDeviceLinkDialog()" class="btn-secondary">
+                Generate Device Link
+            </button>
+            <button onclick="logout()" class="btn-danger">
+                Logout
+            </button>
+        </div>
+        
+        <!-- Device Link Dialog -->
+        <dialog id="deviceLinkDialog">
+            <h1>📱 Add Device</h1>
+            <div id="deviceAdditionStatus"></div>
+            
+            <div id="deviceLinkSection">
+                <h2>Device Addition Link</h2>
+                <div class="token-info">
+                    <p><strong>Share this link to add this account to another device:</strong></p>
+                    
+                    <div class="qr-container">
+                        <div id="qrCode" class="qr-code"></div>
+                        <p><small>Scan this QR code with your other device</small></p>
+                    </div>
+                    
+                    <div class="link-container">
+                        <p class="link-text" id="deviceLinkText">Loading...</p>
+                        <button class="copy-button" onclick="copyDeviceLink()">Copy Link</button>
+                    </div>
+                    
+                    <p><small>⚠️ This link expires in 24 hours and can only be used once.</small></p>
+                </div>
+            </div>
+            
+            <button onclick="closeDeviceLinkDialog()" class="btn-secondary">
+                Close
+            </button>
+        </dialog>
+    </div>
+
+    <script src="/static/app.js"></script>
+    <script>
+        // Initialize the profile view when page loads
+        document.addEventListener('DOMContentLoaded', function() {
+            initializeApp();
+        });
+        
+        // Open device link dialog
+        function openDeviceLinkDialog() {
+            const dialog = document.getElementById('deviceLinkDialog');
+            const container = document.querySelector('.container');
+            const body = document.body;
+            
+            // Add blur and disable effects
+            container.classList.add('dialog-open');
+            body.classList.add('dialog-open');
+            
+            dialog.showModal();
+            generateDeviceLink();
+        }
+        
+        // Close device link dialog
+        function closeDeviceLinkDialog() {
+            const dialog = document.getElementById('deviceLinkDialog');
+            const container = document.querySelector('.container');
+            const body = document.body;
+            
+            // Remove blur and disable effects
+            container.classList.remove('dialog-open');
+            body.classList.remove('dialog-open');
+            
+            dialog.close();
+        }
+        
+        // Generate device link function
+        function generateDeviceLink() {
+            clearStatus('deviceAdditionStatus');
+            showStatus('deviceAdditionStatus', 'Generating device link...', 'info');
+            
+            fetch('/api/create-device-link', {
+                method: 'POST',
+                credentials: 'include'
+            })
+            .then(response => response.json())
+            .then(result => {
+                if (result.error) throw new Error(result.error);
+                
+                // Update UI with the link
+                document.getElementById('deviceLinkText').textContent = result.addition_link;
+                
+                // Store link globally for copy function
+                window.currentDeviceLink = result.addition_link;
+                
+                // Generate QR code
+                const qrCodeEl = document.getElementById('qrCode');
+                qrCodeEl.innerHTML = '';
+                new QRCode(qrCodeEl, {
+                    text: result.addition_link,
+                    width: 200,
+                    height: 200,
+                    colorDark: '#000000',
+                    colorLight: '#ffffff',
+                    correctLevel: QRCode.CorrectLevel.M
+                });
+                
+            })
+            .catch(error => {
+                console.error('Error generating device link:', error);
+                showStatus('deviceAdditionStatus', `Failed to generate device link: ${error.message}`, 'error');
+            });
+        }
+        
+        // Close dialog when clicking outside
+        document.getElementById('deviceLinkDialog').addEventListener('click', function(e) {
+            if (e.target === this) {
+                closeDeviceLinkDialog();
+            }
+        });
+        
+        // Close dialog when pressing Escape key
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape' && document.getElementById('deviceLinkDialog').open) {
+                closeDeviceLinkDialog();
+            }
+        });
+    </script>
+</body>
+</html>
