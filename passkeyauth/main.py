@@ -31,6 +31,7 @@ from .api_handlers import (
 from .db import User
 from .jwt_manager import create_session_token
 from .passkey import Passkey
+from .reset_handlers import create_device_addition_link, validate_device_addition_token
 from .session_manager import get_user_from_cookie_string
 
 STATIC_DIR = Path(__file__).parent.parent / "static"
@@ -117,6 +118,64 @@ async def websocket_register_add(ws: WebSocket):
                 "user_id": str(user_id),
                 "credential_id": credential.credential_id.hex(),
                 "message": "New credential added successfully",
+            }
+        )
+    except ValueError as e:
+        await ws.send_json({"error": str(e)})
+    except WebSocketDisconnect:
+        pass
+    except Exception as e:
+        await ws.send_json({"error": f"Server error: {str(e)}"})
+
+
+@app.websocket("/ws/add_device_credential")
+async def websocket_add_device_credential(ws: WebSocket):
+    """Add a new credential for an existing user via device addition token."""
+    await ws.accept()
+    try:
+        # Get device addition token from client
+        message = await ws.receive_json()
+        token = message.get("token")
+
+        if not token:
+            await ws.send_json({"error": "Device addition token is required"})
+            return
+
+        # Validate device addition token
+        reset_token = await db.get_reset_token(token)
+        if not reset_token:
+            await ws.send_json({"error": "Invalid or expired device addition token"})
+            return
+
+        # Check if token is expired (24 hours)
+        from datetime import timedelta
+
+        expiry_time = reset_token.created_at + timedelta(hours=24)
+        if datetime.now() > expiry_time:
+            await ws.send_json({"error": "Device addition token has expired"})
+            return
+
+        # Get user information
+        user = await db.get_user_by_id(reset_token.user_id)
+        challenge_ids = await db.get_user_credentials(reset_token.user_id)
+
+        # WebAuthn registration
+        credential = await register_chat(
+            ws, reset_token.user_id, user.user_name, challenge_ids
+        )
+
+        # Store the new credential in the database
+        await db.create_credential_for_user(credential)
+
+        # Delete the device addition token (it's now used)
+        await db.delete_reset_token(token)
+
+        await ws.send_json(
+            {
+                "status": "success",
+                "user_id": str(reset_token.user_id),
+                "credential_id": credential.credential_id.hex(),
+                "message": "New credential added successfully via device addition token",
             }
         )
     except ValueError as e:
@@ -220,6 +279,18 @@ async def api_delete_credential(request: Request):
     return await delete_credential(request)
 
 
+@app.post("/api/create-device-link")
+async def api_create_device_link(request: Request):
+    """Create a device addition link for the authenticated user."""
+    return await create_device_addition_link(request)
+
+
+@app.post("/api/validate-device-token")
+async def api_validate_device_token(request: Request):
+    """Validate a device addition token."""
+    return await validate_device_addition_token(request)
+
+
 # Serve static files
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
@@ -228,6 +299,12 @@ app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 async def get_index():
     """Serve the main HTML page"""
     return FileResponse(STATIC_DIR / "index.html")
+
+
+@app.get("/reset/{token}")
+async def get_reset_page(token: str):
+    """Serve the reset page with the token in URL"""
+    return FileResponse(STATIC_DIR / "reset.html")
 
 
 def main():

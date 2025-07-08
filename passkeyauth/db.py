@@ -5,9 +5,10 @@ This module provides an async database layer using SQLAlchemy async mode
 for managing users and credentials in a WebAuthn authentication system.
 """
 
+import secrets
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from uuid import UUID
 
 from sqlalchemy import (
@@ -41,6 +42,7 @@ class UserModel(Base):
     user_name: Mapped[str] = mapped_column(String, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
     last_seen: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    visits: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
     # Relationship to credentials
     credentials: Mapped[list["CredentialModel"]] = relationship(
@@ -66,12 +68,33 @@ class CredentialModel(Base):
     user: Mapped["UserModel"] = relationship("UserModel", back_populates="credentials")
 
 
+class ResetTokenModel(Base):
+    __tablename__ = "reset_tokens"
+
+    token: Mapped[str] = mapped_column(String(64), primary_key=True)
+    user_id: Mapped[bytes] = mapped_column(
+        LargeBinary(16), ForeignKey("users.user_id", ondelete="CASCADE")
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
+
+    # Relationship to user
+    user: Mapped["UserModel"] = relationship("UserModel")
+
+
 @dataclass
 class User:
     user_id: UUID
     user_name: str
     created_at: datetime | None = None
     last_seen: datetime | None = None
+    visits: int = 0
+
+
+@dataclass
+class ResetToken:
+    token: str
+    user_id: UUID
+    created_at: datetime
 
 
 # Global engine and session factory
@@ -108,6 +131,7 @@ class DB:
                 user_name=user_model.user_name,
                 created_at=user_model.created_at,
                 last_seen=user_model.last_seen,
+                visits=user_model.visits,
             )
         raise ValueError("User not found")
 
@@ -118,6 +142,7 @@ class DB:
             user_name=user.user_name,
             created_at=user.created_at or datetime.now(),
             last_seen=user.last_seen,
+            visits=user.visits,
         )
         self.session.add(user_model)
         await self.session.flush()
@@ -186,11 +211,27 @@ class DB:
             # Update credential
             await self.update_credential(credential)
 
-            # Update user's last_seen
+            # Update user's last_seen and increment visits
             stmt = (
                 update(UserModel)
                 .where(UserModel.user_id == user_id.bytes)
-                .values(last_seen=credential.last_used)
+                .values(last_seen=credential.last_used, visits=UserModel.visits + 1)
+            )
+            await self.session.execute(stmt)
+
+    async def create_new_session(
+        self, user_id: UUID, credential: StoredCredential
+    ) -> None:
+        """Create a new session for a user by incrementing visits and updating last_seen."""
+        async with self.session.begin():
+            # Update credential
+            await self.update_credential(credential)
+
+            # Update user's last_seen and increment visits
+            stmt = (
+                update(UserModel)
+                .where(UserModel.user_id == user_id.bytes)
+                .values(last_seen=credential.last_used, visits=UserModel.visits + 1)
             )
             await self.session.execute(stmt)
 
@@ -201,6 +242,61 @@ class DB:
         )
         await self.session.execute(stmt)
         await self.session.commit()
+
+    async def create_reset_token(self, user_id: UUID, token: str | None = None) -> str:
+        """Create a new reset token for a user."""
+        if token is None:
+            token = secrets.token_urlsafe(32)
+
+        reset_token_model = ResetTokenModel(
+            token=token,
+            user_id=user_id.bytes,
+            created_at=datetime.now(),
+        )
+        self.session.add(reset_token_model)
+        await self.session.flush()
+        return token
+
+    async def get_reset_token(self, token: str) -> ResetToken | None:
+        """Get reset token by token string."""
+        stmt = select(ResetTokenModel).where(ResetTokenModel.token == token)
+        result = await self.session.execute(stmt)
+        token_model = result.scalar_one_or_none()
+
+        if token_model:
+            return ResetToken(
+                token=token_model.token,
+                user_id=UUID(bytes=token_model.user_id),
+                created_at=token_model.created_at,
+            )
+        return None
+
+    async def delete_reset_token(self, token: str) -> None:
+        """Delete a reset token (used after successful credential addition)."""
+        stmt = delete(ResetTokenModel).where(ResetTokenModel.token == token)
+        await self.session.execute(stmt)
+
+    async def cleanup_expired_tokens(self) -> None:
+        """Remove expired reset tokens (older than 24 hours)."""
+        expiry_time = datetime.now() - timedelta(hours=24)
+        stmt = delete(ResetTokenModel).where(ResetTokenModel.created_at < expiry_time)
+        await self.session.execute(stmt)
+
+    async def get_user_by_username(self, user_name: str) -> User | None:
+        """Get user by username."""
+        stmt = select(UserModel).where(UserModel.user_name == user_name)
+        result = await self.session.execute(stmt)
+        user_model = result.scalar_one_or_none()
+
+        if user_model:
+            return User(
+                user_id=UUID(bytes=user_model.user_id),
+                user_name=user_model.user_name,
+                created_at=user_model.created_at,
+                last_seen=user_model.last_seen,
+                visits=user_model.visits,
+            )
+        return None
 
 
 # Standalone functions that handle database connections internally
@@ -214,6 +310,8 @@ async def create_user_and_credential(user: User, credential: StoredCredential) -
     """Create a new user and their first credential in a single transaction."""
     async with connect() as db:
         await db.session.begin()
+        # Set visits to 1 for the new user since they're creating their first session
+        user.visits = 1
         await db.create_user(user)
         await db.create_credential(credential)
 
@@ -252,3 +350,39 @@ async def delete_user_credential(credential_id: bytes) -> None:
     """Delete a credential by its ID."""
     async with connect() as db:
         await db.delete_credential(credential_id)
+
+
+async def create_new_session(user_id: UUID, credential: StoredCredential) -> None:
+    """Create a new session for a user by incrementing visits and updating last_seen."""
+    async with connect() as db:
+        await db.create_new_session(user_id, credential)
+
+
+async def create_reset_token(user_id: UUID, token: str | None = None) -> str:
+    """Create a reset token for a user."""
+    async with connect() as db:
+        return await db.create_reset_token(user_id, token)
+
+
+async def get_reset_token(token: str) -> ResetToken | None:
+    """Get reset token by token string."""
+    async with connect() as db:
+        return await db.get_reset_token(token)
+
+
+async def delete_reset_token(token: str) -> None:
+    """Delete a reset token (used after successful credential addition)."""
+    async with connect() as db:
+        await db.delete_reset_token(token)
+
+
+async def cleanup_expired_tokens() -> None:
+    """Remove expired reset tokens (older than 24 hours)."""
+    async with connect() as db:
+        await db.cleanup_expired_tokens()
+
+
+async def get_user_by_username(user_name: str) -> User | None:
+    """Get user by username."""
+    async with connect() as db:
+        return await db.get_user_by_username(user_name)
