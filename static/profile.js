@@ -61,28 +61,39 @@ function closeDeviceLinkDialog() {
 }
 
 // Generate device link function
-function generateDeviceLink() {
+async function generateDeviceLink() {
   clearStatus('deviceAdditionStatus')
   showStatus('deviceAdditionStatus', 'Generating device link...', 'info')
 
-  fetch('/api/create-device-link', {
-    method: 'POST',
-    credentials: 'include'
-  })
-  .then(response => response.json())
-  .then(result => {
-    if (result.error) throw new Error(result.error)
+  try {
+    const response = await fetch('/api/create-device-link', {
+      method: 'POST',
+      credentials: 'include'
+    })
+
+    const result = await response.json()
+
+    if (result.error) {
+      throw new Error(result.error)
+    }
 
     // Update UI with the link
     const deviceLinkText = document.getElementById('deviceLinkText')
-    const deviceToken = document.getElementById('deviceToken')
 
     if (deviceLinkText) {
-      deviceLinkText.textContent = result.addition_link
-    }
+      deviceLinkText.href = result.addition_link
+      deviceLinkText.textContent = result.addition_link.replace(/^[a-z]+:\/\//i, '')
 
-    if (deviceToken) {
-      deviceToken.textContent = result.token
+      // Add click event listener for copying the link
+      deviceLinkText.addEventListener('click', function(e) {
+        e.preventDefault() // Prevent navigation
+        navigator.clipboard.writeText(deviceLinkText.href).then(() => {
+          closeDeviceLinkDialog() // Close the dialog
+          showStatus('deviceAdditionStatus', 'Device registration link copied', 'success') // Display status
+        }).catch(() => {
+          showStatus('deviceAdditionStatus', 'Failed to copy device registration link', 'error')
+        })
+      })
     }
 
     // Store link globally for copy function
@@ -103,10 +114,9 @@ function generateDeviceLink() {
     }
 
     clearStatus('deviceAdditionStatus')
-  })
-  .catch(error => {
+  } catch (error) {
     showStatus('deviceAdditionStatus', `Failed to generate device link: ${error.message}`, 'error')
-  })
+  }
 }
 
 // Make functions available globally for onclick handlers
