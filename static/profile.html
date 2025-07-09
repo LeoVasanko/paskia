@@ -15,12 +15,12 @@
             <h1>👋 Welcome!</h1>
             <div id="userInfo" class="user-info"></div>
             <div id="profileStatus"></div>
-            
+
             <h2>Your Passkeys</h2>
             <div id="credentialList" class="credential-list">
                 <p>Loading credentials...</p>
             </div>
-            
+
             <button onclick="addNewCredential()" class="btn-primary">
                 Add New Passkey
             </button>
@@ -31,31 +31,27 @@
                 Logout
             </button>
         </div>
-        
+
         <!-- Device Link Dialog -->
         <dialog id="deviceLinkDialog">
             <h1>📱 Add Device</h1>
             <div id="deviceAdditionStatus"></div>
-            
+
             <div id="deviceLinkSection">
                 <h2>Device Addition Link</h2>
                 <div class="token-info">
-                    <p><strong>Share this link to add this account to another device:</strong></p>
-                    
                     <div class="qr-container">
                         <div id="qrCode" class="qr-code"></div>
-                        <p><small>Scan this QR code with your other device</small></p>
+                        <p><a href="#" id="deviceLinkText"></a></p>
                     </div>
-                    
-                    <div class="link-container">
-                        <p class="link-text" id="deviceLinkText">Loading...</p>
-                        <button class="copy-button" onclick="copyDeviceLink()">Copy Link</button>
-                    </div>
-                    
-                    <p><small>⚠️ This link expires in 24 hours and can only be used once.</small></p>
+
+                    <p>
+                        <strong>Scan the above code and visit the URL on another device.</strong><br>
+                        <small>⚠️ Expires in 24 hours and can only be used once.</small>
+                    </p>
                 </div>
             </div>
-            
+
             <button onclick="closeDeviceLinkDialog()" class="btn-secondary">
                 Close
             </button>

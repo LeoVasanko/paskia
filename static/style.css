@@ -1,7 +1,7 @@
 /* Passkey Authentication - Main Styles */
 
-body { 
-    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
     margin: 0;
     padding: 0;
     background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
@@ -11,7 +11,7 @@ body {
     justify-content: center;
 }
 
-.container { 
+.container {
     background: white;
     padding: 40px;
     border-radius: 15px;
@@ -59,7 +59,7 @@ input[type="text"]:focus {
     border-color: #667eea;
 }
 
-button { 
+button {
     width: 100%;
     padding: 15px;
     margin-bottom: 15px;
@@ -325,19 +325,4 @@ button:disabled {
     font-size: 14px;
     color: #495057;
     margin: 0;
-}
-
-.copy-button {
-    background: #28a745;
-    color: white;
-    border: none;
-    padding: 8px 16px;
-    border-radius: 4px;
-    cursor: pointer;
-    font-size: 14px;
-    margin-top: 10px;
-}
-
-.copy-button:hover {
-    background: #218838;
 }
