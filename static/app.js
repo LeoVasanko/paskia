@@ -15,7 +15,7 @@ async function validateStoredToken() {
       method: 'GET',
       credentials: 'include'
     })
-    
+
     const result = await response.json()
     return result.status === 'success'
   } catch (error) {
@@ -33,12 +33,12 @@ async function setSessionCookie(sessionToken) {
       },
       credentials: 'include'
     })
-    
+
     const result = await response.json()
     if (result.error) {
       throw new Error(result.error)
     }
-    
+
     return result
   } catch (error) {
     throw new Error(`Failed to set session cookie: ${error.message}`)
@@ -122,12 +122,12 @@ async function copyDeviceLink() {
   try {
     if (window.currentDeviceLink) {
       await navigator.clipboard.writeText(window.currentDeviceLink)
-      
+
       const copyButton = document.querySelector('.copy-button')
       const originalText = copyButton.textContent
       copyButton.textContent = 'Copied!'
       copyButton.style.background = '#28a745'
-      
+
       setTimeout(() => {
         copyButton.textContent = originalText
         copyButton.style.background = '#28a745'
@@ -149,34 +149,34 @@ async function copyDeviceLink() {
 
 async function register(user_name) {
   const ws = await aWebSocket('/ws/new_user_registration')
-  
+
   ws.send(JSON.stringify({ user_name }))
-  
+
   const optionsJSON = JSON.parse(await ws.recv())
   if (optionsJSON.error) throw new Error(optionsJSON.error)
-  
+
   const registrationResponse = await startRegistration({ optionsJSON })
   ws.send(JSON.stringify(registrationResponse))
-  
+
   const result = JSON.parse(await ws.recv())
   if (result.error) throw new Error(`Server: ${result.error}`)
-  
+
   await setSessionCookie(result.session_token)
   ws.close()
 }
 
 async function authenticate() {
   const ws = await aWebSocket('/ws/authenticate')
-  
+
   const optionsJSON = JSON.parse(await ws.recv())
   if (optionsJSON.error) throw new Error(optionsJSON.error)
-  
+
   const authenticationResponse = await startAuthentication({ optionsJSON })
   ws.send(JSON.stringify(authenticationResponse))
-  
+
   const result = JSON.parse(await ws.recv())
   if (result.error) throw new Error(`Server: ${result.error}`)
-  
+
   await setSessionCookie(result.session_token)
   ws.close()
 }
@@ -184,27 +184,27 @@ async function authenticate() {
 async function addNewCredential() {
   try {
     showStatus('dashboardStatus', 'Adding new passkey...', 'info')
-    
+
     const ws = await aWebSocket('/ws/add_credential')
-    
+
     const optionsJSON = JSON.parse(await ws.recv())
     if (optionsJSON.error) throw new Error(optionsJSON.error)
-    
+
     const registrationResponse = await startRegistration({ optionsJSON })
     ws.send(JSON.stringify(registrationResponse))
-    
+
     const result = JSON.parse(await ws.recv())
     if (result.error) throw new Error(`Server: ${result.error}`)
-    
+
     ws.close()
-    
+
     showStatus('dashboardStatus', 'New passkey added successfully!', 'success')
-    
+
     setTimeout(() => {
       loadCredentials()
       clearStatus('dashboardStatus')
     }, 2000)
-    
+
   } catch (error) {
     showStatus('dashboardStatus', `Failed to add passkey: ${error.message}`, 'error')
   }
@@ -219,31 +219,31 @@ async function register(user_name) {
   try {
     const ws = await aWebSocket('/ws/new_user_registration')
     ws.send(JSON.stringify({user_name}))
-    
+
     // Registration chat
     const optionsJSON = JSON.parse(await ws.recv())
     if (optionsJSON.error) throw new Error(optionsJSON.error)
-    
+
     showStatus('registerStatus', 'Save to your authenticator...', 'info')
-    
+
     const registrationResponse = await startRegistration({optionsJSON})
     ws.send(JSON.stringify(registrationResponse))
-    
+
     const result = JSON.parse(await ws.recv())
     if (result.error) throw new Error(`Server: ${result.error}`)
-    
+
     ws.close()
-    
+
     // Set session cookie using the JWT token
     await setSessionCookie(result.session_token)
-    
+
     // Set current user from registration result
     currentUser = {
       user_id: result.user_id,
       user_name: user_name,
       last_seen: new Date().toISOString()
     }
-    
+
     return result
   } catch (error) {
     throw error
@@ -256,31 +256,31 @@ async function authenticate() {
     const ws = await aWebSocket('/ws/authenticate')
     const optionsJSON = JSON.parse(await ws.recv())
     if (optionsJSON.error) throw new Error(optionsJSON.error)
-    
-    showStatus('loginStatus', 'Please touch your authenticator...', 'info')
-    
+
+    showStatus('loginStatus', 'Please use your authenticator...', 'info')
+
     const authResponse = await startAuthentication({optionsJSON})
     await ws.send(JSON.stringify(authResponse))
-    
+
     const result = JSON.parse(await ws.recv())
     if (result.error) throw new Error(`Server: ${result.error}`)
-    
+
     ws.close()
-    
+
     // Set session cookie using the JWT token
     await setSessionCookie(result.session_token)
-    
+
     // Authentication successful, now get user info using HTTP endpoint
     const userResponse = await fetch('/api/user-info', {
       method: 'GET',
       credentials: 'include'
     })
-    
+
     const userInfo = await userResponse.json()
     if (userInfo.error) throw new Error(`Server: ${userInfo.error}`)
-    
+
     currentUser = userInfo.user
-    
+
     return result
   } catch (error) {
     throw error
@@ -292,15 +292,15 @@ async function loadCredentials() {
   try {
     const statusElement = document.getElementById('profileStatus') ? 'profileStatus' : 'dashboardStatus'
     showStatus(statusElement, 'Loading credentials...', 'info')
-    
+
     const response = await fetch('/api/user-credentials', {
       method: 'GET',
       credentials: 'include'
     })
-    
+
     const result = await response.json()
     if (result.error) throw new Error(`Server: ${result.error}`)
-    
+
     currentCredentials = result.credentials
     aaguidInfo = result.aaguid_info || {}
     updateCredentialList()
@@ -318,10 +318,10 @@ async function loadUserInfo() {
       method: 'GET',
       credentials: 'include'
     })
-    
+
     const result = await response.json()
     if (result.error) throw new Error(`Server: ${result.error}`)
-    
+
     currentUser = result.user
   } catch (error) {
     throw error
@@ -344,25 +344,25 @@ function updateUserInfo() {
 // Update credential list display
 function updateCredentialList() {
   const credentialListEl = document.getElementById('credentialList')
-  
+
   if (currentCredentials.length === 0) {
     credentialListEl.innerHTML = '<p>No passkeys found.</p>'
     return
   }
-  
+
   credentialListEl.innerHTML = currentCredentials.map(cred => {
     // Get authenticator information from AAGUID
     const authInfo = aaguidInfo[cred.aaguid]
     const authName = authInfo ? authInfo.name : 'Unknown Authenticator'
-    
+
     // Determine which icon to use based on current theme (you can implement theme detection)
     const isDarkMode = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches
     const iconKey = isDarkMode ? 'icon_dark' : 'icon_light'
     const authIcon = authInfo && authInfo[iconKey] ? authInfo[iconKey] : null
-    
+
     // Check if this is the current session credential
     const isCurrentSession = cred.is_current_session || false
-    
+
     return `
       <div class="credential-item${isCurrentSession ? ' current-session' : ''}">
         <div class="credential-header">
@@ -379,8 +379,8 @@ function updateCredentialList() {
             <span class="date-value">${formatHumanReadableDate(cred.last_used)}</span>
           </div>
           <div class="credential-actions">
-            <button onclick="deleteCredential('${cred.credential_id}')" 
-                    class="btn-delete-credential" 
+            <button onclick="deleteCredential('${cred.credential_id}')"
+                    class="btn-delete-credential"
                     ${isCurrentSession ? 'disabled title="Cannot delete current session credential"' : ''}>
               🗑️
             </button>
@@ -394,13 +394,13 @@ function updateCredentialList() {
 // Helper function to format dates in a human-readable way
 function formatHumanReadableDate(dateString) {
   if (!dateString) return 'Never'
-  
+
   const date = new Date(dateString)
   const now = new Date()
   const diffMs = now - date
   const diffHours = Math.floor(diffMs / (1000 * 60 * 60))
   const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24))
-  
+
   if (diffHours < 1) {
     return 'Just now'
   } else if (diffHours < 24) {
@@ -423,7 +423,7 @@ async function logout() {
   } catch (error) {
     console.error('Logout error:', error)
   }
-  
+
   currentUser = null
   currentCredentials = []
   aaguidInfo = {}
@@ -434,10 +434,10 @@ async function logout() {
 async function checkExistingSession() {
   const isLoggedIn = await validateStoredToken()
   const path = window.location.pathname
-  
+
   // Protected routes that require authentication
   const protectedRoutes = ['/auth/profile']
-  
+
   if (isLoggedIn) {
     // User is logged in
     if (path === '/auth/login' || path === '/auth/register' || path === '/') {
@@ -472,63 +472,4 @@ function initializeApp() {
 }
 
 // Form event handlers
-document.addEventListener('DOMContentLoaded', function() {
-  // Check for existing session on page load
-  initializeApp()
-  
-  // Registration form
-  const regForm = document.getElementById('registrationForm')
-  if (regForm) {
-    const regSubmitBtn = regForm.querySelector('button[type="submit"]')
-    
-    regForm.addEventListener('submit', async (ev) => {
-      ev.preventDefault()
-      regSubmitBtn.disabled = true
-      clearStatus('registerStatus')
-      
-      const user_name = (new FormData(regForm)).get('username')
-      
-      try {
-        showStatus('registerStatus', 'Starting registration...', 'info')
-        await register(user_name)
-        showStatus('registerStatus', `Registration successful for ${user_name}!`, 'success')
-        
-        // Auto-login after successful registration
-        setTimeout(() => {
-          window.location.href = '/auth/profile'
-        }, 1500)
-      } catch (err) {
-        showStatus('registerStatus', `Registration failed: ${err.message}`, 'error')
-      } finally {
-        regSubmitBtn.disabled = false
-      }
-    })
-  }
-
-  // Authentication form
-  const authForm = document.getElementById('authenticationForm')
-  if (authForm) {
-    const authSubmitBtn = authForm.querySelector('button[type="submit"]')
-    
-    authForm.addEventListener('submit', async (ev) => {
-      ev.preventDefault()
-      authSubmitBtn.disabled = true
-      clearStatus('loginStatus')
-      
-      try {
-        showStatus('loginStatus', 'Starting authentication...', 'info')
-        await authenticate()
-        showStatus('loginStatus', 'Authentication successful!', 'success')
-        
-        // Navigate to profile
-        setTimeout(() => {
-          window.location.href = '/auth/profile'
-        }, 1000)
-      } catch (err) {
-        showStatus('loginStatus', `Authentication failed: ${err.message}`, 'error')
-      } finally {
-        authSubmitBtn.disabled = false
-      }
-    })
-  }
-})
+document.addEventListener('DOMContentLoaded', initializeApp)
