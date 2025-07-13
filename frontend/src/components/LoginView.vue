@@ -31,7 +31,11 @@ const handleLogin = async () => {
     authStore.showMessage('Starting authentication...', 'info')
     await authStore.authenticate()
     authStore.showMessage('Authentication successful!', 'success', 2000)
-    authStore.currentView = 'profile'
+    if (location.pathname.startsWith('/auth/')) {
+      authStore.currentView = 'profile'
+    } else {
+      location.reload()
+    }
   } catch (error) {
     authStore.showMessage(`Authentication failed: ${error.message}`, 'error')
   }

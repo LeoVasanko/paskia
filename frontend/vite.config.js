@@ -4,7 +4,7 @@ import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 
 // https://vite.dev/config/
-export default defineConfig({
+export default defineConfig(({ command, mode }) => ({
   plugins: [
     vue(),
   ],
@@ -13,7 +13,7 @@ export default defineConfig({
       '@': fileURLToPath(new URL('./src', import.meta.url))
     },
   },
-  base: '/auth/',
+  base: command == 'build' ? '/auth/' : '/',
   server: {
     port: 3000,
     proxy: {
@@ -29,4 +29,4 @@ export default defineConfig({
     emptyOutDir: true,
     assetsDir: 'assets'
   }
-})
+}))

@@ -15,7 +15,7 @@ export async function register(url, options) {
 }
 
 export async function registerUser(user_name) {
-  return register('/auth/ws/new_user_registration', { user_name })
+  return register('/auth/ws/register_new', { user_name })
 }
 
 export async function registerCredential() {
