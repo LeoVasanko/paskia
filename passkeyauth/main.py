@@ -39,8 +39,7 @@ from .passkey import Passkey
 from .reset_handlers import create_device_addition_link, validate_device_addition_token
 from .session_manager import get_user_from_cookie_string
 
-STATIC_DIR = Path(__file__).parent.parent / "static"
-
+STATIC_DIR = Path(__file__).parent / "frontend-static"
 
 passkey = Passkey(
     rp_id="localhost",
@@ -213,7 +212,7 @@ async def websocket_authenticate(ws: WebSocket):
     await ws.accept()
     origin = ws.headers.get("origin")
     try:
-        options, challenge = passkey.auth_generate_options(origin=origin)
+        options, challenge = passkey.auth_generate_options()
         await ws.send_json(options)
         # Wait for the client to use his authenticator to authenticate
         credential = passkey.auth_parse(await ws.receive_json())
@@ -331,13 +330,23 @@ async def api_get_user_info_by_passphrase(token: str):
 
 
 # Serve static files
-app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+app.mount(
+    "/auth/assets", StaticFiles(directory=STATIC_DIR / "assets"), name="static assets"
+)
+
+
+@app.get("/auth")
+async def redirect_to_index():
+    """Serve the main authentication app."""
+    return FileResponse(STATIC_DIR / "index.html")
 
 
 # Catch-all route for SPA - serve index.html for all non-API routes
 @app.get("/{path:path}")
-async def spa_handler(path: str):
+async def spa_handler(request: Request, path: str):
     """Serve the Vue SPA for all routes (except API and static)"""
+    if "text/html" not in request.headers.get("accept", ""):
+        return Response(content="Not Found", status_code=404)
     return FileResponse(STATIC_DIR / "index.html")
 
 
