@@ -25,19 +25,18 @@ async def create_device_addition_link(request: Request) -> dict:
             return {"error": "Authentication required"}
 
         # Generate a human-readable token
-        token = generate(n=4, sep="-")  # e.g., "able-ocean-forest-dawn"
+        token = generate(n=4, sep=".")  # e.g., "able-ocean-forest-dawn"
 
         # Create reset token in database
         await db.create_reset_token(user.user_id, token)
 
         # Generate the device addition link with pretty URL
-        addition_link = f"http://localhost:8000/reset/{token}"
+        addition_link = f"{request.headers.get('origin', '')}/auth/{token}"
 
         return {
             "status": "success",
             "message": "Device addition link generated successfully",
             "addition_link": addition_link,
-            "token": token,
             "expires_in_hours": 24,
         }
 
