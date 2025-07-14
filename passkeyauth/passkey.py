@@ -88,6 +88,7 @@ class Passkey:
         user_id: UUID,
         user_name: str,
         credential_ids: list[bytes] | None = None,
+        origin: str | None = None,
         **regopts,
     ) -> tuple[dict, bytes]:
         """
@@ -99,6 +100,7 @@ class Passkey:
             credential_ids: For an already authenticated user, a list of credential IDs
                 associated with the account. This prevents accidentally adding another
                 credential on an authenticator that already has one of the listed IDs.
+            origin: The origin URL of the application (e.g. "https://app.example.com"). Must be a subdomain or same as rp_id, with port and scheme but no path included.
             regopts: Additional arguments to generate_registration_options.
 
         Returns:
@@ -126,6 +128,7 @@ class Passkey:
         response_json: dict | str,
         expected_challenge: bytes,
         user_id: UUID,
+        origin: str | None = None,
     ) -> StoredCredential:
         """
         Verify registration response.
@@ -138,10 +141,11 @@ class Passkey:
             Registration verification result
         """
         credential = parse_registration_credential_json(response_json)
+        expected_origin = origin or self.origin
         registration = verify_registration_response(
             credential=credential,
             expected_challenge=expected_challenge,
-            expected_origin=self.origin,
+            expected_origin=expected_origin,
             expected_rp_id=self.rp_id,
         )
         return StoredCredential(
@@ -193,6 +197,7 @@ class Passkey:
         credential: AuthenticationCredential,
         expected_challenge: bytes,
         stored_cred: StoredCredential,
+        origin: str | None = None,
     ) -> VerifiedAuthentication:
         """
         Verify authentication response against locally stored credential data.
@@ -202,11 +207,12 @@ class Passkey:
             expected_challenge: The earlier generated challenge bytes
             stored_cred: The server stored credential record (modified by this function)
         """
+        expected_origin = origin or self.origin
         # Verify the authentication response
         verification = verify_authentication_response(
             credential=credential,
             expected_challenge=expected_challenge,
-            expected_origin=self.origin,
+            expected_origin=expected_origin,
             expected_rp_id=self.rp_id,
             credential_public_key=stored_cred.public_key,
             credential_current_sign_count=stored_cred.sign_count,
