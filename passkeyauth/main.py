@@ -15,11 +15,17 @@ from datetime import datetime
 from pathlib import Path
 from uuid import UUID, uuid4
 
-from fastapi import FastAPI, Request, Response, WebSocket, WebSocketDisconnect
+from fastapi import (
+    FastAPI,
+    Request,
+    Response,
+    WebSocket,
+    WebSocketDisconnect,
+)
 from fastapi import (
     Path as FastAPIPath,
 )
-from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from webauthn.helpers.exceptions import InvalidAuthenticationResponse
 
@@ -204,7 +210,7 @@ async def register_chat(
     )
     await ws.send_json(options)
     response = await ws.receive_json()
-    return passkey.reg_verify(response, challenge, user_id)
+    return passkey.reg_verify(response, challenge, user_id, origin=origin)
 
 
 @app.websocket("/auth/ws/authenticate")
@@ -269,6 +275,27 @@ async def api_validate_token(request: Request):
     return await validate_token(request)
 
 
+@app.get("/auth/forward-auth")
+async def forward_authentication(request: Request):
+    """A verification endpoint to use with Caddy forward_auth or Nginx auth_request."""
+    result = await validate_token(request)
+    if result.get("status") != "success":
+        # Serve the index.html of the authentication app if not authenticated
+        return FileResponse(
+            STATIC_DIR / "index.html",
+            status_code=401,
+            headers={"www-authenticate": "PrivateToken"},
+        )
+
+    # If authenticated, return a success response
+    return JSONResponse(
+        result,
+        headers={
+            "x-auth-user-id": result["user_id"],
+        },
+    )
+
+
 @app.post("/auth/logout")
 async def api_logout(response: Response):
     """Log out the current user by clearing the session cookie."""
@@ -313,20 +340,6 @@ async def reset_authentication(
         max_age=2,
     )
     return response
-
-
-@app.get("/auth/user-info-by-passphrase")
-async def api_get_user_info_by_passphrase(token: str):
-    """Get user information using the passphrase."""
-    reset_token = await db.get_reset_token(token)
-    if not reset_token:
-        return Response(content="Invalid or expired passphrase", status_code=403)
-
-    user = await db.get_user_by_id(reset_token.user_id)
-    if not user:
-        return Response(content="User not found", status_code=404)
-
-    return {"user_name": user.user_name}
 
 
 # Serve static files

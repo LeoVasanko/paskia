@@ -5,7 +5,7 @@
       <form @submit.prevent="handleRegister">
         <input
           type="text"
-          v-model="username"
+          v-model="user_name"
           placeholder="Enter username"
           required
           :disabled="authStore.isLoading"
@@ -13,7 +13,7 @@
         <button
           type="submit"
           class="btn-primary"
-          :disabled="authStore.isLoading || !username.trim()"
+          :disabled="authStore.isLoading || !user_name.trim()"
         >
           {{ authStore.isLoading ? 'Registering...' : 'Register Passkey' }}
         </button>

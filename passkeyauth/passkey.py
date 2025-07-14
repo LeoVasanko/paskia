@@ -141,11 +141,10 @@ class Passkey:
             Registration verification result
         """
         credential = parse_registration_credential_json(response_json)
-        expected_origin = origin or self.origin
         registration = verify_registration_response(
             credential=credential,
             expected_challenge=expected_challenge,
-            expected_origin=expected_origin,
+            expected_origin=origin or self.origin,
             expected_rp_id=self.rp_id,
         )
         return StoredCredential(
