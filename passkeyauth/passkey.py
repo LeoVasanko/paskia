@@ -60,7 +60,7 @@ class Passkey:
         self,
         rp_id: str,
         rp_name: str,
-        origin: str,
+        origin: str | None = None,
         supported_pub_key_algs: list[COSEAlgorithmIdentifier] | None = None,
     ):
         """
@@ -74,7 +74,7 @@ class Passkey:
         """
         self.rp_id = rp_id
         self.rp_name = rp_name
-        self.origin = origin
+        self.origin = origin or f"https://{rp_id}"
         self.supported_pub_key_algs = supported_pub_key_algs or [
             COSEAlgorithmIdentifier.EDDSA,
             COSEAlgorithmIdentifier.ECDSA_SHA_256,

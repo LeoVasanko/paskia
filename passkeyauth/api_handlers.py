@@ -16,8 +16,8 @@ from .jwt_manager import refresh_session_token, validate_session_token
 from .session_manager import (
     clear_session_cookie,
     get_current_user,
-    get_session_token_from_auth_header_or_body,
-    get_session_token_from_request,
+    get_session_token_from_bearer,
+    get_session_token_from_cookie,
     set_session_cookie,
 )
 
@@ -52,7 +52,7 @@ async def get_user_credentials(request: Request) -> dict:
 
         # Get current session credential ID
         current_credential_id = None
-        session_token = get_session_token_from_request(request)
+        session_token = get_session_token_from_cookie(request)
         if session_token:
             token_data = validate_session_token(session_token)
             if token_data:
@@ -65,34 +65,30 @@ async def get_user_credentials(request: Request) -> dict:
         user_aaguids = set()
 
         for cred_id in credential_ids:
-            try:
-                stored_cred = await db.get_credential_by_id(cred_id)
+            stored_cred = await db.get_credential_by_id(cred_id)
 
-                # Convert AAGUID to string format
-                aaguid_str = str(stored_cred.aaguid)
-                user_aaguids.add(aaguid_str)
+            # Convert AAGUID to string format
+            aaguid_str = str(stored_cred.aaguid)
+            user_aaguids.add(aaguid_str)
 
-                # Check if this is the current session credential
-                is_current_session = current_credential_id == stored_cred.credential_id
+            # Check if this is the current session credential
+            is_current_session = current_credential_id == stored_cred.credential_id
 
-                credentials.append(
-                    {
-                        "credential_id": stored_cred.credential_id.hex(),
-                        "aaguid": aaguid_str,
-                        "created_at": stored_cred.created_at.isoformat(),
-                        "last_used": stored_cred.last_used.isoformat()
-                        if stored_cred.last_used
-                        else None,
-                        "last_verified": stored_cred.last_verified.isoformat()
-                        if stored_cred.last_verified
-                        else None,
-                        "sign_count": stored_cred.sign_count,
-                        "is_current_session": is_current_session,
-                    }
-                )
-            except ValueError:
-                # Skip invalid credentials
-                continue
+            credentials.append(
+                {
+                    "credential_id": stored_cred.credential_id.hex(),
+                    "aaguid": aaguid_str,
+                    "created_at": stored_cred.created_at.isoformat(),
+                    "last_used": stored_cred.last_used.isoformat()
+                    if stored_cred.last_used
+                    else None,
+                    "last_verified": stored_cred.last_verified.isoformat()
+                    if stored_cred.last_verified
+                    else None,
+                    "sign_count": stored_cred.sign_count,
+                    "is_current_session": is_current_session,
+                }
+            )
 
         # Get AAGUID information for only the AAGUIDs that the user has
         aaguid_manager = get_aaguid_manager()
@@ -113,7 +109,7 @@ async def get_user_credentials(request: Request) -> dict:
 async def refresh_token(request: Request, response: Response) -> dict:
     """Refresh the session token."""
     try:
-        session_token = get_session_token_from_request(request)
+        session_token = get_session_token_from_cookie(request)
         if not session_token:
             return {"error": "No session token found"}
 
@@ -134,7 +130,7 @@ async def refresh_token(request: Request, response: Response) -> dict:
 async def validate_token(request: Request) -> dict:
     """Validate a session token and return user info."""
     try:
-        session_token = get_session_token_from_request(request)
+        session_token = get_session_token_from_cookie(request)
         if not session_token:
             return {"error": "No session token found"}
 
@@ -165,7 +161,7 @@ async def logout(response: Response) -> dict:
 async def set_session(request: Request, response: Response) -> dict:
     """Set session cookie using JWT token from request body or Authorization header."""
     try:
-        session_token = await get_session_token_from_auth_header_or_body(request)
+        session_token = await get_session_token_from_bearer(request)
 
         if not session_token:
             return {"error": "No session token provided"}
@@ -219,7 +215,7 @@ async def delete_credential(request: Request) -> dict:
             return {"error": "Credential not found"}
 
         # Check if this is the current session credential
-        session_token = get_session_token_from_request(request)
+        session_token = get_session_token_from_cookie(request)
         if session_token:
             token_data = validate_session_token(session_token)
             if token_data and token_data.get("credential_id") == credential_id_bytes:

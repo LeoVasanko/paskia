@@ -7,7 +7,6 @@ This module provides session management functionality including:
 - Session validation and token handling
 """
 
-from typing import Optional
 from uuid import UUID
 
 from fastapi import Request, Response
@@ -15,11 +14,11 @@ from fastapi import Request, Response
 from .db import User, get_user_by_id
 from .jwt_manager import validate_session_token
 
-COOKIE_NAME = "session_token"
+COOKIE_NAME = "auth"
 COOKIE_MAX_AGE = 86400  # 24 hours
 
 
-async def get_current_user(request: Request) -> Optional[User]:
+async def get_current_user(request: Request) -> User | None:
     """Get the current user from the session cookie."""
     session_token = request.cookies.get(COOKIE_NAME)
     if not session_token:
@@ -43,7 +42,7 @@ def set_session_cookie(response: Response, session_token: str) -> None:
         value=session_token,
         max_age=COOKIE_MAX_AGE,
         httponly=True,
-        secure=False,  # Set to True in production with HTTPS
+        secure=True,
         samesite="lax",
     )
 
@@ -53,36 +52,29 @@ def clear_session_cookie(response: Response) -> None:
     response.delete_cookie(key=COOKIE_NAME)
 
 
-def get_session_token_from_request(request: Request) -> Optional[str]:
+def get_session_token_from_cookie(request: Request) -> str | None:
     """Extract session token from request cookies."""
     return request.cookies.get(COOKIE_NAME)
 
 
-async def validate_session_from_request(request: Request) -> Optional[dict]:
+async def validate_session_from_request(request: Request) -> dict | None:
     """Validate session token from request and return token data."""
-    session_token = get_session_token_from_request(request)
+    session_token = get_session_token_from_cookie(request)
     if not session_token:
         return None
 
     return validate_session_token(session_token)
 
 
-async def get_session_token_from_auth_header_or_body(request: Request) -> Optional[str]:
+async def get_session_token_from_bearer(request: Request) -> str | None:
     """Extract session token from Authorization header or request body."""
     # Try to get token from Authorization header first
     auth_header = request.headers.get("Authorization")
     if auth_header and auth_header.startswith("Bearer "):
-        return auth_header[7:]  # Remove "Bearer " prefix
-
-    # Try to get from request body
-    try:
-        body = await request.json()
-        return body.get("session_token")
-    except Exception:
-        return None
+        return auth_header.removeprefix("Bearer ")
 
 
-async def get_user_from_cookie_string(cookie_header: str) -> Optional[UUID]:
+async def get_user_from_cookie_string(cookie_header: str) -> UUID | None:
     """Parse cookie header and return user ID if valid session exists."""
     if not cookie_header:
         return None
