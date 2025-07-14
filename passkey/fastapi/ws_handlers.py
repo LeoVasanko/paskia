@@ -20,7 +20,7 @@ from ..db import sql
 from ..db.sql import User
 from ..sansio import Passkey
 from ..util.jwt import create_session_token
-from .session_manager import get_user_from_cookie_string
+from .session import get_user_from_cookie_string
 
 # Create a FastAPI subapp for WebSocket endpoints
 ws_app = FastAPI()
@@ -170,6 +170,56 @@ async def websocket_add_device_credential(ws: WebSocket, token: str):
                 "user_id": str(reset_token.user_id),
                 "credential_id": credential.credential_id.hex(),
                 "message": "New credential added successfully via device addition token",
+            }
+        )
+    except ValueError as e:
+        await ws.send_json({"error": str(e)})
+    except WebSocketDisconnect:
+        pass
+    except Exception:
+        logging.exception("Internal Server Error")
+        await ws.send_json({"error": "Internal Server Error"})
+
+
+@ws_app.websocket("/add_device_credential_session")
+async def websocket_add_device_credential_session(ws: WebSocket):
+    """Add a new credential for an existing user via device addition session."""
+    await ws.accept()
+    origin = ws.headers.get("origin")
+    try:
+        # Get device addition user ID from session cookie
+        cookie_header = ws.headers.get("cookie", "")
+        from .session import get_device_addition_user_id_from_cookie
+
+        user_id = await get_device_addition_user_id_from_cookie(cookie_header)
+
+        if not user_id:
+            await ws.send_json({"error": "No valid device addition session found"})
+            return
+
+        # Get user information
+        user = await sql.get_user_by_id(user_id)
+        if not user:
+            await ws.send_json({"error": "User not found"})
+            return
+
+        # WebAuthn registration
+        # Fetch challenge IDs for the user
+        challenge_ids = await sql.get_user_credentials(user_id)
+
+        credential = await register_chat(
+            ws, user_id, user.user_name, challenge_ids, origin=origin
+        )
+
+        # Store the new credential in the database
+        await sql.create_credential_for_user(credential)
+
+        await ws.send_json(
+            {
+                "status": "success",
+                "user_id": str(user_id),
+                "credential_id": credential.credential_id.hex(),
+                "message": "New credential added successfully via device addition session",
             }
         )
     except ValueError as e:

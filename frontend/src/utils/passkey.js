@@ -24,6 +24,9 @@ export async function registerCredential() {
 export async function registerWithToken(token) {
   return register('/auth/ws/add_device_credential', { token })
 }
+export async function registerWithSession() {
+  return register('/auth/ws/add_device_credential_session')
+}
 
 export async function authenticateUser() {
   const ws = await aWebSocket('/auth/ws/authenticate')

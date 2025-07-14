@@ -9,73 +9,87 @@ This module provides endpoints for authenticated users to:
 
 from datetime import datetime, timedelta
 
-from fastapi import Request
+from fastapi import FastAPI, Path, Request
+from fastapi.responses import RedirectResponse
 
 from ..db import sql
 from ..util.passphrase import generate
-from .session_manager import get_current_user
+from .session import get_current_user
 
 
-async def create_device_addition_link(request: Request) -> dict:
-    """Create a device addition link for the authenticated user."""
-    try:
-        # Require authentication
-        user = await get_current_user(request)
-        if not user:
-            return {"error": "Authentication required"}
+def register_reset_routes(app: FastAPI):
+    """Register all device addition/reset routes on the FastAPI app."""
 
-        # Generate a human-readable token
-        token = generate(n=4, sep=".")  # e.g., "able-ocean-forest-dawn"
+    @app.post("/auth/create-device-link")
+    async def api_create_device_link(request: Request):
+        """Create a device addition link for the authenticated user."""
+        try:
+            # Require authentication
+            user = await get_current_user(request)
+            if not user:
+                return {"error": "Authentication required"}
 
-        # Create reset token in database
-        await sql.create_reset_token(user.user_id, token)
+            # Generate a human-readable token
+            token = generate(n=4, sep=".")  # e.g., "able-ocean-forest-dawn"
 
-        # Generate the device addition link with pretty URL
-        addition_link = f"{request.headers.get('origin', '')}/auth/{token}"
+            # Create reset token in database
+            await sql.create_reset_token(user.user_id, token)
 
-        return {
-            "status": "success",
-            "message": "Device addition link generated successfully",
-            "addition_link": addition_link,
-            "expires_in_hours": 24,
-        }
+            # Generate the device addition link with pretty URL
+            addition_link = f"{request.headers.get('origin', '')}/auth/{token}"
 
-    except Exception as e:
-        return {"error": f"Failed to create device addition link: {str(e)}"}
+            return {
+                "status": "success",
+                "message": "Device addition link generated successfully",
+                "addition_link": addition_link,
+                "expires_in_hours": 24,
+            }
 
+        except Exception as e:
+            return {"error": f"Failed to create device addition link: {str(e)}"}
 
-async def validate_device_addition_token(request: Request) -> dict:
-    """Validate a device addition token and return user info."""
-    try:
-        body = await request.json()
-        token = body.get("token")
+    @app.get("/auth/device-session-check")
+    async def check_device_session(request: Request):
+        """Check if the current session is for device addition."""
+        from .session import is_device_addition_session
 
-        if not token:
-            return {"error": "Device addition token is required"}
+        is_device_session = await is_device_addition_session(request)
+        return {"device_addition_session": is_device_session}
 
-        # Get reset token
-        reset_token = await sql.get_reset_token(token)
-        if not reset_token:
-            return {"error": "Invalid or expired device addition token"}
+    @app.get("/auth/{passphrase}")
+    async def reset_authentication(
+        passphrase: str = Path(pattern=r"^\w+(\.\w+){2,}$"),
+    ):
+        try:
+            # Get reset token to validate it exists and get user_id
+            reset_token = await sql.get_reset_token(passphrase)
+            if not reset_token:
+                # Token doesn't exist, redirect to home
+                return RedirectResponse(url="/", status_code=303)
 
-        # Check if token is expired (24 hours)
-        expiry_time = reset_token.created_at + timedelta(hours=24)
-        if datetime.now() > expiry_time:
-            return {"error": "Device addition token has expired"}
+            # Check if token is expired (24 hours)
+            expiry_time = reset_token.created_at + timedelta(hours=24)
+            if datetime.now() > expiry_time:
+                # Token expired, clean it up and redirect to home
+                await sql.delete_reset_token(passphrase)
+                return RedirectResponse(url="/", status_code=303)
 
-        # Get user info
-        user = await sql.get_user_by_id(reset_token.user_id)
+            # Create a device addition session token for the user
+            from ..util.jwt import create_device_addition_token
 
-        return {
-            "status": "success",
-            "valid": True,
-            "user_id": str(user.user_id),
-            "user_name": user.user_name,
-            "token": token,
-        }
+            session_token = create_device_addition_token(reset_token.user_id)
 
-    except Exception as e:
-        return {"error": f"Failed to validate device addition token: {str(e)}"}
+            # Create response and set session cookie
+            response = RedirectResponse(url="/auth/", status_code=303)
+            from .session import set_session_cookie
+
+            set_session_cookie(response, session_token)
+
+            return response
+
+        except Exception:
+            # On any error, redirect to home
+            return RedirectResponse(url="/", status_code=303)
 
 
 async def use_device_addition_token(token: str) -> dict:

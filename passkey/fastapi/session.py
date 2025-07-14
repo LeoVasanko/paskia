@@ -96,3 +96,53 @@ async def get_user_from_cookie_string(cookie_header: str) -> UUID | None:
         return None
 
     return token_data["user_id"]
+
+
+async def is_device_addition_session(request: Request) -> bool:
+    """Check if the current session is for device addition."""
+    session_token = request.cookies.get(COOKIE_NAME)
+    if not session_token:
+        return False
+
+    token_data = validate_session_token(session_token)
+    if not token_data:
+        return False
+
+    return token_data.get("device_addition", False)
+
+
+async def get_device_addition_user_id(request: Request) -> UUID | None:
+    """Get user ID from device addition session."""
+    session_token = request.cookies.get(COOKIE_NAME)
+    if not session_token:
+        return None
+
+    token_data = validate_session_token(session_token)
+    if not token_data or not token_data.get("device_addition"):
+        return None
+
+    return token_data.get("user_id")
+
+
+async def get_device_addition_user_id_from_cookie(cookie_header: str) -> UUID | None:
+    """Parse cookie header and return user ID if valid device addition session exists."""
+    if not cookie_header:
+        return None
+
+    # Parse cookies from header (simple implementation)
+    cookies = {}
+    for cookie in cookie_header.split(";"):
+        cookie = cookie.strip()
+        if "=" in cookie:
+            name, value = cookie.split("=", 1)
+            cookies[name] = value
+
+    session_token = cookies.get(COOKIE_NAME)
+    if not session_token:
+        return None
+
+    token_data = validate_session_token(session_token)
+    if not token_data or not token_data.get("device_addition"):
+        return None
+
+    return token_data["user_id"]

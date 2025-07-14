@@ -30,15 +30,6 @@ export const useAuthStore = defineStore('auth', {
         }, duration)
       }
     },
-    async validateStoredToken() {
-      try {
-        const response = await fetch('/auth/validate-token')
-        const result = await response.json()
-        return result.status === 'success'
-      } catch (error) {
-        return false
-      }
-    },
     async setSessionCookie(sessionToken) {
       const response = await fetch('/auth/set-session', {
         method: 'POST',
@@ -84,7 +75,7 @@ export const useAuthStore = defineStore('auth', {
       }
     },
     async loadUserInfo() {
-      const response = await fetch('/auth/user-info')
+      const response = await fetch('/auth/user-info', {method: 'POST'})
       const result = await response.json()
       if (result.error) throw new Error(`Server: ${result.error}`)
 
