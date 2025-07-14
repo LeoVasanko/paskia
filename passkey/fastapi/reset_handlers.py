@@ -11,8 +11,8 @@ from datetime import datetime, timedelta
 
 from fastapi import Request
 
-from . import db
-from .passphrase import generate
+from ..db import sql
+from ..util.passphrase import generate
 from .session_manager import get_current_user
 
 
@@ -28,7 +28,7 @@ async def create_device_addition_link(request: Request) -> dict:
         token = generate(n=4, sep=".")  # e.g., "able-ocean-forest-dawn"
 
         # Create reset token in database
-        await db.create_reset_token(user.user_id, token)
+        await sql.create_reset_token(user.user_id, token)
 
         # Generate the device addition link with pretty URL
         addition_link = f"{request.headers.get('origin', '')}/auth/{token}"
@@ -54,7 +54,7 @@ async def validate_device_addition_token(request: Request) -> dict:
             return {"error": "Device addition token is required"}
 
         # Get reset token
-        reset_token = await db.get_reset_token(token)
+        reset_token = await sql.get_reset_token(token)
         if not reset_token:
             return {"error": "Invalid or expired device addition token"}
 
@@ -64,7 +64,7 @@ async def validate_device_addition_token(request: Request) -> dict:
             return {"error": "Device addition token has expired"}
 
         # Get user info
-        user = await db.get_user_by_id(reset_token.user_id)
+        user = await sql.get_user_by_id(reset_token.user_id)
 
         return {
             "status": "success",
@@ -82,7 +82,7 @@ async def use_device_addition_token(token: str) -> dict:
     """Delete a device addition token after successful use."""
     try:
         # Get reset token first to validate it exists and is not expired
-        reset_token = await db.get_reset_token(token)
+        reset_token = await sql.get_reset_token(token)
         if not reset_token:
             return {"error": "Invalid or expired device addition token"}
 
@@ -92,7 +92,7 @@ async def use_device_addition_token(token: str) -> dict:
             return {"error": "Device addition token has expired"}
 
         # Delete the token (it's now used)
-        await db.delete_reset_token(token)
+        await sql.delete_reset_token(token)
 
         return {
             "status": "success",

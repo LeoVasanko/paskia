@@ -25,7 +25,7 @@ from sqlalchemy.dialects.sqlite import BLOB
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
-from .passkey import StoredCredential
+from ..sansio import StoredCredential
 
 DB_PATH = "sqlite+aiosqlite:///webauthn.db"
 

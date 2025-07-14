@@ -22,8 +22,8 @@ def load_or_create_secret() -> bytes:
     if SECRET_FILE.exists():
         return SECRET_FILE.read_bytes()
     else:
-        # Generate a new 32-byte secret
-        secret = secrets.token_bytes(32)
+        # Generate a new 16-byte secret
+        secret = secrets.token_bytes(16)
         SECRET_FILE.write_bytes(secret)
         return secret
 
@@ -47,7 +47,7 @@ class JWTManager:
         Returns:
             JWT token string
         """
-        now = datetime.utcnow()
+        now = datetime.now()
         payload = {
             "user_id": str(user_id),
             "credential_id": credential_id.hex(),
@@ -105,7 +105,7 @@ class JWTManager:
 
 
 # Global JWT manager instance
-_jwt_manager: Optional[JWTManager] = None
+_jwt_manager: JWTManager | None = None
 
 
 def get_jwt_manager() -> JWTManager:
@@ -114,7 +114,7 @@ def get_jwt_manager() -> JWTManager:
     if _jwt_manager is None:
         secret = load_or_create_secret()
         _jwt_manager = JWTManager(secret)
-    return _jwt_manager
+    return _jwt_manager  # type: ignore
 
 
 def create_session_token(user_id: UUID, credential_id: bytes) -> str:

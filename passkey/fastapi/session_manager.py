@@ -11,8 +11,8 @@ from uuid import UUID
 
 from fastapi import Request, Response
 
-from .db import User, get_user_by_id
-from .jwt_manager import validate_session_token
+from ..db.sql import User, get_user_by_id
+from ..util.jwt import validate_session_token
 
 COOKIE_NAME = "auth"
 COOKIE_MAX_AGE = 86400  # 24 hours
