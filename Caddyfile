@@ -1,0 +1,23 @@
+(auth) {
+	# Forward /auth to the authentication service
+	redir /auth /auth/ 302
+	@auth path /auth/*
+	handle @auth {
+		reverse_proxy localhost:4401
+	}
+	handle {
+		# Check for authentication
+		forward_auth localhost:4401 {
+			uri /auth/forward-auth
+			copy_headers x-auth-user-id
+		}
+		{block}
+	}
+}
+
+localhost {
+	import auth {
+		# Proxy authenticated requests to the main application
+		reverse_proxy localhost:3000
+	}
+}

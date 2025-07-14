@@ -13,19 +13,19 @@ export default defineConfig(({ command, mode }) => ({
       '@': fileURLToPath(new URL('./src', import.meta.url))
     },
   },
-  base: command == 'build' ? '/auth/' : '/',
+  base: command === 'build' ? '/auth/' : '/',
   server: {
-    port: 3000,
+    port: 4403,
     proxy: {
       '/auth/': {
-        target: 'http://localhost:8000',
+        target: 'http://localhost:4401',
         ws: true,
         changeOrigin: false
       }
     }
   },
   build: {
-    outDir: '../passkeyauth/frontend-static',
+    outDir: '../passkey/frontend-build',
     emptyOutDir: true,
     assetsDir: 'assets'
   }

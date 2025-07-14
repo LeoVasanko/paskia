@@ -3,15 +3,14 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "passkeyauth"
+name = "passkey"
 version = "0.1.0"
-description = "Minimal FastAPI WebAuthn server with WebSocket support"
+description = "Passkey Authentication for Web Services"
 authors = [
-    {name = "User", email = "user@example.com"},
+    {name = "Leo Vasanko"},
 ]
 dependencies = [
     "fastapi[standard]>=0.104.1",
-    "uvicorn[standard]>=0.24.0",
     "websockets>=12.0",
     "webauthn>=1.11.1",
     "base64url>=1.0.0",
@@ -34,10 +33,10 @@ select = ["E", "F", "I", "N", "W", "UP"]
 ignore = ["E501"]  # Line too long
 
 [tool.ruff.isort]
-known-first-party = ["passkeyauth"]
+known-first-party = ["passkey"]
 
 [project.scripts]
-serve = "passkeyauth.main:main"
+serve = "passkey.main:main"
 
 [tool.hatch.build]
 artifacts = ["passkeyauth/frontend-static"]

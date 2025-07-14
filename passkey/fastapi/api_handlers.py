@@ -10,9 +10,9 @@ This module contains all the HTTP API endpoints for:
 
 from fastapi import Request, Response
 
-from . import db
-from .aaguid_manager import get_aaguid_manager
-from .jwt_manager import refresh_session_token, validate_session_token
+from .. import aaguid
+from ..db import sql
+from ..util.jwt import refresh_session_token, validate_session_token
 from .session_manager import (
     clear_session_cookie,
     get_current_user,
@@ -59,13 +59,13 @@ async def get_user_credentials(request: Request) -> dict:
                 current_credential_id = token_data.get("credential_id")
 
         # Get all credentials for the user
-        credential_ids = await db.get_user_credentials(user.user_id)
+        credential_ids = await sql.get_user_credentials(user.user_id)
 
         credentials = []
         user_aaguids = set()
 
         for cred_id in credential_ids:
-            stored_cred = await db.get_credential_by_id(cred_id)
+            stored_cred = await sql.get_credential_by_id(cred_id)
 
             # Convert AAGUID to string format
             aaguid_str = str(stored_cred.aaguid)
@@ -91,8 +91,7 @@ async def get_user_credentials(request: Request) -> dict:
             )
 
         # Get AAGUID information for only the AAGUIDs that the user has
-        aaguid_manager = get_aaguid_manager()
-        aaguid_info = aaguid_manager.get_relevant_aaguids(user_aaguids)
+        aaguid_info = aaguid.filter(user_aaguids)
 
         # Sort credentials by creation date (earliest first, most recently created last)
         credentials.sort(key=lambda cred: cred["created_at"])
@@ -208,7 +207,7 @@ async def delete_credential(request: Request) -> dict:
 
         # First, verify the credential belongs to the current user
         try:
-            stored_cred = await db.get_credential_by_id(credential_id_bytes)
+            stored_cred = await sql.get_credential_by_id(credential_id_bytes)
             if stored_cred.user_id != user.user_id:
                 return {"error": "Credential not found or access denied"}
         except ValueError:
@@ -222,12 +221,12 @@ async def delete_credential(request: Request) -> dict:
                 return {"error": "Cannot delete current session credential"}
 
         # Get user's remaining credentials count
-        remaining_credentials = await db.get_user_credentials(user.user_id)
+        remaining_credentials = await sql.get_user_credentials(user.user_id)
         if len(remaining_credentials) <= 1:
             return {"error": "Cannot delete last remaining credential"}
 
         # Delete the credential
-        await db.delete_user_credential(credential_id_bytes)
+        await sql.delete_user_credential(credential_id_bytes)
 
         return {"status": "success", "message": "Credential deleted successfully"}
 
