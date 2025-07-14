@@ -88,7 +88,7 @@ def register_reset_routes(app: FastAPI):
             return RedirectResponse(url="/", status_code=303)
 
 
-async def use_device_addition_token(token: str) -> dict:
+async def use_reset_token(token: str) -> dict:
     """Delete a device addition token after successful use."""
     try:
         # Get session token first to validate it exists and is not expired
