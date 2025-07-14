@@ -38,3 +38,7 @@ known-first-party = ["passkeyauth"]
 
 [project.scripts]
 serve = "passkeyauth.main:main"
+
+[tool.hatch.build]
+artifacts = ["passkeyauth/frontend-static"]
+targets.sdist.hooks.custom.path = "scripts/build-frontend.py"
