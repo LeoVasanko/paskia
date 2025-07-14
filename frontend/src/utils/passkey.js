@@ -22,7 +22,7 @@ export async function registerCredential() {
   return register('/auth/ws/add_credential')
 }
 export async function registerWithToken(token) {
-  return register('/auth/ws/add_device_credential', {token})
+  return register('/auth/ws/add_device_credential', { token })
 }
 
 export async function authenticateUser() {

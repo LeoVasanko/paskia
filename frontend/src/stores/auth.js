@@ -1,6 +1,5 @@
 import { defineStore } from 'pinia'
 import { registerUser, authenticateUser, registerWithToken } from '@/utils/passkey'
-import aWebSocket from '@/utils/awaitable-websocket'
 
 export const useAuthStore = defineStore('auth', {
   state: () => ({
@@ -102,18 +101,6 @@ export const useAuthStore = defineStore('auth', {
         this.isLoading = false
       }
     },
-    async addNewCredential() {
-      this.isLoading = true;
-      try {
-        const result = await registerWithToken()
-        await this.loadCredentials()
-        return result;
-      } catch (error) {
-        throw new Error(`Failed to add new credential: ${error.message}`)
-      } finally {
-        this.isLoading = false
-      }
-    },
     async deleteCredential(credentialId) {
       const response = await fetch('/auth/delete-credential', {
         method: 'POST',
@@ -137,25 +124,6 @@ export const useAuthStore = defineStore('auth', {
       this.currentUser = null
       this.currentCredentials = []
       this.aaguidInfo = {}
-    },
-    async checkResetCookieAndRegister() {
-      const passphrase = getCookie('reset')
-      if (passphrase) {
-        // Abandon existing session
-        await fetch('/auth/logout', { method: 'POST', credentials: 'include' })
-
-        // Register additional token for the user
-        try {
-          const result = await registerUserFromCookie()
-          await this.setSessionCookie(result.session_token)
-          this.currentUser = {
-            user_id: result.user_id,
-            user_name: result.user_name,
-          }
-        } catch (error) {
-          console.error('Failed to register additional token:', error)
-        }
-      }
     },
   }
 })

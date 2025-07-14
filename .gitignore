@@ -5,3 +5,4 @@ dist/
 *.lock
 *.db
 server-secret.bin
+/passkeyauth/frontend-static
