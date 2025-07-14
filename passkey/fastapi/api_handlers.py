@@ -23,28 +23,7 @@ from .session_manager import (
 
 
 async def get_user_info(request: Request) -> dict:
-    """Get user information from session cookie."""
-    try:
-        user = await get_current_user(request)
-        if not user:
-            return {"error": "Not authenticated"}
-
-        return {
-            "status": "success",
-            "user": {
-                "user_id": str(user.user_id),
-                "user_name": user.user_name,
-                "created_at": user.created_at.isoformat() if user.created_at else None,
-                "last_seen": user.last_seen.isoformat() if user.last_seen else None,
-                "visits": user.visits,
-            },
-        }
-    except Exception as e:
-        return {"error": f"Failed to get user info: {str(e)}"}
-
-
-async def get_user_credentials(request: Request) -> dict:
-    """Get all credentials for a user using session cookie."""
+    """Get user information and credentials from session cookie."""
     try:
         user = await get_current_user(request)
         if not user:
@@ -98,11 +77,18 @@ async def get_user_credentials(request: Request) -> dict:
 
         return {
             "status": "success",
+            "user": {
+                "user_id": str(user.user_id),
+                "user_name": user.user_name,
+                "created_at": user.created_at.isoformat() if user.created_at else None,
+                "last_seen": user.last_seen.isoformat() if user.last_seen else None,
+                "visits": user.visits,
+            },
             "credentials": credentials,
             "aaguid_info": aaguid_info,
         }
     except Exception as e:
-        return {"error": f"Failed to get credentials: {str(e)}"}
+        return {"error": f"Failed to get user info: {str(e)}"}
 
 
 async def refresh_token(request: Request, response: Response) -> dict:

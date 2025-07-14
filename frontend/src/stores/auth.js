@@ -5,6 +5,8 @@ export const useAuthStore = defineStore('auth', {
   state: () => ({
     // Auth State
     currentUser: null,
+    currentCredentials: [],
+    aaguidInfo: {},
     isLoading: false,
 
     // UI State
@@ -87,19 +89,8 @@ export const useAuthStore = defineStore('auth', {
       if (result.error) throw new Error(`Server: ${result.error}`)
 
       this.currentUser = result.user
-    },
-    async loadCredentials() {
-      this.isLoading = true
-      try {
-        const response = await fetch('/auth/user-credentials')
-        const result = await response.json()
-        if (result.error) throw new Error(`Server: ${result.error}`)
-
-        this.currentCredentials = result.credentials
-        this.aaguidInfo = result.aaguid_info || {}
-      } finally {
-        this.isLoading = false
-      }
+      this.currentCredentials = result.credentials || []
+      this.aaguidInfo = result.aaguid_info || {}
     },
     async deleteCredential(credentialId) {
       const response = await fetch('/auth/delete-credential', {
@@ -112,7 +103,7 @@ export const useAuthStore = defineStore('auth', {
       const result = await response.json()
       if (result.error) throw new Error(`Server: ${result.error}`)
 
-      await this.loadCredentials()
+      await this.loadUserInfo()
     },
     async logout() {
       try {

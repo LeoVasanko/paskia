@@ -17,12 +17,12 @@
         <div v-if="authStore.isLoading">
           <p>Loading credentials...</p>
         </div>
-        <div v-else-if="userCredentialsData.credentials.length === 0">
+        <div v-else-if="authStore.currentCredentials.length === 0">
           <p>No passkeys found.</p>
         </div>
         <div v-else>
           <div
-            v-for="credential in userCredentialsData.credentials"
+            v-for="credential in authStore.currentCredentials"
             :key="credential.credential_id"
             :class="['credential-item', { 'current-session': credential.is_current_session }]"
           >
@@ -84,36 +84,21 @@ import { formatDate } from '@/utils/helpers'
 import { registerCredential } from '@/utils/passkey'
 
 const authStore = useAuthStore()
-const currentCredentials = ref([])
-const userCredentialsData = ref({ credentials: [], aaguid_info: {} })
 const updateInterval = ref(null)
 
 onMounted(async () => {
   try {
     await authStore.loadUserInfo()
-    currentCredentials.value = await authStore.loadCredentials()
   } catch (error) {
     authStore.showMessage(`Failed to load user info: ${error.message}`, 'error')
     authStore.currentView = 'login'
     return
   }
 
-  // Fetch user credentials from the server
-  try {
-    const response = await fetch('/auth/user-credentials')
-    const result = await response.json()
-    console.log('Fetch Response:', result) // Log the entire response
-    if (result.error) throw new Error(result.error)
-
-    Object.assign(userCredentialsData.value, result) // Store the entire response
-  } catch (error) {
-    console.error('Failed to fetch user credentials:', error)
-  }
-
   updateInterval.value = setInterval(() => {
     // Trigger Vue reactivity to update formatDate fields
     authStore.currentUser = { ...authStore.currentUser }
-    userCredentialsData.value.credentials = [...userCredentialsData.value.credentials]
+    authStore.currentCredentials = [...authStore.currentCredentials]
   }, 60000) // Update every minute
 })
 
@@ -124,12 +109,12 @@ onUnmounted(() => {
 })
 
 const getCredentialAuthName = (credential) => {
-  const authInfo = userCredentialsData.value.aaguid_info[credential.aaguid]
+  const authInfo = authStore.aaguidInfo[credential.aaguid]
   return authInfo ? authInfo.name : 'Unknown Authenticator'
 }
 
 const getCredentialAuthIcon = (credential) => {
-  const authInfo = userCredentialsData.value.aaguid_info[credential.aaguid]
+  const authInfo = authStore.aaguidInfo[credential.aaguid]
   if (!authInfo) return null
 
   const isDarkMode = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches
@@ -142,7 +127,7 @@ const addNewCredential = async () => {
     authStore.isLoading = true
     authStore.showMessage('Adding new passkey...', 'info')
     const result = await registerCredential()
-    currentCredentials.value = await authStore.loadCredentials()
+    await authStore.loadUserInfo()
     authStore.showMessage('New passkey added successfully!', 'success', 3000)
   } catch (error) {
     console.error('Failed to add new passkey:', error)
@@ -157,7 +142,6 @@ const deleteCredential = async (credentialId) => {
 
   try {
     await authStore.deleteCredential(credentialId)
-    currentCredentials.value = await authStore.loadCredentials()
     authStore.showMessage('Passkey deleted successfully!', 'success', 3000)
   } catch (error) {
     authStore.showMessage(`Failed to delete passkey: ${error.message}`, 'error')
