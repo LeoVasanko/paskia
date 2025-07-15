@@ -25,12 +25,12 @@ from fastapi.responses import (
 from fastapi.staticfiles import StaticFiles
 
 from ..db import sql
-from .api_handlers import (
+from .api import (
     register_api_routes,
     validate_token,
 )
-from .reset_handlers import register_reset_routes
-from .ws_handlers import ws_app
+from .reset import register_reset_routes
+from .ws import ws_app
 
 STATIC_DIR = Path(__file__).parent.parent / "frontend-build"
 
