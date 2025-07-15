@@ -30,7 +30,6 @@ from fastapi.staticfiles import StaticFiles
 from ..db import sql
 from .api_handlers import (
     delete_credential,
-    get_user_credentials,
     get_user_info,
     logout,
     refresh_token,
@@ -55,19 +54,10 @@ app = FastAPI(title="Passkey Auth", lifespan=lifespan)
 app.mount("/auth/ws", ws_app)
 
 
-
-
-
 @app.get("/auth/user-info")
 async def api_get_user_info(request: Request):
-    """Get user information from session cookie."""
+    """Get user information and credentials from session cookie."""
     return await get_user_info(request)
-
-
-@app.get("/auth/user-credentials")
-async def api_get_user_credentials(request: Request):
-    """Get all credentials for a user using session cookie."""
-    return await get_user_credentials(request)
 
 
 @app.post("/auth/refresh-token")
