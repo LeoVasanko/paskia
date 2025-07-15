@@ -12,7 +12,7 @@ from fastapi import FastAPI, Request, Response
 
 from .. import aaguid
 from ..db import sql
-from ..util.jwt import refresh_session_token, validate_session_token
+from ..util.session import refresh_session_token, validate_session_token
 from .session import (
     clear_session_cookie,
     get_current_user,
@@ -37,7 +37,7 @@ def register_api_routes(app: FastAPI):
             current_credential_id = None
             session_token = get_session_token_from_cookie(request)
             if session_token:
-                token_data = validate_session_token(session_token)
+                token_data = await validate_session_token(session_token)
                 if token_data:
                     current_credential_id = token_data.get("credential_id")
 
@@ -97,9 +97,24 @@ def register_api_routes(app: FastAPI):
             return {"error": f"Failed to get user info: {str(e)}"}
 
     @app.post("/auth/logout")
-    async def api_logout(response: Response):
-        """Log out the current user by clearing the session cookie."""
+    async def api_logout(request: Request, response: Response):
+        """Log out the current user by clearing the session cookie and deleting from database."""
+        # Get the session token before clearing the cookie
+        session_token = get_session_token_from_cookie(request)
+
+        # Clear the cookie
         clear_session_cookie(response)
+
+        # Delete the session from the database if it exists
+        if session_token:
+            from ..util.session import logout_session
+
+            try:
+                await logout_session(session_token)
+            except Exception:
+                # Continue even if session deletion fails
+                pass
+
         return {"status": "success", "message": "Logged out successfully"}
 
     @app.post("/auth/set-session")
@@ -112,7 +127,7 @@ def register_api_routes(app: FastAPI):
                 return {"error": "No session token provided"}
 
             # Validate the session token
-            token_data = validate_session_token(session_token)
+            token_data = await validate_session_token(session_token)
             if not token_data:
                 return {"error": "Invalid or expired session token"}
 
@@ -162,7 +177,7 @@ def register_api_routes(app: FastAPI):
             # Check if this is the current session credential
             session_token = get_session_token_from_cookie(request)
             if session_token:
-                token_data = validate_session_token(session_token)
+                token_data = await validate_session_token(session_token)
                 if (
                     token_data
                     and token_data.get("credential_id") == credential_id_bytes
@@ -182,6 +197,67 @@ def register_api_routes(app: FastAPI):
         except Exception as e:
             return {"error": f"Failed to delete credential: {str(e)}"}
 
+    @app.get("/auth/sessions")
+    async def api_get_sessions(request: Request):
+        """Get all active sessions for the current user."""
+        try:
+            user = await get_current_user(request)
+            if not user:
+                return {"error": "Authentication required"}
+
+            # Get all sessions for this user
+            from sqlalchemy import select
+
+            from ..db.sql import SessionModel, connect
+
+            async with connect() as db:
+                stmt = select(SessionModel).where(
+                    SessionModel.user_id == user.user_id.bytes
+                )
+                result = await db.session.execute(stmt)
+                session_models = result.scalars().all()
+
+                sessions = []
+                current_token = get_session_token_from_cookie(request)
+
+                for session in session_models:
+                    # Check if session is expired
+                    from datetime import datetime, timedelta
+
+                    expiry_time = session.created_at + timedelta(hours=24)
+                    is_expired = datetime.now() > expiry_time
+
+                    sessions.append(
+                        {
+                            "token": session.token[:8]
+                            + "...",  # Only show first 8 chars for security
+                            "created_at": session.created_at.isoformat(),
+                            "client_ip": session.info.get("client_ip")
+                            if session.info
+                            else None,
+                            "user_agent": session.info.get("user_agent")
+                            if session.info
+                            else None,
+                            "connection_type": session.info.get(
+                                "connection_type", "http"
+                            )
+                            if session.info
+                            else "http",
+                            "is_current": session.token == current_token,
+                            "is_reset_token": session.credential_id is None,
+                            "is_expired": is_expired,
+                        }
+                    )
+
+            return {
+                "status": "success",
+                "sessions": sessions,
+                "total_sessions": len(sessions),
+            }
+
+        except Exception as e:
+            return {"error": f"Failed to get sessions: {str(e)}"}
+
 
 async def validate_token(request: Request, response: Response) -> dict:
     """Validate a session token and return user info. Also refreshes the token if valid."""
@@ -191,13 +267,13 @@ async def validate_token(request: Request, response: Response) -> dict:
             return {"error": "No session token found"}
 
         # Validate the session token
-        token_data = validate_session_token(session_token)
+        token_data = await validate_session_token(session_token)
         if not token_data:
             clear_session_cookie(response)
             return {"error": "Invalid or expired session token"}
 
         # Refresh the token if valid
-        new_token = refresh_session_token(session_token)
+        new_token = await refresh_session_token(session_token)
         if new_token:
             set_session_cookie(response, new_token)
 
@@ -206,9 +282,10 @@ async def validate_token(request: Request, response: Response) -> dict:
             "valid": True,
             "refreshed": bool(new_token),
             "user_id": str(token_data["user_id"]),
-            "credential_id": token_data["credential_id"].hex(),
-            "issued_at": token_data["issued_at"],
-            "expires_at": token_data["expires_at"],
+            "credential_id": token_data["credential_id"].hex()
+            if token_data["credential_id"]
+            else None,
+            "created_at": token_data["created_at"].isoformat(),
         }
 
     except Exception as e:

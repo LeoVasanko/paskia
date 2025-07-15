@@ -19,7 +19,7 @@ from webauthn.helpers.exceptions import InvalidAuthenticationResponse
 from ..db import sql
 from ..db.sql import User
 from ..sansio import Passkey
-from ..util.jwt import create_session_token
+from ..util.session import create_session_token, get_client_info_from_websocket
 from .session import get_user_from_cookie_string
 
 # Create a FastAPI subapp for WebSocket endpoints
@@ -69,7 +69,10 @@ async def websocket_register_new(ws: WebSocket, user_name: str):
         )
 
         # Create a session token for the new user
-        session_token = create_session_token(user_id, credential.credential_id)
+        client_info = get_client_info_from_websocket(ws)
+        session_token = await create_session_token(
+            user_id, credential.credential_id, client_info
+        )
 
         await ws.send_json(
             {
@@ -248,8 +251,9 @@ async def websocket_authenticate(ws: WebSocket):
         await sql.login_user(stored_cred.user_id, stored_cred)
 
         # Create a session token for the authenticated user
-        session_token = create_session_token(
-            stored_cred.user_id, stored_cred.credential_id
+        client_info = get_client_info_from_websocket(ws)
+        session_token = await create_session_token(
+            stored_cred.user_id, stored_cred.credential_id, client_info
         )
 
         await ws.send_json(

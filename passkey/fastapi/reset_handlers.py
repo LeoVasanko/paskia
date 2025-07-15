@@ -7,14 +7,13 @@ This module provides endpoints for authenticated users to:
 - Add new passkeys to existing accounts via tokens
 """
 
-from datetime import datetime, timedelta
-
 from fastapi import FastAPI, Path, Request
 from fastapi.responses import RedirectResponse
 
 from ..db import sql
 from ..util.passphrase import generate
-from .session import get_current_user
+from ..util.session import get_client_info
+from .session import get_current_user, is_device_addition_session, set_session_cookie
 
 
 def register_reset_routes(app: FastAPI):
@@ -32,8 +31,9 @@ def register_reset_routes(app: FastAPI):
             # Generate a human-readable token
             token = generate(n=4, sep=".")  # e.g., "able-ocean-forest-dawn"
 
-            # Create reset token in database
-            await sql.create_reset_token(user.user_id, token)
+            # Create session token in database with credential_id=None for device addition
+            client_info = get_client_info(request)
+            await sql.create_session(user.user_id, None, token, client_info)
 
             # Generate the device addition link with pretty URL
             addition_link = f"{request.headers.get('origin', '')}/auth/{token}"
@@ -51,38 +51,34 @@ def register_reset_routes(app: FastAPI):
     @app.get("/auth/device-session-check")
     async def check_device_session(request: Request):
         """Check if the current session is for device addition."""
-        from .session import is_device_addition_session
-
         is_device_session = await is_device_addition_session(request)
         return {"device_addition_session": is_device_session}
 
     @app.get("/auth/{passphrase}")
     async def reset_authentication(
+        request: Request,
         passphrase: str = Path(pattern=r"^\w+(\.\w+){2,}$"),
     ):
         try:
-            # Get reset token to validate it exists and get user_id
-            reset_token = await sql.get_reset_token(passphrase)
-            if not reset_token:
+            # Get session token to validate it exists and get user_id
+            session_data = await sql.get_session(passphrase)
+            if not session_data:
                 # Token doesn't exist, redirect to home
                 return RedirectResponse(url="/", status_code=303)
 
-            # Check if token is expired (24 hours)
-            expiry_time = reset_token.created_at + timedelta(hours=24)
-            if datetime.now() > expiry_time:
-                # Token expired, clean it up and redirect to home
-                await sql.delete_reset_token(passphrase)
+            # Check if this is a device addition session (credential_id is None)
+            if session_data["credential_id"] is not None:
+                # Not a device addition session, redirect to home
                 return RedirectResponse(url="/", status_code=303)
 
             # Create a device addition session token for the user
-            from ..util.jwt import create_device_addition_token
-
-            session_token = create_device_addition_token(reset_token.user_id)
+            client_info = get_client_info(request)
+            session_token = await sql.create_session(
+                session_data["user_id"], None, None, client_info
+            )
 
             # Create response and set session cookie
             response = RedirectResponse(url="/auth/", status_code=303)
-            from .session import set_session_cookie
-
             set_session_cookie(response, session_token)
 
             return response
@@ -95,18 +91,17 @@ def register_reset_routes(app: FastAPI):
 async def use_device_addition_token(token: str) -> dict:
     """Delete a device addition token after successful use."""
     try:
-        # Get reset token first to validate it exists and is not expired
-        reset_token = await sql.get_reset_token(token)
-        if not reset_token:
+        # Get session token first to validate it exists and is not expired
+        session_data = await sql.get_session(token)
+        if not session_data:
             return {"error": "Invalid or expired device addition token"}
 
-        # Check if token is expired (24 hours)
-        expiry_time = reset_token.created_at + timedelta(hours=24)
-        if datetime.now() > expiry_time:
-            return {"error": "Device addition token has expired"}
+        # Check if this is a device addition session (credential_id is None)
+        if session_data["credential_id"] is not None:
+            return {"error": "Invalid device addition token"}
 
         # Delete the token (it's now used)
-        await sql.delete_reset_token(token)
+        await sql.delete_session(token)
 
         return {
             "status": "success",

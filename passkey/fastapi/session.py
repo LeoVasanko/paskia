@@ -12,7 +12,7 @@ from uuid import UUID
 from fastapi import Request, Response
 
 from ..db.sql import User, get_user_by_id
-from ..util.jwt import validate_session_token
+from ..util.session import validate_session_token
 
 COOKIE_NAME = "auth"
 COOKIE_MAX_AGE = 86400  # 24 hours
@@ -24,7 +24,7 @@ async def get_current_user(request: Request) -> User | None:
     if not session_token:
         return None
 
-    token_data = validate_session_token(session_token)
+    token_data = await validate_session_token(session_token)
     if not token_data:
         return None
 
@@ -63,7 +63,7 @@ async def validate_session_from_request(request: Request) -> dict | None:
     if not session_token:
         return None
 
-    return validate_session_token(session_token)
+    return await validate_session_token(session_token)
 
 
 async def get_session_token_from_bearer(request: Request) -> str | None:
@@ -91,7 +91,7 @@ async def get_user_from_cookie_string(cookie_header: str) -> UUID | None:
     if not session_token:
         return None
 
-    token_data = validate_session_token(session_token)
+    token_data = await validate_session_token(session_token)
     if not token_data:
         return None
 
@@ -104,7 +104,7 @@ async def is_device_addition_session(request: Request) -> bool:
     if not session_token:
         return False
 
-    token_data = validate_session_token(session_token)
+    token_data = await validate_session_token(session_token)
     if not token_data:
         return False
 
@@ -117,7 +117,7 @@ async def get_device_addition_user_id(request: Request) -> UUID | None:
     if not session_token:
         return None
 
-    token_data = validate_session_token(session_token)
+    token_data = await validate_session_token(session_token)
     if not token_data or not token_data.get("device_addition"):
         return None
 
@@ -141,7 +141,7 @@ async def get_device_addition_user_id_from_cookie(cookie_header: str) -> UUID | 
     if not session_token:
         return None
 
-    token_data = validate_session_token(session_token)
+    token_data = await validate_session_token(session_token)
     if not token_data or not token_data.get("device_addition"):
         return None
 

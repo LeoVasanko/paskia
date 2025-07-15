@@ -271,12 +271,6 @@ Register a new user with a new passkey credential.
   "message": "User registered successfully",
   "token": "string (JWT)"
 }
-
-// Error response
-{
-  "status": "error",
-  "message": "error description"
-}
 ```
 
 #### `WS /auth/ws/add_credential`
