@@ -58,6 +58,28 @@ class JWTManager:
 
         return jwt.encode(payload, self.secret_key, algorithm=self.algorithm)
 
+    def create_token_without_credential(self, user_id: UUID) -> str:
+        """
+        Create a JWT token for device addition (without credential ID).
+
+        Args:
+            user_id: The user's UUID
+
+        Returns:
+            JWT token string for device addition
+        """
+        now = datetime.now()
+        payload = {
+            "user_id": str(user_id),
+            "credential_id": None,  # No credential for device addition
+            "device_addition": True,  # Flag to indicate this is for device addition
+            "iat": now,
+            "exp": now + timedelta(hours=2),  # Shorter expiry for device addition
+            "iss": "passkeyauth",
+        }
+
+        return jwt.encode(payload, self.secret_key, algorithm=self.algorithm)
+
     def validate_token(self, token: str) -> Optional[dict]:
         """
         Validate a JWT token and return the payload.
@@ -76,12 +98,23 @@ class JWTManager:
                 issuer="passkeyauth",
             )
 
-            return {
+            result = {
                 "user_id": UUID(payload["user_id"]),
-                "credential_id": bytes.fromhex(payload["credential_id"]),
                 "issued_at": payload["iat"],
                 "expires_at": payload["exp"],
             }
+
+            # Handle credential_id for regular tokens vs device addition tokens
+            if payload.get("credential_id") is not None:
+                result["credential_id"] = bytes.fromhex(payload["credential_id"])
+            else:
+                result["credential_id"] = None
+
+            # Add device addition flag if present
+            if payload.get("device_addition"):
+                result["device_addition"] = True
+
+            return result
         except jwt.ExpiredSignatureError:
             return None
         except jwt.InvalidTokenError:
@@ -120,6 +153,11 @@ def get_jwt_manager() -> JWTManager:
 def create_session_token(user_id: UUID, credential_id: bytes) -> str:
     """Create a session token for a user."""
     return get_jwt_manager().create_token(user_id, credential_id)
+
+
+def create_device_addition_token(user_id: UUID) -> str:
+    """Create a token for device addition."""
+    return get_jwt_manager().create_token_without_credential(user_id)
 
 
 def validate_session_token(token: str) -> Optional[dict]:

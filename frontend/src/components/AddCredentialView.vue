@@ -15,30 +15,42 @@
 
 <script setup>
 import { useAuthStore } from '@/stores/auth'
-import { registerWithToken } from '@/utils/passkey'
+import { registerWithSession } from '@/utils/passkey'
 import { ref, onMounted } from 'vue'
-import { getCookie } from '@/utils/helpers'
 
 const authStore = useAuthStore()
-const token = ref(null)
+const hasDeviceSession = ref(false)
 
 // Check existing session on app load
-onMounted(() => {
-  // Check for 'auth-token' cookie
-  token.value = getCookie('auth-token')
-  if (!token.value) {
-    authStore.showMessage('No registration token cookie found.', 'error')
+onMounted(async () => {
+  try {
+    // Check if we have a device addition session
+    const response = await fetch('/auth/device-session-check', {
+      credentials: 'include'
+    })
+    const data = await response.json()
+
+    if (data.device_addition_session) {
+      hasDeviceSession.value = true
+    } else {
+      authStore.showMessage('No device addition session found.', 'error')
+      authStore.currentView = 'login'
+    }
+  } catch (error) {
+    authStore.showMessage('Failed to check device addition session.', 'error')
     authStore.currentView = 'login'
-    return
   }
-  // Delete the cookie
-  document.cookie = 'auth-token=; Max-Age=0; path=/'
 })
 
 function register() {
+  if (!hasDeviceSession.value) {
+    authStore.showMessage('No valid device addition session', 'error')
+    return
+  }
+
   authStore.isLoading = true
   authStore.showMessage('Starting registration...', 'info')
-  registerWithToken(token.value).finally(() => {
+  registerWithSession().finally(() => {
     authStore.isLoading = false
   }).then(() => {
     authStore.showMessage('Passkey registered successfully!', 'success', 2000)

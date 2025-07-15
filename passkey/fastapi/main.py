@@ -18,25 +18,18 @@ from fastapi import (
     Request,
     Response,
 )
-from fastapi import (
-    Path as FastAPIPath,
-)
 from fastapi.responses import (
     FileResponse,
-    RedirectResponse,
+    JSONResponse,
 )
 from fastapi.staticfiles import StaticFiles
 
 from ..db import sql
 from .api_handlers import (
-    delete_credential,
-    get_user_info,
-    logout,
-    refresh_token,
-    set_session,
+    register_api_routes,
     validate_token,
 )
-from .reset_handlers import create_device_addition_link, validate_device_addition_token
+from .reset_handlers import register_reset_routes
 from .ws_handlers import ws_app
 
 STATIC_DIR = Path(__file__).parent.parent / "frontend-build"
@@ -48,34 +41,23 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(title="Passkey Auth", lifespan=lifespan)
+app = FastAPI(lifespan=lifespan)
 
 # Mount the WebSocket subapp
 app.mount("/auth/ws", ws_app)
 
-
-@app.get("/auth/user-info")
-async def api_get_user_info(request: Request):
-    """Get user information and credentials from session cookie."""
-    return await get_user_info(request)
-
-
-@app.post("/auth/refresh-token")
-async def api_refresh_token(request: Request, response: Response):
-    """Refresh the session token."""
-    return await refresh_token(request, response)
-
-
-@app.get("/auth/validate-token")
-async def api_validate_token(request: Request):
-    """Validate a session token and return user info."""
-    return await validate_token(request)
+# Register API routes
+register_api_routes(app)
+register_reset_routes(app)
 
 
 @app.get("/auth/forward-auth")
 async def forward_authentication(request: Request):
     """A verification endpoint to use with Caddy forward_auth or Nginx auth_request."""
-    result = await validate_token(request)
+    # Create a dummy response object for internal validation (we won't use it for cookies)
+    response = Response()
+
+    result = await validate_token(request, response)
     if result.get("status") != "success":
         # Serve the index.html of the authentication app if not authenticated
         return FileResponse(
@@ -89,52 +71,6 @@ async def forward_authentication(request: Request):
         status_code=204,
         headers={"x-auth-user-id": result["user_id"]},
     )
-
-
-@app.post("/auth/logout")
-async def api_logout(response: Response):
-    """Log out the current user by clearing the session cookie."""
-    return await logout(response)
-
-
-@app.post("/auth/set-session")
-async def api_set_session(request: Request, response: Response):
-    """Set session cookie using JWT token from request body or Authorization header."""
-    return await set_session(request, response)
-
-
-@app.post("/auth/delete-credential")
-async def api_delete_credential(request: Request):
-    """Delete a specific credential for the current user."""
-    return await delete_credential(request)
-
-
-@app.post("/auth/create-device-link")
-async def api_create_device_link(request: Request):
-    """Create a device addition link for the authenticated user."""
-    return await create_device_addition_link(request)
-
-
-@app.post("/auth/validate-device-token")
-async def api_validate_device_token(request: Request):
-    """Validate a device addition token."""
-    return await validate_device_addition_token(request)
-
-
-@app.get("/auth/{passphrase}")
-async def reset_authentication(
-    passphrase: str = FastAPIPath(pattern=r"^\w+(\.\w+){2,}$"),
-):
-    response = RedirectResponse(url="/", status_code=303)
-    response.set_cookie(
-        key="auth-token",
-        value=passphrase,
-        httponly=False,
-        secure=True,
-        samesite="strict",
-        max_age=2,
-    )
-    return response
 
 
 # Serve static files
@@ -154,7 +90,7 @@ async def redirect_to_index():
 async def spa_handler(request: Request, path: str):
     """Serve the Vue SPA for all routes (except API and static)"""
     if "text/html" not in request.headers.get("accept", ""):
-        return Response(content="Not Found", status_code=404)
+        return JSONResponse({"error": "Not Found"}, status_code=404)
     return FileResponse(STATIC_DIR / "index.html")
 
 
