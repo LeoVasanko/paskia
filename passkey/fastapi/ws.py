@@ -9,7 +9,7 @@ This module contains all WebSocket endpoints for:
 """
 
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime
 from uuid import UUID
 
 import uuid7
@@ -139,15 +139,9 @@ async def websocket_add_device_credential(ws: WebSocket, token: str):
     await ws.accept()
     origin = ws.headers.get("origin")
     try:
-        reset_token = await sql.get_reset_token(token)
+        reset_token = await sql.get_session(token)
         if not reset_token:
             await ws.send_json({"error": "Invalid or expired device addition token"})
-            return
-
-        # Check if token is expired (24 hours)
-        expiry_time = reset_token.created_at + timedelta(hours=24)
-        if datetime.now() > expiry_time:
-            await ws.send_json({"error": "Device addition token has expired"})
             return
 
         # Get user information

@@ -298,27 +298,21 @@ class DB:
 
         return await self.create_session(user_id, db_credential_id, token, info)
 
-    async def get_session(self, token: str) -> dict | None:
+    async def get_session(self, token: str) -> SessionModel | None:
         """Get session by token string."""
         stmt = select(SessionModel).where(SessionModel.token == token)
         result = await self.session.execute(stmt)
-        session_model = result.scalar_one_or_none()
+        session = result.scalar_one_or_none()
 
-        if session_model:
+        if session:
             # Check if session is expired (24 hours)
-            expiry_time = session_model.created_at + timedelta(hours=24)
+            expiry_time = session.created_at + timedelta(hours=24)
             if datetime.now() > expiry_time:
                 # Clean up expired session
                 await self.delete_session(token)
                 return None
 
-            return {
-                "token": session_model.token,
-                "user_id": UUID(bytes=session_model.user_id),
-                "credential_id": session_model.credential_id,
-                "created_at": session_model.created_at,
-                "info": session_model.info or {},
-            }
+            return session
         return None
 
     async def delete_session(self, token: str) -> None:
@@ -334,8 +328,8 @@ class DB:
 
     async def refresh_session(self, token: str) -> str | None:
         """Refresh a session by updating its created_at timestamp."""
-        session_data = await self.get_session(token)
-        if not session_data:
+        session = await self.get_session(token)
+        if not session:
             return None
 
         # Delete old session
@@ -343,9 +337,9 @@ class DB:
 
         # Create new session with same user and credential
         return await self.create_session(
-            session_data["user_id"],
-            session_data["credential_id"],
-            info=session_data["info"],
+            user_id=UUID(bytes=session.user_id),
+            credential_id=session.credential_id,
+            info=session.info,
         )
 
 
@@ -438,7 +432,7 @@ async def create_session_by_credential_id(
         )
 
 
-async def get_session(token: str) -> dict | None:
+async def get_session(token: str) -> SessionModel | None:
     """Get session by token string."""
     async with connect() as db:
         return await db.get_session(token)

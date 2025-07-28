@@ -7,6 +7,8 @@ This module provides endpoints for authenticated users to:
 - Add new passkeys to existing accounts via tokens
 """
 
+from uuid import UUID
+
 from fastapi import FastAPI, Path, Request
 from fastapi.responses import RedirectResponse
 
@@ -61,20 +63,20 @@ def register_reset_routes(app: FastAPI):
     ):
         try:
             # Get session token to validate it exists and get user_id
-            session_data = await sql.get_session(passphrase)
-            if not session_data:
+            session = await sql.get_session(passphrase)
+            if not session:
                 # Token doesn't exist, redirect to home
                 return RedirectResponse(url="/", status_code=303)
 
             # Check if this is a device addition session (credential_id is None)
-            if session_data["credential_id"] is not None:
+            if session.credential_id is not None:
                 # Not a device addition session, redirect to home
                 return RedirectResponse(url="/", status_code=303)
 
             # Create a device addition session token for the user
             client_info = get_client_info(request)
             session_token = await sql.create_session(
-                session_data["user_id"], None, None, client_info
+                UUID(bytes=session.user_id), None, None, client_info
             )
 
             # Create response and set session cookie
@@ -92,12 +94,12 @@ async def use_reset_token(token: str) -> dict:
     """Delete a device addition token after successful use."""
     try:
         # Get session token first to validate it exists and is not expired
-        session_data = await sql.get_session(token)
-        if not session_data:
+        session = await sql.get_session(token)
+        if not session:
             return {"error": "Invalid or expired device addition token"}
 
         # Check if this is a device addition session (credential_id is None)
-        if session_data["credential_id"] is not None:
+        if session.credential_id is not None:
             return {"error": "Invalid device addition token"}
 
         # Delete the token (it's now used)
