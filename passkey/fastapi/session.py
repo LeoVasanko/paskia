@@ -12,7 +12,7 @@ This module provides session management functionality including:
 from datetime import datetime, timedelta
 from uuid import UUID
 
-from fastapi import Request, Response
+from fastapi import Request, Response, WebSocket
 
 from ..db import Session, sql
 from ..util import passphrase
@@ -25,7 +25,7 @@ def expires() -> datetime:
     return datetime.now() + EXPIRES
 
 
-def infodict(request: Request, type: str) -> dict:
+def infodict(request: Request | WebSocket, type: str) -> dict:
     """Extract client information from request."""
     return {
         "ip": request.client.host if request.client else "",
