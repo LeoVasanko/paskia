@@ -23,7 +23,7 @@
         <div v-else>
           <div
             v-for="credential in authStore.currentCredentials"
-            :key="credential.credential_id"
+            :key="credential.credential_uuid"
             :class="['credential-item', { 'current-session': credential.is_current_session }]"
           >
             <div class="credential-header">
@@ -49,7 +49,7 @@
               </div>
               <div class="credential-actions">
                 <button
-                  @click="deleteCredential(credential.credential_id)"
+                  @click="deleteCredential(credential.credential_uuid)"
                   class="btn-delete-credential"
                   :disabled="credential.is_current_session"
                   :title="credential.is_current_session ? 'Cannot delete current session credential' : ''"
