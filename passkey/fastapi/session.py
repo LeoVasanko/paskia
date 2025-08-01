@@ -5,144 +5,85 @@ This module provides session management functionality including:
 - Getting current user from session cookies
 - Setting and clearing HTTP-only cookies
 - Session validation and token handling
+- Device addition token management
+- Device addition route handlers
 """
 
+from datetime import datetime, timedelta
 from uuid import UUID
 
 from fastapi import Request, Response
 
-from ..db.sql import User, get_user_by_id
-from ..util.session import validate_session_token
+from ..db import Session, sql
+from ..util import passphrase
+from ..util.tokens import create_token, reset_key, session_key
 
-COOKIE_NAME = "auth"
-COOKIE_MAX_AGE = 86400  # 24 hours
-
-
-async def get_current_user(request: Request) -> User | None:
-    """Get the current user from the session cookie."""
-    session_token = request.cookies.get(COOKIE_NAME)
-    if not session_token:
-        return None
-
-    token_data = await validate_session_token(session_token)
-    if not token_data:
-        return None
-
-    try:
-        user = await get_user_by_id(token_data["user_id"])
-        return user
-    except Exception:
-        return None
+EXPIRES = timedelta(hours=24)
 
 
-def set_session_cookie(response: Response, session_token: str) -> None:
+def expires() -> datetime:
+    return datetime.now() + EXPIRES
+
+
+def infodict(request: Request, type: str) -> dict:
+    """Extract client information from request."""
+    return {
+        "ip": request.client.host if request.client else "",
+        "user_agent": request.headers.get("user-agent", "")[:500],
+        "type": type,
+    }
+
+
+async def create_session(user_uuid: UUID, info: dict, credential_uuid: UUID) -> str:
+    """Create a new session and return a session token."""
+    token = create_token()
+    await sql.create_session(
+        user_uuid=user_uuid,
+        key=session_key(token),
+        expires=datetime.now() + EXPIRES,
+        info=info,
+        credential_uuid=credential_uuid,
+    )
+    return token
+
+
+async def get_session(token: str, reset_allowed=False) -> Session:
+    """Validate a session token and return session data if valid."""
+    if passphrase.is_well_formed(token):
+        if not reset_allowed:
+            raise ValueError("Reset link is not allowed for this endpoint")
+        key = reset_key(token)
+    else:
+        key = session_key(token)
+
+    session = await sql.get_session(key)
+    if not session:
+        raise ValueError("Invalid or expired session token")
+    return session
+
+
+async def refresh_session_token(token: str):
+    """Refresh a session extending its expiry."""
+    # Get the current session
+    s = await sql.update_session(session_key(token), datetime.now() + EXPIRES, {})
+
+    if not s:
+        raise ValueError("Session not found or expired")
+
+
+def set_session_cookie(response: Response, token: str) -> None:
     """Set the session token as an HTTP-only cookie."""
     response.set_cookie(
-        key=COOKIE_NAME,
-        value=session_token,
-        max_age=COOKIE_MAX_AGE,
+        key="auth",
+        value=token,
+        max_age=int(EXPIRES.total_seconds()),
         httponly=True,
         secure=True,
-        samesite="lax",
+        path="/auth/",
     )
 
 
-def clear_session_cookie(response: Response) -> None:
-    """Clear the session cookie."""
-    response.delete_cookie(key=COOKIE_NAME)
-
-
-def get_session_token_from_cookie(request: Request) -> str | None:
-    """Extract session token from request cookies."""
-    return request.cookies.get(COOKIE_NAME)
-
-
-async def validate_session_from_request(request: Request) -> dict | None:
-    """Validate session token from request and return token data."""
-    session_token = get_session_token_from_cookie(request)
-    if not session_token:
-        return None
-
-    return await validate_session_token(session_token)
-
-
-async def get_session_token_from_bearer(request: Request) -> str | None:
-    """Extract session token from Authorization header or request body."""
-    # Try to get token from Authorization header first
-    auth_header = request.headers.get("Authorization")
-    if auth_header and auth_header.startswith("Bearer "):
-        return auth_header.removeprefix("Bearer ")
-
-
-async def get_user_from_cookie_string(cookie_header: str) -> UUID | None:
-    """Parse cookie header and return user ID if valid session exists."""
-    if not cookie_header:
-        return None
-
-    # Parse cookies from header (simple implementation)
-    cookies = {}
-    for cookie in cookie_header.split(";"):
-        cookie = cookie.strip()
-        if "=" in cookie:
-            name, value = cookie.split("=", 1)
-            cookies[name] = value
-
-    session_token = cookies.get(COOKIE_NAME)
-    if not session_token:
-        return None
-
-    token_data = await validate_session_token(session_token)
-    if not token_data:
-        return None
-
-    return token_data["user_id"]
-
-
-async def is_device_addition_session(request: Request) -> bool:
-    """Check if the current session is for device addition."""
-    session_token = request.cookies.get(COOKIE_NAME)
-    if not session_token:
-        return False
-
-    token_data = await validate_session_token(session_token)
-    if not token_data:
-        return False
-
-    return token_data.get("device_addition", False)
-
-
-async def get_device_addition_user_id(request: Request) -> UUID | None:
-    """Get user ID from device addition session."""
-    session_token = request.cookies.get(COOKIE_NAME)
-    if not session_token:
-        return None
-
-    token_data = await validate_session_token(session_token)
-    if not token_data or not token_data.get("device_addition"):
-        return None
-
-    return token_data.get("user_id")
-
-
-async def get_device_addition_user_id_from_cookie(cookie_header: str) -> UUID | None:
-    """Parse cookie header and return user ID if valid device addition session exists."""
-    if not cookie_header:
-        return None
-
-    # Parse cookies from header (simple implementation)
-    cookies = {}
-    for cookie in cookie_header.split(";"):
-        cookie = cookie.strip()
-        if "=" in cookie:
-            name, value = cookie.split("=", 1)
-            cookies[name] = value
-
-    session_token = cookies.get(COOKIE_NAME)
-    if not session_token:
-        return None
-
-    token_data = await validate_session_token(session_token)
-    if not token_data or not token_data.get("device_addition"):
-        return None
-
-    return token_data["user_id"]
+async def delete_credential(credential_uuid: UUID, auth: str):
+    """Delete a specific credential for the current user."""
+    s = await get_session(auth)
+    await sql.delete_credential(credential_uuid, s.user_uuid)

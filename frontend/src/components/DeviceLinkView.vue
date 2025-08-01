@@ -46,7 +46,7 @@ const copyLink = async (event) => {
 
 onMounted(async () => {
   try {
-    const response = await fetch('/auth/create-device-link', { method: 'POST' })
+    const response = await fetch('/auth/create-link', { method: 'POST' })
     const result = await response.json()
     if (result.error) throw new Error(result.error)
 
@@ -63,7 +63,7 @@ onMounted(async () => {
       })
     }
   } catch (error) {
-    console.error('Failed to fetch device link:', error)
+    console.error('Failed to create link:', error)
   }
 })
 </script>
