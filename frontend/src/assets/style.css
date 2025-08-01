@@ -11,6 +11,10 @@ body {
     justify-content: center;
 }
 
+a, a:visited {
+    text-decoration: none;
+}
+
 .container {
     background: white;
     padding: 40px;
