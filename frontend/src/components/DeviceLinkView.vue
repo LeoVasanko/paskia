@@ -1,10 +1,8 @@
 <template>
   <div class="container">
     <div class="view active">
-      <h1>📱 Add Device</h1>
-
+      <h1>📱 Add Another Device</h1>
       <div class="device-link-section">
-        <h2>Device Addition Link</h2>
         <div class="qr-container">
           <a :href="url" id="deviceLinkText" @click="copyLink">
             <canvas id="qrCode" class="qr-code"></canvas>
