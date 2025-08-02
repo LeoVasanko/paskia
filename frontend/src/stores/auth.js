@@ -33,10 +33,7 @@ export const useAuthStore = defineStore('auth', {
     async setSessionCookie(sessionToken) {
       const response = await fetch('/auth/set-session', {
         method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${sessionToken}`,
-          'Content-Type': 'application/json'
-        },
+        headers: {'Authorization': `Bearer ${sessionToken}`},
       })
       const result = await response.json()
       if (result.error) {

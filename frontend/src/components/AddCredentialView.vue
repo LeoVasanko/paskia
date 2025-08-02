@@ -15,7 +15,7 @@
 
 <script setup>
 import { useAuthStore } from '@/stores/auth'
-import { registerWithSession } from '@/utils/passkey'
+import { registerCredential } from '@/utils/passkey'
 import { ref, onMounted } from 'vue'
 
 const authStore = useAuthStore()
@@ -25,9 +25,7 @@ const hasDeviceSession = ref(false)
 onMounted(async () => {
   try {
     // Check if we have a device addition session
-    const response = await fetch('/auth/device-session-check', {
-      credentials: 'include'
-    })
+    const response = await fetch('/auth/device-session-check')
     const data = await response.json()
 
     if (data.device_addition_session) {
@@ -50,7 +48,7 @@ function register() {
 
   authStore.isLoading = true
   authStore.showMessage('Starting registration...', 'info')
-  registerWithSession().finally(() => {
+  registerCredential().finally(() => {
     authStore.isLoading = false
   }).then(() => {
     authStore.showMessage('Passkey registered successfully!', 'success', 2000)

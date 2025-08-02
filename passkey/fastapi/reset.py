@@ -1,114 +1,74 @@
-"""
-Device addition API handlers for WebAuthn authentication.
+import logging
 
-This module provides endpoints for authenticated users to:
-- Generate device addition links with human-readable tokens
-- Validate device addition tokens
-- Add new passkeys to existing accounts via tokens
-"""
-
-from uuid import UUID
-
-from fastapi import FastAPI, Path, Request
+from fastapi import Cookie, HTTPException, Request
 from fastapi.responses import RedirectResponse
 
 from ..db import sql
-from ..util.passphrase import generate
-from ..util.session import get_client_info
-from .session import get_current_user, is_device_addition_session, set_session_cookie
+from ..util import passphrase, tokens
+from . import session
 
 
-def register_reset_routes(app: FastAPI):
+def register_reset_routes(app):
     """Register all device addition/reset routes on the FastAPI app."""
 
-    @app.post("/auth/create-device-link")
-    async def api_create_device_link(request: Request):
+    @app.post("/auth/create-link")
+    async def api_create_link(request: Request, auth=Cookie(None)):
         """Create a device addition link for the authenticated user."""
         try:
             # Require authentication
-            user = await get_current_user(request)
-            if not user:
-                return {"error": "Authentication required"}
+            s = await session.get_session(auth)
 
             # Generate a human-readable token
-            token = generate(n=4, sep=".")  # e.g., "able-ocean-forest-dawn"
-
-            # Create session token in database with credential_id=None for device addition
-            client_info = get_client_info(request)
-            await sql.create_session(user.user_id, None, token, client_info)
+            token = passphrase.generate()  # e.g., "cross.rotate.yin.note.evoke"
+            await sql.create_session(
+                user_uuid=s.user_uuid,
+                key=tokens.reset_key(token),
+                expires=session.expires(),
+                info=session.infodict(request, "device addition"),
+            )
 
             # Generate the device addition link with pretty URL
-            addition_link = f"{request.headers.get('origin', '')}/auth/{token}"
+            path = request.url.path.removesuffix("create-link") + token
+            url = f"{request.headers['origin']}{path}"
 
             return {
                 "status": "success",
-                "message": "Device addition link generated successfully",
-                "addition_link": addition_link,
-                "expires_in_hours": 24,
+                "message": "Registration link generated successfully",
+                "url": url,
+                "expires": session.expires().isoformat(),
             }
 
+        except ValueError:
+            return {"error": "Authentication required"}
         except Exception as e:
-            return {"error": f"Failed to create device addition link: {str(e)}"}
+            return {"error": f"Failed to create registration link: {str(e)}"}
 
-    @app.get("/auth/device-session-check")
-    async def check_device_session(request: Request):
-        """Check if the current session is for device addition."""
-        is_device_session = await is_device_addition_session(request)
-        return {"device_addition_session": is_device_session}
-
-    @app.get("/auth/{passphrase}")
+    @app.get("/auth/{reset_token}")
     async def reset_authentication(
         request: Request,
-        passphrase: str = Path(pattern=r"^\w+(\.\w+){2,}$"),
+        reset_token: str,
     ):
+        """Verifies the token and redirects to auth app for credential registration."""
+        # This route should only match to exact passphrases
+        print(f"Reset handler called with url: {request.url.path}")
+        if not passphrase.is_well_formed(reset_token):
+            raise HTTPException(status_code=404)
         try:
             # Get session token to validate it exists and get user_id
-            session = await sql.get_session(passphrase)
-            if not session:
-                # Token doesn't exist, redirect to home
-                return RedirectResponse(url="/", status_code=303)
+            key = tokens.reset_key(reset_token)
+            sess = await sql.get_session(key)
+            if not sess:
+                raise ValueError("Invalid or expired registration token")
 
-            # Check if this is a device addition session (credential_id is None)
-            if session.credential_id is not None:
-                # Not a device addition session, redirect to home
-                return RedirectResponse(url="/", status_code=303)
-
-            # Create a device addition session token for the user
-            client_info = get_client_info(request)
-            session_token = await sql.create_session(
-                UUID(bytes=session.user_id), None, None, client_info
-            )
-
-            # Create response and set session cookie
             response = RedirectResponse(url="/auth/", status_code=303)
-            set_session_cookie(response, session_token)
-
+            session.set_session_cookie(response, reset_token)
             return response
 
-        except Exception:
-            # On any error, redirect to home
-            return RedirectResponse(url="/", status_code=303)
-
-
-async def use_reset_token(token: str) -> dict:
-    """Delete a device addition token after successful use."""
-    try:
-        # Get session token first to validate it exists and is not expired
-        session = await sql.get_session(token)
-        if not session:
-            return {"error": "Invalid or expired device addition token"}
-
-        # Check if this is a device addition session (credential_id is None)
-        if session.credential_id is not None:
-            return {"error": "Invalid device addition token"}
-
-        # Delete the token (it's now used)
-        await sql.delete_session(token)
-
-        return {
-            "status": "success",
-            "message": "Device addition token used successfully",
-        }
-
-    except Exception as e:
-        return {"error": f"Failed to use device addition token: {str(e)}"}
+        except Exception as e:
+            # On any error, redirect to auth app
+            if isinstance(e, ValueError):
+                msg = str(e)
+            else:
+                logging.exception("Internal Server Error in reset_authentication")
+                msg = "Internal Server Error"
+            return RedirectResponse(url=f"/auth/#{msg}", status_code=303)

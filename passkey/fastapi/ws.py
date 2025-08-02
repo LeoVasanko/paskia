@@ -13,17 +13,18 @@ from datetime import datetime
 from uuid import UUID
 
 import uuid7
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import Cookie, FastAPI, Query, Request, WebSocket, WebSocketDisconnect
 from webauthn.helpers.exceptions import InvalidAuthenticationResponse
 
-from ..db import sql
-from ..db.sql import User
+from passkey.fastapi import session
+
+from ..db import User, sql
 from ..sansio import Passkey
-from ..util.session import create_session_token, get_client_info_from_websocket
-from .session import get_user_from_cookie_string
+from ..util.tokens import create_token, reset_key, session_key
+from .session import create_session, infodict
 
 # Create a FastAPI subapp for WebSocket endpoints
-ws_app = FastAPI()
+app = FastAPI()
 
 # Initialize the passkey instance
 passkey = Passkey(
@@ -34,51 +35,55 @@ passkey = Passkey(
 
 async def register_chat(
     ws: WebSocket,
-    user_id: UUID,
+    user_uuid: UUID,
     user_name: str,
     credential_ids: list[bytes] | None = None,
     origin: str | None = None,
 ):
     """Generate registration options and send them to the client."""
     options, challenge = passkey.reg_generate_options(
-        user_id=user_id,
+        user_id=user_uuid,
         user_name=user_name,
         credential_ids=credential_ids,
         origin=origin,
     )
     await ws.send_json(options)
     response = await ws.receive_json()
-    return passkey.reg_verify(response, challenge, user_id, origin=origin)
+    return passkey.reg_verify(response, challenge, user_uuid, origin=origin)
 
 
-@ws_app.websocket("/register_new")
-async def websocket_register_new(ws: WebSocket, user_name: str):
+@app.websocket("/register")
+async def websocket_register_new(
+    request: Request, ws: WebSocket, user_name: str = Query(""), auth=Cookie(None)
+):
     """Register a new user and with a new passkey credential."""
     await ws.accept()
     origin = ws.headers.get("origin")
     try:
-        user_id = uuid7.create()
-
+        user_uuid = uuid7.create()
         # WebAuthn registration
-        credential = await register_chat(ws, user_id, user_name, origin=origin)
+        credential = await register_chat(ws, user_uuid, user_name, origin=origin)
 
         # Store the user and credential in the database
         await sql.create_user_and_credential(
-            User(user_id, user_name, created_at=datetime.now()),
+            User(user_uuid, user_name, created_at=datetime.now()),
             credential,
         )
-
         # Create a session token for the new user
-        client_info = get_client_info_from_websocket(ws)
-        session_token = await create_session_token(
-            user_id, credential.credential_id, client_info
+        token = create_token()
+        await sql.create_session(
+            user_uuid=user_uuid,
+            key=session_key(token),
+            expires=datetime.now() + session.EXPIRES,
+            info=infodict(request, "authenticated"),
+            credential_uuid=credential.uuid,
         )
 
         await ws.send_json(
             {
                 "status": "success",
-                "user_id": str(user_id),
-                "session_token": session_token,
+                "user_uuid": str(user_uuid),
+                "session_token": token,
             }
         )
     except ValueError as e:
@@ -90,28 +95,31 @@ async def websocket_register_new(ws: WebSocket, user_name: str):
         await ws.send_json({"error": "Internal Server Error"})
 
 
-@ws_app.websocket("/add_credential")
-async def websocket_register_add(ws: WebSocket):
+@app.websocket("/add_credential")
+async def websocket_register_add(ws: WebSocket, token: str | None = None):
     """Register a new credential for an existing user."""
     await ws.accept()
     origin = ws.headers.get("origin")
     try:
-        # Authenticate user via cookie
-        cookie_header = ws.headers.get("cookie", "")
-        user_id = await get_user_from_cookie_string(cookie_header)
-
-        if not user_id:
-            await ws.send_json({"error": "Authentication required"})
+        if not token:
+            await ws.send_json({"error": "Token is required"})
             return
+        # If a token is provided, use it to look up the session
+        key = reset_key(token)
+        s = await sql.get_session(key)
+        if not s:
+            await ws.send_json({"error": "Invalid or expired token"})
+            return
+        user_uuid = s.user_uuid
 
         # Get user information to get the user_name
-        user = await sql.get_user_by_id(user_id)
+        user = await sql.get_user_by_uuid(user_uuid)
         user_name = user.user_name
-        challenge_ids = await sql.get_user_credentials(user_id)
+        challenge_ids = await sql.get_user_credentials(user_uuid)
 
         # WebAuthn registration
         credential = await register_chat(
-            ws, user_id, user_name, challenge_ids, origin=origin
+            ws, user_uuid, user_name, challenge_ids, origin=origin
         )
         # Store the new credential in the database
         await sql.create_credential_for_user(credential)
@@ -119,7 +127,7 @@ async def websocket_register_add(ws: WebSocket):
         await ws.send_json(
             {
                 "status": "success",
-                "user_id": str(user_id),
+                "user_uuid": str(user_uuid),
                 "credential_id": credential.credential_id.hex(),
                 "message": "New credential added successfully",
             }
@@ -133,103 +141,8 @@ async def websocket_register_add(ws: WebSocket):
         await ws.send_json({"error": "Internal Server Error"})
 
 
-@ws_app.websocket("/add_device_credential")
-async def websocket_add_device_credential(ws: WebSocket, token: str):
-    """Add a new credential for an existing user via device addition token."""
-    await ws.accept()
-    origin = ws.headers.get("origin")
-    try:
-        reset_token = await sql.get_session(token)
-        if not reset_token:
-            await ws.send_json({"error": "Invalid or expired device addition token"})
-            return
-
-        # Get user information
-        user = await sql.get_user_by_id(reset_token.user_id)
-
-        # WebAuthn registration
-        # Fetch challenge IDs for the user
-        challenge_ids = await sql.get_user_credentials(reset_token.user_id)
-
-        credential = await register_chat(
-            ws, reset_token.user_id, user.user_name, challenge_ids, origin=origin
-        )
-
-        # Store the new credential in the database
-        await sql.create_credential_for_user(credential)
-
-        # Delete the device addition token (it's now used)
-        await sql.delete_reset_token(token)
-
-        await ws.send_json(
-            {
-                "status": "success",
-                "user_id": str(reset_token.user_id),
-                "credential_id": credential.credential_id.hex(),
-                "message": "New credential added successfully via device addition token",
-            }
-        )
-    except ValueError as e:
-        await ws.send_json({"error": str(e)})
-    except WebSocketDisconnect:
-        pass
-    except Exception:
-        logging.exception("Internal Server Error")
-        await ws.send_json({"error": "Internal Server Error"})
-
-
-@ws_app.websocket("/add_device_credential_session")
-async def websocket_add_device_credential_session(ws: WebSocket):
-    """Add a new credential for an existing user via device addition session."""
-    await ws.accept()
-    origin = ws.headers.get("origin")
-    try:
-        # Get device addition user ID from session cookie
-        cookie_header = ws.headers.get("cookie", "")
-        from .session import get_device_addition_user_id_from_cookie
-
-        user_id = await get_device_addition_user_id_from_cookie(cookie_header)
-
-        if not user_id:
-            await ws.send_json({"error": "No valid device addition session found"})
-            return
-
-        # Get user information
-        user = await sql.get_user_by_id(user_id)
-        if not user:
-            await ws.send_json({"error": "User not found"})
-            return
-
-        # WebAuthn registration
-        # Fetch challenge IDs for the user
-        challenge_ids = await sql.get_user_credentials(user_id)
-
-        credential = await register_chat(
-            ws, user_id, user.user_name, challenge_ids, origin=origin
-        )
-
-        # Store the new credential in the database
-        await sql.create_credential_for_user(credential)
-
-        await ws.send_json(
-            {
-                "status": "success",
-                "user_id": str(user_id),
-                "credential_id": credential.credential_id.hex(),
-                "message": "New credential added successfully via device addition session",
-            }
-        )
-    except ValueError as e:
-        await ws.send_json({"error": str(e)})
-    except WebSocketDisconnect:
-        pass
-    except Exception:
-        logging.exception("Internal Server Error")
-        await ws.send_json({"error": "Internal Server Error"})
-
-
-@ws_app.websocket("/authenticate")
-async def websocket_authenticate(ws: WebSocket):
+@app.websocket("/authenticate")
+async def websocket_authenticate(request: Request, ws: WebSocket):
     await ws.accept()
     origin = ws.headers.get("origin")
     try:
@@ -242,19 +155,21 @@ async def websocket_authenticate(ws: WebSocket):
         # Verify the credential matches the stored data
         passkey.auth_verify(credential, challenge, stored_cred, origin=origin)
         # Update both credential and user's last_seen timestamp
-        await sql.login_user(stored_cred.user_id, stored_cred)
+        await sql.login_user(stored_cred.user_uuid, stored_cred)
 
         # Create a session token for the authenticated user
-        client_info = get_client_info_from_websocket(ws)
-        session_token = await create_session_token(
-            stored_cred.user_id, stored_cred.credential_id, client_info
+        assert stored_cred.uuid is not None
+        token = await create_session(
+            user_uuid=stored_cred.user_uuid,
+            info=infodict(request, "auth"),
+            credential_uuid=stored_cred.uuid,
         )
 
         await ws.send_json(
             {
                 "status": "success",
-                "user_id": str(stored_cred.user_id),
-                "session_token": session_token,
+                "user_uuid": str(stored_cred.user_uuid),
+                "session_token": token,
             }
         )
     except (ValueError, InvalidAuthenticationResponse) as e:

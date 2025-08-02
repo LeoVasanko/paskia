@@ -2,8 +2,18 @@ import secrets
 
 from .wordlist import words
 
+N_WORDS = 5
 
-def generate(n=4, sep="."):
+wset = set(words)
+
+
+def generate(n=N_WORDS, sep="."):
     """Generate a password of random words without repeating any word."""
-    wl = list(words)
+    wl = words.copy()
     return sep.join(wl.pop(secrets.randbelow(len(wl))) for i in range(n))
+
+
+def is_well_formed(passphrase: str, n=N_WORDS, sep=".") -> bool:
+    """Check if the passphrase is well-formed according to the regex pattern."""
+    p = passphrase.split(sep)
+    return len(p) == n and all(w in wset for w in passphrase.split("."))

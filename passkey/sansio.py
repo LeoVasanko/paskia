@@ -8,7 +8,6 @@ This module provides a unified interface for WebAuthn operations including:
 """
 
 import json
-from dataclasses import dataclass
 from datetime import datetime
 from uuid import UUID
 
@@ -36,21 +35,7 @@ from webauthn.helpers.structs import (
     UserVerificationRequirement,
 )
 
-
-@dataclass
-class StoredCredential:
-    """Credential data stored in the database."""
-
-    # Fields set only at registration time
-    credential_id: bytes
-    user_id: UUID
-    aaguid: UUID
-    public_key: bytes
-    # Mutable fields that may be updated during authentication
-    sign_count: int
-    created_at: datetime
-    last_used: datetime | None = None
-    last_verified: datetime | None = None
+from .db import Credential
 
 
 class Passkey:
@@ -129,7 +114,7 @@ class Passkey:
         expected_challenge: bytes,
         user_id: UUID,
         origin: str | None = None,
-    ) -> StoredCredential:
+    ) -> Credential:
         """
         Verify registration response.
 
@@ -147,7 +132,7 @@ class Passkey:
             expected_origin=origin or self.origin,
             expected_rp_id=self.rp_id,
         )
-        return StoredCredential(
+        return Credential(
             credential_id=credential.raw_id,
             user_id=user_id,
             aaguid=UUID(registration.aaguid),
@@ -195,7 +180,7 @@ class Passkey:
         self,
         credential: AuthenticationCredential,
         expected_challenge: bytes,
-        stored_cred: StoredCredential,
+        stored_cred: Credential,
         origin: str | None = None,
     ) -> VerifiedAuthentication:
         """

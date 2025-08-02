@@ -22,7 +22,12 @@ import AddCredentialView from '@/components/AddCredentialView.vue'
 const store = useAuthStore()
 
 onMounted(async () => {
-  // Check for device addition session first
+  // Was an error message passed in the URL?
+  const message = location.hash.substring(1)
+  if (message) {
+    store.showMessage(decodeURIComponent(message), 'error')
+    history.replaceState(null, '', location.pathname)
+  }
   try {
     await store.loadUserInfo()
   } catch (error) {
