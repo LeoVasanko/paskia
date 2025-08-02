@@ -17,7 +17,6 @@ from pathlib import Path
 from fastapi import Cookie, FastAPI, Request, Response
 from fastapi.responses import (
     FileResponse,
-    JSONResponse,
 )
 from fastapi.staticfiles import StaticFiles
 
@@ -52,7 +51,12 @@ async def forward_authentication(request: Request, auth=Cookie(None)):
         s = await session.get_session(auth)
         # If authenticated, return a success response
         if s.info and s.info["type"] == "authenticated":
-            return Response(status_code=204, headers={"x-auth-user": str(s.user_uuid)})
+            return Response(
+                status_code=204,
+                headers={
+                    "x-auth-user-uuid": str(s.user_uuid),
+                },
+            )
 
     # Serve the index.html of the authentication app if not authenticated
     return FileResponse(
@@ -68,18 +72,9 @@ app.mount(
 )
 
 
-@app.get("/auth")
+@app.get("/auth/")
 async def redirect_to_index():
     """Serve the main authentication app."""
-    return FileResponse(STATIC_DIR / "index.html")
-
-
-# Catch-all route for SPA - serve index.html for all non-API routes
-@app.get("/{path:path}")
-async def spa_handler(request: Request, path: str):
-    """Serve the Vue SPA for all routes (except API and static)"""
-    if "text/html" not in request.headers.get("accept", ""):
-        return JSONResponse({"error": "Not Found"}, status_code=404)
     return FileResponse(STATIC_DIR / "index.html")
 
 

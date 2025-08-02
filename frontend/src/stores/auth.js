@@ -79,6 +79,8 @@ export const useAuthStore = defineStore('auth', {
       this.currentUser = result.user
       this.currentCredentials = result.credentials || []
       this.aaguidInfo = result.aaguid_info || {}
+      if (result.session_type === 'device addition') this.currentView = 'add-credential'
+      console.log('User info loaded:', result)
     },
     async deleteCredential(uuid) {
       const response = await fetch(`/auth/credential/${uuid}`, {method: 'DELETE'})

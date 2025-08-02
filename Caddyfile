@@ -1,6 +1,5 @@
 (auth) {
-	# Forward /auth to the authentication service
-	redir /auth /auth/ 302
+	# Forward /auth/ to the authentication service
 	@auth path /auth/*
 	handle @auth {
 		reverse_proxy localhost:4401
@@ -9,7 +8,7 @@
 		# Check for authentication
 		forward_auth localhost:4401 {
 			uri /auth/forward-auth
-			copy_headers x-auth-user-id
+			copy_headers x-auth*
 		}
 		{block}
 	}
