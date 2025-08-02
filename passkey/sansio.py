@@ -11,6 +11,7 @@ import json
 from datetime import datetime
 from uuid import UUID
 
+import uuid7
 from webauthn import (
     generate_authentication_options,
     generate_registration_options,
@@ -112,7 +113,7 @@ class Passkey:
         self,
         response_json: dict | str,
         expected_challenge: bytes,
-        user_id: UUID,
+        user_uuid: UUID,
         origin: str | None = None,
     ) -> Credential:
         """
@@ -133,8 +134,9 @@ class Passkey:
             expected_rp_id=self.rp_id,
         )
         return Credential(
+            uuid=uuid7.create(),
             credential_id=credential.raw_id,
-            user_id=user_id,
+            user_uuid=user_uuid,
             aaguid=UUID(registration.aaguid),
             public_key=registration.credential_public_key,
             sign_count=registration.sign_count,

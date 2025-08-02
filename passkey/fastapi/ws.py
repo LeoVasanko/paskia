@@ -13,7 +13,7 @@ from datetime import datetime
 from uuid import UUID
 
 import uuid7
-from fastapi import Cookie, FastAPI, Query, Request, WebSocket, WebSocketDisconnect
+from fastapi import Cookie, FastAPI, Query, WebSocket, WebSocketDisconnect
 from webauthn.helpers.exceptions import InvalidAuthenticationResponse
 
 from passkey.fastapi import session
@@ -54,7 +54,7 @@ async def register_chat(
 
 @app.websocket("/register")
 async def websocket_register_new(
-    request: Request, ws: WebSocket, user_name: str = Query(""), auth=Cookie(None)
+    ws: WebSocket, user_name: str = Query(""), auth=Cookie(None)
 ):
     """Register a new user and with a new passkey credential."""
     await ws.accept()
@@ -75,7 +75,7 @@ async def websocket_register_new(
             user_uuid=user_uuid,
             key=session_key(token),
             expires=datetime.now() + session.EXPIRES,
-            info=infodict(request, "authenticated"),
+            info=infodict(ws, "authenticated"),
             credential_uuid=credential.uuid,
         )
 
@@ -142,7 +142,7 @@ async def websocket_register_add(ws: WebSocket, token: str | None = None):
 
 
 @app.websocket("/authenticate")
-async def websocket_authenticate(request: Request, ws: WebSocket):
+async def websocket_authenticate(ws: WebSocket):
     await ws.accept()
     origin = ws.headers.get("origin")
     try:
@@ -161,7 +161,7 @@ async def websocket_authenticate(request: Request, ws: WebSocket):
         assert stored_cred.uuid is not None
         token = await create_session(
             user_uuid=stored_cred.user_uuid,
-            info=infodict(request, "auth"),
+            info=infodict(ws, "auth"),
             credential_uuid=stored_cred.uuid,
         )
 
