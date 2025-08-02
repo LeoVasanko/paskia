@@ -16,29 +16,10 @@
 <script setup>
 import { useAuthStore } from '@/stores/auth'
 import { registerCredential } from '@/utils/passkey'
-import { ref, onMounted } from 'vue'
+import { ref, computed } from 'vue'
 
 const authStore = useAuthStore()
-const hasDeviceSession = ref(false)
-
-// Check existing session on app load
-onMounted(async () => {
-  try {
-    // Check if we have a device addition session
-    const response = await fetch('/auth/device-session-check')
-    const data = await response.json()
-
-    if (data.device_addition_session) {
-      hasDeviceSession.value = true
-    } else {
-      authStore.showMessage('No device addition session found.', 'error')
-      authStore.currentView = 'login'
-    }
-  } catch (error) {
-    authStore.showMessage('Failed to check device addition session.', 'error')
-    authStore.currentView = 'login'
-  }
-})
+const hasDeviceSession = computed(() => !!authStore.currentUser)
 
 function register() {
   if (!hasDeviceSession.value) {

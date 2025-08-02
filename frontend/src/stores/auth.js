@@ -80,14 +80,8 @@ export const useAuthStore = defineStore('auth', {
       this.currentCredentials = result.credentials || []
       this.aaguidInfo = result.aaguid_info || {}
     },
-    async deleteCredential(credentialId) {
-      const response = await fetch('/auth/delete-credential', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ credential_id: credentialId })
-      })
+    async deleteCredential(uuid) {
+      const response = await fetch(`/auth/credential/${uuid}`, {method: 'DELETE'})
       const result = await response.json()
       if (result.error) throw new Error(`Server: ${result.error}`)
 

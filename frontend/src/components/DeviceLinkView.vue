@@ -7,9 +7,9 @@
         <h2>Device Addition Link</h2>
         <div class="qr-container">
           <canvas id="qrCode" class="qr-code"></canvas>
-          <p v-if="deviceLink.url">
-            <a :href="deviceLink.url" id="deviceLinkText" @click="copyLink">
-              {{ deviceLink.url.replace(/^[^:]+:\/\//, '') }}
+          <p v-if="url">
+            <a :href="url" id="deviceLinkText" @click="copyLink">
+              {{ url.replace(/^[^:]+:\/\//, '') }}
             </a>
           </p>
         </div>
@@ -33,12 +33,12 @@ import { useAuthStore } from '@/stores/auth'
 import QRCode from 'qrcode/lib/browser'
 
 const authStore = useAuthStore()
-const deviceLink = ref({ url: '', token: '' })
+const url = ref(null)
 
 const copyLink = async (event) => {
   event.preventDefault()
-  if (deviceLink.value.url) {
-    await navigator.clipboard.writeText(deviceLink.value.url)
+  if (url.value) {
+    await navigator.clipboard.writeText(url.value)
     authStore.showMessage('Link copied to clipboard!')
     authStore.currentView = 'profile'
   }
@@ -50,15 +50,12 @@ onMounted(async () => {
     const result = await response.json()
     if (result.error) throw new Error(result.error)
 
-    deviceLink.value = {
-      url: result.addition_link,
-      token: result.token
-    }
+    url.value = result.url
 
     // Generate QR code
     const qrCodeElement = document.getElementById('qrCode')
     if (qrCodeElement) {
-      QRCode.toCanvas(qrCodeElement, deviceLink.value.url, error => {
+      QRCode.toCanvas(qrCodeElement, url.value, error => {
         if (error) console.error('Failed to generate QR code:', error)
       })
     }
