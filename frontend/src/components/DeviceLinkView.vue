@@ -6,18 +6,20 @@
       <div class="device-link-section">
         <h2>Device Addition Link</h2>
         <div class="qr-container">
-          <canvas id="qrCode" class="qr-code"></canvas>
-          <p v-if="url">
-            <a :href="url" id="deviceLinkText" @click="copyLink">
+          <a :href="url" id="deviceLinkText" @click="copyLink">
+            <canvas id="qrCode" class="qr-code"></canvas>
+            <p v-if="url">
               {{ url.replace(/^[^:]+:\/\//, '') }}
-            </a>
+            </p>
+            <p v-else>
+              <em>Generating link...</em>
+            </p>
+          </a>
+          <p>
+            <strong>Scan and visit the URL on another device.</strong><br>
+            <small>⚠️ Expires in 24 hours and can only be used once.</small>
           </p>
         </div>
-
-        <p>
-          <strong>Scan and visit the URL on another device.</strong><br>
-          <small>⚠️ Expires in 24 hours and can only be used once.</small>
-        </p>
       </div>
 
       <button @click="authStore.currentView = 'profile'" class="btn-secondary">
@@ -55,7 +57,7 @@ onMounted(async () => {
     // Generate QR code
     const qrCodeElement = document.getElementById('qrCode')
     if (qrCodeElement) {
-      QRCode.toCanvas(qrCodeElement, url.value, error => {
+      QRCode.toCanvas(qrCodeElement, url.value, {scale: 8 }, error => {
         if (error) console.error('Failed to generate QR code:', error)
       })
     }
