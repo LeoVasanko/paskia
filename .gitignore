@@ -4,5 +4,4 @@ dist/
 !.gitignore
 *.lock
 *.db
-server-secret.bin
 /passkey/frontend-build
