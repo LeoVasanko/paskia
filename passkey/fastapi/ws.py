@@ -20,7 +20,7 @@ from passkey.fastapi import session
 
 from ..db import User, sql
 from ..sansio import Passkey
-from ..util.tokens import create_token, reset_key, session_key
+from ..util.tokens import create_token, session_key
 from .session import create_session, infodict
 
 # Create a FastAPI subapp for WebSocket endpoints
@@ -96,20 +96,13 @@ async def websocket_register_new(
 
 
 @app.websocket("/add_credential")
-async def websocket_register_add(ws: WebSocket, token: str | None = None):
+async def websocket_register_add(ws: WebSocket, auth=Cookie(None)):
     """Register a new credential for an existing user."""
+    print(auth)
     await ws.accept()
     origin = ws.headers.get("origin")
     try:
-        if not token:
-            await ws.send_json({"error": "Token is required"})
-            return
-        # If a token is provided, use it to look up the session
-        key = reset_key(token)
-        s = await sql.get_session(key)
-        if not s:
-            await ws.send_json({"error": "Invalid or expired token"})
-            return
+        s = await session.get_session(auth, reset_allowed=True)
         user_uuid = s.user_uuid
 
         # Get user information to get the user_name
@@ -119,7 +112,7 @@ async def websocket_register_add(ws: WebSocket, token: str | None = None):
 
         # WebAuthn registration
         credential = await register_chat(
-            ws, user_uuid, user_name, challenge_ids, origin=origin
+            ws, user_uuid, user_name, challenge_ids, origin
         )
         # Store the new credential in the database
         await sql.create_credential_for_user(credential)

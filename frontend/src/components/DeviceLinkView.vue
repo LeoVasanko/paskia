@@ -60,7 +60,8 @@ onMounted(async () => {
       })
     }
   } catch (error) {
-    console.error('Failed to create link:', error)
+    authStore.showMessage(`Failed to create device link: ${error.message}`, 'error')
+    authStore.currentView = 'profile'
   }
 })
 </script>

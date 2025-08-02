@@ -5,7 +5,7 @@ This module provides dataclasses and database abstractions for managing
 users, credentials, and sessions in a WebAuthn authentication system.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from uuid import UUID
 
@@ -43,8 +43,8 @@ class Session:
     key: bytes
     user_uuid: UUID
     expires: datetime
+    info: dict
     credential_uuid: UUID | None = None
-    info: dict | None = None
 
 
 __all__ = ["User", "Credential", "Session"]

@@ -81,6 +81,7 @@ def register_api_routes(app: FastAPI):
 
             return {
                 "status": "success",
+                "session_type": s.info["type"],
                 "user": {
                     "user_uuid": str(u.user_uuid),
                     "user_name": u.user_name,
@@ -91,8 +92,10 @@ def register_api_routes(app: FastAPI):
                 "credentials": credentials,
                 "aaguid_info": aaguid_info,
             }
-        except Exception as e:
-            return {"error": f"Failed to get user info: {str(e)}"}
+        except ValueError as e:
+            return {"error": f"Failed to get user info: {e}"}
+        except Exception:
+            return {"error": "Failed to get user info"}
 
     @app.post("/auth/logout")
     async def api_logout(response: Response, auth=Cookie(None)):
@@ -123,7 +126,7 @@ def register_api_routes(app: FastAPI):
         except ValueError as e:
             return {"error": str(e)}
         except Exception as e:
-            return {"error": f"Failed to set session: {str(e)}"}
+            return {"error": f"Failed to set session: {e}"}
 
     @app.delete("/auth/credential/{uuid}")
     async def api_delete_credential(uuid: UUID, auth: str = Cookie(None)):
