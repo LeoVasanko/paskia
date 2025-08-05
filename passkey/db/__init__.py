@@ -13,8 +13,6 @@ from uuid import UUID
 
 @dataclass
 class User:
-    """User data structure."""
-
     user_uuid: UUID
     user_name: str
     created_at: datetime | None = None
@@ -24,10 +22,8 @@ class User:
 
 @dataclass
 class Credential:
-    """Credential data structure."""
-
     uuid: UUID
-    credential_id: bytes
+    credential_id: bytes  # Long binary ID passed from the authenticator
     user_uuid: UUID
     aaguid: UUID
     public_key: bytes
@@ -35,6 +31,14 @@ class Credential:
     created_at: datetime
     last_used: datetime | None = None
     last_verified: datetime | None = None
+
+
+@dataclass
+class Org:
+    """Organization data structure."""
+
+    id: str  # ASCII primary key
+    options: dict
 
 
 @dataclass
@@ -122,6 +126,41 @@ class DatabaseInterface(ABC):
     async def cleanup(self) -> None:
         """Called periodically to clean up expired records."""
 
+    # Organization operations
+    @abstractmethod
+    async def create_organization(self, organization: Org) -> None:
+        """Create a new organization."""
+
+    @abstractmethod
+    async def get_organization(self, org_id: str) -> Org:
+        """Get organization by ID."""
+
+    @abstractmethod
+    async def update_organization(self, organization: Org) -> None:
+        """Update organization options."""
+
+    @abstractmethod
+    async def delete_organization(self, org_id: str) -> None:
+        """Delete organization by ID."""
+
+    @abstractmethod
+    async def add_user_to_organization(
+        self, user_uuid: UUID, org_id: str, role: str
+    ) -> None:
+        """Add a user to an organization with a specific role."""
+
+    @abstractmethod
+    async def remove_user_from_organization(self, user_uuid: UUID, org_id: str) -> None:
+        """Remove a user from an organization."""
+
+    @abstractmethod
+    async def get_user_org_role(self, user_uuid: UUID) -> list[tuple[Org, str]]:
+        """Get all organizations for a user with their roles."""
+
+    @abstractmethod
+    async def get_organization_users(self, org_id: str) -> list[tuple[User, str]]:
+        """Get all users in an organization with their roles."""
+
     # Combined operations
     @abstractmethod
     async def login(self, user_uuid: UUID, credential: Credential) -> None:
@@ -160,6 +199,7 @@ __all__ = [
     "User",
     "Credential",
     "Session",
+    "Org",
     "DatabaseInterface",
     "db",
 ]
