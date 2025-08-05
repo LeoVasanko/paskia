@@ -20,7 +20,7 @@ from fastapi.responses import (
 )
 from fastapi.staticfiles import StaticFiles
 
-from ..db import sql
+from ..db import close_db, init_db
 from . import session, ws
 from .api import register_api_routes
 from .reset import register_reset_routes
@@ -30,8 +30,9 @@ STATIC_DIR = Path(__file__).parent.parent / "frontend-build"
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    await sql.init_database()
+    await init_db()
     yield
+    await close_db()
 
 
 app = FastAPI(lifespan=lifespan)

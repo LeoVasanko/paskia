@@ -14,7 +14,7 @@ from fastapi import Cookie, Depends, FastAPI, Request, Response
 from fastapi.security import HTTPBearer
 
 from .. import aaguid
-from ..db import sql
+from ..db import database
 from ..util.tokens import session_key
 from . import session
 
@@ -38,19 +38,19 @@ def register_api_routes(app: FastAPI):
             return {"status": "error", "valid": False}
 
     @app.post("/auth/user-info")
-    async def api_user_info(request: Request, response: Response, auth=Cookie(None)):
+    async def api_user_info(auth=Cookie(None)):
         """Get full user information for the authenticated user."""
         try:
             s = await session.get_session(auth, reset_allowed=True)
-            u = await sql.get_user_by_uuid(s.user_uuid)
+            u = await database().get_user_by_user_uuid(s.user_uuid)
             # Get all credentials for the user
-            credential_ids = await sql.get_user_credentials(s.user_uuid)
+            credential_ids = await database().get_credentials_by_user_uuid(s.user_uuid)
 
             credentials = []
             user_aaguids = set()
 
             for cred_id in credential_ids:
-                c = await sql.get_credential_by_id(cred_id)
+                c = await database().get_credential_by_id(cred_id)
 
                 # Convert AAGUID to string format
                 aaguid_str = str(c.aaguid)
@@ -102,14 +102,12 @@ def register_api_routes(app: FastAPI):
         """Log out the current user by clearing the session cookie and deleting from database."""
         if not auth:
             return {"status": "success", "message": "Already logged out"}
-        await sql.delete_session(session_key(auth))
+        await database().delete_session(session_key(auth))
         response.delete_cookie("auth")
         return {"status": "success", "message": "Logged out successfully"}
 
     @app.post("/auth/set-session")
-    async def api_set_session(
-        request: Request, response: Response, auth=Depends(bearer_auth)
-    ):
+    async def api_set_session(response: Response, auth=Depends(bearer_auth)):
         """Set session cookie from Authorization header. Fetched after login by WebSocket."""
         try:
             user = await session.get_session(auth.credentials)
