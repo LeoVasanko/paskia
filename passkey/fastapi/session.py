@@ -14,7 +14,7 @@ from uuid import UUID
 
 from fastapi import Request, Response, WebSocket
 
-from ..db import Session, database
+from ..db import Session, db
 from ..util import passphrase
 from ..util.tokens import create_token, reset_key, session_key
 
@@ -37,7 +37,7 @@ def infodict(request: Request | WebSocket, type: str) -> dict:
 async def create_session(user_uuid: UUID, info: dict, credential_uuid: UUID) -> str:
     """Create a new session and return a session token."""
     token = create_token()
-    await database().create_session(
+    await db.instance.create_session(
         user_uuid=user_uuid,
         key=session_key(token),
         expires=datetime.now() + EXPIRES,
@@ -56,7 +56,7 @@ async def get_session(token: str, reset_allowed=False) -> Session:
     else:
         key = session_key(token)
 
-    session = await database().get_session(key)
+    session = await db.instance.get_session(key)
     if not session:
         raise ValueError("Invalid or expired session token")
     return session
@@ -65,7 +65,7 @@ async def get_session(token: str, reset_allowed=False) -> Session:
 async def refresh_session_token(token: str):
     """Refresh a session extending its expiry."""
     # Get the current session
-    s = await database().update_session(
+    s = await db.instance.update_session(
         session_key(token), datetime.now() + EXPIRES, {}
     )
 
@@ -88,4 +88,4 @@ def set_session_cookie(response: Response, token: str) -> None:
 async def delete_credential(credential_uuid: UUID, auth: str):
     """Delete a specific credential for the current user."""
     s = await get_session(auth)
-    await database().delete_credential(credential_uuid, s.user_uuid)
+    await db.instance.delete_credential(credential_uuid, s.user_uuid)

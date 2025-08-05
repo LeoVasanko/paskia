@@ -3,7 +3,7 @@ import logging
 from fastapi import Cookie, HTTPException, Request
 from fastapi.responses import RedirectResponse
 
-from ..db import database
+from ..db import db
 from ..util import passphrase, tokens
 from . import session
 
@@ -20,7 +20,7 @@ def register_reset_routes(app):
 
             # Generate a human-readable token
             token = passphrase.generate()  # e.g., "cross.rotate.yin.note.evoke"
-            await database().create_session(
+            await db.instance.create_session(
                 user_uuid=s.user_uuid,
                 key=tokens.reset_key(token),
                 expires=session.expires(),
@@ -56,7 +56,7 @@ def register_reset_routes(app):
         try:
             # Get session token to validate it exists and get user_id
             key = tokens.reset_key(reset_token)
-            sess = await database().get_session(key)
+            sess = await db.instance.get_session(key)
             if not sess:
                 raise ValueError("Invalid or expired registration token")
 

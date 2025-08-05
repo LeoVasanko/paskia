@@ -23,15 +23,14 @@ from sqlalchemy.dialects.sqlite import BLOB, JSON
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
-from . import Credential, DatabaseInterface, Session, User
+from . import Credential, DatabaseInterface, Session, User, db
 
 DB_PATH = "sqlite+aiosqlite:///webauthn.db"
 
 
-def init(*args, **kwargs):
-    from .. import db
-
-    db.database_instance = DB()
+async def init(*args, **kwargs):
+    db.instance = DB()
+    await db.instance.init_db()
 
 
 # SQLAlchemy Models

@@ -1,14 +1,3 @@
-"""
-Minimal FastAPI WebAuthn server with WebSocket support for passkey registration and authentication.
-
-This module provides a simple WebAuthn implementation that:
-- Uses WebSocket for real-time communication
-- Supports Resident Keys (discoverable credentials) for passwordless authentication
-- Maintains challenges locally per connection
-- Uses async SQLite database for persistent storage of users and credentials
-- Enables true passwordless authentication where users don't need to enter a user_name
-"""
-
 import contextlib
 import logging
 from contextlib import asynccontextmanager
@@ -20,7 +9,6 @@ from fastapi.responses import (
 )
 from fastapi.staticfiles import StaticFiles
 
-from ..db import close_db, init_db
 from . import session, ws
 from .api import register_api_routes
 from .reset import register_reset_routes
@@ -30,9 +18,10 @@ STATIC_DIR = Path(__file__).parent.parent / "frontend-build"
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    await init_db()
+    from ..db import sql
+
+    await sql.init()
     yield
-    await close_db()
 
 
 app = FastAPI(lifespan=lifespan)
