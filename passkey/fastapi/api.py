@@ -14,7 +14,7 @@ from fastapi import Cookie, Depends, FastAPI, Request, Response
 from fastapi.security import HTTPBearer
 
 from .. import aaguid
-from ..db import database
+from ..db import db
 from ..util.tokens import session_key
 from . import session
 
@@ -42,15 +42,15 @@ def register_api_routes(app: FastAPI):
         """Get full user information for the authenticated user."""
         try:
             s = await session.get_session(auth, reset_allowed=True)
-            u = await database().get_user_by_user_uuid(s.user_uuid)
+            u = await db.instance.get_user_by_user_uuid(s.user_uuid)
             # Get all credentials for the user
-            credential_ids = await database().get_credentials_by_user_uuid(s.user_uuid)
+            credential_ids = await db.instance.get_credentials_by_user_uuid(s.user_uuid)
 
             credentials = []
             user_aaguids = set()
 
             for cred_id in credential_ids:
-                c = await database().get_credential_by_id(cred_id)
+                c = await db.instance.get_credential_by_id(cred_id)
 
                 # Convert AAGUID to string format
                 aaguid_str = str(c.aaguid)
@@ -102,7 +102,7 @@ def register_api_routes(app: FastAPI):
         """Log out the current user by clearing the session cookie and deleting from database."""
         if not auth:
             return {"status": "success", "message": "Already logged out"}
-        await database().delete_session(session_key(auth))
+        await db.instance.delete_session(session_key(auth))
         response.delete_cookie("auth")
         return {"status": "success", "message": "Logged out successfully"}
 

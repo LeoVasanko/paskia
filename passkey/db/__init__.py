@@ -134,15 +134,26 @@ class DatabaseInterface(ABC):
         """Create a new user and their first credential in a transaction."""
 
 
-# Global DB instance
-database_instance: DatabaseInterface | None = None
+class DatabaseManager:
+    """Manager for the global database instance."""
+
+    def __init__(self):
+        self._instance: DatabaseInterface | None = None
+
+    @property
+    def instance(self) -> DatabaseInterface:
+        if self._instance is None:
+            raise RuntimeError(
+                "Database not initialized. Call e.g. db.sql.init() first."
+            )
+        return self._instance
+
+    @instance.setter
+    def instance(self, instance: DatabaseInterface) -> None:
+        self._instance = instance
 
 
-def database() -> DatabaseInterface:
-    """Get the global database instance."""
-    if database_instance is None:
-        raise RuntimeError("Database not initialized. Call e.g. db.sql.init() first.")
-    return database_instance
+db = DatabaseManager()
 
 
 __all__ = [
@@ -150,6 +161,5 @@ __all__ = [
     "Credential",
     "Session",
     "DatabaseInterface",
-    "database_instance",
-    "database",
+    "db",
 ]

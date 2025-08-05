@@ -18,7 +18,7 @@ from webauthn.helpers.exceptions import InvalidAuthenticationResponse
 
 from passkey.fastapi import session
 
-from ..db import User, database
+from ..db import User, db
 from ..sansio import Passkey
 from ..util.tokens import create_token, session_key
 from .session import create_session, infodict
@@ -65,13 +65,13 @@ async def websocket_register_new(
         credential = await register_chat(ws, user_uuid, user_name, origin=origin)
 
         # Store the user and credential in the database
-        await database().create_user_and_credential(
+        await db.instance.create_user_and_credential(
             User(user_uuid, user_name, created_at=datetime.now()),
             credential,
         )
         # Create a session token for the new user
         token = create_token()
-        await database().create_session(
+        await db.instance.create_session(
             user_uuid=user_uuid,
             key=session_key(token),
             expires=datetime.now() + session.EXPIRES,
@@ -106,16 +106,16 @@ async def websocket_register_add(ws: WebSocket, auth=Cookie(None)):
         user_uuid = s.user_uuid
 
         # Get user information to get the user_name
-        user = await database().get_user_by_user_uuid(user_uuid)
+        user = await db.instance.get_user_by_user_uuid(user_uuid)
         user_name = user.user_name
-        challenge_ids = await database().get_credentials_by_user_uuid(user_uuid)
+        challenge_ids = await db.instance.get_credentials_by_user_uuid(user_uuid)
 
         # WebAuthn registration
         credential = await register_chat(
             ws, user_uuid, user_name, challenge_ids, origin
         )
         # Store the new credential in the database
-        await database().create_credential(credential)
+        await db.instance.create_credential(credential)
 
         await ws.send_json(
             {
@@ -144,11 +144,11 @@ async def websocket_authenticate(ws: WebSocket):
         # Wait for the client to use his authenticator to authenticate
         credential = passkey.auth_parse(await ws.receive_json())
         # Fetch from the database by credential ID
-        stored_cred = await database().get_credential_by_id(credential.raw_id)
+        stored_cred = await db.instance.get_credential_by_id(credential.raw_id)
         # Verify the credential matches the stored data
         passkey.auth_verify(credential, challenge, stored_cred, origin=origin)
         # Update both credential and user's last_seen timestamp
-        await database().login(stored_cred.user_uuid, stored_cred)
+        await db.instance.login(stored_cred.user_uuid, stored_cred)
 
         # Create a session token for the authenticated user
         assert stored_cred.uuid is not None
