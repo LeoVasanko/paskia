@@ -3,6 +3,7 @@ import logging
 from fastapi import Cookie, HTTPException, Request
 from fastapi.responses import RedirectResponse
 
+from ..authsession import expires, get_session
 from ..db import db
 from ..util import passphrase, tokens
 from . import session
@@ -16,14 +17,14 @@ def register_reset_routes(app):
         """Create a device addition link for the authenticated user."""
         try:
             # Require authentication
-            s = await session.get_session(auth)
+            s = await get_session(auth)
 
             # Generate a human-readable token
             token = passphrase.generate()  # e.g., "cross.rotate.yin.note.evoke"
             await db.instance.create_session(
                 user_uuid=s.user_uuid,
                 key=tokens.reset_key(token),
-                expires=session.expires(),
+                expires=expires(),
                 info=session.infodict(request, "device addition"),
             )
 
@@ -35,7 +36,7 @@ def register_reset_routes(app):
                 "status": "success",
                 "message": "Registration link generated successfully",
                 "url": url,
-                "expires": session.expires().isoformat(),
+                "expires": expires().isoformat(),
             }
 
         except ValueError:

@@ -1,5 +1,4 @@
 import contextlib
-import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -9,7 +8,8 @@ from fastapi.responses import (
 )
 from fastapi.staticfiles import StaticFiles
 
-from . import session, ws
+from ..authsession import get_session
+from . import ws
 from .api import register_api_routes
 from .reset import register_reset_routes
 
@@ -38,7 +38,7 @@ register_reset_routes(app)
 async def forward_authentication(request: Request, auth=Cookie(None)):
     """A validation endpoint to use with Caddy forward_auth or Nginx auth_request."""
     with contextlib.suppress(ValueError):
-        s = await session.get_session(auth)
+        s = await get_session(auth)
         # If authenticated, return a success response
         if s.info and s.info["type"] == "authenticated":
             return Response(
@@ -66,21 +66,3 @@ app.mount(
 async def redirect_to_index():
     """Serve the main authentication app."""
     return FileResponse(STATIC_DIR / "index.html")
-
-
-def main():
-    """Entry point for the application"""
-    import uvicorn
-
-    uvicorn.run(
-        "passkey.fastapi.main:app",
-        host="localhost",
-        port=4401,
-        reload=True,
-        log_level="info",
-    )
-
-
-if __name__ == "__main__":
-    logging.basicConfig(level=logging.DEBUG)
-    main()

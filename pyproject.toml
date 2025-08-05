@@ -36,7 +36,7 @@ ignore = ["E501"]  # Line too long
 known-first-party = ["passkey"]
 
 [project.scripts]
-serve = "passkey.main:main"
+passkey-auth = "passkey.fastapi.__main__:main"
 
 [tool.hatch.build]
 artifacts = ["passkeyauth/frontend-static"]

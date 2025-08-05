@@ -14,6 +14,7 @@ from fastapi import Cookie, Depends, FastAPI, Request, Response
 from fastapi.security import HTTPBearer
 
 from .. import aaguid
+from ..authsession import delete_credential, get_session
 from ..db import db
 from ..util.tokens import session_key
 from . import session
@@ -28,7 +29,7 @@ def register_api_routes(app: FastAPI):
     async def validate_token(request: Request, response: Response, auth=Cookie(None)):
         """Lightweight token validation endpoint."""
         try:
-            s = await session.get_session(auth)
+            s = await get_session(auth)
             return {
                 "status": "success",
                 "valid": True,
@@ -41,7 +42,7 @@ def register_api_routes(app: FastAPI):
     async def api_user_info(auth=Cookie(None)):
         """Get full user information for the authenticated user."""
         try:
-            s = await session.get_session(auth, reset_allowed=True)
+            s = await get_session(auth, reset_allowed=True)
             u = await db.instance.get_user_by_user_uuid(s.user_uuid)
             # Get all credentials for the user
             credential_ids = await db.instance.get_credentials_by_user_uuid(s.user_uuid)
@@ -110,7 +111,7 @@ def register_api_routes(app: FastAPI):
     async def api_set_session(response: Response, auth=Depends(bearer_auth)):
         """Set session cookie from Authorization header. Fetched after login by WebSocket."""
         try:
-            user = await session.get_session(auth.credentials)
+            user = await get_session(auth.credentials)
             if not user:
                 raise ValueError("Invalid Authorization header.")
             session.set_session_cookie(response, auth.credentials)
@@ -130,7 +131,7 @@ def register_api_routes(app: FastAPI):
     async def api_delete_credential(uuid: UUID, auth: str = Cookie(None)):
         """Delete a specific credential for the current user."""
         try:
-            await session.delete_credential(uuid, auth)
+            await delete_credential(uuid, auth)
             return {"status": "success", "message": "Credential deleted successfully"}
 
         except ValueError as e:

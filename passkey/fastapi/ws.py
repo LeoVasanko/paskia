@@ -16,12 +16,11 @@ import uuid7
 from fastapi import Cookie, FastAPI, Query, WebSocket, WebSocketDisconnect
 from webauthn.helpers.exceptions import InvalidAuthenticationResponse
 
-from passkey.fastapi import session
-
+from ..authsession import EXPIRES, create_session, get_session
 from ..db import User, db
 from ..sansio import Passkey
 from ..util.tokens import create_token, session_key
-from .session import create_session, infodict
+from .session import infodict
 
 # Create a FastAPI subapp for WebSocket endpoints
 app = FastAPI()
@@ -74,7 +73,7 @@ async def websocket_register_new(
         await db.instance.create_session(
             user_uuid=user_uuid,
             key=session_key(token),
-            expires=datetime.now() + session.EXPIRES,
+            expires=datetime.now() + EXPIRES,
             info=infodict(ws, "authenticated"),
             credential_uuid=credential.uuid,
         )
@@ -102,7 +101,7 @@ async def websocket_register_add(ws: WebSocket, auth=Cookie(None)):
     await ws.accept()
     origin = ws.headers.get("origin")
     try:
-        s = await session.get_session(auth, reset_allowed=True)
+        s = await get_session(auth, reset_allowed=True)
         user_uuid = s.user_uuid
 
         # Get user information to get the user_name
