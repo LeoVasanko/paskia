@@ -25,7 +25,7 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 from . import Credential, DatabaseInterface, Session, User, db
 
-DB_PATH = "sqlite+aiosqlite:///webauthn.db"
+DB_PATH = "sqlite+aiosqlite:///passkey-auth.sqlite"
 
 
 async def init(*args, **kwargs):
