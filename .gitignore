@@ -3,5 +3,5 @@ dist/
 .*
 !.gitignore
 *.lock
-*.db
+passkey-auth.sqlite
 /passkey/frontend-build
