@@ -232,28 +232,6 @@ class DatabaseInterface(ABC):
         """Create a new user and their first credential in a transaction."""
 
 
-class DatabaseManager:
-    """Manager for the global database instance."""
-
-    def __init__(self):
-        self._instance: DatabaseInterface | None = None
-
-    @property
-    def instance(self) -> DatabaseInterface:
-        if self._instance is None:
-            raise RuntimeError(
-                "Database not initialized. Call e.g. db.sql.init() first."
-            )
-        return self._instance
-
-    @instance.setter
-    def instance(self, instance: DatabaseInterface) -> None:
-        self._instance = instance
-
-
-db = DatabaseManager()
-
-
 __all__ = [
     "User",
     "Credential",
@@ -261,5 +239,4 @@ __all__ = [
     "Org",
     "Permission",
     "DatabaseInterface",
-    "db",
 ]

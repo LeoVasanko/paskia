@@ -9,6 +9,7 @@ This module provides a unified interface for WebAuthn operations including:
 
 import json
 from datetime import datetime
+from urllib.parse import urlparse
 from uuid import UUID
 
 import uuid7
@@ -45,7 +46,7 @@ class Passkey:
     def __init__(
         self,
         rp_id: str,
-        rp_name: str,
+        rp_name: str | None = None,
         origin: str | None = None,
         supported_pub_key_algs: list[COSEAlgorithmIdentifier] | None = None,
     ):
@@ -54,18 +55,40 @@ class Passkey:
 
         Args:
             rp_id: Your security domain (e.g. "example.com")
-            rp_name: The relying party name (e.g., "My Application" - visible to users)
-            origin: The origin URL of the application (e.g. "https://app.example.com"). Must be a subdomain or same as rp_id, with port and scheme but no path included.
+            rp_name: The relying party display name (e.g. "Example App"). May be shown in authenticators.
+            origin: The origin URL of the application (e.g. "https://app.example.com").
+                   If no scheme is provided, "https://" will be prepended.
+                   Must be a subdomain or same as rp_id, with port and scheme but no path included.
             supported_pub_key_algs: List of supported COSE algorithms (default is EDDSA, ECDSA_SHA_256, RSASSA_PKCS1_v1_5_SHA_256).
+
+        Raises:
+            ValueError: If the origin domain doesn't match or isn't a subdomain of rp_id.
         """
         self.rp_id = rp_id
-        self.rp_name = rp_name
-        self.origin = origin or f"https://{rp_id}"
+        self.rp_name = rp_name or rp_id
+        self.origin = self._normalize_and_validate_origin(origin, rp_id)
         self.supported_pub_key_algs = supported_pub_key_algs or [
             COSEAlgorithmIdentifier.EDDSA,
             COSEAlgorithmIdentifier.ECDSA_SHA_256,
             COSEAlgorithmIdentifier.RSASSA_PKCS1_v1_5_SHA_256,
         ]
+
+    def _normalize_and_validate_origin(self, origin: str | None, rp_id: str) -> str:
+        if origin is None:
+            origin = f"https://{rp_id}"
+        elif "://" not in origin:
+            origin = f"https://{origin}"
+
+        hostname = urlparse(origin).hostname
+        if not hostname:
+            raise ValueError(f"Invalid origin URL: no hostname found in '{origin}'")
+
+        if hostname == rp_id or hostname.endswith(f".{rp_id}"):
+            return origin
+
+        raise ValueError(
+            f"Origin domain '{hostname}' must be the same as or a subdomain of rp_id '{rp_id}'"
+        )
 
     ### Registration Methods ###
 

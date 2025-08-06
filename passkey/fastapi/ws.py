@@ -8,8 +8,8 @@ from fastapi import Cookie, FastAPI, Query, WebSocket, WebSocketDisconnect
 from webauthn.helpers.exceptions import InvalidAuthenticationResponse
 
 from ..authsession import EXPIRES, create_session, get_reset, get_session
-from ..db import User, db
-from ..sansio import Passkey
+from ..db import User
+from ..globals import db, passkey
 from ..util import passphrase
 from ..util.tokens import create_token, session_key
 from .session import infodict
@@ -36,12 +36,6 @@ def websocket_error_handler(func):
 # Create a FastAPI subapp for WebSocket endpoints
 app = FastAPI()
 
-# Initialize the passkey instance
-passkey = Passkey(
-    rp_id="localhost",
-    rp_name="Passkey Auth",
-)
-
 
 async def register_chat(
     ws: WebSocket,
@@ -51,7 +45,7 @@ async def register_chat(
     origin: str | None = None,
 ):
     """Generate registration options and send them to the client."""
-    options, challenge = passkey.reg_generate_options(
+    options, challenge = passkey.instance.reg_generate_options(
         user_id=user_uuid,
         user_name=user_name,
         credential_ids=credential_ids,
@@ -59,7 +53,7 @@ async def register_chat(
     )
     await ws.send_json(options)
     response = await ws.receive_json()
-    return passkey.reg_verify(response, challenge, user_uuid, origin=origin)
+    return passkey.instance.reg_verify(response, challenge, user_uuid, origin=origin)
 
 
 @app.websocket("/register")
@@ -139,14 +133,14 @@ async def websocket_register_add(ws: WebSocket, auth=Cookie(None)):
 @websocket_error_handler
 async def websocket_authenticate(ws: WebSocket):
     origin = ws.headers["origin"]
-    options, challenge = passkey.auth_generate_options()
+    options, challenge = passkey.instance.auth_generate_options()
     await ws.send_json(options)
     # Wait for the client to use his authenticator to authenticate
-    credential = passkey.auth_parse(await ws.receive_json())
+    credential = passkey.instance.auth_parse(await ws.receive_json())
     # Fetch from the database by credential ID
     stored_cred = await db.instance.get_credential_by_id(credential.raw_id)
     # Verify the credential matches the stored data
-    passkey.auth_verify(credential, challenge, stored_cred, origin=origin)
+    passkey.instance.auth_verify(credential, challenge, stored_cred, origin=origin)
     # Update both credential and user's last_seen timestamp
     await db.instance.login(stored_cred.user_uuid, stored_cred)
 
