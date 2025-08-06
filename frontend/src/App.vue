@@ -5,7 +5,7 @@
     <RegisterView v-if="store.currentView === 'register'" />
     <ProfileView v-if="store.currentView === 'profile'" />
     <DeviceLinkView v-if="store.currentView === 'device-link'" />
-    <AddCredentialView v-if="store.currentView === 'add-credential'" />
+    <ResetView v-if="store.currentView === 'reset'" />
   </div>
 </template>
 
@@ -17,7 +17,7 @@ import LoginView from '@/components/LoginView.vue'
 import RegisterView from '@/components/RegisterView.vue'
 import ProfileView from '@/components/ProfileView.vue'
 import DeviceLinkView from '@/components/DeviceLinkView.vue'
-import AddCredentialView from '@/components/AddCredentialView.vue'
+import ResetView from '@/components/ResetView.vue'
 
 const store = useAuthStore()
 
@@ -34,15 +34,6 @@ onMounted(async () => {
     console.log('Failed to load user info:', error)
     store.currentView = 'login'
   }
-  if (store.currentCredentials.length) {
-    // User is logged in, go to profile
-      store.currentView = 'profile'
-  } else if (store.currentUser) {
-    // User is logged in via reset link, allow adding a credential
-    store.currentView = 'add-credential'
-  } else {
-    // User is not logged in, show login
-    store.currentView = 'login'
-  }
+  store.selectView()
 })
 </script>
