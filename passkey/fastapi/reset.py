@@ -1,6 +1,6 @@
 import logging
 
-from fastapi import Cookie, HTTPException, Request
+from fastapi import Cookie, HTTPException, Request, Response
 from fastapi.responses import RedirectResponse
 
 from ..authsession import expires, get_session
@@ -13,7 +13,7 @@ def register_reset_routes(app):
     """Register all device addition/reset routes on the FastAPI app."""
 
     @app.post("/auth/create-link")
-    async def api_create_link(request: Request, auth=Cookie(None)):
+    async def api_create_link(request: Request, response: Response, auth=Cookie(None)):
         """Create a device addition link for the authenticated user."""
         try:
             # Require authentication
@@ -33,16 +33,17 @@ def register_reset_routes(app):
             url = f"{request.headers['origin']}{path}"
 
             return {
-                "status": "success",
                 "message": "Registration link generated successfully",
                 "url": url,
                 "expires": expires().isoformat(),
             }
 
         except ValueError:
-            return {"error": "Authentication required"}
+            response.status_code = 401
+            return {"detail": "Authentication required"}
         except Exception as e:
-            return {"error": f"Failed to create registration link: {str(e)}"}
+            response.status_code = 500
+            return {"detail": f"Failed to create registration link: {str(e)}"}
 
     @app.get("/auth/{reset_token}")
     async def reset_authentication(

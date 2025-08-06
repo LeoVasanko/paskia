@@ -16,9 +16,10 @@ import uuid7
 from fastapi import Cookie, FastAPI, Query, WebSocket, WebSocketDisconnect
 from webauthn.helpers.exceptions import InvalidAuthenticationResponse
 
-from ..authsession import EXPIRES, create_session, get_session
+from ..authsession import EXPIRES, create_session, get_reset, get_session
 from ..db import User, db
 from ..sansio import Passkey
+from ..util import passphrase
 from ..util.tokens import create_token, session_key
 from .session import infodict
 
@@ -80,18 +81,17 @@ async def websocket_register_new(
 
         await ws.send_json(
             {
-                "status": "success",
                 "user_uuid": str(user_uuid),
                 "session_token": token,
             }
         )
     except ValueError as e:
-        await ws.send_json({"error": str(e)})
+        await ws.send_json({"detail": str(e)})
     except WebSocketDisconnect:
         pass
     except Exception:
         logging.exception("Internal Server Error")
-        await ws.send_json({"error": "Internal Server Error"})
+        await ws.send_json({"detail": "Internal Server Error"})
 
 
 @app.websocket("/add_credential")
@@ -100,7 +100,9 @@ async def websocket_register_add(ws: WebSocket, auth=Cookie(None)):
     await ws.accept()
     origin = ws.headers["origin"]
     try:
-        s = await get_session(auth, reset_allowed=True)
+        # Try to get either a regular session or a reset session
+        reset = passphrase.is_well_formed(auth)
+        s = await (get_reset if reset else get_session)(auth)
         user_uuid = s.user_uuid
 
         # Get user information to get the user_name
@@ -126,7 +128,6 @@ async def websocket_register_add(ws: WebSocket, auth=Cookie(None)):
 
         await ws.send_json(
             {
-                "status": "success",
                 "user_uuid": str(user.uuid),
                 "credential_uuid": str(credential.uuid),
                 "session_token": token,
@@ -134,12 +135,12 @@ async def websocket_register_add(ws: WebSocket, auth=Cookie(None)):
             }
         )
     except ValueError as e:
-        await ws.send_json({"error": str(e)})
+        await ws.send_json({"detail": str(e)})
     except WebSocketDisconnect:
         pass
     except Exception:
         logging.exception("Internal Server Error")
-        await ws.send_json({"error": "Internal Server Error"})
+        await ws.send_json({"detail": "Internal Server Error"})
 
 
 @app.websocket("/authenticate")
@@ -168,16 +169,15 @@ async def websocket_authenticate(ws: WebSocket):
 
         await ws.send_json(
             {
-                "status": "success",
                 "user_uuid": str(stored_cred.user_uuid),
                 "session_token": token,
             }
         )
     except (ValueError, InvalidAuthenticationResponse) as e:
         logging.exception("ValueError")
-        await ws.send_json({"error": str(e)})
+        await ws.send_json({"detail": str(e)})
     except WebSocketDisconnect:
         pass
     except Exception:
         logging.exception("Internal Server Error")
-        await ws.send_json({"error": "Internal Server Error"})
+        await ws.send_json({"detail": "Internal Server Error"})

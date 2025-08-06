@@ -28,17 +28,17 @@ def register_api_routes(app: FastAPI):
     """Register all API routes on the FastAPI app."""
 
     @app.post("/auth/validate")
-    async def validate_token(auth=Cookie(None)):
+    async def validate_token(response: Response, auth=Cookie(None)):
         """Lightweight token validation endpoint."""
         try:
             s = await get_session(auth)
             return {
-                "status": "success",
                 "valid": True,
                 "user_uuid": str(s.user_uuid),
             }
         except ValueError:
-            return {"status": "error", "valid": False}
+            response.status_code = 401
+            return {"valid": False}
 
     @app.post("/auth/user-info")
     async def api_user_info(response: Response, auth=Cookie(None)):
@@ -84,7 +84,6 @@ def register_api_routes(app: FastAPI):
             credentials.sort(key=lambda cred: cred["created_at"])
 
             return {
-                "status": "success",
                 "authenticated": not reset,
                 "session_type": s.info["type"],
                 "user": {
@@ -99,24 +98,23 @@ def register_api_routes(app: FastAPI):
             }
         except ValueError as e:
             response.status_code = 400
-            return {"error": f"Failed to get user info: {e}"}
+            return {"detail": f"Failed to get user info: {e}"}
         except Exception:
             response.status_code = 500
-
-            return {"error": "Failed to get user info"}
+            return {"detail": "Failed to get user info"}
 
     @app.post("/auth/logout")
     async def api_logout(response: Response, auth=Cookie(None)):
         """Log out the current user by clearing the session cookie and deleting from database."""
         if not auth:
-            return {"status": "success", "message": "Already logged out"}
+            return {"message": "Already logged out"}
         # Remove from database if possible
         try:
             await db.instance.delete_session(session_key(auth))
         except Exception:
             ...
         response.delete_cookie("auth")
-        return {"status": "success", "message": "Logged out successfully"}
+        return {"message": "Logged out successfully"}
 
     @app.post("/auth/set-session")
     async def api_set_session(response: Response, auth=Depends(bearer_auth)):
@@ -128,17 +126,16 @@ def register_api_routes(app: FastAPI):
             session.set_session_cookie(response, auth.credentials)
 
             return {
-                "status": "success",
                 "message": "Session cookie set successfully",
                 "user_uuid": str(user.user_uuid),
             }
 
         except ValueError as e:
             response.status_code = 400
-            return {"error": str(e)}
+            return {"detail": str(e)}
         except Exception:
             response.status_code = 500
-            return {"error": "Failed to set session"}
+            return {"detail": "Failed to set session"}
 
     @app.delete("/auth/credential/{uuid}")
     async def api_delete_credential(
@@ -147,11 +144,11 @@ def register_api_routes(app: FastAPI):
         """Delete a specific credential for the current user."""
         try:
             await delete_credential(uuid, auth)
-            return {"status": "success", "message": "Credential deleted successfully"}
+            return {"message": "Credential deleted successfully"}
 
         except ValueError as e:
             response.status_code = 400
-            return {"error": str(e)}
+            return {"detail": str(e)}
         except Exception:
             response.status_code = 500
-            return {"error": "Failed to delete credential"}
+            return {"detail": "Failed to delete credential"}

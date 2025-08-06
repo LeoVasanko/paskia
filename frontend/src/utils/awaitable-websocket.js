@@ -57,8 +57,8 @@ class AwaitableWebSocket extends WebSocket {
       console.error("Failed to parse JSON from WebSocket message", data, err)
       throw new Error("Failed to parse JSON from WebSocket message")
     }
-    if (parsed.error) {
-      throw new Error(`Server: ${parsed.error}`)
+    if (parsed.detail) {
+      throw new Error(`Server: ${parsed.detail}`)
     }
     return parsed
   }

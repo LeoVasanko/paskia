@@ -36,8 +36,8 @@ export const useAuthStore = defineStore('auth', {
         headers: {'Authorization': `Bearer ${sessionToken}`},
       })
       const result = await response.json()
-      if (result.error) {
-        throw new Error(result.error)
+      if (result.detail) {
+        throw new Error(result.detail)
       }
       return result
     },
@@ -73,7 +73,7 @@ export const useAuthStore = defineStore('auth', {
     async loadUserInfo() {
       const response = await fetch('/auth/user-info', {method: 'POST'})
       const result = await response.json()
-      if (result.error) throw new Error(`Server: ${result.error}`)
+      if (result.detail) throw new Error(`Server: ${result.detail}`)
 
       this.currentUser = result.user
       this.currentCredentials = result.credentials || []
@@ -82,9 +82,9 @@ export const useAuthStore = defineStore('auth', {
       console.log('User info loaded:', result)
     },
     async deleteCredential(uuid) {
-      const response = await fetch(`/auth/credential/${uuid}`, {method: 'DELETE'})
+      const response = await fetch(`/auth/credential/${uuid}`, {method: 'Delete'})
       const result = await response.json()
-      if (result.error) throw new Error(`Server: ${result.error}`)
+      if (result.detail) throw new Error(`Server: ${result.detail}`)
 
       await this.loadUserInfo()
     },
