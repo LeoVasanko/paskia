@@ -4,13 +4,11 @@ import { registerUser, authenticateUser, registerWithToken } from '@/utils/passk
 export const useAuthStore = defineStore('auth', {
   state: () => ({
     // Auth State
-    currentUser: null,
-    currentCredentials: [],
-    aaguidInfo: {},
+    userInfo: null, // Contains the full user info response: {user, credentials, aaguid_info, session_type, authenticated}
     isLoading: false,
 
     // UI State
-    currentView: 'login', // 'login', 'register', 'profile', 'device-link'
+    currentView: 'login', // 'login', 'register', 'profile', 'reset'
     status: {
       message: '',
       type: 'info',
@@ -46,9 +44,15 @@ export const useAuthStore = defineStore('auth', {
       try {
         const result = await registerUser(user_name)
 
-        this.currentUser = {
-          user_id: result.user_id,
-          user_name: user_name,
+        this.userInfo = {
+          user: {
+            user_id: result.user_id,
+            user_name: user_name,
+          },
+          credentials: [],
+          aaguid_info: {},
+          session_type: null,
+          authenticated: false
         }
 
         await this.setSessionCookie(result.session_token)
@@ -70,15 +74,16 @@ export const useAuthStore = defineStore('auth', {
         this.isLoading = false
       }
     },
+    selectView() {
+      if (!store.userInfo) this.currentView = 'login'
+      else if (store.userInfo?.authenticated) this.currentView = 'profile'
+      else this.currentView = 'reset'
+    },
     async loadUserInfo() {
       const response = await fetch('/auth/user-info', {method: 'POST'})
       const result = await response.json()
       if (result.detail) throw new Error(`Server: ${result.detail}`)
-
-      this.currentUser = result.user
-      this.currentCredentials = result.credentials || []
-      this.aaguidInfo = result.aaguid_info || {}
-      if (result.session_type === 'device addition') this.currentView = 'add-credential'
+      this.userInfo = result
       console.log('User info loaded:', result)
     },
     async deleteCredential(uuid) {
@@ -95,9 +100,7 @@ export const useAuthStore = defineStore('auth', {
         console.error('Logout error:', error)
       }
 
-      this.currentUser = null
-      this.currentCredentials = []
-      this.aaguidInfo = {}
+      this.userInfo = null
     },
   }
 })

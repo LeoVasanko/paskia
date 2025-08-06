@@ -2,14 +2,14 @@
   <div class="container">
     <div class="view active">
       <h1>👋 Welcome!</h1>
-      <div v-if="authStore.currentUser" class="user-info">
-        <h3>👤 {{ authStore.currentUser.user_name }}</h3>
+      <div v-if="authStore.userInfo?.user" class="user-info">
+        <h3>👤 {{ authStore.userInfo.user.user_name }}</h3>
         <span><strong>Visits:</strong></span>
-        <span>{{ authStore.currentUser.visits || 0 }}</span>
+        <span>{{ authStore.userInfo.user.visits || 0 }}</span>
         <span><strong>Registered:</strong></span>
-        <span>{{ formatDate(authStore.currentUser.created_at) }}</span>
+        <span>{{ formatDate(authStore.userInfo.user.created_at) }}</span>
         <span><strong>Last seen:</strong></span>
-        <span>{{ formatDate(authStore.currentUser.last_seen) }}</span>
+        <span>{{ formatDate(authStore.userInfo.user.last_seen) }}</span>
       </div>
 
       <h2>Your Passkeys</h2>
@@ -17,12 +17,12 @@
         <div v-if="authStore.isLoading">
           <p>Loading credentials...</p>
         </div>
-        <div v-else-if="authStore.currentCredentials.length === 0">
+        <div v-else-if="authStore.userInfo?.credentials?.length === 0">
           <p>No passkeys found.</p>
         </div>
         <div v-else>
           <div
-            v-for="credential in authStore.currentCredentials"
+            v-for="credential in authStore.userInfo?.credentials || []"
             :key="credential.credential_uuid"
             :class="['credential-item', { 'current-session': credential.is_current_session }]"
           >
@@ -89,8 +89,9 @@ const updateInterval = ref(null)
 onMounted(() => {
   updateInterval.value = setInterval(() => {
     // Trigger Vue reactivity to update formatDate fields
-    authStore.currentUser = { ...authStore.currentUser }
-    authStore.currentCredentials = [...authStore.currentCredentials]
+    if (authStore.userInfo) {
+      authStore.userInfo = { ...authStore.userInfo }
+    }
   }, 60000) // Update every minute
 })
 
@@ -101,12 +102,12 @@ onUnmounted(() => {
 })
 
 const getCredentialAuthName = (credential) => {
-  const authInfo = authStore.aaguidInfo[credential.aaguid]
+  const authInfo = authStore.userInfo?.aaguid_info?.[credential.aaguid]
   return authInfo ? authInfo.name : 'Unknown Authenticator'
 }
 
 const getCredentialAuthIcon = (credential) => {
-  const authInfo = authStore.aaguidInfo[credential.aaguid]
+  const authInfo = authStore.userInfo?.aaguid_info?.[credential.aaguid]
   if (!authInfo) return null
 
   const isDarkMode = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches
