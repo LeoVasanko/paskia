@@ -26,6 +26,11 @@ async def lifespan(app: FastAPI):
 
         await sql.init()
 
+    # Bootstrap system if needed
+    from ..bootstrap import bootstrap_if_needed
+
+    await bootstrap_if_needed()
+
     yield
 
 
