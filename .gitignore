@@ -5,3 +5,4 @@ dist/
 *.lock
 passkey-auth.sqlite
 /passkey/frontend-build
+/test_*.py
