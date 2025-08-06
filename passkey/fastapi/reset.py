@@ -15,35 +15,27 @@ def register_reset_routes(app):
     @app.post("/auth/create-link")
     async def api_create_link(request: Request, response: Response, auth=Cookie(None)):
         """Create a device addition link for the authenticated user."""
-        try:
-            # Require authentication
-            s = await get_session(auth)
+        # Require authentication
+        s = await get_session(auth)
 
-            # Generate a human-readable token
-            token = passphrase.generate()  # e.g., "cross.rotate.yin.note.evoke"
-            await db.instance.create_session(
-                user_uuid=s.user_uuid,
-                key=tokens.reset_key(token),
-                expires=expires(),
-                info=session.infodict(request, "device addition"),
-            )
+        # Generate a human-readable token
+        token = passphrase.generate()  # e.g., "cross.rotate.yin.note.evoke"
+        await db.instance.create_session(
+            user_uuid=s.user_uuid,
+            key=tokens.reset_key(token),
+            expires=expires(),
+            info=session.infodict(request, "device addition"),
+        )
 
-            # Generate the device addition link with pretty URL
-            path = request.url.path.removesuffix("create-link") + token
-            url = f"{request.headers['origin']}{path}"
+        # Generate the device addition link with pretty URL
+        path = request.url.path.removesuffix("create-link") + token
+        url = f"{request.headers['origin']}{path}"
 
-            return {
-                "message": "Registration link generated successfully",
-                "url": url,
-                "expires": expires().isoformat(),
-            }
-
-        except ValueError:
-            response.status_code = 401
-            return {"detail": "Authentication required"}
-        except Exception as e:
-            response.status_code = 500
-            return {"detail": f"Failed to create registration link: {str(e)}"}
+        return {
+            "message": "Registration link generated successfully",
+            "url": url,
+            "expires": expires().isoformat(),
+        }
 
     @app.get("/auth/{reset_token}")
     async def reset_authentication(
