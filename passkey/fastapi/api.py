@@ -10,11 +10,13 @@ This module contains all the HTTP API endpoints for:
 
 from uuid import UUID
 
-from fastapi import Cookie, Depends, FastAPI, Request, Response
+from fastapi import Cookie, Depends, FastAPI, Response
 from fastapi.security import HTTPBearer
 
+from passkey.util import passphrase
+
 from .. import aaguid
-from ..authsession import delete_credential, get_session
+from ..authsession import delete_credential, get_reset, get_session
 from ..db import db
 from ..util.tokens import session_key
 from . import session
@@ -26,7 +28,7 @@ def register_api_routes(app: FastAPI):
     """Register all API routes on the FastAPI app."""
 
     @app.post("/auth/validate")
-    async def validate_token(request: Request, response: Response, auth=Cookie(None)):
+    async def validate_token(auth=Cookie(None)):
         """Lightweight token validation endpoint."""
         try:
             s = await get_session(auth)
@@ -39,11 +41,12 @@ def register_api_routes(app: FastAPI):
             return {"status": "error", "valid": False}
 
     @app.post("/auth/user-info")
-    async def api_user_info(auth=Cookie(None)):
+    async def api_user_info(response: Response, auth=Cookie(None)):
         """Get full user information for the authenticated user."""
         try:
-            s = await get_session(auth, reset_allowed=True)
-            u = await db.instance.get_user_by_user_uuid(s.user_uuid)
+            reset = passphrase.is_well_formed(auth)
+            s = await (get_reset if reset else get_session)(auth)
+            u = await db.instance.get_user_by_uuid(s.user_uuid)
             # Get all credentials for the user
             credential_ids = await db.instance.get_credentials_by_user_uuid(s.user_uuid)
 
@@ -82,10 +85,11 @@ def register_api_routes(app: FastAPI):
 
             return {
                 "status": "success",
+                "authenticated": not reset,
                 "session_type": s.info["type"],
                 "user": {
-                    "user_uuid": str(u.user_uuid),
-                    "user_name": u.user_name,
+                    "user_uuid": str(u.uuid),
+                    "user_name": u.display_name,
                     "created_at": u.created_at.isoformat() if u.created_at else None,
                     "last_seen": u.last_seen.isoformat() if u.last_seen else None,
                     "visits": u.visits,
@@ -94,8 +98,11 @@ def register_api_routes(app: FastAPI):
                 "aaguid_info": aaguid_info,
             }
         except ValueError as e:
+            response.status_code = 400
             return {"error": f"Failed to get user info: {e}"}
         except Exception:
+            response.status_code = 500
+
             return {"error": "Failed to get user info"}
 
     @app.post("/auth/logout")
@@ -103,7 +110,11 @@ def register_api_routes(app: FastAPI):
         """Log out the current user by clearing the session cookie and deleting from database."""
         if not auth:
             return {"status": "success", "message": "Already logged out"}
-        await db.instance.delete_session(session_key(auth))
+        # Remove from database if possible
+        try:
+            await db.instance.delete_session(session_key(auth))
+        except Exception:
+            ...
         response.delete_cookie("auth")
         return {"status": "success", "message": "Logged out successfully"}
 
@@ -123,18 +134,24 @@ def register_api_routes(app: FastAPI):
             }
 
         except ValueError as e:
+            response.status_code = 400
             return {"error": str(e)}
-        except Exception as e:
-            return {"error": f"Failed to set session: {e}"}
+        except Exception:
+            response.status_code = 500
+            return {"error": "Failed to set session"}
 
     @app.delete("/auth/credential/{uuid}")
-    async def api_delete_credential(uuid: UUID, auth: str = Cookie(None)):
+    async def api_delete_credential(
+        response: Response, uuid: UUID, auth: str = Cookie(None)
+    ):
         """Delete a specific credential for the current user."""
         try:
             await delete_credential(uuid, auth)
             return {"status": "success", "message": "Credential deleted successfully"}
 
         except ValueError as e:
+            response.status_code = 400
             return {"error": str(e)}
         except Exception:
+            response.status_code = 500
             return {"error": "Failed to delete credential"}

@@ -21,9 +21,9 @@ from sqlalchemy import (
 )
 from sqlalchemy.dialects.sqlite import BLOB, JSON
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
-from . import Credential, DatabaseInterface, Org, Session, User, db
+from . import Credential, DatabaseInterface, Org, Permission, Session, User, db
 
 DB_PATH = "sqlite+aiosqlite:///passkey-auth.sqlite"
 
@@ -38,25 +38,43 @@ class Base(DeclarativeBase):
     pass
 
 
-# Association model for many-to-many relationship between users and organizations with roles
-class UserRole(Base):
-    __tablename__ = "user_roles"
+# Association model for many-to-many relationship between organizations and permissions
+class OrgPermission(Base):
+    """Permissions each Org is allowed to grant to its roles."""
 
-    user_uuid: Mapped[bytes] = mapped_column(
-        LargeBinary(16),
-        ForeignKey("users.user_uuid", ondelete="CASCADE"),
-        primary_key=True,
-    )
+    __tablename__ = "org_permissions"
+
     org_uuid: Mapped[bytes] = mapped_column(
         LargeBinary(16),
         ForeignKey("orgs.uuid", ondelete="CASCADE"),
         primary_key=True,
     )
-    role: Mapped[str] = mapped_column(String, nullable=False)
+    permission_id: Mapped[str] = mapped_column(
+        String(32),
+        ForeignKey("permissions.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    """Permissions each Org is allowed to grant to its roles."""
 
-    # Relationships to the actual models
-    user: Mapped["UserModel"] = relationship("UserModel", back_populates="user_orgs")
-    org: Mapped["OrgModel"] = relationship("OrgModel", back_populates="user_orgs")
+    __tablename__ = "org_permissions"
+
+    org_uuid: Mapped[bytes] = mapped_column(
+        LargeBinary(16),
+        ForeignKey("orgs.uuid", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    permission_id: Mapped[str] = mapped_column(
+        String(32),
+        ForeignKey("permissions.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+
+
+class PermissionModel(Base):
+    __tablename__ = "permissions"
+
+    id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    display_name: Mapped[str] = mapped_column(String, nullable=False)
 
 
 class OrgModel(Base):
@@ -65,30 +83,19 @@ class OrgModel(Base):
     uuid: Mapped[bytes] = mapped_column(LargeBinary(16), primary_key=True)
     options: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
 
-    # Relationship to user-org associations
-    user_orgs: Mapped[list["UserRole"]] = relationship(
-        "UserRoleModel", back_populates="org", cascade="all, delete-orphan"
-    )
-
 
 class UserModel(Base):
     __tablename__ = "users"
 
-    user_uuid: Mapped[bytes] = mapped_column(LargeBinary(16), primary_key=True)
-    user_name: Mapped[str] = mapped_column(String, nullable=False)
+    uuid: Mapped[bytes] = mapped_column(LargeBinary(16), primary_key=True)
+    display_name: Mapped[str] = mapped_column(String, nullable=False)
+    org_uuid: Mapped[bytes | None] = mapped_column(
+        LargeBinary(16), ForeignKey("orgs.uuid", ondelete="SET NULL"), nullable=True
+    )
+    role: Mapped[str | None] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
     last_seen: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     visits: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-
-    # Relationship to credentials
-    credentials: Mapped[list["CredentialModel"]] = relationship(
-        "CredentialModel", back_populates="user", cascade="all, delete-orphan"
-    )
-
-    # Relationship to user-org associations
-    user_orgs: Mapped[list["UserRole"]] = relationship(
-        "UserOrgModel", back_populates="user", cascade="all, delete-orphan"
-    )
 
 
 class CredentialModel(Base):
@@ -98,7 +105,7 @@ class CredentialModel(Base):
         LargeBinary(64), unique=True, index=True
     )
     user_uuid: Mapped[bytes] = mapped_column(
-        LargeBinary(16), ForeignKey("users.user_uuid", ondelete="CASCADE")
+        LargeBinary(16), ForeignKey("users.uuid", ondelete="CASCADE")
     )
     aaguid: Mapped[bytes] = mapped_column(LargeBinary(16), nullable=False)
     public_key: Mapped[bytes] = mapped_column(BLOB, nullable=False)
@@ -107,25 +114,19 @@ class CredentialModel(Base):
     last_used: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     last_verified: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
-    # Relationship to user
-    user: Mapped["UserModel"] = relationship("UserModel", back_populates="credentials")
-
 
 class SessionModel(Base):
     __tablename__ = "sessions"
 
     key: Mapped[bytes] = mapped_column(LargeBinary(16), primary_key=True)
     user_uuid: Mapped[bytes] = mapped_column(
-        LargeBinary(16), ForeignKey("users.user_uuid", ondelete="CASCADE")
+        LargeBinary(16), ForeignKey("users.uuid", ondelete="CASCADE")
     )
     credential_uuid: Mapped[bytes | None] = mapped_column(
         LargeBinary(16), ForeignKey("credentials.uuid", ondelete="CASCADE")
     )
     expires: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     info: Mapped[dict | None] = mapped_column(JSON, nullable=True)
-
-    # Relationship to user
-    user: Mapped["UserModel"] = relationship("UserModel")
 
 
 class DB(DatabaseInterface):
@@ -152,16 +153,20 @@ class DB(DatabaseInterface):
         async with self.engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
 
-    async def get_user_by_user_uuid(self, user_uuid: UUID) -> User:
+    async def get_user_by_uuid(self, user_uuid: UUID) -> User:
         async with self.session() as session:
-            stmt = select(UserModel).where(UserModel.user_uuid == user_uuid.bytes)
+            stmt = select(UserModel).where(UserModel.uuid == user_uuid.bytes)
             result = await session.execute(stmt)
             user_model = result.scalar_one_or_none()
 
             if user_model:
                 return User(
-                    user_uuid=UUID(bytes=user_model.user_uuid),
-                    user_name=user_model.user_name,
+                    uuid=UUID(bytes=user_model.uuid),
+                    display_name=user_model.display_name,
+                    org_uuid=UUID(bytes=user_model.org_uuid)
+                    if user_model.org_uuid
+                    else None,
+                    role=user_model.role,
                     created_at=user_model.created_at,
                     last_seen=user_model.last_seen,
                     visits=user_model.visits,
@@ -171,8 +176,10 @@ class DB(DatabaseInterface):
     async def create_user(self, user: User) -> None:
         async with self.session() as session:
             user_model = UserModel(
-                user_uuid=user.user_uuid.bytes,
-                user_name=user.user_name,
+                uuid=user.uuid.bytes,
+                display_name=user.display_name,
+                org_uuid=user.org_uuid.bytes if user.org_uuid else None,
+                role=user.role,
                 created_at=user.created_at or datetime.now(),
                 last_seen=user.last_seen,
                 visits=user.visits,
@@ -256,7 +263,7 @@ class DB(DatabaseInterface):
             # Update user's last_seen and increment visits
             stmt = (
                 update(UserModel)
-                .where(UserModel.user_uuid == user_uuid.bytes)
+                .where(UserModel.uuid == user_uuid.bytes)
                 .values(last_seen=credential.last_used, visits=UserModel.visits + 1)
             )
             await session.execute(stmt)
@@ -270,8 +277,10 @@ class DB(DatabaseInterface):
 
             # Create user
             user_model = UserModel(
-                user_uuid=user.user_uuid.bytes,
-                user_name=user.user_name,
+                uuid=user.uuid.bytes,
+                display_name=user.display_name,
+                org_uuid=user.org_uuid.bytes if user.org_uuid else None,
+                role=user.role,
                 created_at=user.created_at or datetime.now(),
                 last_seen=user.last_seen,
                 visits=user.visits,
@@ -399,7 +408,7 @@ class DB(DatabaseInterface):
     ) -> None:
         async with self.session() as session:
             # Get user and organization models
-            user_stmt = select(UserModel).where(UserModel.user_uuid == user_uuid.bytes)
+            user_stmt = select(UserModel).where(UserModel.uuid == user_uuid.bytes)
             user_result = await session.execute(user_stmt)
             user_model = user_result.scalar_one_or_none()
 
@@ -414,67 +423,65 @@ class DB(DatabaseInterface):
             if not org_model:
                 raise ValueError("Organization not found")
 
-            # Create the user-org relationship with role
-            user_org = UserRole(
-                user_uuid=user_uuid.bytes, org_uuid=org_uuid.bytes, role=role
-            )
-            session.add(user_org)
-
-    async def remove_user_from_organization(self, user_uuid: UUID, org_id: str) -> None:
-        async with self.session() as session:
-            # Convert string ID to UUID bytes for lookup
-            org_uuid = UUID(org_id)
-            # Delete the user-org relationship
-            stmt = delete(UserRole).where(
-                UserRole.user_uuid == user_uuid.bytes,
-                UserRole.org_uuid == org_uuid.bytes,
+            # Update the user's organization and role
+            stmt = (
+                update(UserModel)
+                .where(UserModel.uuid == user_uuid.bytes)
+                .values(org_uuid=org_uuid.bytes, role=role)
             )
             await session.execute(stmt)
 
-    async def get_user_org_role(self, user_uuid: UUID) -> list[tuple[Org, str]]:
+    async def remove_user_from_organization(self, user_uuid: UUID) -> None:
         async with self.session() as session:
-            stmt = select(UserRole).where(UserRole.user_uuid == user_uuid.bytes)
+            # Clear the user's organization and role
+            stmt = (
+                update(UserModel)
+                .where(UserModel.uuid == user_uuid.bytes)
+                .values(org_uuid=None, role=None)
+            )
+            await session.execute(stmt)
+
+    async def get_user_organization(self, user_uuid: UUID) -> tuple[Org, str] | None:
+        async with self.session() as session:
+            stmt = select(UserModel).where(UserModel.uuid == user_uuid.bytes)
             result = await session.execute(stmt)
-            user_org_models = result.scalars().all()
+            user_model = result.scalar_one_or_none()
 
-            # Fetch the organization details for each user-org relationship
-            org_role_pairs = []
-            for user_org in user_org_models:
-                org_stmt = select(OrgModel).where(OrgModel.uuid == user_org.org_uuid)
-                org_result = await session.execute(org_stmt)
-                org_model = org_result.scalar_one()
+            if not user_model or not user_model.org_uuid:
+                return None
 
-                # Convert UUID bytes back to string for the interface
-                org = Org(id=str(UUID(bytes=org_model.uuid)), options=org_model.options)
-                org_role_pairs.append((org, user_org.role))
+            # Fetch the organization details
+            org_stmt = select(OrgModel).where(OrgModel.uuid == user_model.org_uuid)
+            org_result = await session.execute(org_stmt)
+            org_model = org_result.scalar_one()
 
-            return org_role_pairs
+            # Convert UUID bytes back to string for the interface
+            org = Org(id=str(UUID(bytes=org_model.uuid)), options=org_model.options)
+            return (org, user_model.role or "")
 
     async def get_organization_users(self, org_id: str) -> list[tuple[User, str]]:
         async with self.session() as session:
             # Convert string ID to UUID bytes for lookup
             org_uuid = UUID(org_id)
-            stmt = select(UserRole).where(UserRole.org_uuid == org_uuid.bytes)
+            stmt = select(UserModel).where(UserModel.org_uuid == org_uuid.bytes)
             result = await session.execute(stmt)
-            user_org_models = result.scalars().all()
+            user_models = result.scalars().all()
 
-            # Fetch the user details for each user-org relationship
+            # Create user objects with their roles
             user_role_pairs = []
-            for user_org in user_org_models:
-                user_stmt = select(UserModel).where(
-                    UserModel.user_uuid == user_org.user_uuid
-                )
-                user_result = await session.execute(user_stmt)
-                user_model = user_result.scalar_one()
-
+            for user_model in user_models:
                 user = User(
-                    user_uuid=UUID(bytes=user_model.user_uuid),
-                    user_name=user_model.user_name,
+                    uuid=UUID(bytes=user_model.uuid),
+                    display_name=user_model.display_name,
+                    org_uuid=UUID(bytes=user_model.org_uuid)
+                    if user_model.org_uuid
+                    else None,
+                    role=user_model.role,
                     created_at=user_model.created_at,
                     last_seen=user_model.last_seen,
                     visits=user_model.visits,
                 )
-                user_role_pairs.append((user, user_org.role))
+                user_role_pairs.append((user, user_model.role or ""))
 
             return user_role_pairs
 
@@ -485,31 +492,150 @@ class DB(DatabaseInterface):
         async with self.session() as session:
             # Convert string ID to UUID bytes for lookup
             org_uuid = UUID(org_id)
-            stmt = select(UserRole.role).where(
-                UserRole.user_uuid == user_uuid.bytes,
-                UserRole.org_uuid == org_uuid.bytes,
+            stmt = select(UserModel.role).where(
+                UserModel.uuid == user_uuid.bytes,
+                UserModel.org_uuid == org_uuid.bytes,
             )
             result = await session.execute(stmt)
             return result.scalar_one_or_none()
 
     async def update_user_role_in_organization(
-        self, user_uuid: UUID, org_id: str, new_role: str
+        self, user_uuid: UUID, new_role: str
     ) -> None:
-        """Update a user's role in an organization."""
+        """Update a user's role in their organization."""
         async with self.session() as session:
-            # Convert string ID to UUID bytes for lookup
-            org_uuid = UUID(org_id)
             stmt = (
-                update(UserRole)
-                .where(
-                    UserRole.user_uuid == user_uuid.bytes,
-                    UserRole.org_uuid == org_uuid.bytes,
-                )
+                update(UserModel)
+                .where(UserModel.uuid == user_uuid.bytes)
                 .values(role=new_role)
             )
             result = await session.execute(stmt)
             if result.rowcount == 0:
-                raise ValueError("User is not a member of this organization")
+                raise ValueError("User not found")
+
+    # Permission operations
+    async def create_permission(self, permission: Permission) -> None:
+        async with self.session() as session:
+            permission_model = PermissionModel(
+                id=permission.id,
+                display_name=permission.display_name,
+            )
+            session.add(permission_model)
+
+    async def get_permission(self, permission_id: str) -> Permission:
+        async with self.session() as session:
+            stmt = select(PermissionModel).where(PermissionModel.id == permission_id)
+            result = await session.execute(stmt)
+            permission_model = result.scalar_one_or_none()
+
+            if permission_model:
+                return Permission(
+                    id=permission_model.id,
+                    display_name=permission_model.display_name,
+                )
+            raise ValueError("Permission not found")
+
+    async def update_permission(self, permission: Permission) -> None:
+        async with self.session() as session:
+            stmt = (
+                update(PermissionModel)
+                .where(PermissionModel.id == permission.id)
+                .values(display_name=permission.display_name)
+            )
+            await session.execute(stmt)
+
+    async def delete_permission(self, permission_id: str) -> None:
+        async with self.session() as session:
+            stmt = delete(PermissionModel).where(PermissionModel.id == permission_id)
+            await session.execute(stmt)
+
+    async def add_permission_to_organization(
+        self, org_id: str, permission_id: str
+    ) -> None:
+        async with self.session() as session:
+            # Get organization and permission models
+            org_uuid = UUID(org_id)
+            org_stmt = select(OrgModel).where(OrgModel.uuid == org_uuid.bytes)
+            org_result = await session.execute(org_stmt)
+            org_model = org_result.scalar_one_or_none()
+
+            permission_stmt = select(PermissionModel).where(
+                PermissionModel.id == permission_id
+            )
+            permission_result = await session.execute(permission_stmt)
+            permission_model = permission_result.scalar_one_or_none()
+
+            if not org_model:
+                raise ValueError("Organization not found")
+            if not permission_model:
+                raise ValueError("Permission not found")
+
+            # Create the org-permission relationship
+            org_permission = OrgPermission(
+                org_uuid=org_uuid.bytes, permission_id=permission_id
+            )
+            session.add(org_permission)
+
+    async def remove_permission_from_organization(
+        self, org_id: str, permission_id: str
+    ) -> None:
+        async with self.session() as session:
+            # Convert string ID to UUID bytes for lookup
+            org_uuid = UUID(org_id)
+            # Delete the org-permission relationship
+            stmt = delete(OrgPermission).where(
+                OrgPermission.org_uuid == org_uuid.bytes,
+                OrgPermission.permission_id == permission_id,
+            )
+            await session.execute(stmt)
+
+    async def get_organization_permissions(self, org_id: str) -> list[Permission]:
+        async with self.session() as session:
+            # Convert string ID to UUID bytes for lookup
+            org_uuid = UUID(org_id)
+            stmt = select(OrgPermission).where(OrgPermission.org_uuid == org_uuid.bytes)
+            result = await session.execute(stmt)
+            org_permission_models = result.scalars().all()
+
+            # Fetch the permission details for each org-permission relationship
+            permissions = []
+            for org_permission in org_permission_models:
+                permission_stmt = select(PermissionModel).where(
+                    PermissionModel.id == org_permission.permission_id
+                )
+                permission_result = await session.execute(permission_stmt)
+                permission_model = permission_result.scalar_one()
+
+                permission = Permission(
+                    id=permission_model.id,
+                    display_name=permission_model.display_name,
+                )
+                permissions.append(permission)
+
+            return permissions
+
+    async def get_permission_organizations(self, permission_id: str) -> list[Org]:
+        async with self.session() as session:
+            stmt = select(OrgPermission).where(
+                OrgPermission.permission_id == permission_id
+            )
+            result = await session.execute(stmt)
+            org_permission_models = result.scalars().all()
+
+            # Fetch the organization details for each org-permission relationship
+            organizations = []
+            for org_permission in org_permission_models:
+                org_stmt = select(OrgModel).where(
+                    OrgModel.uuid == org_permission.org_uuid
+                )
+                org_result = await session.execute(org_stmt)
+                org_model = org_result.scalar_one()
+
+                # Convert UUID bytes back to string for the interface
+                org = Org(id=str(UUID(bytes=org_model.uuid)), options=org_model.options)
+                organizations.append(org)
+
+            return organizations
 
     async def cleanup(self) -> None:
         async with self.session() as session:

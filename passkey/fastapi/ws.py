@@ -97,30 +97,39 @@ async def websocket_register_new(
 @app.websocket("/add_credential")
 async def websocket_register_add(ws: WebSocket, auth=Cookie(None)):
     """Register a new credential for an existing user."""
-    print(auth)
     await ws.accept()
-    origin = ws.headers.get("origin")
+    origin = ws.headers["origin"]
     try:
         s = await get_session(auth, reset_allowed=True)
         user_uuid = s.user_uuid
 
         # Get user information to get the user_name
-        user = await db.instance.get_user_by_user_uuid(user_uuid)
-        user_name = user.user_name
+        user = await db.instance.get_user_by_uuid(user_uuid)
+        user_name = user.display_name
         challenge_ids = await db.instance.get_credentials_by_user_uuid(user_uuid)
 
         # WebAuthn registration
         credential = await register_chat(
             ws, user_uuid, user_name, challenge_ids, origin
         )
+        if s.info["type"] == "authenticated":
+            token = auth
+        else:
+            # Replace reset session with a new session
+            await db.instance.delete_session(s.key)
+            token = await create_session(
+                user_uuid, credential.uuid, infodict(ws, "authenticated")
+            )
+        assert isinstance(token, str) and len(token) == 16
         # Store the new credential in the database
         await db.instance.create_credential(credential)
 
         await ws.send_json(
             {
                 "status": "success",
-                "user_uuid": str(user_uuid),
-                "credential_id": credential.credential_id.hex(),
+                "user_uuid": str(user.uuid),
+                "credential_uuid": str(credential.uuid),
+                "session_token": token,
                 "message": "New credential added successfully",
             }
         )
@@ -136,7 +145,7 @@ async def websocket_register_add(ws: WebSocket, auth=Cookie(None)):
 @app.websocket("/authenticate")
 async def websocket_authenticate(ws: WebSocket):
     await ws.accept()
-    origin = ws.headers.get("origin")
+    origin = ws.headers["origin"]
     try:
         options, challenge = passkey.auth_generate_options()
         await ws.send_json(options)

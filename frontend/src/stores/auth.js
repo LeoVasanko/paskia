@@ -46,13 +46,12 @@ export const useAuthStore = defineStore('auth', {
       try {
         const result = await registerUser(user_name)
 
-        await this.setSessionCookie(result.session_token)
-
         this.currentUser = {
           user_id: result.user_id,
           user_name: user_name,
         }
 
+        await this.setSessionCookie(result.session_token)
         return result
       } finally {
         this.isLoading = false
