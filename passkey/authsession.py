@@ -12,7 +12,6 @@ from datetime import datetime, timedelta
 from uuid import UUID
 
 from .db import Session, db
-from .util import passphrase
 from .util.tokens import create_token, reset_key, session_key
 
 EXPIRES = timedelta(hours=24)
@@ -22,29 +21,30 @@ def expires() -> datetime:
     return datetime.now() + EXPIRES
 
 
-async def create_session(user_uuid: UUID, info: dict, credential_uuid: UUID) -> str:
+async def create_session(user_uuid: UUID, credential_uuid: UUID, info: dict) -> str:
     """Create a new session and return a session token."""
     token = create_token()
     await db.instance.create_session(
         user_uuid=user_uuid,
+        credential_uuid=credential_uuid,
         key=session_key(token),
         expires=datetime.now() + EXPIRES,
         info=info,
-        credential_uuid=credential_uuid,
     )
     return token
 
 
-async def get_session(token: str, reset_allowed=False) -> Session:
-    """Validate a session token and return session data if valid."""
-    if passphrase.is_well_formed(token):
-        if not reset_allowed:
-            raise ValueError("Reset link is not allowed for this endpoint")
-        key = reset_key(token)
-    else:
-        key = session_key(token)
+async def get_reset(token: str) -> Session:
+    """Validate a credential reset token. Returns None if the token is not well formed (i.e. it is another type of token)."""
+    session = await db.instance.get_session(reset_key(token))
+    if not session:
+        raise ValueError("Invalid or expired session token")
+    return session
 
-    session = await db.instance.get_session(key)
+
+async def get_session(token: str) -> Session:
+    """Validate a session token and return session data if valid."""
+    session = await db.instance.get_session(session_key(token))
     if not session:
         raise ValueError("Invalid or expired session token")
     return session

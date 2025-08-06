@@ -24,7 +24,7 @@ def main():
         host=args.host,
         port=args.port,
         reload=args.dev,
-        log_level="debug" if args.dev else "info",
+        log_level="info",
     )
 
 

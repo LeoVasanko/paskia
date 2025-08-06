@@ -8,7 +8,6 @@ export async function register(url, options) {
   const optionsJSON = await ws.receive_json()
   const registrationResponse = await startRegistration({ optionsJSON })
   ws.send_json(registrationResponse)
-
   const result = await ws.receive_json()
   ws.close()
   return result;
@@ -31,7 +30,6 @@ export async function authenticateUser() {
   const optionsJSON = await ws.receive_json()
   const authResponse = await startAuthentication({ optionsJSON })
   ws.send_json(authResponse)
-
   const result = await ws.receive_json()
   ws.close()
   return result

@@ -13,8 +13,10 @@ from uuid import UUID
 
 @dataclass
 class User:
-    user_uuid: UUID
-    user_name: str
+    uuid: UUID
+    display_name: str
+    org_uuid: UUID | None = None
+    role: str | None = None
     created_at: datetime | None = None
     last_seen: datetime | None = None
     visits: int = 0
@@ -39,6 +41,14 @@ class Org:
 
     id: str  # ASCII primary key
     options: dict
+
+
+@dataclass
+class Permission:
+    """Permission data structure."""
+
+    id: str  # String primary key (max 32 chars)
+    display_name: str
 
 
 @dataclass
@@ -68,7 +78,7 @@ class DatabaseInterface(ABC):
 
     # User operations
     @abstractmethod
-    async def get_user_by_user_uuid(self, user_uuid: UUID) -> User:
+    async def get_user_by_uuid(self, user_uuid: UUID) -> User:
         """Get user record by WebAuthn user UUID."""
 
     @abstractmethod
@@ -147,19 +157,68 @@ class DatabaseInterface(ABC):
     async def add_user_to_organization(
         self, user_uuid: UUID, org_id: str, role: str
     ) -> None:
-        """Add a user to an organization with a specific role."""
+        """Set a user's organization and role."""
 
     @abstractmethod
-    async def remove_user_from_organization(self, user_uuid: UUID, org_id: str) -> None:
-        """Remove a user from an organization."""
+    async def remove_user_from_organization(self, user_uuid: UUID) -> None:
+        """Remove a user from their organization."""
 
     @abstractmethod
-    async def get_user_org_role(self, user_uuid: UUID) -> list[tuple[Org, str]]:
-        """Get all organizations for a user with their roles."""
+    async def get_user_organization(self, user_uuid: UUID) -> tuple[Org, str] | None:
+        """Get the organization and role for a user."""
 
     @abstractmethod
     async def get_organization_users(self, org_id: str) -> list[tuple[User, str]]:
         """Get all users in an organization with their roles."""
+
+    @abstractmethod
+    async def get_user_role_in_organization(
+        self, user_uuid: UUID, org_id: str
+    ) -> str | None:
+        """Get a user's role in a specific organization."""
+
+    @abstractmethod
+    async def update_user_role_in_organization(
+        self, user_uuid: UUID, new_role: str
+    ) -> None:
+        """Update a user's role in their organization."""
+
+    # Permission operations
+    @abstractmethod
+    async def create_permission(self, permission: Permission) -> None:
+        """Create a new permission."""
+
+    @abstractmethod
+    async def get_permission(self, permission_id: str) -> Permission:
+        """Get permission by ID."""
+
+    @abstractmethod
+    async def update_permission(self, permission: Permission) -> None:
+        """Update permission details."""
+
+    @abstractmethod
+    async def delete_permission(self, permission_id: str) -> None:
+        """Delete permission by ID."""
+
+    @abstractmethod
+    async def add_permission_to_organization(
+        self, org_id: str, permission_id: str
+    ) -> None:
+        """Add a permission to an organization."""
+
+    @abstractmethod
+    async def remove_permission_from_organization(
+        self, org_id: str, permission_id: str
+    ) -> None:
+        """Remove a permission from an organization."""
+
+    @abstractmethod
+    async def get_organization_permissions(self, org_id: str) -> list[Permission]:
+        """Get all permissions assigned to an organization."""
+
+    @abstractmethod
+    async def get_permission_organizations(self, permission_id: str) -> list[Org]:
+        """Get all organizations that have a specific permission."""
 
     # Combined operations
     @abstractmethod
@@ -200,6 +259,7 @@ __all__ = [
     "Credential",
     "Session",
     "Org",
+    "Permission",
     "DatabaseInterface",
     "db",
 ]
