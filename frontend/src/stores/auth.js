@@ -75,8 +75,8 @@ export const useAuthStore = defineStore('auth', {
       }
     },
     selectView() {
-      if (!store.userInfo) this.currentView = 'login'
-      else if (store.userInfo?.authenticated) this.currentView = 'profile'
+      if (!this.userInfo) this.currentView = 'login'
+      else if (this.userInfo.authenticated) this.currentView = 'profile'
       else this.currentView = 'reset'
     },
     async loadUserInfo() {
