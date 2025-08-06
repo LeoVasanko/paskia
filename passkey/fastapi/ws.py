@@ -114,14 +114,14 @@ async def websocket_register_add(ws: WebSocket, auth=Cookie(None)):
         credential = await register_chat(
             ws, user_uuid, user_name, challenge_ids, origin
         )
-        if s.info["type"] == "authenticated":
-            token = auth
-        else:
+        if reset:
             # Replace reset session with a new session
             await db.instance.delete_session(s.key)
             token = await create_session(
                 user_uuid, credential.uuid, infodict(ws, "authenticated")
             )
+        else:
+            token = auth
         assert isinstance(token, str) and len(token) == 16
         # Store the new credential in the database
         await db.instance.create_credential(credential)
