@@ -48,7 +48,7 @@ onMounted(async () => {
   try {
     const response = await fetch('/auth/create-link', { method: 'POST' })
     const result = await response.json()
-    if (result.error) throw new Error(result.error)
+    if (result.detail) throw new Error(result.detail)
 
     url.value = result.url
 
