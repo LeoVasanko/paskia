@@ -1,9 +1,10 @@
 import contextlib
+import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import Cookie, FastAPI, Request, Response
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from ..authsession import get_session
@@ -29,6 +30,21 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(lifespan=lifespan)
+
+
+# Global exception handlers
+@app.exception_handler(ValueError)
+async def value_error_handler(request: Request, exc: ValueError):
+    """Handle ValueError exceptions globally with 400 status code."""
+    return JSONResponse(status_code=400, content={"detail": str(exc)})
+
+
+@app.exception_handler(Exception)
+async def general_exception_handler(request: Request, exc: Exception):
+    """Handle all other exceptions globally with 500 status code."""
+    logging.exception("Internal Server Error")
+    return JSONResponse(status_code=500, content={"detail": "Internal server error"})
+
 
 # Mount the WebSocket subapp
 app.mount("/auth/ws", ws.app)
