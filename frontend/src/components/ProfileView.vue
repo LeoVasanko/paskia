@@ -86,15 +86,7 @@ import { registerCredential } from '@/utils/passkey'
 const authStore = useAuthStore()
 const updateInterval = ref(null)
 
-onMounted(async () => {
-  try {
-    await authStore.loadUserInfo()
-  } catch (error) {
-    authStore.showMessage(`Failed to load user info: ${error.message}`, 'error')
-    authStore.currentView = 'login'
-    return
-  }
-
+onMounted(() => {
   updateInterval.value = setInterval(() => {
     // Trigger Vue reactivity to update formatDate fields
     authStore.currentUser = { ...authStore.currentUser }
