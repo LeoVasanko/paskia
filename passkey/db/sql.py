@@ -643,36 +643,3 @@ class DB(DatabaseInterface):
             current_time = datetime.now()
             stmt = delete(SessionModel).where(SessionModel.expires < current_time)
             await session.execute(stmt)
-
-    # Bootstrap helpers
-    async def has_any_users(self) -> bool:
-        """Check if any users exist in the system."""
-        async with self.session() as session:
-            stmt = select(UserModel).limit(1)
-            result = await session.execute(stmt)
-            user = result.scalar_one_or_none()
-            return user is not None
-
-    async def find_users_by_role(self, role: str) -> list[User]:
-        """Find all users with a specific role."""
-        async with self.session() as session:
-            stmt = select(UserModel).where(UserModel.role == role)
-            result = await session.execute(stmt)
-            user_models = result.scalars().all()
-
-            users = []
-            for user_model in user_models:
-                user = User(
-                    uuid=UUID(bytes=user_model.uuid),
-                    display_name=user_model.display_name,
-                    org_uuid=UUID(bytes=user_model.org_uuid)
-                    if user_model.org_uuid
-                    else None,
-                    role=user_model.role,
-                    created_at=user_model.created_at,
-                    last_seen=user_model.last_seen,
-                    visits=user_model.visits,
-                )
-                users.append(user)
-
-            return users

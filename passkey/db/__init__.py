@@ -231,15 +231,6 @@ class DatabaseInterface(ABC):
     ) -> None:
         """Create a new user and their first credential in a transaction."""
 
-    # Bootstrap helpers
-    @abstractmethod
-    async def has_any_users(self) -> bool:
-        """Check if any users exist in the system."""
-
-    @abstractmethod
-    async def find_users_by_role(self, role: str) -> list[User]:
-        """Find all users with a specific role."""
-
 
 __all__ = [
     "User",
