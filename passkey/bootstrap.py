@@ -46,10 +46,12 @@ async def bootstrap_system() -> dict:
     Returns:
         dict: Contains information about created entities and reset link
     """
-    admin_uuid = uuid7.create()
-    org_uuid = uuid7.create()
+    # Create permission first - will fail if already exists
+    permission = Permission(id="auth/admin", display_name="Admin")
+    await globals.db.instance.create_permission(permission)
 
     # Create organization
+    org_uuid = uuid7.create()
     org = Org(
         id=str(org_uuid),
         options={
@@ -59,11 +61,8 @@ async def bootstrap_system() -> dict:
     )
     await globals.db.instance.create_organization(org)
 
-    # Create permission
-    permission = Permission(id="auth/admin", display_name="Admin")
-    await globals.db.instance.create_permission(permission)
-
     # Create admin user
+    admin_uuid = uuid7.create()
     user = User(
         uuid=admin_uuid,
         display_name="Admin",
@@ -113,8 +112,19 @@ async def check_admin_credentials() -> bool:
         bool: True if a reset link was created, False if admin already has credentials
     """
     try:
-        # Find admin users
-        admin_users = await globals.db.instance.find_users_by_role("Admin")
+        # Get permission organizations to find admin users
+        permission_orgs = await globals.db.instance.get_permission_organizations(
+            "auth/admin"
+        )
+
+        if not permission_orgs:
+            return False
+
+        # Get users from the first organization with admin permission
+        org_users = await globals.db.instance.get_organization_users(
+            permission_orgs[0].id
+        )
+        admin_users = [user for user, role in org_users if role == "Admin"]
 
         if not admin_users:
             return False
@@ -148,53 +158,25 @@ async def bootstrap_if_needed() -> bool:
         bool: True if bootstrapping was performed, False if system was already set up
     """
     try:
-        # Check if any users exist
-        if await globals.db.instance.has_any_users():
-            await check_admin_credentials()
-            return False
+        # Check if the admin permission exists - if it does, system is already bootstrapped
+        await globals.db.instance.get_permission("auth/admin")
+        # Permission exists, check if admin needs credentials
+        await check_admin_credentials()
+        return False
     except Exception:
+        # Permission doesn't exist, need to bootstrap
         pass
 
-    # No users found, need to bootstrap
+    # No admin permission found, need to bootstrap
     await bootstrap_system()
     return True
-
-
-async def force_bootstrap() -> dict:
-    """
-    Force bootstrap the system (useful for testing or resetting).
-
-    Returns:
-        dict: Bootstrap result information
-    """
-    return await bootstrap_system()
 
 
 # CLI interface
 async def main():
     """Main CLI entry point for bootstrapping."""
-    import argparse
-
-    from .db.sql import init
-
-    parser = argparse.ArgumentParser(
-        description="Bootstrap passkey authentication system"
-    )
-    parser.add_argument(
-        "--force",
-        action="store_true",
-        help="Force bootstrap even if system is already set up",
-    )
-
-    args = parser.parse_args()
-
-    # Initialize database
-    await init()
-
-    if args.force:
-        await force_bootstrap()
-    else:
-        await bootstrap_if_needed()
+    await globals.init()
+    await bootstrap_if_needed()
 
 
 if __name__ == "__main__":
