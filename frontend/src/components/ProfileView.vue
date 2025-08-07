@@ -124,7 +124,7 @@ const addNewCredential = async () => {
     authStore.showMessage('New passkey added successfully!', 'success', 3000)
   } catch (error) {
     console.error('Failed to add new passkey:', error)
-    authStore.showMessage(`Failed to add passkey: ${error.message}`, 'error')
+    authStore.showMessage(error.message, 'error')
   } finally {
     authStore.isLoading = false
   }

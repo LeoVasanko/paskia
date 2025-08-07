@@ -37,7 +37,7 @@ const handleLogin = async () => {
       location.reload()
     }
   } catch (error) {
-    authStore.showMessage(`Authentication failed: ${error.message}`, 'error')
+    authStore.showMessage(error.message, 'error')
   }
 }
 </script>
