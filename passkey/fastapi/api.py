@@ -17,7 +17,7 @@ from passkey.util import passphrase
 
 from .. import aaguid
 from ..authsession import delete_credential, get_reset, get_session
-from ..db import db
+from ..globals import db
 from ..util.tokens import session_key
 from . import session
 

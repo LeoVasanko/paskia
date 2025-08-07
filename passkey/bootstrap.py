@@ -11,7 +11,8 @@ from datetime import datetime
 import uuid7
 
 from .authsession import expires
-from .db import Org, Permission, User, db
+from .db import Org, Permission, User
+from .globals import db
 from .util import passphrase, tokens
 
 

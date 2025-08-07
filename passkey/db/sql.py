@@ -23,7 +23,8 @@ from sqlalchemy.dialects.sqlite import BLOB, JSON
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
-from . import Credential, DatabaseInterface, Org, Permission, Session, User, db
+from ..globals import db
+from . import Credential, DatabaseInterface, Org, Permission, Session, User
 
 DB_PATH = "sqlite+aiosqlite:///passkey-auth.sqlite"
 

@@ -4,7 +4,7 @@ from fastapi import Cookie, HTTPException, Request, Response
 from fastapi.responses import RedirectResponse
 
 from ..authsession import expires, get_session
-from ..db import db
+from ..globals import db
 from ..util import passphrase, tokens
 from . import session
 

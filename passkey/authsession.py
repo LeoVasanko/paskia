@@ -11,7 +11,8 @@ independent of any web framework:
 from datetime import datetime, timedelta
 from uuid import UUID
 
-from .db import Session, db
+from .db import Session
+from .globals import db
 from .util.tokens import create_token, reset_key, session_key
 
 EXPIRES = timedelta(hours=24)

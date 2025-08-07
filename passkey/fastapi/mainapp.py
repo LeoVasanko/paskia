@@ -1,6 +1,5 @@
 import contextlib
 import logging
-from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import Cookie, FastAPI, Request, Response
@@ -8,7 +7,6 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from ..authsession import get_session
-from ..db import db
 from . import ws
 from .api import register_api_routes
 from .reset import register_reset_routes
@@ -16,25 +14,7 @@ from .reset import register_reset_routes
 STATIC_DIR = Path(__file__).parent.parent / "frontend-build"
 
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    # Test if we have a database already initialized, otherwise use SQL
-    try:
-        db.instance
-    except RuntimeError:
-        from ..db import sql
-
-        await sql.init()
-
-    # Bootstrap system if needed
-    from ..bootstrap import bootstrap_if_needed
-
-    await bootstrap_if_needed()
-
-    yield
-
-
-app = FastAPI(lifespan=lifespan)
+app = FastAPI()
 
 
 # Global exception handlers
