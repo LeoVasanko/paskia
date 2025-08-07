@@ -27,7 +27,11 @@ class Manager(Generic[T]):
 
 
 async def init(
-    rp_id: str = "localhost", rp_name: str | None = None, origin: str | None = None
+    rp_id: str = "localhost",
+    rp_name: str | None = None,
+    origin: str | None = None,
+    default_admin: str | None = None,
+    default_org: str | None = None,
 ) -> None:
     """Initialize the global database, passkey instance, and bootstrap the system if needed."""
     # Initialize passkey instance with provided parameters
@@ -48,7 +52,7 @@ async def init(
     # Bootstrap system if needed
     from .bootstrap import bootstrap_if_needed
 
-    await bootstrap_if_needed()
+    await bootstrap_if_needed(default_admin, default_org)
 
 
 # Global instances

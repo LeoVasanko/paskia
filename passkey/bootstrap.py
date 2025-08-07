@@ -6,6 +6,7 @@ including creating default admin user, organization, permissions, and
 generating a reset link for initial admin setup.
 """
 
+import asyncio
 import logging
 from datetime import datetime
 
@@ -39,9 +40,15 @@ async def _create_and_log_admin_reset_link(user_uuid, message, session_type) -> 
     return reset_link
 
 
-async def bootstrap_system() -> dict:
+async def bootstrap_system(
+    user_name: str | None = None, org_name: str | None = None
+) -> dict:
     """
     Bootstrap the entire system with default data.
+
+    Args:
+        user_name: Display name for the admin user (default: "Admin")
+        org_name: Display name for the organization (default: "Organization")
 
     Returns:
         dict: Contains information about created entities and reset link
@@ -55,7 +62,7 @@ async def bootstrap_system() -> dict:
     org = Org(
         id=str(org_uuid),
         options={
-            "display_name": "Organization",
+            "display_name": org_name or "Organization",
             "created_at": datetime.now().isoformat(),
         },
     )
@@ -65,7 +72,7 @@ async def bootstrap_system() -> dict:
     admin_uuid = uuid7.create()
     user = User(
         uuid=admin_uuid,
-        display_name="Admin",
+        display_name=user_name or "Admin",
         org_uuid=org_uuid,
         role="Admin",
         created_at=datetime.now(),
@@ -150,9 +157,15 @@ async def check_admin_credentials() -> bool:
         return False
 
 
-async def bootstrap_if_needed() -> bool:
+async def bootstrap_if_needed(
+    default_admin: str | None = None, default_org: str | None = None
+) -> bool:
     """
     Check if system needs bootstrapping and perform it if necessary.
+
+    Args:
+        default_admin: Display name for the admin user
+        default_org: Display name for the organization
 
     Returns:
         bool: True if bootstrapping was performed, False if system was already set up
@@ -160,26 +173,53 @@ async def bootstrap_if_needed() -> bool:
     try:
         # Check if the admin permission exists - if it does, system is already bootstrapped
         await globals.db.instance.get_permission("auth/admin")
-        # Permission exists, check if admin needs credentials
-        await check_admin_credentials()
+        # Permission exists, system is already bootstrapped
+        # Check if admin needs credentials (only for already-bootstrapped systems)
+        admin_needs_reset = await check_admin_credentials()
+        if not admin_needs_reset:
+            # Use the same format as the reset link messages
+            logger.info(
+                ADMIN_RESET_MESSAGE,
+                "ℹ️  System already bootstrapped - no action needed",
+                "Admin user already has credentials",
+            )
         return False
     except Exception:
         # Permission doesn't exist, need to bootstrap
         pass
 
     # No admin permission found, need to bootstrap
-    await bootstrap_system()
+    # Bootstrap creates the admin user AND the reset link, so no need to check credentials after
+    await bootstrap_system(default_admin, default_org)
     return True
 
 
 # CLI interface
 async def main():
     """Main CLI entry point for bootstrapping."""
-    await globals.init()
-    await bootstrap_if_needed()
+    import argparse
+
+    # Configure logging for CLI usage
+    logging.basicConfig(level=logging.INFO, format="%(message)s", force=True)
+
+    parser = argparse.ArgumentParser(
+        description="Bootstrap passkey authentication system"
+    )
+    parser.add_argument(
+        "--user-name",
+        default=None,
+        help="Name for the admin user (default: Admin)",
+    )
+    parser.add_argument(
+        "--org-name",
+        default=None,
+        help="Name for the organization (default: Organization)",
+    )
+
+    args = parser.parse_args()
+
+    await globals.init(default_admin=args.user_name, default_org=args.org_name)
 
 
 if __name__ == "__main__":
-    import asyncio
-
     asyncio.run(main())
