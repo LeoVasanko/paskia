@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { registerUser, authenticateUser, registerWithToken } from '@/utils/passkey'
+import { register, authenticate } from '@/utils/passkey'
 
 export const useAuthStore = defineStore('auth', {
   state: () => ({
@@ -8,7 +8,7 @@ export const useAuthStore = defineStore('auth', {
     isLoading: false,
 
     // UI State
-    currentView: 'login', // 'login', 'register', 'profile', 'reset'
+    currentView: 'login', // 'login', 'profile', 'device-link', 'reset'
     status: {
       message: '',
       type: 'info',
@@ -39,23 +39,12 @@ export const useAuthStore = defineStore('auth', {
       }
       return result
     },
-    async register(user_name) {
+    async register() {
       this.isLoading = true
       try {
-        const result = await registerUser(user_name)
-
-        this.userInfo = {
-          user: {
-            user_id: result.user_id,
-            user_name: user_name,
-          },
-          credentials: [],
-          aaguid_info: {},
-          session_type: null,
-          authenticated: false
-        }
-
+        const result = await register()
         await this.setSessionCookie(result.session_token)
+        await this.loadUserInfo()
         return result
       } finally {
         this.isLoading = false
@@ -64,7 +53,7 @@ export const useAuthStore = defineStore('auth', {
     async authenticate() {
       this.isLoading = true
       try {
-        const result = await authenticateUser()
+        const result = await authenticate()
 
         await this.setSessionCookie(result.session_token)
         await this.loadUserInfo()

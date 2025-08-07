@@ -11,11 +11,6 @@
           {{ authStore.isLoading ? 'Authenticating...' : 'Login with Your Device' }}
         </button>
       </form>
-      <p class="toggle-link">
-        <a href="#" @click.prevent="authStore.currentView = 'register'">
-          Don't have an account? Register here
-        </a>
-      </p>
     </div>
   </div>
 </template>

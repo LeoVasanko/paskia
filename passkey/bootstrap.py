@@ -13,7 +13,7 @@ from datetime import datetime
 import uuid7
 
 from . import authsession, globals
-from .db import Org, Permission, User
+from .db import Org, Permission, Role, User
 from .util import passphrase, tokens
 
 logger = logging.getLogger(__name__)
@@ -54,61 +54,41 @@ async def bootstrap_system(
         dict: Contains information about created entities and reset link
     """
     # Create permission first - will fail if already exists
-    permission = Permission(id="auth/admin", display_name="Admin")
-    await globals.db.instance.create_permission(permission)
+    perm0 = Permission(id="auth/admin", display_name="Master Admin")
+    await globals.db.instance.create_permission(perm0)
 
-    # Create organization
-    org_uuid = uuid7.create()
-    org = Org(
-        id=str(org_uuid),
-        options={
-            "display_name": org_name or "Organization",
-            "created_at": datetime.now().isoformat(),
-        },
-    )
+    org = Org(uuid7.create(), org_name or "Organization")
     await globals.db.instance.create_organization(org)
 
-    # Create admin user
-    admin_uuid = uuid7.create()
+    perm1 = Permission(
+        id=f"auth/org:{org.uuid}", display_name=f"{org.display_name} Admin"
+    )
+    await globals.db.instance.create_permission(perm1)
+
+    role = Role(uuid7.create(), org.uuid, "Administration")
+    await globals.db.instance.create_role(role)
+
     user = User(
-        uuid=admin_uuid,
+        uuid=uuid7.create(),
         display_name=user_name or "Admin",
-        org_uuid=org_uuid,
-        role="Admin",
+        role_uuid=role.uuid,
         created_at=datetime.now(),
         visits=0,
     )
     await globals.db.instance.create_user(user)
 
-    # Link user to organization and assign permissions
-    await globals.db.instance.add_user_to_organization(
-        user_uuid=admin_uuid, org_id=org.id, role="Admin"
-    )
-    await globals.db.instance.add_permission_to_organization(org.id, permission.id)
-
     # Generate reset link and log it
     reset_link = await _create_and_log_admin_reset_link(
-        admin_uuid, "✅ Bootstrap completed!", "admin bootstrap"
+        user.uuid, "✅ Bootstrap completed!", "admin bootstrap"
     )
 
-    result = {
-        "admin_user": {
-            "uuid": str(user.uuid),
-            "display_name": user.display_name,
-            "role": user.role,
-        },
-        "organization": {
-            "id": org.id,
-            "display_name": org.options.get("display_name"),
-        },
-        "permission": {
-            "id": permission.id,
-            "display_name": permission.display_name,
-        },
+    return {
+        "user": user,
+        "org": org,
+        "role": role,
+        "permissions": [perm0, perm1],
         "reset_link": reset_link,
     }
-
-    return result
 
 
 async def check_admin_credentials() -> bool:
@@ -175,14 +155,7 @@ async def bootstrap_if_needed(
         await globals.db.instance.get_permission("auth/admin")
         # Permission exists, system is already bootstrapped
         # Check if admin needs credentials (only for already-bootstrapped systems)
-        admin_needs_reset = await check_admin_credentials()
-        if not admin_needs_reset:
-            # Use the same format as the reset link messages
-            logger.info(
-                ADMIN_RESET_MESSAGE,
-                "ℹ️  System already bootstrapped - no action needed",
-                "Admin user already has credentials",
-            )
+        await check_admin_credentials()
         return False
     except Exception:
         # Permission doesn't exist, need to bootstrap

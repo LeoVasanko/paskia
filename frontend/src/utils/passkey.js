@@ -1,14 +1,13 @@
 import { startRegistration, startAuthentication } from '@simplewebauthn/browser'
 import aWebSocket from '@/utils/awaitable-websocket'
 
-export async function register(url, options) {
-  if (options) url += `?${new URLSearchParams(options).toString()}`
-  const ws = await aWebSocket(url)
+export async function register() {
+  const ws = await aWebSocket("/auth/ws/register")
   try {
     const optionsJSON = await ws.receive_json()
     const registrationResponse = await startRegistration({ optionsJSON })
     ws.send_json(registrationResponse)
-    const result = await ws.receive_json()
+    return await ws.receive_json()
   } catch (error) {
     console.error('Registration error:', error)
      // Replace useless and ugly error message from startRegistration
@@ -18,18 +17,7 @@ export async function register(url, options) {
   }
 }
 
-export async function registerUser(user_name) {
-  return register('/auth/ws/register', { user_name })
-}
-
-export async function registerCredential() {
-  return register('/auth/ws/add_credential')
-}
-export async function registerWithToken(token) {
-  return register('/auth/ws/add_credential', { token })
-}
-
-export async function authenticateUser() {
+export async function authenticate() {
   const ws = await aWebSocket('/auth/ws/authenticate')
   try {
     const optionsJSON = await ws.receive_json()
@@ -44,3 +32,5 @@ export async function authenticateUser() {
     ws.close()
   }
 }
+
+export default { authenticate, register }

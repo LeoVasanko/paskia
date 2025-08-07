@@ -1,17 +1,13 @@
 import logging
-from datetime import datetime
 from functools import wraps
 from uuid import UUID
 
-import uuid7
-from fastapi import Cookie, FastAPI, Query, WebSocket, WebSocketDisconnect
+from fastapi import Cookie, FastAPI, WebSocket, WebSocketDisconnect
 from webauthn.helpers.exceptions import InvalidAuthenticationResponse
 
-from ..authsession import EXPIRES, create_session, get_reset, get_session
-from ..db import User
+from ..authsession import create_session, get_reset, get_session
 from ..globals import db, passkey
 from ..util import passphrase
-from ..util.tokens import create_token, session_key
 from .session import infodict
 
 
@@ -57,40 +53,6 @@ async def register_chat(
 
 
 @app.websocket("/register")
-@websocket_error_handler
-async def websocket_register_new(
-    ws: WebSocket, user_name: str = Query(""), auth=Cookie(None)
-):
-    """Register a new user and with a new passkey credential."""
-    origin = ws.headers["origin"]
-    user_uuid = uuid7.create()
-    # WebAuthn registration
-    credential = await register_chat(ws, user_uuid, user_name, origin=origin)
-
-    # Store the user and credential in the database
-    await db.instance.create_user_and_credential(
-        User(user_uuid, user_name, created_at=datetime.now()),
-        credential,
-    )
-    # Create a session token for the new user
-    token = create_token()
-    await db.instance.create_session(
-        user_uuid=user_uuid,
-        key=session_key(token),
-        expires=datetime.now() + EXPIRES,
-        info=infodict(ws, "authenticated"),
-        credential_uuid=credential.uuid,
-    )
-
-    await ws.send_json(
-        {
-            "user_uuid": str(user_uuid),
-            "session_token": token,
-        }
-    )
-
-
-@app.websocket("/add_credential")
 @websocket_error_handler
 async def websocket_register_add(ws: WebSocket, auth=Cookie(None)):
     """Register a new credential for an existing user."""
