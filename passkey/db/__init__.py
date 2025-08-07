@@ -15,7 +15,7 @@ from uuid import UUID
 class User:
     uuid: UUID
     display_name: str
-    org_uuid: UUID | None = None
+    org_uuid: UUID
     role: str | None = None
     created_at: datetime | None = None
     last_seen: datetime | None = None
@@ -60,6 +60,17 @@ class Session:
     expires: datetime
     info: dict
     credential_uuid: UUID | None = None
+
+
+@dataclass
+class SessionContext:
+    """Complete session context with user, organization, role, and permissions."""
+
+    session: Session
+    user: User
+    organization: Org
+    role: str | None = None
+    permissions: list[Permission] | None = None
 
 
 class DatabaseInterface(ABC):
@@ -160,11 +171,13 @@ class DatabaseInterface(ABC):
         """Set a user's organization and role."""
 
     @abstractmethod
-    async def remove_user_from_organization(self, user_uuid: UUID) -> None:
-        """Remove a user from their organization."""
+    async def transfer_user_to_organization(
+        self, user_uuid: UUID, new_org_id: str, new_role: str | None = None
+    ) -> None:
+        """Transfer a user to another organization with an optional role."""
 
     @abstractmethod
-    async def get_user_organization(self, user_uuid: UUID) -> tuple[Org, str] | None:
+    async def get_user_organization(self, user_uuid: UUID) -> tuple[Org, str]:
         """Get the organization and role for a user."""
 
     @abstractmethod
@@ -231,11 +244,16 @@ class DatabaseInterface(ABC):
     ) -> None:
         """Create a new user and their first credential in a transaction."""
 
+    @abstractmethod
+    async def get_session_context(self, session_key: bytes) -> SessionContext | None:
+        """Get complete session context including user, organization, role, and permissions."""
+
 
 __all__ = [
     "User",
     "Credential",
     "Session",
+    "SessionContext",
     "Org",
     "Permission",
     "DatabaseInterface",
