@@ -29,6 +29,7 @@ from . import (
     DatabaseInterface,
     Org,
     Permission,
+    Role,
     Session,
     SessionContext,
     User,
@@ -42,41 +43,47 @@ async def init(*args, **kwargs):
     await db.instance.init_db()
 
 
-# SQLAlchemy Models
 class Base(DeclarativeBase):
     pass
-
-
-# Association model for many-to-many relationship between organizations and permissions
-class OrgPermission(Base):
-    """Permissions each Org is allowed to grant to its roles."""
-
-    __tablename__ = "org_permissions"
-
-    org_uuid: Mapped[bytes] = mapped_column(
-        LargeBinary(16),
-        ForeignKey("orgs.uuid", ondelete="CASCADE"),
-        primary_key=True,
-    )
-    permission_id: Mapped[str] = mapped_column(
-        String(32),
-        ForeignKey("permissions.id", ondelete="CASCADE"),
-        primary_key=True,
-    )
-
-
-class PermissionModel(Base):
-    __tablename__ = "permissions"
-
-    id: Mapped[str] = mapped_column(String(128), primary_key=True)
-    display_name: Mapped[str] = mapped_column(String, nullable=False)
 
 
 class OrgModel(Base):
     __tablename__ = "orgs"
 
     uuid: Mapped[bytes] = mapped_column(LargeBinary(16), primary_key=True)
-    options: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    display_name: Mapped[str] = mapped_column(String, nullable=False)
+
+    def as_dataclass(self):
+        return Org(UUID(bytes=self.uuid), self.display_name)
+
+    @staticmethod
+    def from_dataclass(org: Org):
+        return OrgModel(uuid=org.uuid.bytes, display_name=org.display_name)
+
+
+class RoleModel(Base):
+    __tablename__ = "roles"
+
+    uuid: Mapped[bytes] = mapped_column(LargeBinary(16), primary_key=True)
+    org_uuid: Mapped[bytes] = mapped_column(
+        LargeBinary(16), ForeignKey("orgs.uuid", ondelete="CASCADE"), nullable=False
+    )
+    display_name: Mapped[str] = mapped_column(String, nullable=False)
+
+    def as_dataclass(self):
+        return Role(
+            uuid=UUID(bytes=self.uuid),
+            org_uuid=UUID(bytes=self.org_uuid),
+            display_name=self.display_name,
+        )
+
+    @staticmethod
+    def from_dataclass(role: Role):
+        return RoleModel(
+            uuid=role.uuid.bytes,
+            org_uuid=role.org_uuid.bytes,
+            display_name=role.display_name,
+        )
 
 
 class UserModel(Base):
@@ -84,17 +91,38 @@ class UserModel(Base):
 
     uuid: Mapped[bytes] = mapped_column(LargeBinary(16), primary_key=True)
     display_name: Mapped[str] = mapped_column(String, nullable=False)
-    org_uuid: Mapped[bytes] = mapped_column(
-        LargeBinary(16), ForeignKey("orgs.uuid", ondelete="CASCADE"), nullable=False
+    role_uuid: Mapped[bytes] = mapped_column(
+        LargeBinary(16), ForeignKey("roles.uuid", ondelete="CASCADE"), nullable=False
     )
-    role: Mapped[str | None] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
     last_seen: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     visits: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
+    def as_dataclass(self) -> User:
+        return User(
+            uuid=UUID(bytes=self.uuid),
+            display_name=self.display_name,
+            role_uuid=UUID(bytes=self.role_uuid),
+            created_at=self.created_at,
+            last_seen=self.last_seen,
+            visits=self.visits,
+        )
+
+    @staticmethod
+    def from_dataclass(user: User):
+        return UserModel(
+            uuid=user.uuid.bytes,
+            display_name=user.display_name,
+            role_uuid=user.role_uuid.bytes,
+            created_at=user.created_at or datetime.now(),
+            last_seen=user.last_seen,
+            visits=user.visits,
+        )
+
 
 class CredentialModel(Base):
     __tablename__ = "credentials"
+
     uuid: Mapped[bytes] = mapped_column(LargeBinary(16), primary_key=True)
     credential_id: Mapped[bytes] = mapped_column(
         LargeBinary(64), unique=True, index=True
@@ -121,7 +149,73 @@ class SessionModel(Base):
         LargeBinary(16), ForeignKey("credentials.uuid", ondelete="CASCADE")
     )
     expires: Mapped[datetime] = mapped_column(DateTime, nullable=False)
-    info: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    info: Mapped[dict] = mapped_column(JSON, default=dict)
+
+    def as_dataclass(self):
+        return Session(
+            key=self.key,
+            user_uuid=UUID(bytes=self.user_uuid),
+            credential_uuid=(
+                UUID(bytes=self.credential_uuid) if self.credential_uuid else None
+            ),
+            expires=self.expires,
+            info=self.info,
+        )
+
+    @staticmethod
+    def from_dataclass(session: Session):
+        return SessionModel(
+            key=session.key,
+            user_uuid=session.user_uuid.bytes,
+            credential_uuid=session.credential_uuid and session.credential_uuid.bytes,
+            expires=session.expires,
+            info=session.info,
+        )
+
+
+class PermissionModel(Base):
+    __tablename__ = "permissions"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    display_name: Mapped[str] = mapped_column(String, nullable=False)
+
+    def as_dataclass(self):
+        return Permission(self.id, self.display_name)
+
+    @staticmethod
+    def from_dataclass(permission: Permission):
+        return PermissionModel(id=permission.id, display_name=permission.display_name)
+
+
+## Join tables (no dataclass equivalents)
+
+
+class OrgPermission(Base):
+    """Permissions each organization is allowed to grant to its roles."""
+
+    __tablename__ = "org_permissions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)  # Not used
+    org_uuid: Mapped[bytes] = mapped_column(
+        LargeBinary(16), ForeignKey("orgs.uuid", ondelete="CASCADE")
+    )
+    permission_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("permissions.id", ondelete="CASCADE")
+    )
+
+
+class RolePermission(Base):
+    """Permissions that each role grants to its members."""
+
+    __tablename__ = "role_permissions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)  # Not used
+    role_uuid: Mapped[bytes] = mapped_column(
+        LargeBinary(16), ForeignKey("roles.uuid", ondelete="CASCADE")
+    )
+    permission_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("permissions.id", ondelete="CASCADE")
+    )
 
 
 class DB(DatabaseInterface):
@@ -155,29 +249,16 @@ class DB(DatabaseInterface):
             user_model = result.scalar_one_or_none()
 
             if user_model:
-                return User(
-                    uuid=UUID(bytes=user_model.uuid),
-                    display_name=user_model.display_name,
-                    org_uuid=UUID(bytes=user_model.org_uuid),
-                    role=user_model.role,
-                    created_at=user_model.created_at,
-                    last_seen=user_model.last_seen,
-                    visits=user_model.visits,
-                )
+                return user_model.as_dataclass()
             raise ValueError("User not found")
 
     async def create_user(self, user: User) -> None:
         async with self.session() as session:
-            user_model = UserModel(
-                uuid=user.uuid.bytes,
-                display_name=user.display_name,
-                org_uuid=user.org_uuid.bytes,
-                role=user.role,
-                created_at=user.created_at or datetime.now(),
-                last_seen=user.last_seen,
-                visits=user.visits,
-            )
-            session.add(user_model)
+            session.add(UserModel.from_dataclass(user))
+
+    async def create_role(self, role: Role) -> None:
+        async with self.session() as session:
+            session.add(RoleModel.from_dataclass(role))
 
     async def create_credential(self, credential: Credential) -> None:
         async with self.session() as session:
@@ -265,19 +346,8 @@ class DB(DatabaseInterface):
         self, user: User, credential: Credential
     ) -> None:
         async with self.session() as session:
-            # Set visits to 1 for the new user since they're creating their first session
-            user.visits = 1
-
             # Create user
-            user_model = UserModel(
-                uuid=user.uuid.bytes,
-                display_name=user.display_name,
-                org_uuid=user.org_uuid.bytes,
-                role=user.role,
-                created_at=user.created_at or datetime.now(),
-                last_seen=user.last_seen,
-                visits=user.visits,
-            )
+            user_model = UserModel.from_dataclass(user)
             session.add(user_model)
 
             # Create credential
@@ -352,13 +422,11 @@ class DB(DatabaseInterface):
             )
 
     # Organization operations
-    async def create_organization(self, organization: Org) -> None:
+    async def create_organization(self, org: Org) -> None:
         async with self.session() as session:
-            # Convert string ID to UUID bytes for storage
-            org_uuid = UUID(organization.id)
             org_model = OrgModel(
-                uuid=org_uuid.bytes,
-                options=organization.options,
+                uuid=org.uuid.bytes,
+                display_name=org.display_name,
             )
             session.add(org_model)
 
@@ -370,34 +438,28 @@ class DB(DatabaseInterface):
             result = await session.execute(stmt)
             org_model = result.scalar_one_or_none()
 
-            if org_model:
-                # Convert UUID bytes back to string for the interface
-                return Org(
-                    id=str(UUID(bytes=org_model.uuid)),
-                    options=org_model.options,
-                )
-            raise ValueError("Organization not found")
+            if not org_model:
+                raise ValueError("Organization not found")
 
-    async def update_organization(self, organization: Org) -> None:
+            return org_model.as_dataclass()
+
+    async def update_organization(self, org: Org) -> None:
         async with self.session() as session:
-            # Convert string ID to UUID bytes for lookup
-            org_uuid = UUID(organization.id)
             stmt = (
                 update(OrgModel)
-                .where(OrgModel.uuid == org_uuid.bytes)
-                .values(options=organization.options)
+                .where(OrgModel.uuid == org.uuid.bytes)
+                .values(display_name=org.display_name)
             )
             await session.execute(stmt)
 
-    async def delete_organization(self, org_id: str) -> None:
+    async def delete_organization(self, org_uuid: UUID) -> None:
         async with self.session() as session:
             # Convert string ID to UUID bytes for lookup
-            org_uuid = UUID(org_id)
             stmt = delete(OrgModel).where(OrgModel.uuid == org_uuid.bytes)
             await session.execute(stmt)
 
     async def add_user_to_organization(
-        self, user_uuid: UUID, org_id: str, role: str
+        self, user_uuid: UUID, org_uuid: UUID, role: str
     ) -> None:
         async with self.session() as session:
             # Get user and organization models
@@ -406,7 +468,6 @@ class DB(DatabaseInterface):
             user_model = user_result.scalar_one_or_none()
 
             # Convert string ID to UUID bytes for lookup
-            org_uuid = UUID(org_id)
             org_stmt = select(OrgModel).where(OrgModel.uuid == org_uuid.bytes)
             org_result = await session.execute(org_stmt)
             org_model = org_result.scalar_one_or_none()
@@ -449,7 +510,7 @@ class DB(DatabaseInterface):
             if result.rowcount == 0:
                 raise ValueError("User not found")
 
-    async def get_user_organization(self, user_uuid: UUID) -> tuple[Org, str]:
+    async def get_user_organization(self, user_uuid: UUID) -> Org:
         async with self.session() as session:
             stmt = select(UserModel).where(UserModel.uuid == user_uuid.bytes)
             result = await session.execute(stmt)
@@ -459,37 +520,19 @@ class DB(DatabaseInterface):
                 raise ValueError("User not found")
 
             # Fetch the organization details
-            org_stmt = select(OrgModel).where(OrgModel.uuid == user_model.org_uuid)
+            org_stmt = select(OrgModel).where(OrgModel.uuid == user_model.role_uuid)
             org_result = await session.execute(org_stmt)
             org_model = org_result.scalar_one()
 
             # Convert UUID bytes back to string for the interface
-            org = Org(id=str(UUID(bytes=org_model.uuid)), options=org_model.options)
-            return (org, user_model.role or "")
+            return org_model.as_dataclass()
 
-    async def get_organization_users(self, org_id: str) -> list[tuple[User, str]]:
+    async def get_organization_users(self, org_id: str) -> list[User]:
         async with self.session() as session:
-            # Convert string ID to UUID bytes for lookup
-            org_uuid = UUID(org_id)
-            stmt = select(UserModel).where(UserModel.org_uuid == org_uuid.bytes)
+            stmt = select(UserModel).where(UserModel.role_uuid == role.uuid.bytes)
             result = await session.execute(stmt)
             user_models = result.scalars().all()
-
-            # Create user objects with their roles
-            user_role_pairs = []
-            for user_model in user_models:
-                user = User(
-                    uuid=UUID(bytes=user_model.uuid),
-                    display_name=user_model.display_name,
-                    org_uuid=UUID(bytes=user_model.org_uuid),
-                    role=user_model.role,
-                    created_at=user_model.created_at,
-                    last_seen=user_model.last_seen,
-                    visits=user_model.visits,
-                )
-                user_role_pairs.append((user, user_model.role or ""))
-
-            return user_role_pairs
+            return [u.as_dataclass() for u in user_models]
 
     async def get_user_role_in_organization(
         self, user_uuid: UUID, org_id: str
@@ -638,8 +681,7 @@ class DB(DatabaseInterface):
                 org_model = org_result.scalar_one()
 
                 # Convert UUID bytes back to string for the interface
-                org = Org(id=str(UUID(bytes=org_model.uuid)), options=org_model.options)
-                organizations.append(org)
+                organizations.append(org.as_dataclass())
 
             return organizations
 
@@ -695,21 +737,10 @@ class DB(DatabaseInterface):
             )
 
             # Create the user object
-            user_obj = User(
-                uuid=UUID(bytes=user_model.uuid),
-                display_name=user_model.display_name,
-                org_uuid=UUID(bytes=user_model.org_uuid),
-                role=user_model.role,
-                created_at=user_model.created_at,
-                last_seen=user_model.last_seen,
-                visits=user_model.visits,
-            )
+            user_obj = user_model.as_dataclass()
 
             # Create organization object (always exists now)
-            organization = Org(
-                id=str(UUID(bytes=org_model.uuid)),
-                options=org_model.options,
-            )
+            organization = Org(UUID(bytes=org_model.uuid), org_model.display_name)
 
             # Collect all unique permissions
             permissions = []
@@ -728,7 +759,7 @@ class DB(DatabaseInterface):
             return SessionContext(
                 session=session_obj,
                 user=user_obj,
-                organization=organization,
+                org=organization,
                 role=user_model.role,
                 permissions=permissions if permissions else None,
             )

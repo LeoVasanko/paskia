@@ -2,7 +2,6 @@
   <div>
     <StatusMessage />
     <LoginView v-if="store.currentView === 'login'" />
-    <RegisterView v-if="store.currentView === 'register'" />
     <ProfileView v-if="store.currentView === 'profile'" />
     <DeviceLinkView v-if="store.currentView === 'device-link'" />
     <ResetView v-if="store.currentView === 'reset'" />
@@ -14,7 +13,6 @@ import { onMounted } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import StatusMessage from '@/components/StatusMessage.vue'
 import LoginView from '@/components/LoginView.vue'
-import RegisterView from '@/components/RegisterView.vue'
 import ProfileView from '@/components/ProfileView.vue'
 import DeviceLinkView from '@/components/DeviceLinkView.vue'
 import ResetView from '@/components/ResetView.vue'

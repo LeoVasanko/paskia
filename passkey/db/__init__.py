@@ -12,11 +12,23 @@ from uuid import UUID
 
 
 @dataclass
+class Org:
+    uuid: UUID
+    display_name: str
+
+
+@dataclass
+class Role:
+    uuid: UUID
+    org_uuid: UUID
+    display_name: str
+
+
+@dataclass
 class User:
     uuid: UUID
     display_name: str
-    org_uuid: UUID
-    role: str | None = None
+    role_uuid: UUID
     created_at: datetime | None = None
     last_seen: datetime | None = None
     visits: int = 0
@@ -36,25 +48,7 @@ class Credential:
 
 
 @dataclass
-class Org:
-    """Organization data structure."""
-
-    id: str  # ASCII primary key
-    options: dict
-
-
-@dataclass
-class Permission:
-    """Permission data structure."""
-
-    id: str  # String primary key (max 32 chars)
-    display_name: str
-
-
-@dataclass
 class Session:
-    """Session data structure."""
-
     key: bytes
     user_uuid: UUID
     expires: datetime
@@ -63,13 +57,17 @@ class Session:
 
 
 @dataclass
-class SessionContext:
-    """Complete session context with user, organization, role, and permissions."""
+class Permission:
+    id: str  # String primary key (max 128 chars)
+    display_name: str
 
+
+@dataclass
+class SessionContext:
     session: Session
     user: User
-    organization: Org
-    role: str | None = None
+    org: Org
+    role: Role
     permissions: list[Permission] | None = None
 
 
@@ -95,6 +93,11 @@ class DatabaseInterface(ABC):
     @abstractmethod
     async def create_user(self, user: User) -> None:
         """Create a new user."""
+
+    # Role operations
+    @abstractmethod
+    async def create_role(self, role: Role) -> None:
+        """Create new role."""
 
     # Credential operations
     @abstractmethod
@@ -149,19 +152,19 @@ class DatabaseInterface(ABC):
 
     # Organization operations
     @abstractmethod
-    async def create_organization(self, organization: Org) -> None:
-        """Create a new organization."""
+    async def create_organization(self, org: Org) -> None:
+        """Add a new organization."""
 
     @abstractmethod
     async def get_organization(self, org_id: str) -> Org:
         """Get organization by ID."""
 
     @abstractmethod
-    async def update_organization(self, organization: Org) -> None:
+    async def update_organization(self, org: Org) -> None:
         """Update organization options."""
 
     @abstractmethod
-    async def delete_organization(self, org_id: str) -> None:
+    async def delete_organization(self, org_uuid: UUID) -> None:
         """Delete organization by ID."""
 
     @abstractmethod

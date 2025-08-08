@@ -3,6 +3,7 @@
     <div class="view active">
       <h1>🔑 Add New Credential</h1>
       <h3>👤 {{ authStore.userInfo?.user?.user_name }}</h3>
+      <!-- TODO: allow editing name <input type="text" v-model="user_name" required :disabled="authStore.isLoading"> -->
       <p>Proceed to complete {{authStore.userInfo?.session_type}}:</p>
       <button
         class="btn-primary"
@@ -17,7 +18,7 @@
 
 <script setup>
 import { useAuthStore } from '@/stores/auth'
-import { registerCredential } from '@/utils/passkey'
+import passkey from '@/utils/passkey'
 
 const authStore = useAuthStore()
 
@@ -26,8 +27,7 @@ async function register() {
   authStore.showMessage('Starting registration...', 'info')
 
   try {
-    // TODO: For reset sessions, might use registerWithToken() in the future
-    const result = await registerCredential()
+    const result = await passkey.register()
     console.log("Result", result)
     await authStore.setSessionCookie(result.session_token)
 

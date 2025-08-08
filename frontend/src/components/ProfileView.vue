@@ -81,7 +81,7 @@
 import { ref, onMounted, onUnmounted } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import { formatDate } from '@/utils/helpers'
-import { registerCredential } from '@/utils/passkey'
+import passkey from '@/utils/passkey'
 
 const authStore = useAuthStore()
 const updateInterval = ref(null)
@@ -119,7 +119,7 @@ const addNewCredential = async () => {
   try {
     authStore.isLoading = true
     authStore.showMessage('Adding new passkey...', 'info')
-    const result = await registerCredential()
+    await passkey.register()
     await authStore.loadUserInfo()
     authStore.showMessage('New passkey added successfully!', 'success', 3000)
   } catch (error) {
