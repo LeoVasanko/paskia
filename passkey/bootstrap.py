@@ -19,7 +19,8 @@ from .util import passphrase, tokens
 logger = logging.getLogger(__name__)
 
 # Shared log message template for admin reset links
-ADMIN_RESET_MESSAGE = """%s
+ADMIN_RESET_MESSAGE = """\
+%s
 
 👤 Admin  %s
    - Use this link to register a Passkey for the admin user!
