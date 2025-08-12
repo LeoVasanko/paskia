@@ -70,6 +70,19 @@ async def redirect_to_index():
     return FileResponse(STATIC_DIR / "index.html")
 
 
+@app.get("/auth/admin")
+async def serve_admin():
+    """Serve the admin app entry point."""
+    # Vite MPA builds admin as admin.html in the same outDir
+    admin_html = STATIC_DIR / "admin.html"
+    # If configured to emit admin/index.html, support that too
+    if not admin_html.exists():
+        alt = STATIC_DIR / "admin" / "index.html"
+        if alt.exists():
+            return FileResponse(alt)
+    return FileResponse(admin_html)
+
+
 # Register API routes
 register_api_routes(app)
 register_reset_routes(app)
