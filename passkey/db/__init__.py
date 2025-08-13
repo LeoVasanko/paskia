@@ -6,7 +6,7 @@ users, credentials, and sessions in a WebAuthn authentication system.
 """
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from uuid import UUID
 
@@ -22,15 +22,18 @@ class Role:
     uuid: UUID
     org_uuid: UUID
     display_name: str
-    permissions: list[Permission]
+    # List of permission IDs this role grants to its members
+    permissions: list[str] = field(default_factory=list)  # permission IDs
 
 
 @dataclass
 class Org:
     uuid: UUID
     display_name: str
-    permissions: list[Permission]  # All that the Org can grant
-    roles: list[Role]
+    # All permission IDs that the Org is allowed to grant to its roles
+    permissions: list[str] = field(default_factory=list)  # permission IDs
+    # Roles belonging to this org
+    roles: list[Role] = field(default_factory=list)
 
 
 @dataclass
@@ -160,7 +163,7 @@ class DatabaseInterface(ABC):
 
     @abstractmethod
     async def get_organization(self, org_id: str) -> Org:
-        """Get organization by ID."""
+        """Get organization by ID, including its permission IDs and roles (with their permission IDs)."""
 
     @abstractmethod
     async def update_organization(self, org: Org) -> None:
@@ -172,7 +175,7 @@ class DatabaseInterface(ABC):
 
     @abstractmethod
     async def add_user_to_organization(
-        self, user_uuid: UUID, org_id: str, role: str
+    self, user_uuid: UUID, org_id: str, role: str
     ) -> None:
         """Set a user's organization and role."""
 
@@ -239,6 +242,23 @@ class DatabaseInterface(ABC):
     async def get_permission_organizations(self, permission_id: str) -> list[Org]:
         """Get all organizations that have a specific permission."""
 
+    # Role-permission operations
+    @abstractmethod
+    async def add_permission_to_role(self, role_uuid: UUID, permission_id: str) -> None:
+        """Add a permission to a role."""
+
+    @abstractmethod
+    async def remove_permission_from_role(self, role_uuid: UUID, permission_id: str) -> None:
+        """Remove a permission from a role."""
+
+    @abstractmethod
+    async def get_role_permissions(self, role_uuid: UUID) -> list[Permission]:
+        """List all permissions granted to a role."""
+
+    @abstractmethod
+    async def get_permission_roles(self, permission_id: str) -> list[Role]:
+        """List all roles that grant a permission."""
+
     # Combined operations
     @abstractmethod
     async def login(self, user_uuid: UUID, credential: Credential) -> None:
@@ -261,6 +281,7 @@ __all__ = [
     "Session",
     "SessionContext",
     "Org",
+    "Role",
     "Permission",
     "DatabaseInterface",
 ]

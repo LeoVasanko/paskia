@@ -41,6 +41,9 @@ def register_api_routes(app: FastAPI):
         """Get full user information for the authenticated user."""
         reset = passphrase.is_well_formed(auth)
         s = await (get_reset if reset else get_session)(auth)
+        # Session context (org, role, permissions)
+        ctx = await db.instance.get_session_context(session_key(auth))
+        # Fallback if context not available (e.g., reset session)
         u = await db.instance.get_user_by_uuid(s.user_uuid)
         # Get all credentials for the user
         credential_ids = await db.instance.get_credentials_by_user_uuid(s.user_uuid)
@@ -78,6 +81,33 @@ def register_api_routes(app: FastAPI):
         # Sort credentials by creation date (earliest first, most recently created last)
         credentials.sort(key=lambda cred: cred["created_at"])
 
+        # Permissions and roles
+        role_info = None
+        org_info = None
+        effective_permissions = []
+        is_global_admin = False
+        is_org_admin = False
+        if ctx:
+            role_info = {
+                "uuid": str(ctx.role.uuid),
+                "display_name": ctx.role.display_name,
+                "permissions": ctx.role.permissions,  # IDs
+            }
+            org_info = {
+                "uuid": str(ctx.org.uuid),
+                "display_name": ctx.org.display_name,
+                "permissions": ctx.org.permissions,  # IDs the org can grant
+            }
+            # Effective permissions are role permissions; API also returns full objects for convenience
+            effective_permissions = [p.id for p in (ctx.permissions or [])]
+            is_global_admin = "auth/admin" in role_info["permissions"]
+            # org admin permission is auth/org:<org_uuid>
+            is_org_admin = (
+                f"auth/org:{org_info['uuid']}" in role_info["permissions"]
+                if org_info
+                else False
+            )
+
         return {
             "authenticated": not reset,
             "session_type": s.info["type"],
@@ -88,6 +118,11 @@ def register_api_routes(app: FastAPI):
                 "last_seen": u.last_seen.isoformat() if u.last_seen else None,
                 "visits": u.visits,
             },
+            "org": org_info,
+            "role": role_info,
+            "permissions": effective_permissions,
+            "is_global_admin": is_global_admin,
+            "is_org_admin": is_org_admin,
             "credentials": credentials,
             "aaguid_info": aaguid_info,
         }

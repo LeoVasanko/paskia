@@ -66,7 +66,12 @@ async def bootstrap_system(
     )
     await globals.db.instance.create_permission(perm1)
 
-    role = Role(uuid7.create(), org.uuid, "Administration")
+    # Allow this org to grant admin permissions
+    await globals.db.instance.add_permission_to_organization(str(org.uuid), perm0.id)
+    await globals.db.instance.add_permission_to_organization(str(org.uuid), perm1.id)
+
+    # Create an Administration role granting both org and global admin
+    role = Role(uuid7.create(), org.uuid, "Administration", permissions=[perm0.id, perm1.id])
     await globals.db.instance.create_role(role)
 
     user = User(
@@ -110,9 +115,9 @@ async def check_admin_credentials() -> bool:
 
         # Get users from the first organization with admin permission
         org_users = await globals.db.instance.get_organization_users(
-            permission_orgs[0].id
+            str(permission_orgs[0].uuid)
         )
-        admin_users = [user for user, role in org_users if role == "Admin"]
+        admin_users = [user for user, role in org_users if role == "Administration"]
 
         if not admin_users:
             return False
