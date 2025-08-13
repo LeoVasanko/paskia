@@ -12,8 +12,8 @@ from uuid import UUID
 
 
 @dataclass
-class Org:
-    uuid: UUID
+class Permission:
+    id: str  # String primary key (max 128 chars)
     display_name: str
 
 
@@ -22,6 +22,15 @@ class Role:
     uuid: UUID
     org_uuid: UUID
     display_name: str
+    permissions: list[Permission]
+
+
+@dataclass
+class Org:
+    uuid: UUID
+    display_name: str
+    permissions: list[Permission]  # All that the Org can grant
+    roles: list[Role]
 
 
 @dataclass
@@ -54,12 +63,6 @@ class Session:
     expires: datetime
     info: dict
     credential_uuid: UUID | None = None
-
-
-@dataclass
-class Permission:
-    id: str  # String primary key (max 128 chars)
-    display_name: str
 
 
 @dataclass
