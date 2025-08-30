@@ -56,6 +56,7 @@ def register_reset_routes(app):
 
             response = RedirectResponse(url=f"{origin}/auth/", status_code=303)
             session.set_session_cookie(response, reset_token)
+            print(response.headers)
             return response
 
         except Exception as e:

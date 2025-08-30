@@ -69,17 +69,21 @@ async def websocket_register_add(ws: WebSocket, auth=Cookie(None)):
 
     # WebAuthn registration
     credential = await register_chat(ws, user_uuid, user_name, challenge_ids, origin)
+    # IMPORTANT: Insert the credential before creating a session that references it
+    # to satisfy the sessions.credential_uuid foreign key (now enforced).
+    await db.instance.create_credential(credential)
+
     if reset:
-        # Replace reset session with a new session
+        # Invalidate the one-time reset session only after credential persisted
         await db.instance.delete_session(s.key)
         token = await create_session(
             user_uuid, credential.uuid, infodict(ws, "authenticated")
         )
     else:
+        # Existing session continues; we don't need to create a new one here.
         token = auth
+
     assert isinstance(token, str) and len(token) == 16
-    # Store the new credential in the database
-    await db.instance.create_credential(credential)
 
     await ws.send_json(
         {

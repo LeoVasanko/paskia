@@ -243,6 +243,18 @@ class DatabaseInterface(ABC):
         """Delete permission by ID."""
 
     @abstractmethod
+    async def rename_permission(
+        self, old_id: str, new_id: str, display_name: str
+    ) -> None:
+        """Rename a permission's ID (and display name) updating all references.
+
+        This must update:
+            - permissions.id (primary key)
+            - org_permissions.permission_id
+            - role_permissions.permission_id
+        """
+
+    @abstractmethod
     async def add_permission_to_organization(
         self, org_id: str, permission_id: str
     ) -> None:
