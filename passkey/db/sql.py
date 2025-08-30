@@ -864,6 +864,25 @@ class DB(DatabaseInterface):
             r_dc.permissions = [row[0] for row in perms_result.fetchall()]
             return r_dc
 
+    async def get_roles_by_organization(self, org_id: str) -> list[Role]:
+        async with self.session() as session:
+            org_uuid = UUID(org_id)
+            result = await session.execute(
+                select(RoleModel).where(RoleModel.org_uuid == org_uuid.bytes)
+            )
+            role_models = result.scalars().all()
+            roles: list[Role] = []
+            for rm in role_models:
+                r_dc = rm.as_dataclass()
+                perms_result = await session.execute(
+                    select(RolePermission.permission_id).where(
+                        RolePermission.role_uuid == rm.uuid
+                    )
+                )
+                r_dc.permissions = [row[0] for row in perms_result.fetchall()]
+                roles.append(r_dc)
+            return roles
+
     async def add_permission_to_organization(
         self, org_id: str, permission_id: str
     ) -> None:

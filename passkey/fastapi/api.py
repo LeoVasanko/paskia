@@ -16,8 +16,10 @@ from fastapi.security import HTTPBearer
 from passkey.util import passphrase
 
 from .. import aaguid
-from ..authsession import delete_credential, get_reset, get_session
+from ..authsession import delete_credential, expires, get_reset, get_session
 from ..globals import db
+from ..globals import passkey as global_passkey
+from ..util import tokens
 from ..util.tokens import session_key
 from . import session
 
@@ -321,6 +323,42 @@ def register_api_routes(app: FastAPI):
         await db.instance.update_role(updated)
         return {"status": "ok"}
 
+    @app.post("/auth/admin/orgs/{org_uuid}/users")
+    async def admin_create_user(
+        org_uuid: UUID, payload: dict = Body(...), auth=Cookie(None)
+    ):
+        """Create a new user within an organization.
+
+        Body parameters:
+        - display_name: str (required)
+        - role: str (required) display name of existing role in that org
+        """
+        ctx, is_global_admin, is_org_admin = await _get_ctx_and_admin_flags(auth)
+        if not (is_global_admin or (is_org_admin and ctx.org.uuid == org_uuid)):
+            raise ValueError("Insufficient permissions")
+        display_name = payload.get("display_name")
+        role_name = payload.get("role")
+        if not display_name or not role_name:
+            raise ValueError("display_name and role are required")
+        # Validate role exists in org
+        from ..db import User as UserDC  # local import to avoid cycles
+        roles = await db.instance.get_roles_by_organization(str(org_uuid))
+        role_obj = next((r for r in roles if r.display_name == role_name), None)
+        if not role_obj:
+            raise ValueError("Role not found in organization")
+        # Create user
+        user_uuid = uuid4()
+        user = UserDC(
+            uuid=user_uuid,
+            display_name=display_name,
+            role_uuid=role_obj.uuid,
+            visits=0,
+            created_at=None,
+            last_seen=None,
+        )
+        await db.instance.create_user(user)
+        return {"uuid": str(user_uuid)}
+
     @app.delete("/auth/admin/roles/{role_uuid}")
     async def admin_delete_role(role_uuid: UUID, auth=Cookie(None)):
         ctx, is_global_admin, is_org_admin = await _get_ctx_and_admin_flags(auth)
@@ -329,6 +367,109 @@ def register_api_routes(app: FastAPI):
             raise ValueError("Insufficient permissions")
         await db.instance.delete_role(role_uuid)
         return {"status": "ok"}
+
+    # -------------------- Admin API: Users (role management) --------------------
+
+    @app.put("/auth/admin/orgs/{org_uuid}/users/{user_uuid}/role")
+    async def admin_update_user_role(
+        org_uuid: UUID, user_uuid: UUID, payload: dict = Body(...), auth=Cookie(None)
+    ):
+        """Change a user's role within their organization.
+
+        Body: {"role": "New Role Display Name"}
+        Only global admins or admins of the organization can perform this.
+        """
+        ctx, is_global_admin, is_org_admin = await _get_ctx_and_admin_flags(auth)
+        if not (is_global_admin or (is_org_admin and ctx.org.uuid == org_uuid)):
+            raise ValueError("Insufficient permissions")
+        new_role = payload.get("role")
+        if not new_role:
+            raise ValueError("role is required")
+        # Verify user belongs to this org
+        try:
+            user_org, _current_role = await db.instance.get_user_organization(user_uuid)
+        except ValueError:
+            raise ValueError("User not found")
+        if user_org.uuid != org_uuid:
+            raise ValueError("User does not belong to this organization")
+        # Ensure role exists in org and update
+        roles = await db.instance.get_roles_by_organization(str(org_uuid))
+        if not any(r.display_name == new_role for r in roles):
+            raise ValueError("Role not found in organization")
+        await db.instance.update_user_role_in_organization(user_uuid, new_role)
+        return {"status": "ok"}
+
+    @app.post("/auth/admin/users/{user_uuid}/create-link")
+    async def admin_create_user_registration_link(user_uuid: UUID, auth=Cookie(None)):
+        """Create a device registration/reset link for a specific user (admin only).
+
+        Returns JSON: {"url": str, "expires": iso8601}
+        """
+        ctx, is_global_admin, is_org_admin = await _get_ctx_and_admin_flags(auth)
+        # Ensure user exists and fetch their org
+        try:
+            user_org, _role_name = await db.instance.get_user_organization(user_uuid)
+        except ValueError:
+            raise HTTPException(status_code=404, detail="User not found")
+        if not (is_global_admin or (is_org_admin and user_org.uuid == ctx.org.uuid)):
+            raise HTTPException(status_code=403, detail="Insufficient permissions")
+
+        # Generate human-readable reset token and store as session with reset key
+        token = passphrase.generate()
+        await db.instance.create_session(
+            user_uuid=user_uuid,
+            key=tokens.reset_key(token),
+            expires=expires(),
+            info={"type": "device addition", "created_by_admin": True},
+        )
+        origin = global_passkey.instance.origin
+        url = f"{origin}/auth/{token}"
+        return {"url": url, "expires": expires().isoformat()}
+
+    @app.get("/auth/admin/users/{user_uuid}")
+    async def admin_get_user_detail(user_uuid: UUID, auth=Cookie(None)):
+        """Get detailed information about a user (admin only)."""
+        ctx, is_global_admin, is_org_admin = await _get_ctx_and_admin_flags(auth)
+        try:
+            user_org, role_name = await db.instance.get_user_organization(user_uuid)
+        except ValueError:
+            raise HTTPException(status_code=404, detail="User not found")
+        if not (is_global_admin or (is_org_admin and user_org.uuid == ctx.org.uuid)):
+            raise HTTPException(status_code=403, detail="Insufficient permissions")
+        user = await db.instance.get_user_by_uuid(user_uuid)
+        # Gather credentials
+        cred_ids = await db.instance.get_credentials_by_user_uuid(user_uuid)
+        creds: list[dict] = []
+        aaguids: set[str] = set()
+        for cid in cred_ids:
+            try:
+                c = await db.instance.get_credential_by_id(cid)
+            except ValueError:
+                continue
+            aaguid_str = str(c.aaguid)
+            aaguids.add(aaguid_str)
+            creds.append(
+                {
+                    "credential_uuid": str(c.uuid),
+                    "aaguid": aaguid_str,
+                    "created_at": c.created_at.isoformat(),
+                    "last_used": c.last_used.isoformat() if c.last_used else None,
+                    "last_verified": c.last_verified.isoformat() if c.last_verified else None,
+                    "sign_count": c.sign_count,
+                }
+            )
+        from .. import aaguid as aaguid_mod
+        aaguid_info = aaguid_mod.filter(aaguids)
+        return {
+            "display_name": user.display_name,
+            "org": {"display_name": user_org.display_name},
+            "role": role_name,
+            "visits": user.visits,
+            "created_at": user.created_at.isoformat() if user.created_at else None,
+            "last_seen": user.last_seen.isoformat() if user.last_seen else None,
+            "credentials": creds,
+            "aaguid_info": aaguid_info,
+        }
 
     # -------------------- Admin API: Permissions (global) --------------------
 
