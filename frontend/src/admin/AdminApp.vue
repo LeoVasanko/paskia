@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted, computed, watch } from 'vue'
+import { ref, onMounted, onBeforeUnmount, computed, watch } from 'vue'
 import CredentialList from '@/components/CredentialList.vue'
 import RegistrationLinkModal from '@/components/RegistrationLinkModal.vue'
 import StatusMessage from '@/components/StatusMessage.vue'
@@ -16,6 +16,85 @@ const userDetail = ref(null) // cached user detail object
 const userLink = ref(null) // latest generated registration link
 const userLinkExpires = ref(null)
 const authStore = useAuthStore()
+const addingOrgForPermission = ref(null)
+
+function handleGlobalClick(e) {
+  if (!addingOrgForPermission.value) return
+  const menu = e.target.closest('.org-add-menu')
+  const trigger = e.target.closest('.add-org-btn')
+  if (!menu && !trigger) {
+    addingOrgForPermission.value = null
+  }
+}
+
+onMounted(() => {
+  document.addEventListener('click', handleGlobalClick)
+})
+onBeforeUnmount(() => {
+  document.removeEventListener('click', handleGlobalClick)
+})
+
+// Build a summary: for each permission id -> { orgs: Set(org_display_name), userCount }
+const permissionSummary = computed(() => {
+  const summary = {}
+  for (const o of orgs.value) {
+    const orgBase = { uuid: o.uuid, display_name: o.display_name }
+    // Org-level permissions (direct)
+    for (const pid of o.permissions || []) {
+      if (!summary[pid]) summary[pid] = { orgs: [], orgSet: new Set(), userCount: 0 }
+      if (!summary[pid].orgSet.has(o.uuid)) {
+        summary[pid].orgs.push(orgBase)
+        summary[pid].orgSet.add(o.uuid)
+      }
+    }
+    // Role-based permissions (inheritance)
+    for (const r of o.roles) {
+      for (const pid of r.permissions) {
+        if (!summary[pid]) summary[pid] = { orgs: [], orgSet: new Set(), userCount: 0 }
+        if (!summary[pid].orgSet.has(o.uuid)) {
+          summary[pid].orgs.push(orgBase)
+          summary[pid].orgSet.add(o.uuid)
+        }
+        summary[pid].userCount += r.users.length
+      }
+    }
+  }
+  const display = {}
+  for (const [pid, v] of Object.entries(summary)) {
+    display[pid] = { orgs: v.orgs.sort((a,b)=>a.display_name.localeCompare(b.display_name)), userCount: v.userCount }
+  }
+  return display
+})
+
+function availableOrgsForPermission(pid) {
+  return orgs.value.filter(o => !o.permissions.includes(pid))
+}
+
+async function attachPermissionToOrg(pid, orgUuid) {
+  if (!orgUuid) return
+  try {
+    const params = new URLSearchParams({ permission_id: pid })
+    const res = await fetch(`/auth/admin/orgs/${orgUuid}/permission?${params.toString()}`, { method: 'POST' })
+    const data = await res.json()
+    if (data.detail) throw new Error(data.detail)
+    await loadOrgs()
+  } catch (e) {
+    alert(e.message || 'Failed to add permission to org')
+  }
+}
+
+async function detachPermissionFromOrg(pid, orgUuid) {
+  if (!confirm('Remove permission from this org?')) return
+  try {
+    const params = new URLSearchParams({ permission_id: pid })
+    const res = await fetch(`/auth/admin/orgs/${orgUuid}/permission?${params.toString()}`, { method: 'DELETE' })
+    const data = await res.json()
+    if (data.detail) throw new Error(data.detail)
+    await loadOrgs()
+  } catch (e) {
+    alert(e.message || 'Failed to remove permission from org')
+  }
+}
 
 function parseHash() {
   const h = window.location.hash || ''
@@ -88,7 +167,7 @@ async function createOrg() {
   })
   const data = await res.json()
   if (data.detail) return alert(data.detail)
-  await loadOrgs()
+  await Promise.all([loadOrgs(), loadPermissions()])
 }
 
 async function updateOrg(org) {
@@ -229,11 +308,8 @@ async function createPermission() {
 async function updatePermission(p) {
   const name = prompt('Permission display name:', p.display_name)
   if (!name) return
-  const res = await fetch(`/auth/admin/permissions/${encodeURIComponent(p.id)}`, {
-    method: 'PUT',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ display_name: name })
-  })
+  const params = new URLSearchParams({ permission_id: p.id, display_name: name })
+  const res = await fetch(`/auth/admin/permission?${params.toString()}`, { method: 'PUT' })
   const data = await res.json()
   if (data.detail) return alert(data.detail)
   await loadPermissions()
@@ -241,7 +317,8 @@ async function updatePermission(p) {
 
 async function deletePermission(p) {
   if (!confirm(`Delete permission ${p.id}?`)) return
-  const res = await fetch(`/auth/admin/permissions/${encodeURIComponent(p.id)}`, { method: 'DELETE' })
+  const params = new URLSearchParams({ permission_id: p.id })
+  const res = await fetch(`/auth/admin/permission?${params.toString()}`, { method: 'DELETE' })
   const data = await res.json()
   if (data.detail) return alert(data.detail)
   await loadPermissions()
@@ -340,8 +417,6 @@ async function toggleRolePermission(role, permId, checked) {
       <a href="/auth/" class="back-link" title="Back to User App">User</a>
       <a v-if="selectedOrg && info?.is_global_admin" @click.prevent="goOverview" href="#overview" class="nav-link" title="Back to overview">Overview</a>
     </h1>
-    <p class="subtitle" v-if="!selectedUser">Manage organizations, roles, and permissions</p>
-
     <div v-if="loading">Loading…</div>
     <div v-else-if="error" class="error">{{ error }}</div>
     <div v-else>
@@ -418,18 +493,13 @@ async function toggleRolePermission(role, permId, checked) {
             <span class="org-name">{{ selectedOrg.display_name }}</span>
             <button @click="updateOrg(selectedOrg)" class="icon-btn" aria-label="Rename organization" title="Rename organization">✏️</button>
           </h2>
-          <div class="org-actions">
-            <button @click="deleteOrg(selectedOrg)" v-if="info.is_global_admin" class="icon-btn delete-icon" aria-label="Delete organization" title="Delete organization">❌</button>
-            <button @click="createRole(selectedOrg)">+ Role</button>
-            <button @click="goOverview" v-if="info.is_global_admin">Back</button>
-          </div>
+          <div class="org-actions"></div>
 
           <div class="matrix-wrapper">
-            <h3>Permissions Matrix</h3>
             <div class="matrix-scroll">
               <div
                 class="perm-matrix-grid"
-                :style="{ gridTemplateColumns: 'minmax(180px, 1fr) ' + selectedOrg.roles.map(()=> '2.2rem').join(' ') }"
+                :style="{ gridTemplateColumns: 'minmax(180px, 1fr) ' + selectedOrg.roles.map(()=> '2.2rem').join(' ') + ' 2.2rem' }"
               >
                 <!-- Headers -->
                 <div class="grid-head perm-head">Permission</div>
@@ -441,6 +511,7 @@ async function toggleRolePermission(role, permId, checked) {
                 >
                   <span>{{ r.display_name }}</span>
                 </div>
+                <div class="grid-head role-head add-role-head" title="Add role" @click="createRole(selectedOrg)" role="button">➕</div>
 
                 <!-- Data Rows -->
                 <template v-for="pid in selectedOrg.permissions" :key="pid">
@@ -456,6 +527,7 @@ async function toggleRolePermission(role, permId, checked) {
                       @change="e => toggleRolePermission(r, pid, e.target.checked)"
                     />
                   </div>
+                  <div class="matrix-cell add-role-cell" />
                 </template>
               </div>
             </div>
@@ -507,14 +579,57 @@ async function toggleRolePermission(role, permId, checked) {
           <div class="actions">
             <button @click="createPermission">+ Create Permission</button>
           </div>
-          <div v-for="p in permissions" :key="p.id" class="perm" :title="p.id">
-            <div class="perm-name-line">
-              <span>{{ p.display_name }}</span>
-              <button @click="updatePermission(p)" class="icon-btn" aria-label="Rename permission" title="Rename permission">✏️</button>
-            </div>
-            <div class="perm-actions">
-              <button @click="deletePermission(p)" class="icon-btn delete-icon" aria-label="Delete permission" title="Delete permission">❌</button>
-            </div>
+          <div class="permission-grid">
+            <div class="perm-grid-head">Permission</div>
+            <div class="perm-grid-head">Orgs</div>
+            <div class="perm-grid-head center">Members</div>
+            <div class="perm-grid-head center">Actions</div>
+            <template v-for="p in [...permissions].sort((a,b)=> a.id.localeCompare(b.id))" :key="p.id">
+              <div class="perm-cell perm-name" :title="p.id">
+                <span class="perm-title">{{ p.display_name }}</span>
+                <span class="perm-id muted">({{ p.id }})</span>
+              </div>
+              <div class="perm-cell perm-orgs" :title="permissionSummary[p.id]?.orgs?.map(o=>o.display_name).join(', ') || ''">
+                <template v-if="permissionSummary[p.id]">
+                  <span class="org-pill" v-for="o in permissionSummary[p.id].orgs" :key="o.uuid">
+                    {{ o.display_name }}
+                    <button class="pill-x" @click.stop="detachPermissionFromOrg(p.id, o.uuid)" aria-label="Remove">×</button>
+                  </span>
+                </template>
+                <span class="org-add-wrapper">
+                  <button
+                    v-if="availableOrgsForPermission(p.id).length && addingOrgForPermission !== p.id"
+                    class="add-org-btn"
+                    @click.stop="addingOrgForPermission = p.id"
+                    aria-label="Add organization"
+                    title="Add organization"
+                  >➕</button>
+                  <div
+                    v-if="addingOrgForPermission === p.id"
+                    class="org-add-menu"
+                    tabindex="0"
+                    @keydown.escape.stop.prevent="addingOrgForPermission = null"
+                  >
+                    <div class="org-add-list">
+                      <button
+                        v-for="o in availableOrgsForPermission(p.id)"
+                        :key="o.uuid"
+                        class="org-add-item"
+                        @click.stop="attachPermissionToOrg(p.id, o.uuid); addingOrgForPermission = null"
+                      >{{ o.display_name }}</button>
+                    </div>
+                    <div class="org-add-footer">
+                      <button class="org-add-cancel" @click.stop="addingOrgForPermission = null" aria-label="Cancel">Cancel</button>
+                    </div>
+                  </div>
+                </span>
+              </div>
+              <div class="perm-cell perm-users center">{{ permissionSummary[p.id]?.userCount || 0 }}</div>
+              <div class="perm-cell perm-actions center">
+                <button @click="updatePermission(p)" class="icon-btn" aria-label="Rename permission" title="Rename permission">✏️</button>
+                <button @click="deletePermission(p)" class="icon-btn delete-icon" aria-label="Delete permission" title="Delete permission">❌</button>
+              </div>
+            </template>
           </div>
         </div>
       </div>
@@ -544,8 +659,10 @@ async function toggleRolePermission(role, permId, checked) {
 .pill-x { background: transparent; border: none; color: #900; cursor: pointer }
 button { padding: .25rem .5rem; border-radius: 6px; border: 1px solid #ddd; background: #fff; cursor: pointer }
 button:hover { background: #f7f7f7 }
-.roles-grid { display: flex; gap: 1rem; align-items: stretch; overflow-x: auto; padding: .5rem 0 }
-.role-column { background: #fafafa; border: 1px solid #eee; border-radius: 8px; padding: .5rem; min-width: 200px; flex: 0 0 240px; display: flex; flex-direction: column; }
+/* Avoid global button 100% width from frontend main styles */
+button, .perm-actions button, .org-actions button, .role-actions button { width: auto; }
+.roles-grid { display: flex; flex-wrap: wrap; gap: 1rem; align-items: stretch; padding: .5rem 0; }
+.role-column { background: #fafafa; border: 1px solid #eee; border-radius: 8px; padding: .5rem; min-width: 200px; flex: 1 1 240px; display: flex; flex-direction: column; max-width: 300px; }
 .role-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: .25rem }
 .user-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: .25rem; flex: 1 1 auto; }
 .user-chip { background: #fff; border: 1px solid #ddd; border-radius: 6px; padding: .25rem .4rem; display: flex; justify-content: space-between; gap: .5rem; cursor: grab; }
@@ -573,6 +690,10 @@ button:hover { background: #f7f7f7 }
 .perm-matrix-grid .matrix-cell { display: flex; justify-content: center; align-items: center; }
 .perm-matrix-grid .matrix-cell input { cursor: pointer; }
 .matrix-hint { font-size: .7rem; margin-top: .25rem; }
+/* Add role column styles */
+.add-role-head { cursor: pointer; color: #2a6; font-size: 1rem; display:flex; justify-content:center; align-items:flex-end; }
+.add-role-head:hover { color:#1c4; }
+/* Removed add-role placeholder styles */
 /* Inline organization title with icon */
 .org-title { display: flex; align-items: center; gap: .4rem; }
 .org-title .org-name { flex: 0 1 auto; }
@@ -580,7 +701,7 @@ button:hover { background: #f7f7f7 }
 .plus-btn { background: none; border: none; font-size: 1.15rem; line-height: 1; padding: 0 .1rem; cursor: pointer; opacity: .6; }
 .plus-btn:hover, .plus-btn:focus { opacity: 1; outline: none; }
 .plus-btn:focus-visible { outline: 2px solid #555; outline-offset: 2px; }
-.empty-role { display: flex; flex-direction: column; gap: .4rem; align-items: flex-start; padding: .35rem .25rem; flex: 1 1 auto; width: 100%; }
+.empty-role { display: flex; flex-direction: column; gap: .4rem; align-items: flex-start; padding: .35rem .25rem; /* removed flex grow & width for natural size */ }
 .empty-role .empty-text { font-size: .7rem; margin: 0; }
 .delete-icon { color: #c00; }
 .delete-icon:hover, .delete-icon:focus { color: #ff0000; }
@@ -601,4 +722,33 @@ button:hover { background: #f7f7f7 }
 .cred-item { background: #fff; border: 1px solid #eee; border-radius: 6px; padding: .35rem .5rem; font-size: .65rem; }
 .cred-line { display: flex; flex-direction: column; gap: .15rem; }
 .cred-line .dates { color: #555; font-size: .6rem; }
+/* Permission grid */
+.permission-grid { display: grid; grid-template-columns: minmax(220px,2fr) minmax(160px,3fr) 70px 90px; gap: 2px; margin-top: .5rem; }
+.permission-grid .perm-grid-head { font-size: .6rem; text-transform: uppercase; letter-spacing: .05em; font-weight: 600; padding: .35rem .4rem; background: #f3f3f3; border: 1px solid #e1e1e1; }
+.permission-grid .perm-cell { background: #fff; border: 1px solid #eee; padding: .35rem .4rem; font-size: .7rem; display: flex; align-items: center; gap: .4rem; }
+.permission-grid .perm-name { flex-direction: row; flex-wrap: wrap; }
+.permission-grid .perm-title { font-weight: 600; }
+.permission-grid .perm-id { font-size: .55rem; }
+.permission-grid .center { justify-content: center; }
+.permission-grid .perm-actions { gap: .25rem; }
+.permission-grid .perm-actions .icon-btn { font-size: .9rem; }
+/* Org pill editing */
+.perm-orgs { flex-wrap: wrap; gap: .25rem; }
+.perm-orgs .org-pill { background:#eef4ff; border:1px solid #d0dcf0; padding:2px 6px; border-radius:999px; font-size:.55rem; display:inline-flex; align-items:center; gap:4px; }
+.perm-orgs .org-pill .pill-x { background:none; border:none; cursor:pointer; font-size:.7rem; line-height:1; padding:0; margin:0; color:#555; }
+.perm-orgs .org-pill .pill-x:hover { color:#c00; }
+.add-org-btn { background:none; border:none; cursor:pointer; font-size:.7rem; padding:0 2px; line-height:1; opacity:.55; display:inline; }
+.add-org-btn:hover, .add-org-btn:focus { opacity:1; }
+.add-org-btn:focus-visible { outline:2px solid #555; outline-offset:2px; }
+.org-add-wrapper { position:relative; display:inline-block; }
+.org-add-menu { position:absolute; top:100%; left:0; z-index:20; margin-top:4px; min-width:160px; background:#fff; border:1px solid #e2e6ea; border-radius:6px; padding:.3rem .35rem; box-shadow:0 4px 10px rgba(0,0,0,.08); display:flex; flex-direction:column; gap:.25rem; font-size:.6rem; }
+.org-add-menu:before { content:""; position:absolute; top:-5px; left:10px; width:8px; height:8px; background:#fff; border-left:1px solid #e2e6ea; border-top:1px solid #e2e6ea; transform:rotate(45deg); }
+.org-add-list { display:flex; flex-direction:column; gap:0; max-height:180px; overflow-y:auto; scrollbar-width:thin; }
+.org-add-item { background:transparent; border:none; padding:.25rem .4rem; font-size:.6rem; border-radius:4px; cursor:pointer; line-height:1.1; text-align:left; width:100%; color:#222; }
+.org-add-item:hover, .org-add-item:focus { background:#f2f5f9; }
+.org-add-item:active { background:#e6ebf0; }
+.org-add-footer { margin-top:.25rem; display:flex; justify-content:flex-end; }
+.org-add-cancel { background:transparent; border:none; font-size:.55rem; padding:.15rem .35rem; cursor:pointer; color:#666; border-radius:4px; }
+.org-add-cancel:hover, .org-add-cancel:focus { background:#f2f5f9; color:#222; }
+.org-add-cancel:active { background:#e6ebf0; }
 </style>
