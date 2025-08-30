@@ -32,8 +32,15 @@ async def init(
     origin: str | None = None,
     default_admin: str | None = None,
     default_org: str | None = None,
+    *,
+    bootstrap: bool = True,
 ) -> None:
-    """Initialize the global database, passkey instance, and bootstrap the system if needed."""
+    """Initialize global passkey + database.
+
+    If bootstrap=True (default) the system bootstrap_if_needed() will be invoked.
+    In FastAPI lifespan we call with bootstrap=False to avoid duplicate bootstrapping
+    since the CLI performs it once before servers start.
+    """
     # Initialize passkey instance with provided parameters
     passkey.instance = Passkey(
         rp_id=rp_id,
@@ -49,10 +56,11 @@ async def init(
 
         await sql.init()
 
-    # Bootstrap system if needed
-    from .bootstrap import bootstrap_if_needed
+    if bootstrap:
+        # Bootstrap system if needed
+        from .bootstrap import bootstrap_if_needed
 
-    await bootstrap_if_needed(default_admin, default_org)
+        await bootstrap_if_needed(default_admin, default_org)
 
 
 # Global instances

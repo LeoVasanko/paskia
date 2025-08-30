@@ -20,9 +20,35 @@ export default defineConfig(({ command, mode }) => ({
     port: 4403,
     proxy: {
       '/auth/': {
-        target: 'http://localhost:4401',
+        target: 'http://localhost:4402',
         ws: true,
-        changeOrigin: false
+        changeOrigin: false,
+        // We proxy API + WS under /auth/, but want Vite to serve the SPA entrypoints
+        // and static assets so that HMR works. Bypass tells http-proxy to skip
+        // proxying when we return a (possibly rewritten) local path.
+        bypass(req) {
+          const url = req.url || ''
+          // Paths to serve locally (not proxied):
+          //  - /auth/ (root SPA)
+          //  - /auth/assets/* (dev static assets)
+          //  - /auth/admin/* (admin SPA)
+          // NOTE: Keep /auth/ws/* and all other API endpoints proxied.
+          if (url === '/auth/' || url === '/auth') {
+            return '/'
+          }
+          if (url.startsWith('/auth/assets')) {
+            // Map /auth/assets/* -> /assets/*
+            return url.replace(/^\/auth/, '')
+          }
+          if (url === '/auth/admin' || url === '/auth/admin/') {
+            return '/admin/'
+          }
+          if (url.startsWith('/auth/admin/')) {
+            // Map /auth/admin/* -> /admin/*
+            return url.replace(/^\/auth\/admin/, '/admin')
+          }
+          // Otherwise proxy (API, ws, etc.)
+        }
       }
     }
   },
@@ -35,9 +61,7 @@ export default defineConfig(({ command, mode }) => ({
         index: resolve(__dirname, 'index.html'),
         admin: resolve(__dirname, 'admin/index.html')
       },
-      output: {
-        // Ensure HTML files land as /auth/index.html and /auth/admin.html -> we will serve /auth/admin mapping in backend
-      }
+      output: {}
     }
   }
 }))

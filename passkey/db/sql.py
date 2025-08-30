@@ -441,12 +441,41 @@ class DB(DatabaseInterface):
                 display_name=org.display_name,
             )
             session.add(org_model)
-            # Persist org permissions the org is allowed to grant
+            # Persist any explicitly provided org grantable permissions
             if org.permissions:
-                for perm_id in org.permissions:
+                for perm_id in set(org.permissions):
                     session.add(
                         OrgPermission(org_uuid=org.uuid.bytes, permission_id=perm_id)
                     )
+
+            # Automatically create an organization admin permission if not present.
+            # Pattern: auth/org:<org-uuid>
+            auto_perm_id = f"auth/org:{org.uuid}"
+            # Only create if it does not already exist (in case caller passed it)
+            existing_perm = await session.execute(
+                select(PermissionModel).where(PermissionModel.id == auto_perm_id)
+            )
+            if not existing_perm.scalar_one_or_none():
+                session.add(
+                    PermissionModel(
+                        id=auto_perm_id,
+                        display_name=f"{org.display_name} Admin",
+                    )
+                )
+            # Ensure org is allowed to grant its own admin permission (insert if missing)
+            existing_org_perm = await session.execute(
+                select(OrgPermission).where(
+                    OrgPermission.org_uuid == org.uuid.bytes,
+                    OrgPermission.permission_id == auto_perm_id,
+                )
+            )
+            if not existing_org_perm.scalar_one_or_none():
+                session.add(
+                    OrgPermission(org_uuid=org.uuid.bytes, permission_id=auto_perm_id)
+                )
+            # Reflect the automatically added permission in the dataclass instance
+            if auto_perm_id not in org.permissions:
+                org.permissions.append(auto_perm_id)
 
     async def get_organization(self, org_id: str) -> Org:
         async with self.session() as session:
@@ -488,6 +517,48 @@ class DB(DatabaseInterface):
 
             return org_dc
 
+    async def list_organizations(self) -> list[Org]:
+        async with self.session() as session:
+            # Load all orgs
+            orgs_result = await session.execute(select(OrgModel))
+            org_models = orgs_result.scalars().all()
+            if not org_models:
+                return []
+
+            # Preload org permissions mapping
+            org_perms_result = await session.execute(select(OrgPermission))
+            org_perms = org_perms_result.scalars().all()
+            perms_by_org: dict[bytes, list[str]] = {}
+            for op in org_perms:
+                perms_by_org.setdefault(op.org_uuid, []).append(op.permission_id)
+
+            # Preload roles
+            roles_result = await session.execute(select(RoleModel))
+            role_models = roles_result.scalars().all()
+
+            # Preload role permissions mapping
+            rp_result = await session.execute(select(RolePermission))
+            rps = rp_result.scalars().all()
+            perms_by_role: dict[bytes, list[str]] = {}
+            for rp in rps:
+                perms_by_role.setdefault(rp.role_uuid, []).append(rp.permission_id)
+
+            # Build org dataclasses with roles and permission IDs
+            roles_by_org: dict[bytes, list[Role]] = {}
+            for rm in role_models:
+                r_dc = rm.as_dataclass()
+                r_dc.permissions = perms_by_role.get(rm.uuid, [])
+                roles_by_org.setdefault(rm.org_uuid, []).append(r_dc)
+
+            orgs: list[Org] = []
+            for om in org_models:
+                o_dc = om.as_dataclass()
+                o_dc.permissions = perms_by_org.get(om.uuid, [])
+                o_dc.roles = roles_by_org.get(om.uuid, [])
+                orgs.append(o_dc)
+
+            return orgs
+
     async def update_organization(self, org: Org) -> None:
         async with self.session() as session:
             stmt = (
@@ -505,9 +576,7 @@ class DB(DatabaseInterface):
             if org.permissions:
                 for perm_id in org.permissions:
                     await session.merge(
-                        OrgPermission(
-                            org_uuid=org.uuid.bytes, permission_id=perm_id
-                        )
+                        OrgPermission(org_uuid=org.uuid.bytes, permission_id=perm_id)
                     )
 
     async def delete_organization(self, org_uuid: UUID) -> None:
@@ -557,9 +626,9 @@ class DB(DatabaseInterface):
     async def transfer_user_to_organization(
         self, user_uuid: UUID, new_org_id: str, new_role: str | None = None
     ) -> None:
-            # Users are members of an org that never changes after creation.
-            # Disallow transfers across organizations to enforce invariant.
-            raise ValueError("Users cannot be transferred to a different organization")
+        # Users are members of an org that never changes after creation.
+        # Disallow transfers across organizations to enforce invariant.
+        raise ValueError("Users cannot be transferred to a different organization")
 
     async def get_user_organization(self, user_uuid: UUID) -> tuple[Org, str]:
         async with self.session() as session:
@@ -686,6 +755,11 @@ class DB(DatabaseInterface):
             stmt = delete(PermissionModel).where(PermissionModel.id == permission_id)
             await session.execute(stmt)
 
+    async def list_permissions(self) -> list[Permission]:
+        async with self.session() as session:
+            result = await session.execute(select(PermissionModel))
+            return [p.as_dataclass() for p in result.scalars().all()]
+
     async def add_permission_to_role(self, role_uuid: UUID, permission_id: str) -> None:
         async with self.session() as session:
             # Ensure role exists
@@ -696,7 +770,9 @@ class DB(DatabaseInterface):
                 raise ValueError("Role not found")
 
             # Ensure permission exists
-            perm_stmt = select(PermissionModel).where(PermissionModel.id == permission_id)
+            perm_stmt = select(PermissionModel).where(
+                PermissionModel.id == permission_id
+            )
             perm_result = await session.execute(perm_stmt)
             if not perm_result.scalar_one_or_none():
                 raise ValueError("Permission not found")
@@ -705,7 +781,9 @@ class DB(DatabaseInterface):
                 RolePermission(role_uuid=role_uuid.bytes, permission_id=permission_id)
             )
 
-    async def remove_permission_from_role(self, role_uuid: UUID, permission_id: str) -> None:
+    async def remove_permission_from_role(
+        self, role_uuid: UUID, permission_id: str
+    ) -> None:
         async with self.session() as session:
             await session.execute(
                 delete(RolePermission)
@@ -717,7 +795,9 @@ class DB(DatabaseInterface):
         async with self.session() as session:
             stmt = (
                 select(PermissionModel)
-                .join(RolePermission, PermissionModel.id == RolePermission.permission_id)
+                .join(
+                    RolePermission, PermissionModel.id == RolePermission.permission_id
+                )
                 .where(RolePermission.role_uuid == role_uuid.bytes)
             )
             result = await session.execute(stmt)
@@ -732,6 +812,57 @@ class DB(DatabaseInterface):
             )
             result = await session.execute(stmt)
             return [r.as_dataclass() for r in result.scalars().all()]
+
+    async def update_role(self, role: Role) -> None:
+        async with self.session() as session:
+            # Update role display_name
+            await session.execute(
+                update(RoleModel)
+                .where(RoleModel.uuid == role.uuid.bytes)
+                .values(display_name=role.display_name)
+            )
+            # Sync role permissions: delete all then insert current set
+            await session.execute(
+                delete(RolePermission).where(
+                    RolePermission.role_uuid == role.uuid.bytes
+                )
+            )
+            if role.permissions:
+                for perm_id in set(role.permissions):
+                    session.add(
+                        RolePermission(role_uuid=role.uuid.bytes, permission_id=perm_id)
+                    )
+
+    async def delete_role(self, role_uuid: UUID) -> None:
+        async with self.session() as session:
+            # Prevent deleting a role that still has users
+            # Quick existence check for users assigned to the role
+            existing_user = await session.execute(
+                select(UserModel.uuid).where(UserModel.role_uuid == role_uuid.bytes)
+            )
+            if existing_user.first() is not None:
+                raise ValueError("Cannot delete role with assigned users")
+
+            await session.execute(
+                delete(RoleModel).where(RoleModel.uuid == role_uuid.bytes)
+            )
+
+    async def get_role(self, role_uuid: UUID) -> Role:
+        async with self.session() as session:
+            result = await session.execute(
+                select(RoleModel).where(RoleModel.uuid == role_uuid.bytes)
+            )
+            role_model = result.scalar_one_or_none()
+            if not role_model:
+                raise ValueError("Role not found")
+            r_dc = role_model.as_dataclass()
+            perms_result = await session.execute(
+                select(RolePermission.permission_id).where(
+                    RolePermission.role_uuid == role_uuid.bytes
+                )
+            )
+            r_dc.permissions = [row[0] for row in perms_result.fetchall()]
+            return r_dc
 
     async def add_permission_to_organization(
         self, org_id: str, permission_id: str
@@ -844,7 +975,9 @@ class DB(DatabaseInterface):
                 .join(RoleModel, UserModel.role_uuid == RoleModel.uuid)
                 .join(OrgModel, RoleModel.org_uuid == OrgModel.uuid)
                 .outerjoin(RolePermission, RoleModel.uuid == RolePermission.role_uuid)
-                .outerjoin(PermissionModel, RolePermission.permission_id == PermissionModel.id)
+                .outerjoin(
+                    PermissionModel, RolePermission.permission_id == PermissionModel.id
+                )
                 .where(SessionModel.key == session_key)
             )
 
