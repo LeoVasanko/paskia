@@ -206,6 +206,10 @@ class DatabaseInterface(ABC):
         """Get all users in an organization with their roles."""
 
     @abstractmethod
+    async def get_roles_by_organization(self, org_id: str) -> list[Role]:
+        """List roles belonging to an organization."""
+
+    @abstractmethod
     async def get_user_role_in_organization(
         self, user_uuid: UUID, org_id: str
     ) -> str | None:

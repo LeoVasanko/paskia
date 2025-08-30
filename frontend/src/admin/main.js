@@ -1,6 +1,9 @@
 import '../assets/style.css'
 
 import { createApp } from 'vue'
+import { createPinia } from 'pinia'
 import AdminApp from './AdminApp.vue'
 
-createApp(AdminApp).mount('#admin-app')
+const app = createApp(AdminApp)
+app.use(createPinia())
+app.mount('#admin-app')
