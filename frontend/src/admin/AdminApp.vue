@@ -171,7 +171,7 @@ onMounted(load)
 
 <template>
   <div class="container">
-    <h1>Passkey Admin</h1>
+    <h1>Passkey Admin <a href="/auth/" class="back-link" title="Back to User App">User</a></h1>
     <p class="subtitle">Manage organizations, roles, and permissions</p>
 
     <div v-if="loading">Loading…</div>
@@ -301,4 +301,6 @@ onMounted(load)
 .pill-x { background: transparent; border: none; color: #900; cursor: pointer }
 button { padding: .25rem .5rem; border-radius: 6px; border: 1px solid #ddd; background: #fff; cursor: pointer }
 button:hover { background: #f7f7f7 }
+.back-link { font-size: .5em; margin-left: .75rem; text-decoration: none; background: #eee; padding: .25em .6em; border-radius: 999px; border: 1px solid #ccc; vertical-align: middle; line-height: 1.2; }
+.back-link:hover { background: #ddd; }
 </style>
