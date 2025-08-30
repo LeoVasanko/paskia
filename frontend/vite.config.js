@@ -28,26 +28,12 @@ export default defineConfig(({ command, mode }) => ({
         // proxying when we return a (possibly rewritten) local path.
         bypass(req) {
           const url = req.url || ''
-          // Paths to serve locally (not proxied):
-          //  - /auth/ (root SPA)
-          //  - /auth/assets/* (dev static assets)
-          //  - /auth/admin/* (admin SPA)
-          // NOTE: Keep /auth/ws/* and all other API endpoints proxied.
-          if (url === '/auth/' || url === '/auth') {
-            return '/'
-          }
-          if (url.startsWith('/auth/assets')) {
-            // Map /auth/assets/* -> /assets/*
-            return url.replace(/^\/auth/, '')
-          }
-          if (url === '/auth/admin' || url === '/auth/admin/') {
-            return '/admin/'
-          }
-          if (url.startsWith('/auth/admin/')) {
-            // Map /auth/admin/* -> /admin/*
-            return url.replace(/^\/auth\/admin/, '/admin')
-          }
-          // Otherwise proxy (API, ws, etc.)
+          // Bypass only root SPA entrypoints + static assets so Vite serves them for HMR.
+          // Admin API endpoints (e.g., /auth/admin/orgs) must still hit backend.
+          if (url === '/auth/' || url === '/auth') return '/'
+          if (url === '/auth/admin' || url === '/auth/admin/') return '/admin/'
+          if (url.startsWith('/auth/assets/')) return url.replace(/^\/auth/, '')
+          // Everything else (including /auth/admin/* APIs) should proxy.
         }
       }
     }
