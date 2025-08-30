@@ -1,7 +1,7 @@
 <template>
   <div class="container">
     <div class="view active">
-      <h1>👋 Welcome!</h1>
+  <h1>👋 Welcome! <a v-if="isAdmin" href="/auth/admin/" class="admin-link" title="Admin Console">Admin</a></h1>
       <div v-if="authStore.userInfo?.user" class="user-info">
         <h3>👤 {{ authStore.userInfo.user.user_name }}</h3>
         <span><strong>Visits:</strong></span>
@@ -78,7 +78,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import { formatDate } from '@/utils/helpers'
 import passkey from '@/utils/passkey'
@@ -145,6 +145,8 @@ const logout = async () => {
   await authStore.logout()
   authStore.currentView = 'login'
 }
+
+const isAdmin = computed(() => !!(authStore.userInfo?.is_global_admin || authStore.userInfo?.is_org_admin))
 </script>
 
 <style scoped>
@@ -158,5 +160,22 @@ const logout = async () => {
 }
 .user-info span {
   text-align: left;
+}
+</style>
+
+<style scoped>
+.admin-link {
+  font-size: 0.6em;
+  margin-left: 0.75rem;
+  text-decoration: none;
+  background: var(--color-background-soft, #eee);
+  padding: 0.2em 0.6em;
+  border-radius: 999px;
+  border: 1px solid var(--color-border, #ccc);
+  vertical-align: middle;
+  line-height: 1.2;
+}
+.admin-link:hover {
+  background: var(--color-background-mute, #ddd);
 }
 </style>
