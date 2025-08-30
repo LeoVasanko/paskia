@@ -241,27 +241,21 @@ def register_api_routes(app: FastAPI):
         await db.instance.delete_organization(org_uuid)
         return {"status": "ok"}
 
-    # Manage an org's grantable permissions
-    @app.post("/auth/admin/orgs/{org_uuid}/permissions/{permission_id}")
-    async def admin_add_org_permission(
-        org_uuid: UUID, permission_id: str, auth=Cookie(None)
-    ):
+    # Manage an org's grantable permissions (query param for permission_id)
+    @app.post("/auth/admin/orgs/{org_uuid}/permission")
+    async def admin_add_org_permission(org_uuid: UUID, permission_id: str, auth=Cookie(None)):
         ctx, is_global_admin, is_org_admin = await _get_ctx_and_admin_flags(auth)
         if not (is_global_admin or (is_org_admin and ctx.org.uuid == org_uuid)):
             raise ValueError("Insufficient permissions")
         await db.instance.add_permission_to_organization(str(org_uuid), permission_id)
         return {"status": "ok"}
 
-    @app.delete("/auth/admin/orgs/{org_uuid}/permissions/{permission_id}")
-    async def admin_remove_org_permission(
-        org_uuid: UUID, permission_id: str, auth=Cookie(None)
-    ):
+    @app.delete("/auth/admin/orgs/{org_uuid}/permission")
+    async def admin_remove_org_permission(org_uuid: UUID, permission_id: str, auth=Cookie(None)):
         ctx, is_global_admin, is_org_admin = await _get_ctx_and_admin_flags(auth)
         if not (is_global_admin or (is_org_admin and ctx.org.uuid == org_uuid)):
             raise ValueError("Insufficient permissions")
-        await db.instance.remove_permission_from_organization(
-            str(org_uuid), permission_id
-        )
+        await db.instance.remove_permission_from_organization(str(org_uuid), permission_id)
         return {"status": "ok"}
 
     # -------------------- Admin API: Roles --------------------
@@ -471,7 +465,7 @@ def register_api_routes(app: FastAPI):
             "aaguid_info": aaguid_info,
         }
 
-    # -------------------- Admin API: Permissions (global) --------------------
+    # Admin API: Permissions (global)
 
     @app.get("/auth/admin/permissions")
     async def admin_list_permissions(auth=Cookie(None)):
@@ -497,24 +491,18 @@ def register_api_routes(app: FastAPI):
         )
         return {"status": "ok"}
 
-    @app.put("/auth/admin/permissions/{permission_id}")
-    async def admin_update_permission(
-        permission_id: str, payload: dict = Body(...), auth=Cookie(None)
-    ):
+    @app.put("/auth/admin/permission")
+    async def admin_update_permission(permission_id: str, display_name: str, auth=Cookie(None)):
         _, is_global_admin, _ = await _get_ctx_and_admin_flags(auth)
         if not is_global_admin:
             raise ValueError("Global admin required")
         from ..db import Permission as PermDC
-
-        display_name = payload.get("display_name")
         if not display_name:
             raise ValueError("display_name is required")
-        await db.instance.update_permission(
-            PermDC(id=permission_id, display_name=display_name)
-        )
+        await db.instance.update_permission(PermDC(id=permission_id, display_name=display_name))
         return {"status": "ok"}
 
-    @app.delete("/auth/admin/permissions/{permission_id}")
+    @app.delete("/auth/admin/permission")
     async def admin_delete_permission(permission_id: str, auth=Cookie(None)):
         _, is_global_admin, _ = await _get_ctx_and_admin_flags(auth)
         if not is_global_admin:
