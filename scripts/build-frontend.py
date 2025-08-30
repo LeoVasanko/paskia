@@ -28,6 +28,7 @@ class CustomBuildHook(BuildHookInterface):
                 stderr.write("\n### npm run build\n")
                 subprocess.run([npm, "run", "build"], check=True)  # noqa: S603
             else:
+                assert bun
                 stderr.write("### bun install\n")
                 subprocess.run([bun, "install"], check=True)  # noqa: S603
                 stderr.write("\n### bun run build\n")
