@@ -19,52 +19,55 @@ A minimal FastAPI WebAuthn server with WebSocket support for passkey registratio
 
 ## Quick Start
 
-### Using uv (recommended)
+### Install (editable dev mode)
 
 ```fish
-# Install uv if you haven't already
-curl -LsSf https://astral.sh/uv/install.sh | sh
-
-# Clone/navigate to the project directory
-cd passkeyauth
-
-# Install dependencies and run
-uv run passkeyauth.main:main
+uv pip install -e .[dev]
 ```
 
-### Using pip
+### Run (new CLI)
+
+`passkey-auth` now provides subcommands:
+
+```text
+passkey-auth serve [host:port] [--options]
+passkey-auth dev   [--options]
+```
+
+Examples (fish shell shown):
 
 ```fish
-# Create and activate virtual environment
-python -m venv venv
-source venv/bin/activate.fish  # or venv/bin/activate for bash
+# Production style (no reload)
+passkey-auth serve
+passkey-auth serve 0.0.0.0:8080 --rp-id example.com --origin https://example.com
 
-# Install the package in development mode
-pip install -e ".[dev]"
-
-# Run the server
-python -m passkeyauth.main
+# Development (auto-reload)
+passkey-auth dev            # localhost:4401
+passkey-auth dev :5500      # localhost on port 5500
+passkey-auth dev 127.0.0.1  # host only, default port 4401
 ```
 
-### Using hatch
+Available options (both subcommands):
 
-```fish
-# Install hatch if you haven't already
-pip install hatch
-
-# Run the development server
-hatch run python -m passkeyauth.main
+```text
+--rp-id <id>        Relying Party ID (default: localhost)
+--rp-name <name>    Relying Party name (default: same as rp-id)
+--origin <url>      Explicit origin (default: https://<rp-id>)
 ```
 
-## Usage
+### Legacy Invocation
 
-1. Start the server using one of the methods above
-2. Open your browser to `http://localhost:8000`
+If you previously used `python -m passkey.fastapi --dev --host ...`, switch to the new form above. The old flags `--host`, `--port`, and `--dev` are replaced by the `[host:port]` positional and the `dev` subcommand.
+
+## Usage (Web)
+
+1. Start the server with one of the commands above
+2. Open your browser to `http://localhost:4401/auth/` (or your chosen host/port)
 3. Enter a username (or use the default)
 4. Click "Register Passkey"
-5. Follow your authenticator's prompts to create a passkey
+5. Follow your authenticator's prompts
 
-The WebSocket connection will show real-time status updates as you progress through the registration flow.
+Real-time status updates stream over WebSocket.
 
 ## Development
 

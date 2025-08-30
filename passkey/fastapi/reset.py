@@ -5,6 +5,7 @@ from fastapi.responses import RedirectResponse
 
 from ..authsession import expires, get_session
 from ..globals import db
+from ..globals import passkey as global_passkey
 from ..util import passphrase, tokens
 from . import session
 
@@ -43,10 +44,9 @@ def register_reset_routes(app):
         reset_token: str,
     ):
         """Verifies the token and redirects to auth app for credential registration."""
-        # This route should only match to exact passphrases
-        print(f"Reset handler called with url: {request.url.path}")
         if not passphrase.is_well_formed(reset_token):
             raise HTTPException(status_code=404)
+        origin = global_passkey.instance.origin
         try:
             # Get session token to validate it exists and get user_id
             key = tokens.reset_key(reset_token)
@@ -54,7 +54,7 @@ def register_reset_routes(app):
             if not sess:
                 raise ValueError("Invalid or expired registration token")
 
-            response = RedirectResponse(url="/auth/", status_code=303)
+            response = RedirectResponse(url=f"{origin}/auth/", status_code=303)
             session.set_session_cookie(response, reset_token)
             return response
 
@@ -65,4 +65,4 @@ def register_reset_routes(app):
             else:
                 logging.exception("Internal Server Error in reset_authentication")
                 msg = "Internal Server Error"
-            return RedirectResponse(url=f"/auth/#{msg}", status_code=303)
+            return RedirectResponse(url=f"{origin}/auth/#{msg}", status_code=303)

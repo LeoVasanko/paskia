@@ -16,7 +16,18 @@ from . import authsession, globals
 from .db import Org, Permission, Role, User
 from .util import passphrase, tokens
 
-logger = logging.getLogger(__name__)
+
+def _init_logger() -> logging.Logger:
+    l = logging.getLogger(__name__)
+    if not l.handlers and not logging.getLogger().handlers:
+        h = logging.StreamHandler()
+        h.setFormatter(logging.Formatter("%(message)s"))
+        l.addHandler(h)
+        l.setLevel(logging.INFO)
+    return l
+
+
+logger = _init_logger()
 
 # Shared log message template for admin reset links
 ADMIN_RESET_MESSAGE = """\
@@ -61,17 +72,18 @@ async def bootstrap_system(
     org = Org(uuid7.create(), org_name or "Organization")
     await globals.db.instance.create_organization(org)
 
-    perm1 = Permission(
-        id=f"auth/org:{org.uuid}", display_name=f"{org.display_name} Admin"
-    )
-    await globals.db.instance.create_permission(perm1)
-
-    # Allow this org to grant admin permissions
+    # After creation, org.permissions now includes the auto-created org admin permission
+    # Allow this org to grant global admin explicitly
     await globals.db.instance.add_permission_to_organization(str(org.uuid), perm0.id)
-    await globals.db.instance.add_permission_to_organization(str(org.uuid), perm1.id)
 
     # Create an Administration role granting both org and global admin
-    role = Role(uuid7.create(), org.uuid, "Administration", permissions=[perm0.id, perm1.id])
+    # Compose permissions for Administration role: global admin + org admin auto-perm
+    role = Role(
+        uuid7.create(),
+        org.uuid,
+        "Administration",
+        permissions=[perm0.id, *org.permissions],
+    )
     await globals.db.instance.create_role(role)
 
     user = User(
@@ -92,7 +104,10 @@ async def bootstrap_system(
         "user": user,
         "org": org,
         "role": role,
-        "permissions": [perm0, perm1],
+        "permissions": [
+            perm0,
+            *[Permission(id=p, display_name="") for p in org.permissions],
+        ],
         "reset_link": reset_link,
     }
 

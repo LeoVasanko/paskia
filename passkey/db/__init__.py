@@ -105,6 +105,14 @@ class DatabaseInterface(ABC):
     async def create_role(self, role: Role) -> None:
         """Create new role."""
 
+    @abstractmethod
+    async def update_role(self, role: Role) -> None:
+        """Update a role's display name and synchronize its permissions."""
+
+    @abstractmethod
+    async def delete_role(self, role_uuid: UUID) -> None:
+        """Delete a role by UUID. Implementations may prevent deletion if users exist."""
+
     # Credential operations
     @abstractmethod
     async def create_credential(self, credential: Credential) -> None:
@@ -166,6 +174,10 @@ class DatabaseInterface(ABC):
         """Get organization by ID, including its permission IDs and roles (with their permission IDs)."""
 
     @abstractmethod
+    async def list_organizations(self) -> list[Org]:
+        """List all organizations with their roles and permission IDs."""
+
+    @abstractmethod
     async def update_organization(self, org: Org) -> None:
         """Update organization options."""
 
@@ -175,7 +187,7 @@ class DatabaseInterface(ABC):
 
     @abstractmethod
     async def add_user_to_organization(
-    self, user_uuid: UUID, org_id: str, role: str
+        self, user_uuid: UUID, org_id: str, role: str
     ) -> None:
         """Set a user's organization and role."""
 
@@ -215,6 +227,10 @@ class DatabaseInterface(ABC):
         """Get permission by ID."""
 
     @abstractmethod
+    async def list_permissions(self) -> list[Permission]:
+        """List all permissions."""
+
+    @abstractmethod
     async def update_permission(self, permission: Permission) -> None:
         """Update permission details."""
 
@@ -248,7 +264,9 @@ class DatabaseInterface(ABC):
         """Add a permission to a role."""
 
     @abstractmethod
-    async def remove_permission_from_role(self, role_uuid: UUID, permission_id: str) -> None:
+    async def remove_permission_from_role(
+        self, role_uuid: UUID, permission_id: str
+    ) -> None:
         """Remove a permission from a role."""
 
     @abstractmethod
@@ -258,6 +276,10 @@ class DatabaseInterface(ABC):
     @abstractmethod
     async def get_permission_roles(self, permission_id: str) -> list[Role]:
         """List all roles that grant a permission."""
+
+    @abstractmethod
+    async def get_role(self, role_uuid: UUID) -> Role:
+        """Get a role by UUID, including its permission IDs."""
 
     # Combined operations
     @abstractmethod
