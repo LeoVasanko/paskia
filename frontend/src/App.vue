@@ -20,11 +20,21 @@ import ResetView from '@/components/ResetView.vue'
 const store = useAuthStore()
 
 onMounted(async () => {
-  // Was an error message passed in the URL?
+  // Was an error message passed in the URL hash?
   const message = location.hash.substring(1)
   if (message) {
     store.showMessage(decodeURIComponent(message), 'error')
     history.replaceState(null, '', location.pathname)
+  }
+  // Capture reset token from query parameter and then remove it
+  const params = new URLSearchParams(location.search)
+  const reset = params.get('reset')
+  if (reset) {
+    store.resetToken = reset
+    // Remove query param to avoid lingering in history / clipboard
+  const targetPath = '/auth/'
+  const currentPath = location.pathname.endsWith('/') ? location.pathname : location.pathname + '/'
+  history.replaceState(null, '', currentPath.startsWith('/auth') ? '/auth/' : targetPath)
   }
   try {
     await store.loadUserInfo()

@@ -27,7 +27,9 @@ export default defineConfig(({ command, mode }) => ({
         // and static assets so that HMR works. Bypass tells http-proxy to skip
         // proxying when we return a (possibly rewritten) local path.
         bypass(req) {
-          const url = req.url || ''
+          const rawUrl = req.url || ''
+          // Strip query/hash to match path-only for SPA entrypoints with query params (e.g. ?reset=token)
+          const url = rawUrl.split('?')[0].split('#')[0]
           // Bypass only root SPA entrypoints + static assets so Vite serves them for HMR.
           // Admin API endpoints (e.g., /auth/admin/orgs) must still hit backend.
           if (url === '/auth/' || url === '/auth') return '/'

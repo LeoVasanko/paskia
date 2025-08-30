@@ -6,6 +6,7 @@ export const useAuthStore = defineStore('auth', {
     // Auth State
     userInfo: null, // Contains the full user info response: {user, credentials, aaguid_info, session_type, authenticated}
     isLoading: false,
+  resetToken: null, // transient reset token (never stored in cookie)
 
     // UI State
     currentView: 'login', // 'login', 'profile', 'device-link', 'reset'
@@ -37,6 +38,9 @@ export const useAuthStore = defineStore('auth', {
       if (result.detail) {
         throw new Error(result.detail)
       }
+  // On successful session establishment, discard any reset token to avoid
+  // sending stale Authorization headers on subsequent API calls.
+  this.resetToken = null
       return result
     },
     async register() {
@@ -69,9 +73,25 @@ export const useAuthStore = defineStore('auth', {
       else this.currentView = 'reset'
     },
     async loadUserInfo() {
-      const response = await fetch('/auth/user-info', {method: 'POST'})
-      const result = await response.json()
-      if (result.detail) throw new Error(`Server: ${result.detail}`)
+      const headers = {}
+      // Reset tokens are only passed via query param now, not Authorization header
+      const url = this.resetToken ? `/auth/user-info?reset=${encodeURIComponent(this.resetToken)}` : '/auth/user-info'
+      const response = await fetch(url, { method: 'POST', headers })
+      let result = null
+      try {
+        result = await response.json()
+      } catch (_) {
+        // ignore JSON parse errors (unlikely)
+      }
+      if (response.status === 401 && result?.detail) {
+        this.showMessage(result.detail, 'error', 5000)
+        throw new Error(result.detail)
+      }
+      if (result?.detail) {
+        // Other error style
+        this.showMessage(result.detail, 'error', 5000)
+        throw new Error(result.detail)
+      }
       this.userInfo = result
       console.log('User info loaded:', result)
     },

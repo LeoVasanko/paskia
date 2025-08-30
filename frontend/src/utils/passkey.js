@@ -1,8 +1,9 @@
 import { startRegistration, startAuthentication } from '@simplewebauthn/browser'
 import aWebSocket from '@/utils/awaitable-websocket'
 
-export async function register() {
-  const ws = await aWebSocket("/auth/ws/register")
+export async function register(resetToken = null) {
+  const url = resetToken ? `/auth/ws/register?reset=${encodeURIComponent(resetToken)}` : "/auth/ws/register"
+  const ws = await aWebSocket(url)
   try {
     const optionsJSON = await ws.receive_json()
     const registrationResponse = await startRegistration({ optionsJSON })
