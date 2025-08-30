@@ -73,12 +73,12 @@ app.mount("/auth/ws", ws.app)
 
 @app.get("/auth/forward-auth")
 async def forward_authentication(
-    request: Request, perm: str | None = None, auth=Cookie(None)
+    request: Request, perm: list[str] | None = None, auth=Cookie(None)
 ):
     """A validation endpoint to use with Caddy forward_auth or Nginx auth_request.
 
     Query Params:
-    - perm: optional permission ID the authenticated user must possess (role or org).
+    - perm: repeated permission IDs the authenticated user must possess (ALL required).
 
     Success: 204 No Content with x-auth-user-uuid header.
     Failure (unauthenticated / unauthorized): 4xx with index.html body so the
