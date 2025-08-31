@@ -21,7 +21,7 @@ from ..globals import db
 from ..globals import passkey as global_passkey
 from ..util import tokens
 from ..util.tokens import session_key
-from . import session
+from . import authz, session
 
 bearer_auth = HTTPBearer(auto_error=True)
 
@@ -43,13 +43,17 @@ def register_api_routes(app: FastAPI):
         return ctx, is_global_admin, is_org_admin
 
     @app.post("/auth/validate")
-    async def validate_token(response: Response, auth=Cookie(None)):
-        """Lightweight token validation endpoint."""
-        s = await get_session(auth)
-        return {
-            "valid": True,
-            "user_uuid": str(s.user_uuid),
-        }
+    async def validate_token(
+        response: Response, perm: str | None = None, auth=Cookie(None)
+    ):
+        """Lightweight token validation endpoint.
+
+        Query Params:
+        - perm: optional permission ID the caller must possess
+        """
+
+        s = await authz.verify(auth, perm)
+        return {"valid": True, "user_uuid": str(s.user_uuid)}
 
     @app.post("/auth/user-info")
     async def api_user_info(reset: str | None = None, auth=Cookie(None)):

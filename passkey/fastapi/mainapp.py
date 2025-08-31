@@ -4,12 +4,12 @@ import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import Cookie, FastAPI, Request, Response
+from fastapi import Cookie, FastAPI, HTTPException, Request, Response
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from ..authsession import get_session
-from . import ws
+from . import authz, ws
 from .api import register_api_routes
 from .reset import register_reset_routes
 
@@ -72,26 +72,26 @@ app.mount("/auth/ws", ws.app)
 
 
 @app.get("/auth/forward-auth")
-async def forward_authentication(request: Request, auth=Cookie(None)):
-    """A validation endpoint to use with Caddy forward_auth or Nginx auth_request."""
-    if auth:
-        with contextlib.suppress(ValueError):
-            s = await get_session(auth)
-            # If authenticated, return a success response
-            if s.info and s.info["type"] == "authenticated":
-                return Response(
-                    status_code=204,
-                    headers={
-                        "x-auth-user-uuid": str(s.user_uuid),
-                    },
-                )
+async def forward_authentication(
+    request: Request, perm: str | None = None, auth=Cookie(None)
+):
+    """A validation endpoint to use with Caddy forward_auth or Nginx auth_request.
 
-    # Serve the index.html of the authentication app if not authenticated
-    return FileResponse(
-        STATIC_DIR / "index.html",
-        status_code=401,
-        headers={"www-authenticate": "PrivateToken"},
-    )
+    Query Params:
+    - perm: optional permission ID the authenticated user must possess (role or org).
+
+    Success: 204 No Content with x-auth-user-uuid header.
+    Failure (unauthenticated / unauthorized): 4xx with index.html body so the
+    client (reverse proxy or browser) can initiate auth flow.
+    """
+    try:
+        s = await authz.verify(auth, perm)
+        return Response(
+            status_code=204,
+            headers={"x-auth-user-uuid": str(s.user_uuid)},
+        )
+    except HTTPException as e:
+        return FileResponse(STATIC_DIR / "index.html", e.status_code)
 
 
 # Serve static files
