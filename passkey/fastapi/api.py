@@ -19,7 +19,7 @@ from .. import aaguid
 from ..authsession import delete_credential, expires, get_reset, get_session
 from ..globals import db
 from ..globals import passkey as global_passkey
-from ..util import tokens
+from ..util import querysafe, tokens
 from ..util.tokens import session_key
 from . import authz, session
 
@@ -260,6 +260,7 @@ def register_api_routes(app: FastAPI):
         ctx, is_global_admin, is_org_admin = await _get_ctx_and_admin_flags(auth)
         if not (is_global_admin or (is_org_admin and ctx.org.uuid == org_uuid)):
             raise ValueError("Insufficient permissions")
+        querysafe.assert_safe(permission_id, field="permission_id")
         await db.instance.add_permission_to_organization(str(org_uuid), permission_id)
         return {"status": "ok"}
 
@@ -270,6 +271,7 @@ def register_api_routes(app: FastAPI):
         ctx, is_global_admin, is_org_admin = await _get_ctx_and_admin_flags(auth)
         if not (is_global_admin or (is_org_admin and ctx.org.uuid == org_uuid)):
             raise ValueError("Insufficient permissions")
+        querysafe.assert_safe(permission_id, field="permission_id")
         await db.instance.remove_permission_from_organization(
             str(org_uuid), permission_id
         )
@@ -506,6 +508,7 @@ def register_api_routes(app: FastAPI):
         display_name = payload.get("display_name")
         if not perm_id or not display_name:
             raise ValueError("id and display_name are required")
+        querysafe.assert_safe(perm_id, field="id")
         await db.instance.create_permission(
             PermDC(id=perm_id, display_name=display_name)
         )
@@ -522,6 +525,7 @@ def register_api_routes(app: FastAPI):
 
         if not display_name:
             raise ValueError("display_name is required")
+        querysafe.assert_safe(permission_id, field="permission_id")
         await db.instance.update_permission(
             PermDC(id=permission_id, display_name=display_name)
         )
@@ -541,6 +545,8 @@ def register_api_routes(app: FastAPI):
         display_name = payload.get("display_name")
         if not old_id or not new_id:
             raise ValueError("old_id and new_id required")
+        querysafe.assert_safe(old_id, field="old_id")
+        querysafe.assert_safe(new_id, field="new_id")
         if display_name is None:
             # Fetch old to retain display name
             perm = await db.instance.get_permission(old_id)
@@ -557,6 +563,7 @@ def register_api_routes(app: FastAPI):
         _, is_global_admin, _ = await _get_ctx_and_admin_flags(auth)
         if not is_global_admin:
             raise ValueError("Global admin required")
+        querysafe.assert_safe(permission_id, field="permission_id")
         await db.instance.delete_permission(permission_id)
         return {"status": "ok"}
 
