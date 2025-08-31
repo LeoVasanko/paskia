@@ -66,7 +66,7 @@ async def bootstrap_system(
         dict: Contains information about created entities and reset link
     """
     # Create permission first - will fail if already exists
-    perm0 = Permission(id="auth/admin", display_name="Master Admin")
+    perm0 = Permission(id="auth:admin", display_name="Master Admin")
     await globals.db.instance.create_permission(perm0)
 
     org = Org(uuid7.create(), org_name or "Organization")
@@ -122,7 +122,7 @@ async def check_admin_credentials() -> bool:
     try:
         # Get permission organizations to find admin users
         permission_orgs = await globals.db.instance.get_permission_organizations(
-            "auth/admin"
+            "auth:admin"
         )
 
         if not permission_orgs:
@@ -173,7 +173,7 @@ async def bootstrap_if_needed(
     """
     try:
         # Check if the admin permission exists - if it does, system is already bootstrapped
-        await globals.db.instance.get_permission("auth/admin")
+        await globals.db.instance.get_permission("auth:admin")
         # Permission exists, system is already bootstrapped
         # Check if admin needs credentials (only for already-bootstrapped systems)
         await check_admin_credentials()

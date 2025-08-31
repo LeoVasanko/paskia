@@ -30,5 +30,4 @@ def set_session_cookie(response: Response, token: str) -> None:
         max_age=int(EXPIRES.total_seconds()),
         httponly=True,
         secure=True,
-        path="/auth/",
     )

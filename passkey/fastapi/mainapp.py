@@ -4,7 +4,7 @@ import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import Cookie, FastAPI, HTTPException, Request, Response
+from fastapi import Cookie, FastAPI, HTTPException, Query, Request, Response
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -72,9 +72,7 @@ app.mount("/auth/ws", ws.app)
 
 
 @app.get("/auth/forward-auth")
-async def forward_authentication(
-    request: Request, perm: list[str] | None = None, auth=Cookie(None)
-):
+async def forward_authentication(request: Request, perm=Query(None), auth=Cookie(None)):
     """A validation endpoint to use with Caddy forward_auth or Nginx auth_request.
 
     Query Params:
