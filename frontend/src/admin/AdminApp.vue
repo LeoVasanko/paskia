@@ -70,6 +70,48 @@ function availableOrgsForPermission(pid) {
   return orgs.value.filter(o => !o.permissions.includes(pid))
 }
 
+async function renamePermissionDisplay(p) {
+  const newName = prompt('New display name', p.display_name)
+  if (!newName || newName === p.display_name) return
+  try {
+    const body = { id: p.id, display_name: newName }
+    const res = await fetch(`/auth/admin/permission?permission_id=${encodeURIComponent(p.id)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    })
+    const data = await res.json()
+    if (data.detail) throw new Error(data.detail)
+  await refreshPermissionsContext()
+  } catch (e) {
+    alert(e.message || 'Failed to rename display name')
+  }
+}
+
+async function renamePermissionId(p) {
+  const newId = prompt('New permission id', p.id)
+  if (!newId || newId === p.id) return
+  try {
+    const body = { old_id: p.id, new_id: newId, display_name: p.display_name }
+    const res = await fetch('/auth/admin/permission/rename', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    })
+    let data
+    try { data = await res.json() } catch(_) { data = {} }
+    if (!res.ok || data.detail) throw new Error(data.detail || data.error || `Failed (${res.status})`)
+    await refreshPermissionsContext()
+  } catch (e) {
+    alert((e && e.message) ? e.message : 'Failed to rename permission id')
+  }
+}
+
+async function refreshPermissionsContext() {
+  // Reload both lists so All Permissions table shows new associations promptly.
+  await Promise.all([loadPermissions(), loadOrgs()])
+}
+
 async function attachPermissionToOrg(pid, orgUuid) {
   if (!orgUuid) return
   try {
@@ -184,6 +226,10 @@ async function updateOrg(org) {
 }
 
 async function deleteOrg(org) {
+  if (!info.value?.is_global_admin) {
+    alert('Only global admins may delete organizations.')
+    return
+  }
   if (!confirm(`Delete organization ${org.display_name}?`)) return
   const res = await fetch(`/auth/admin/orgs/${org.uuid}`, { method: 'DELETE' })
   const data = await res.json()
@@ -586,8 +632,8 @@ async function toggleRolePermission(role, permId, checked) {
             <div class="perm-grid-head center">Actions</div>
             <template v-for="p in [...permissions].sort((a,b)=> a.id.localeCompare(b.id))" :key="p.id">
               <div class="perm-cell perm-name" :title="p.id">
-                <span class="perm-title">{{ p.display_name }}</span>
-                <span class="perm-id muted">({{ p.id }})</span>
+                <div class="perm-title-line">{{ p.display_name }}</div>
+                <div class="perm-id-line muted">{{ p.id }}</div>
               </div>
               <div class="perm-cell perm-orgs" :title="permissionSummary[p.id]?.orgs?.map(o=>o.display_name).join(', ') || ''">
                 <template v-if="permissionSummary[p.id]">
@@ -626,7 +672,8 @@ async function toggleRolePermission(role, permId, checked) {
               </div>
               <div class="perm-cell perm-users center">{{ permissionSummary[p.id]?.userCount || 0 }}</div>
               <div class="perm-cell perm-actions center">
-                <button @click="updatePermission(p)" class="icon-btn" aria-label="Rename permission" title="Rename permission">✏️</button>
+                <button @click="renamePermissionDisplay(p)" class="icon-btn" aria-label="Change display name" title="Change display name">✏️</button>
+                <button @click="renamePermissionId(p)" class="icon-btn" aria-label="Change id" title="Change id">🆔</button>
                 <button @click="deletePermission(p)" class="icon-btn delete-icon" aria-label="Delete permission" title="Delete permission">❌</button>
               </div>
             </template>
@@ -727,8 +774,9 @@ button, .perm-actions button, .org-actions button, .role-actions button { width:
 .permission-grid .perm-grid-head { font-size: .6rem; text-transform: uppercase; letter-spacing: .05em; font-weight: 600; padding: .35rem .4rem; background: #f3f3f3; border: 1px solid #e1e1e1; }
 .permission-grid .perm-cell { background: #fff; border: 1px solid #eee; padding: .35rem .4rem; font-size: .7rem; display: flex; align-items: center; gap: .4rem; }
 .permission-grid .perm-name { flex-direction: row; flex-wrap: wrap; }
-.permission-grid .perm-title { font-weight: 600; }
-.permission-grid .perm-id { font-size: .55rem; }
+.permission-grid .perm-name { flex-direction: column; align-items: flex-start; gap:2px; }
+.permission-grid .perm-title-line { font-weight:600; line-height:1.1; }
+.permission-grid .perm-id-line { font-size:.55rem; line-height:1.1; word-break:break-all; }
 .permission-grid .center { justify-content: center; }
 .permission-grid .perm-actions { gap: .25rem; }
 .permission-grid .perm-actions .icon-btn { font-size: .9rem; }

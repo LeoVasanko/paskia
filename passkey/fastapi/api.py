@@ -58,10 +58,17 @@ def register_api_routes(app: FastAPI):
         - For authenticated sessions: return full context (org/role/permissions/credentials)
         - For reset tokens: return only basic user information to drive reset flow
         """
+        reset = False
         try:
-            reset = auth and passphrase.is_well_formed(auth)
+            if auth is None:
+                raise ValueError("Auth cookie missing")
+            reset = passphrase.is_well_formed(auth)
             s = await (get_reset if reset else get_session)(auth)
-        except ValueError:
+        except ValueError as e:
+            if reset:
+                print(e, reset, auth, tokens.reset_key(auth).hex())
+            else:
+                print(e, reset, auth)
             raise HTTPException(
                 status_code=401,
                 detail="Authentication Required",
@@ -235,15 +242,27 @@ def register_api_routes(app: FastAPI):
 
     @app.delete("/auth/admin/orgs/{org_uuid}")
     async def admin_delete_org(org_uuid: UUID, auth=Cookie(None)):
-        _, is_global_admin, _ = await _get_ctx_and_admin_flags(auth)
+        ctx, is_global_admin, is_org_admin = await _get_ctx_and_admin_flags(auth)
         if not is_global_admin:
+            # Org admins cannot delete at all (avoid self-lockout)
             raise ValueError("Global admin required")
+        # Prevent deleting the organization that the acting global admin currently belongs to
+        # if that deletion would remove their effective access (e.g., last org granting auth/admin)
+        try:
+            acting_org_uuid = ctx.org.uuid if ctx.org else None
+        except Exception:
+            acting_org_uuid = None
+        if acting_org_uuid and acting_org_uuid == org_uuid:
+            # Never allow deletion of the caller's own organization to avoid immediate account deletion.
+            raise ValueError("Cannot delete the organization you belong to")
         await db.instance.delete_organization(org_uuid)
         return {"status": "ok"}
 
     # Manage an org's grantable permissions (query param for permission_id)
     @app.post("/auth/admin/orgs/{org_uuid}/permission")
-    async def admin_add_org_permission(org_uuid: UUID, permission_id: str, auth=Cookie(None)):
+    async def admin_add_org_permission(
+        org_uuid: UUID, permission_id: str, auth=Cookie(None)
+    ):
         ctx, is_global_admin, is_org_admin = await _get_ctx_and_admin_flags(auth)
         if not (is_global_admin or (is_org_admin and ctx.org.uuid == org_uuid)):
             raise ValueError("Insufficient permissions")
@@ -251,11 +270,15 @@ def register_api_routes(app: FastAPI):
         return {"status": "ok"}
 
     @app.delete("/auth/admin/orgs/{org_uuid}/permission")
-    async def admin_remove_org_permission(org_uuid: UUID, permission_id: str, auth=Cookie(None)):
+    async def admin_remove_org_permission(
+        org_uuid: UUID, permission_id: str, auth=Cookie(None)
+    ):
         ctx, is_global_admin, is_org_admin = await _get_ctx_and_admin_flags(auth)
         if not (is_global_admin or (is_org_admin and ctx.org.uuid == org_uuid)):
             raise ValueError("Insufficient permissions")
-        await db.instance.remove_permission_from_organization(str(org_uuid), permission_id)
+        await db.instance.remove_permission_from_organization(
+            str(org_uuid), permission_id
+        )
         return {"status": "ok"}
 
     # -------------------- Admin API: Roles --------------------
@@ -336,6 +359,7 @@ def register_api_routes(app: FastAPI):
             raise ValueError("display_name and role are required")
         # Validate role exists in org
         from ..db import User as UserDC  # local import to avoid cycles
+
         roles = await db.instance.get_roles_by_organization(str(org_uuid))
         role_obj = next((r for r in roles if r.display_name == role_name), None)
         if not role_obj:
@@ -448,11 +472,14 @@ def register_api_routes(app: FastAPI):
                     "aaguid": aaguid_str,
                     "created_at": c.created_at.isoformat(),
                     "last_used": c.last_used.isoformat() if c.last_used else None,
-                    "last_verified": c.last_verified.isoformat() if c.last_verified else None,
+                    "last_verified": c.last_verified.isoformat()
+                    if c.last_verified
+                    else None,
                     "sign_count": c.sign_count,
                 }
             )
         from .. import aaguid as aaguid_mod
+
         aaguid_info = aaguid_mod.filter(aaguids)
         return {
             "display_name": user.display_name,
@@ -492,14 +519,44 @@ def register_api_routes(app: FastAPI):
         return {"status": "ok"}
 
     @app.put("/auth/admin/permission")
-    async def admin_update_permission(permission_id: str, display_name: str, auth=Cookie(None)):
+    async def admin_update_permission(
+        permission_id: str, display_name: str, auth=Cookie(None)
+    ):
         _, is_global_admin, _ = await _get_ctx_and_admin_flags(auth)
         if not is_global_admin:
             raise ValueError("Global admin required")
         from ..db import Permission as PermDC
+
         if not display_name:
             raise ValueError("display_name is required")
-        await db.instance.update_permission(PermDC(id=permission_id, display_name=display_name))
+        await db.instance.update_permission(
+            PermDC(id=permission_id, display_name=display_name)
+        )
+        return {"status": "ok"}
+
+    @app.post("/auth/admin/permission/rename")
+    async def admin_rename_permission(payload: dict = Body(...), auth=Cookie(None)):
+        """Rename a permission's id (and optionally display name) updating all references.
+
+        Body: { "old_id": str, "new_id": str, "display_name": str|null }
+        """
+        _, is_global_admin, _ = await _get_ctx_and_admin_flags(auth)
+        if not is_global_admin:
+            raise ValueError("Global admin required")
+        old_id = payload.get("old_id")
+        new_id = payload.get("new_id")
+        display_name = payload.get("display_name")
+        if not old_id or not new_id:
+            raise ValueError("old_id and new_id required")
+        if display_name is None:
+            # Fetch old to retain display name
+            perm = await db.instance.get_permission(old_id)
+            display_name = perm.display_name
+        # rename_permission added to interface; use getattr for forward compatibility
+        rename_fn = getattr(db.instance, "rename_permission", None)
+        if not rename_fn:
+            raise ValueError("Permission renaming not supported by this backend")
+        await rename_fn(old_id, new_id, display_name)
         return {"status": "ok"}
 
     @app.delete("/auth/admin/permission")
