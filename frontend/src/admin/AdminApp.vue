@@ -17,6 +17,16 @@ const userLink = ref(null) // latest generated registration link
 const userLinkExpires = ref(null)
 const authStore = useAuthStore()
 const addingOrgForPermission = ref(null)
+const PERMISSION_ID_PATTERN = '^[A-Za-z0-9:._~-]+$'
+const showCreatePermission = ref(false)
+const newPermId = ref('')
+const newPermName = ref('')
+const editingPermId = ref(null)
+const renameIdValue = ref('')
+const safeIdRegex = /[^A-Za-z0-9:._~-]/g
+
+function sanitizeNewId() { if (newPermId.value) newPermId.value = newPermId.value.replace(safeIdRegex, '') }
+function sanitizeRenameId() { if (renameIdValue.value) renameIdValue.value = renameIdValue.value.replace(safeIdRegex, '') }
 
 function handleGlobalClick(e) {
   if (!addingOrgForPermission.value) return
@@ -88,22 +98,22 @@ async function renamePermissionDisplay(p) {
   }
 }
 
-async function renamePermissionId(p) {
-  const newId = prompt('New permission id', p.id)
-  if (!newId || newId === p.id) return
+function startRenamePermissionId(p) {
+  editingPermId.value = p.id
+  renameIdValue.value = p.id
+}
+function cancelRenameId() { editingPermId.value = null; renameIdValue.value = '' }
+async function submitRenamePermissionId(p) {
+  const newId = renameIdValue.value.trim()
+  if (!newId || newId === p.id) { cancelRenameId(); return }
   try {
     const body = { old_id: p.id, new_id: newId, display_name: p.display_name }
-    const res = await fetch('/auth/admin/permission/rename', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body)
-    })
-    let data
-    try { data = await res.json() } catch(_) { data = {} }
+    const res = await fetch('/auth/admin/permission/rename', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+    let data; try { data = await res.json() } catch(_) { data = {} }
     if (!res.ok || data.detail) throw new Error(data.detail || data.error || `Failed (${res.status})`)
-    await refreshPermissionsContext()
+    await refreshPermissionsContext(); cancelRenameId()
   } catch (e) {
-    alert((e && e.message) ? e.message : 'Failed to rename permission id')
+    alert(e?.message || 'Failed to rename permission id')
   }
 }
 
@@ -336,20 +346,15 @@ async function deleteRole(role) {
 }
 
 // Permission actions
-async function createPermission() {
-  const id = prompt('Permission ID (e.g., auth/example):')
-  if (!id) return
-  const name = prompt('Permission display name:')
-  if (!name) return
-  const res = await fetch('/auth/admin/permissions', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ id, display_name: name })
-  })
-  const data = await res.json()
-  if (data.detail) return alert(data.detail)
-  await loadPermissions()
+async function submitCreatePermission() {
+  const id = newPermId.value.trim()
+  const name = newPermName.value.trim()
+  if (!id || !name) return
+  const res = await fetch('/auth/admin/permissions', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id, display_name: name }) })
+  const data = await res.json(); if (data.detail) { alert(data.detail); return }
+  await loadPermissions(); newPermId.value=''; newPermName.value=''; showCreatePermission.value=false
 }
+function cancelCreatePermission() { newPermId.value=''; newPermName.value=''; showCreatePermission.value=false }
 
 async function updatePermission(p) {
   const name = prompt('Permission display name:', p.display_name)
@@ -623,7 +628,13 @@ async function toggleRolePermission(role, permId, checked) {
   <div v-if="!selectedUser && !selectedOrg && (info.is_global_admin || info.is_org_admin)" class="card">
           <h2>All Permissions</h2>
           <div class="actions">
-            <button @click="createPermission">+ Create Permission</button>
+            <button v-if="!showCreatePermission" @click="showCreatePermission = true">+ Create Permission</button>
+            <form v-else class="inline-form" @submit.prevent="submitCreatePermission">
+              <input v-model="newPermId" @input="sanitizeNewId" required :pattern="PERMISSION_ID_PATTERN" placeholder="permission id" title="Allowed: A-Za-z0-9:._~-" />
+              <input v-model="newPermName" required placeholder="display name" />
+              <button type="submit">Save</button>
+              <button type="button" @click="cancelCreatePermission">Cancel</button>
+            </form>
           </div>
           <div class="permission-grid">
             <div class="perm-grid-head">Permission</div>
@@ -672,9 +683,16 @@ async function toggleRolePermission(role, permId, checked) {
               </div>
               <div class="perm-cell perm-users center">{{ permissionSummary[p.id]?.userCount || 0 }}</div>
               <div class="perm-cell perm-actions center">
-                <button @click="renamePermissionDisplay(p)" class="icon-btn" aria-label="Change display name" title="Change display name">✏️</button>
-                <button @click="renamePermissionId(p)" class="icon-btn" aria-label="Change id" title="Change id">🆔</button>
-                <button @click="deletePermission(p)" class="icon-btn delete-icon" aria-label="Delete permission" title="Delete permission">❌</button>
+                <template v-if="editingPermId !== p.id">
+                  <button @click="renamePermissionDisplay(p)" class="icon-btn" aria-label="Change display name" title="Change display name">✏️</button>
+                  <button @click="startRenamePermissionId(p)" class="icon-btn" aria-label="Change id" title="Change id">🆔</button>
+                  <button @click="deletePermission(p)" class="icon-btn delete-icon" aria-label="Delete permission" title="Delete permission">❌</button>
+                </template>
+                <form v-else class="inline-id-form" @submit.prevent="submitRenamePermissionId(p)">
+                  <input v-model="renameIdValue" @input="sanitizeRenameId" required :pattern="PERMISSION_ID_PATTERN" class="id-input" title="Allowed: A-Za-z0-9:._~-" />
+                  <button type="submit" class="icon-btn" aria-label="Save">✔</button>
+                  <button type="button" class="icon-btn" @click="cancelRenameId" aria-label="Cancel">✖</button>
+                </form>
               </div>
             </template>
           </div>
