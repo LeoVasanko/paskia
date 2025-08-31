@@ -44,12 +44,12 @@ def register_api_routes(app: FastAPI):
 
     @app.post("/auth/validate")
     async def validate_token(
-        response: Response, perm: str | None = None, auth=Cookie(None)
+        response: Response, perm: list[str] | None = None, auth=Cookie(None)
     ):
         """Lightweight token validation endpoint.
 
         Query Params:
-        - perm: optional permission ID the caller must possess
+        - perm: repeated permission IDs the caller must possess (ALL required)
         """
 
         s = await authz.verify(auth, perm)
