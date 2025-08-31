@@ -1,22 +1,35 @@
 (auth) {
-	# Forward /auth/ to the authentication service
-	@auth path /auth/*
-	handle @auth {
-		reverse_proxy localhost:4401
-	}
-	handle {
-		# Check for authentication
-		forward_auth localhost:4401 {
-			uri /auth/forward-auth
-			copy_headers x-auth*
-		}
-		{block}
+	# Permission check (named arg: perm=...)
+	forward_auth localhost:4401 {
+		uri /auth/forward-auth?{args.0}
+		copy_headers x-auth-*
 	}
 }
 
 localhost {
-	import auth {
-		# Proxy authenticated requests to the main application
-		reverse_proxy localhost:3000
+	# Single definition for auth service endpoints (avoid duplicate matcher names)
+	@auth_api path /auth/*
+	handle @auth_api {
+		reverse_proxy localhost:4401
+	}
+
+	# Admin-protected paths
+	handle_path /admin/* {
+		import auth perm=auth:admin
+		# Respond with a message for the admin area
+		respond "Admin area (protected)" 200
+	}
+
+	# Reports-protected paths
+	handle_path /reports/* {
+		import auth perm=reports:view
+		# Respond with a message for the reports area
+		respond "Reports area (protected)" 200
+	}
+
+	# Unprotected (fallback)
+	handle {
+		# Respond with a public content message
+		respond "Public content" 200
 	}
 }
