@@ -6,10 +6,11 @@ export const useAuthStore = defineStore('auth', {
     // Auth State
     userInfo: null, // Contains the full user info response: {user, credentials, aaguid_info, session_type, authenticated}
     isLoading: false,
-  resetToken: null, // transient reset token (never stored in cookie)
+    resetToken: null, // transient reset token
+    restrictedMode: false, // If true, app loaded outside /auth/ and should restrict to login or permission denied
 
     // UI State
-    currentView: 'login', // 'login', 'profile', 'device-link', 'reset'
+    currentView: 'login',
     status: {
       message: '',
       type: 'info',
@@ -68,9 +69,19 @@ export const useAuthStore = defineStore('auth', {
       }
     },
     selectView() {
+      if (this.restrictedMode) {
+        // In restricted mode only allow login or show permission denied if already authenticated
+        if (!this.userInfo) this.currentView = 'login'
+        else if (this.userInfo.authenticated) this.currentView = 'permission-denied'
+        else this.currentView = 'login' // do not expose reset/registration flows outside /auth/
+        return
+      }
       if (!this.userInfo) this.currentView = 'login'
       else if (this.userInfo.authenticated) this.currentView = 'profile'
       else this.currentView = 'reset'
+    },
+    setRestrictedMode(flag) {
+      this.restrictedMode = !!flag
     },
     async loadUserInfo() {
       const headers = {}
