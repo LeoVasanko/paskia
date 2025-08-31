@@ -462,8 +462,7 @@ class DB(DatabaseInterface):
                     )
 
             # Automatically create an organization admin permission if not present.
-            # Pattern: auth/org:<org-uuid>
-            auto_perm_id = f"auth/org:{org.uuid}"
+            auto_perm_id = f"auth:org:{org.uuid}"
             # Only create if it does not already exist (in case caller passed it)
             existing_perm = await session.execute(
                 select(PermissionModel).where(PermissionModel.id == auto_perm_id)

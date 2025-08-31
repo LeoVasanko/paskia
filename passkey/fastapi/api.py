@@ -10,7 +10,7 @@ This module contains all the HTTP API endpoints for:
 
 from uuid import UUID, uuid4
 
-from fastapi import Body, Cookie, Depends, FastAPI, HTTPException, Response
+from fastapi import Body, Cookie, Depends, FastAPI, HTTPException, Query, Response
 from fastapi.security import HTTPBearer
 
 from passkey.util import passphrase
@@ -38,14 +38,12 @@ def register_api_routes(app: FastAPI):
             raise ValueError("Not authenticated")
         role_perm_ids = set(ctx.role.permissions or [])
         org_uuid_str = str(ctx.org.uuid)
-        is_global_admin = "auth/admin" in role_perm_ids
-        is_org_admin = f"auth/org:{org_uuid_str}" in role_perm_ids
+        is_global_admin = "auth:admin" in role_perm_ids
+        is_org_admin = f"auth:org:{org_uuid_str}" in role_perm_ids
         return ctx, is_global_admin, is_org_admin
 
     @app.post("/auth/validate")
-    async def validate_token(
-        response: Response, perm: list[str] | None = None, auth=Cookie(None)
-    ):
+    async def validate_token(perm=Query(None), auth=Cookie(None)):
         """Lightweight token validation endpoint.
 
         Query Params:
@@ -137,9 +135,9 @@ def register_api_routes(app: FastAPI):
                 "permissions": ctx.org.permissions,
             }
             effective_permissions = [p.id for p in (ctx.permissions or [])]
-            is_global_admin = "auth/admin" in role_info["permissions"]
+            is_global_admin = "auth:admin" in role_info["permissions"]
             is_org_admin = (
-                f"auth/org:{org_info['uuid']}" in role_info["permissions"]
+                f"auth:org:{org_info['uuid']}" in role_info["permissions"]
                 if org_info
                 else False
             )
