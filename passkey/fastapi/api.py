@@ -52,47 +52,42 @@ def register_api_routes(app: FastAPI):
         }
 
     @app.post("/auth/user-info")
-    async def api_user_info(response: Response, auth=Cookie(None)):
+    async def api_user_info(reset: str | None = None, auth=Cookie(None)):
         """Get user information.
 
         - For authenticated sessions: return full context (org/role/permissions/credentials)
         - For reset tokens: return only basic user information to drive reset flow
         """
-        reset = False
+        authenticated = False
         try:
-            if auth is None:
-                raise ValueError("Auth cookie missing")
-            reset = passphrase.is_well_formed(auth)
-            s = await (get_reset if reset else get_session)(auth)
-        except ValueError as e:
             if reset:
-                print(e, reset, auth, tokens.reset_key(auth).hex())
+                if not passphrase.is_well_formed(reset):
+                    raise ValueError("Invalid reset token")
+                s = await get_reset(reset)
             else:
-                print(e, reset, auth)
-            raise HTTPException(
-                status_code=401,
-                detail="Authentication Required",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
+                if auth is None:
+                    raise ValueError("Authentication Required")
+                s = await get_session(auth)
+                authenticated = True
+        except ValueError as e:
+            raise HTTPException(401, str(e))
+
+        u = await db.instance.get_user_by_uuid(s.user_uuid)
 
         # Minimal response for reset tokens
-        if reset:
-            u = await db.instance.get_user_by_uuid(s.user_uuid)
+        if not authenticated:
             return {
                 "authenticated": False,
                 "session_type": s.info.get("type"),
                 "user": {
                     "user_uuid": str(u.uuid),
                     "user_name": u.display_name,
-                    "created_at": u.created_at.isoformat() if u.created_at else None,
-                    "last_seen": u.last_seen.isoformat() if u.last_seen else None,
-                    "visits": u.visits,
                 },
             }
 
         # Full context for authenticated sessions
+        assert authenticated and auth is not None
         ctx = await db.instance.get_session_context(session_key(auth))
-        u = await db.instance.get_user_by_uuid(s.user_uuid)
         credential_ids = await db.instance.get_credentials_by_user_uuid(s.user_uuid)
 
         credentials: list[dict] = []
@@ -224,25 +219,22 @@ def register_api_routes(app: FastAPI):
     async def admin_update_org(
         org_uuid: UUID, payload: dict = Body(...), auth=Cookie(None)
     ):
-        ctx, is_global_admin, is_org_admin = await _get_ctx_and_admin_flags(auth)
-        if not (is_global_admin or (is_org_admin and ctx.org.uuid == org_uuid)):
-            raise ValueError("Insufficient permissions")
-        from ..db import Org as OrgDC
+        # Only global admins can modify org definitions (simpler rule)
+        _, is_global_admin, _ = await _get_ctx_and_admin_flags(auth)
+        if not is_global_admin:
+            raise ValueError("Global admin required")
+        from ..db import Org as OrgDC  # local import to avoid cycles
 
         current = await db.instance.get_organization(str(org_uuid))
         display_name = payload.get("display_name") or current.display_name
-        permissions = (
-            payload.get("permissions")
-            if "permissions" in payload
-            else current.permissions
-        ) or []
+        permissions = payload.get("permissions") or current.permissions or []
         org = OrgDC(uuid=org_uuid, display_name=display_name, permissions=permissions)
         await db.instance.update_organization(org)
         return {"status": "ok"}
 
     @app.delete("/auth/admin/orgs/{org_uuid}")
     async def admin_delete_org(org_uuid: UUID, auth=Cookie(None)):
-        ctx, is_global_admin, is_org_admin = await _get_ctx_and_admin_flags(auth)
+        ctx, is_global_admin, _ = await _get_ctx_and_admin_flags(auth)
         if not is_global_admin:
             # Org admins cannot delete at all (avoid self-lockout)
             raise ValueError("Global admin required")
@@ -372,7 +364,6 @@ def register_api_routes(app: FastAPI):
             role_uuid=role_obj.uuid,
             visits=0,
             created_at=None,
-            last_seen=None,
         )
         await db.instance.create_user(user)
         return {"uuid": str(user_uuid)}
@@ -582,10 +573,8 @@ def register_api_routes(app: FastAPI):
 
     @app.post("/auth/set-session")
     async def api_set_session(response: Response, auth=Depends(bearer_auth)):
-        """Set session cookie from Authorization header. Fetched after login by WebSocket."""
+        """Set session cookie from Authorization Bearer session token (never via query)."""
         user = await get_session(auth.credentials)
-        if not user:
-            raise ValueError("Invalid Authorization header.")
         session.set_session_cookie(response, auth.credentials)
 
         return {

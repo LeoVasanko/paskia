@@ -1,4 +1,4 @@
-import logging
+from pathlib import Path
 
 from fastapi import Cookie, HTTPException, Request, Response
 from fastapi.responses import RedirectResponse
@@ -8,6 +8,9 @@ from ..globals import db
 from ..globals import passkey as global_passkey
 from ..util import passphrase, tokens
 from . import session
+
+# Local copy to avoid circular import with mainapp
+STATIC_DIR = Path(__file__).parent.parent / "frontend-build"
 
 
 def register_reset_routes(app):
@@ -28,9 +31,10 @@ def register_reset_routes(app):
             info=session.infodict(request, "device addition"),
         )
 
-        # Generate the device addition link with pretty URL
-        path = request.url.path.removesuffix("create-link") + token
-        url = f"{request.headers['origin']}{path}"
+        # Generate the device addition link with pretty URL using configured origin
+        origin = global_passkey.instance.origin.rstrip("/")
+        path = request.url.path.removesuffix("create-link") + token  # /auth/<token>
+        url = f"{origin}{path}"
 
         return {
             "message": "Registration link generated successfully",
@@ -39,31 +43,17 @@ def register_reset_routes(app):
         }
 
     @app.get("/auth/{reset_token}")
-    async def reset_authentication(
-        request: Request,
-        reset_token: str,
-    ):
-        """Verifies the token and redirects to auth app for credential registration."""
+    async def reset_authentication(request: Request, reset_token: str):
+        """Validate reset token and redirect with it as query parameter (no cookies).
+
+        After validation we 303 redirect to /auth/?reset=<token>. The frontend will:
+        - Read the token from location.search
+        - Use it via Authorization header or websocket query param
+        - history.replaceState to remove it from the address bar/history
+        """
         if not passphrase.is_well_formed(reset_token):
             raise HTTPException(status_code=404)
         origin = global_passkey.instance.origin
-        try:
-            # Get session token to validate it exists and get user_id
-            key = tokens.reset_key(reset_token)
-            sess = await db.instance.get_session(key)
-            if not sess:
-                raise ValueError("Invalid or expired registration token")
-
-            response = RedirectResponse(url=f"{origin}/auth/", status_code=303)
-            session.set_session_cookie(response, reset_token)
-            print(response.headers)
-            return response
-
-        except Exception as e:
-            # On any error, redirect to auth app
-            if isinstance(e, ValueError):
-                msg = str(e)
-            else:
-                logging.exception("Internal Server Error in reset_authentication")
-                msg = "Internal Server Error"
-            return RedirectResponse(url=f"{origin}/auth/#{msg}", status_code=303)
+        # Do not verify existence/expiry here; frontend + user-info endpoint will handle invalid tokens.
+        redirect_url = f"{origin}/auth/?reset={reset_token}"
+        return RedirectResponse(url=redirect_url, status_code=303)

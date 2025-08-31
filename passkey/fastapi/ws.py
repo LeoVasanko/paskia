@@ -54,12 +54,26 @@ async def register_chat(
 
 @app.websocket("/register")
 @websocket_error_handler
-async def websocket_register_add(ws: WebSocket, auth=Cookie(None)):
-    """Register a new credential for an existing user."""
+async def websocket_register_add(
+    ws: WebSocket, reset: str | None = None, auth=Cookie(None)
+):
+    """Register a new credential for an existing user.
+
+    Supports either:
+    - Normal session via auth cookie
+    - Reset token supplied as ?reset=... (auth cookie ignored)
+    """
     origin = ws.headers["origin"]
-    # Try to get either a regular session or a reset session
-    reset = passphrase.is_well_formed(auth)
-    s = await (get_reset if reset else get_session)(auth)
+    is_reset = False
+    if reset is not None:
+        if not passphrase.is_well_formed(reset):
+            raise ValueError("Invalid reset token")
+        is_reset = True
+        s = await get_reset(reset)
+    else:
+        if not auth:
+            raise ValueError("Authentication Required")
+        s = await get_session(auth)
     user_uuid = s.user_uuid
 
     # Get user information to get the user_name
@@ -73,23 +87,19 @@ async def websocket_register_add(ws: WebSocket, auth=Cookie(None)):
     # to satisfy the sessions.credential_uuid foreign key (now enforced).
     await db.instance.create_credential(credential)
 
-    if reset:
+    if is_reset:
         # Invalidate the one-time reset session only after credential persisted
         await db.instance.delete_session(s.key)
-        token = await create_session(
+        auth = await create_session(
             user_uuid, credential.uuid, infodict(ws, "authenticated")
         )
-    else:
-        # Existing session continues; we don't need to create a new one here.
-        token = auth
 
-    assert isinstance(token, str) and len(token) == 16
-
+    assert isinstance(auth, str) and len(auth) == 16
     await ws.send_json(
         {
             "user_uuid": str(user.uuid),
             "credential_uuid": str(credential.uuid),
-            "session_token": token,
+            "session_token": auth,
             "message": "New credential added successfully",
         }
     )

@@ -27,12 +27,14 @@ async function register() {
   authStore.showMessage('Starting registration...', 'info')
 
   try {
-    const result = await passkey.register()
-    console.log("Result", result)
-    await authStore.setSessionCookie(result.session_token)
-
-    authStore.showMessage('Passkey registered successfully!', 'success', 2000)
-    authStore.loadUserInfo().then(authStore.selectView)
+  const result = await passkey.register(authStore.resetToken)
+  console.log("Result", result)
+  await authStore.setSessionCookie(result.session_token)
+  // resetToken cleared by setSessionCookie; ensure again
+  authStore.resetToken = null
+  authStore.showMessage('Passkey registered successfully!', 'success', 2000)
+  await authStore.loadUserInfo()
+  authStore.selectView()
   } catch (error) {
     authStore.showMessage(`Registration failed: ${error.message}`, 'error')
   } finally {
