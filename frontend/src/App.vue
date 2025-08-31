@@ -5,6 +5,7 @@
     <ProfileView v-if="store.currentView === 'profile'" />
     <DeviceLinkView v-if="store.currentView === 'device-link'" />
     <ResetView v-if="store.currentView === 'reset'" />
+  <PermissionDeniedView v-if="store.currentView === 'permission-denied'" />
   </div>
 </template>
 
@@ -16,10 +17,15 @@ import LoginView from '@/components/LoginView.vue'
 import ProfileView from '@/components/ProfileView.vue'
 import DeviceLinkView from '@/components/DeviceLinkView.vue'
 import ResetView from '@/components/ResetView.vue'
+import PermissionDeniedView from '@/components/PermissionDeniedView.vue'
 
 const store = useAuthStore()
 
 onMounted(async () => {
+  // Detect restricted mode: any path not starting with /auth/
+  if (!location.pathname.startsWith('/auth/')) {
+    store.setRestrictedMode(true)
+  }
   // Was an error message passed in the URL hash?
   const message = location.hash.substring(1)
   if (message) {
