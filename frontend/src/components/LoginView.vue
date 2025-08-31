@@ -26,7 +26,10 @@ const handleLogin = async () => {
     authStore.showMessage('Starting authentication...', 'info')
     await authStore.authenticate()
     authStore.showMessage('Authentication successful!', 'success', 2000)
-    if (location.pathname.startsWith('/auth/')) {
+    if (authStore.restrictedMode) {
+      // In restricted mode after successful auth show permission denied (no profile outside /auth/)
+      authStore.currentView = 'permission-denied'
+    } else if (location.pathname.startsWith('/auth/')) {
       authStore.currentView = 'profile'
     } else {
       location.reload()
