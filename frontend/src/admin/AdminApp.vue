@@ -23,6 +23,7 @@ const newPermId = ref('')
 const newPermName = ref('')
 const editingPermId = ref(null)
 const renameIdValue = ref('')
+const dialog = ref({ type: null, data: null, busy: false, error: '' })
 const safeIdRegex = /[^A-Za-z0-9:._~-]/g
 
 function sanitizeNewId() { if (newPermId.value) newPermId.value = newPermId.value.replace(safeIdRegex, '') }
@@ -80,28 +81,9 @@ function availableOrgsForPermission(pid) {
   return orgs.value.filter(o => !o.permissions.includes(pid))
 }
 
-async function renamePermissionDisplay(p) {
-  const newName = prompt('New display name', p.display_name)
-  if (!newName || newName === p.display_name) return
-  try {
-    const body = { id: p.id, display_name: newName }
-    const res = await fetch(`/auth/admin/permission?permission_id=${encodeURIComponent(p.id)}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body)
-    })
-    const data = await res.json()
-    if (data.detail) throw new Error(data.detail)
-  await refreshPermissionsContext()
-  } catch (e) {
-    alert(e.message || 'Failed to rename display name')
-  }
-}
+function renamePermissionDisplay(p) { openDialog('perm-display', { permission: p }) }
 
-function startRenamePermissionId(p) {
-  editingPermId.value = p.id
-  renameIdValue.value = p.id
-}
+function startRenamePermissionId(p) { editingPermId.value = p.id; renameIdValue.value = p.id }
 function cancelRenameId() { editingPermId.value = null; renameIdValue.value = '' }
 async function submitRenamePermissionId(p) {
   const newId = renameIdValue.value.trim()
@@ -112,9 +94,7 @@ async function submitRenamePermissionId(p) {
     let data; try { data = await res.json() } catch(_) { data = {} }
     if (!res.ok || data.detail) throw new Error(data.detail || data.error || `Failed (${res.status})`)
     await refreshPermissionsContext(); cancelRenameId()
-  } catch (e) {
-    alert(e?.message || 'Failed to rename permission id')
-  }
+  } catch (e) { authStore.showMessage(e?.message || 'Rename failed') }
 }
 
 async function refreshPermissionsContext() {
@@ -131,21 +111,22 @@ async function attachPermissionToOrg(pid, orgUuid) {
     if (data.detail) throw new Error(data.detail)
     await loadOrgs()
   } catch (e) {
-    alert(e.message || 'Failed to add permission to org')
+  authStore.showMessage(e.message || 'Failed to add permission to org')
   }
 }
 
 async function detachPermissionFromOrg(pid, orgUuid) {
-  if (!confirm('Remove permission from this org?')) return
-  try {
-    const params = new URLSearchParams({ permission_id: pid })
-    const res = await fetch(`/auth/admin/orgs/${orgUuid}/permission?${params.toString()}`, { method: 'DELETE' })
-    const data = await res.json()
-    if (data.detail) throw new Error(data.detail)
-    await loadOrgs()
-  } catch (e) {
-    alert(e.message || 'Failed to remove permission from org')
-  }
+  openDialog('confirm', { message: 'Remove permission from this org?', action: async () => {
+    try {
+      const params = new URLSearchParams({ permission_id: pid })
+      const res = await fetch(`/auth/admin/orgs/${orgUuid}/permission?${params.toString()}`, { method: 'DELETE' })
+      const data = await res.json()
+      if (data.detail) throw new Error(data.detail)
+      await loadOrgs()
+    } catch (e) {
+      authStore.showMessage(e.message || 'Failed to remove permission from org')
+    }
+  } })
 }
 
 function parseHash() {
@@ -209,56 +190,20 @@ async function load() {
 }
 
 // Org actions
-async function createOrg() {
-  const name = prompt('New organization display name:')
-  if (!name) return
-  const res = await fetch('/auth/admin/orgs', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ display_name: name, permissions: [] })
-  })
-  const data = await res.json()
-  if (data.detail) return alert(data.detail)
-  await Promise.all([loadOrgs(), loadPermissions()])
+function createOrg() { openDialog('org-create', {}) }
+
+function updateOrg(org) { openDialog('org-update', { org }) }
+
+function deleteOrg(org) {
+  if (!info.value?.is_global_admin) { authStore.showMessage('Global admin only'); return }
+  openDialog('confirm', { message: `Delete organization ${org.display_name}?`, action: async () => {
+    const res = await fetch(`/auth/admin/orgs/${org.uuid}`, { method: 'DELETE' })
+    const data = await res.json(); if (data.detail) throw new Error(data.detail)
+    await loadOrgs()
+  } })
 }
 
-async function updateOrg(org) {
-  const name = prompt('Organization display name:', org.display_name)
-  if (!name) return
-  const res = await fetch(`/auth/admin/orgs/${org.uuid}`, {
-    method: 'PUT',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ display_name: name, permissions: org.permissions })
-  })
-  const data = await res.json()
-  if (data.detail) return alert(data.detail)
-  await loadOrgs()
-}
-
-async function deleteOrg(org) {
-  if (!info.value?.is_global_admin) {
-    alert('Only global admins may delete organizations.')
-    return
-  }
-  if (!confirm(`Delete organization ${org.display_name}?`)) return
-  const res = await fetch(`/auth/admin/orgs/${org.uuid}`, { method: 'DELETE' })
-  const data = await res.json()
-  if (data.detail) return alert(data.detail)
-  await loadOrgs()
-}
-
-async function createUserInRole(org, role) {
-  const displayName = prompt(`New member display name for role "${role.display_name}":`)
-  if (!displayName) return
-  const res = await fetch(`/auth/admin/orgs/${org.uuid}/users`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ display_name: displayName, role: role.display_name })
-  })
-  const data = await res.json()
-  if (data.detail) return alert(data.detail)
-  await loadOrgs()
-}
+function createUserInRole(org, role) { openDialog('user-create', { org, role }) }
 
 async function moveUserToRole(org, user, targetRoleDisplayName) {
   if (user.role === targetRoleDisplayName) return
@@ -268,7 +213,7 @@ async function moveUserToRole(org, user, targetRoleDisplayName) {
     body: JSON.stringify({ role: targetRoleDisplayName })
   })
   const data = await res.json()
-  if (data.detail) return alert(data.detail)
+  if (data.detail) { authStore.showMessage(data.detail); return }
   await loadOrgs()
 }
 
@@ -292,57 +237,22 @@ function onRoleDrop(e, org, role) {
   } catch (_) { /* ignore */ }
 }
 
-async function addOrgPermission(org) {
-  const id = prompt('Permission ID to add:', permissions.value[0]?.id || '')
-  if (!id) return
-  const res = await fetch(`/auth/admin/orgs/${org.uuid}/permissions/${encodeURIComponent(id)}`, { method: 'POST' })
-  const data = await res.json()
-  if (data.detail) return alert(data.detail)
-  await loadOrgs()
-}
+// (legacy function retained but unused in UI)
+async function addOrgPermission() { /* obsolete */ }
 
-async function removeOrgPermission(org, permId) {
-  const res = await fetch(`/auth/admin/orgs/${org.uuid}/permissions/${encodeURIComponent(permId)}`, { method: 'DELETE' })
-  const data = await res.json()
-  if (data.detail) return alert(data.detail)
-  await loadOrgs()
-}
+async function removeOrgPermission() { /* obsolete */ }
 
 // Role actions
-async function createRole(org) {
-  const name = prompt('New role display name:')
-  if (!name) return
-  const res = await fetch(`/auth/admin/orgs/${org.uuid}/roles`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-  body: JSON.stringify({ display_name: name, permissions: [] })
-  })
-  const data = await res.json()
-  if (data.detail) return alert(data.detail)
-  await loadOrgs()
-}
+function createRole(org) { openDialog('role-create', { org }) }
 
-async function updateRole(role) {
-  const name = prompt('Role display name:', role.display_name)
-  if (!name) return
-  const csv = prompt('Permission IDs (comma-separated):', role.permissions.join(', ')) || ''
-  const perms = csv.split(',').map(s => s.trim()).filter(Boolean)
-  const res = await fetch(`/auth/admin/roles/${role.uuid}`, {
-    method: 'PUT',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ display_name: name, permissions: perms })
-  })
-  const data = await res.json()
-  if (data.detail) return alert(data.detail)
-  await loadOrgs()
-}
+function updateRole(role) { openDialog('role-update', { role }) }
 
-async function deleteRole(role) {
-  if (!confirm(`Delete role ${role.display_name}?`)) return
-  const res = await fetch(`/auth/admin/roles/${role.uuid}`, { method: 'DELETE' })
-  const data = await res.json()
-  if (data.detail) return alert(data.detail)
-  await loadOrgs()
+function deleteRole(role) {
+  openDialog('confirm', { message: `Delete role ${role.display_name}?`, action: async () => {
+    const res = await fetch(`/auth/admin/roles/${role.uuid}`, { method: 'DELETE' })
+    const data = await res.json(); if (data.detail) throw new Error(data.detail)
+    await loadOrgs()
+  } })
 }
 
 // Permission actions
@@ -351,28 +261,20 @@ async function submitCreatePermission() {
   const name = newPermName.value.trim()
   if (!id || !name) return
   const res = await fetch('/auth/admin/permissions', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id, display_name: name }) })
-  const data = await res.json(); if (data.detail) { alert(data.detail); return }
+  const data = await res.json(); if (data.detail) { authStore.showMessage(data.detail); return }
   await loadPermissions(); newPermId.value=''; newPermName.value=''; showCreatePermission.value=false
 }
 function cancelCreatePermission() { newPermId.value=''; newPermName.value=''; showCreatePermission.value=false }
 
-async function updatePermission(p) {
-  const name = prompt('Permission display name:', p.display_name)
-  if (!name) return
-  const params = new URLSearchParams({ permission_id: p.id, display_name: name })
-  const res = await fetch(`/auth/admin/permission?${params.toString()}`, { method: 'PUT' })
-  const data = await res.json()
-  if (data.detail) return alert(data.detail)
-  await loadPermissions()
-}
+function updatePermission(p) { openDialog('perm-display', { permission: p }) }
 
-async function deletePermission(p) {
-  if (!confirm(`Delete permission ${p.id}?`)) return
-  const params = new URLSearchParams({ permission_id: p.id })
-  const res = await fetch(`/auth/admin/permission?${params.toString()}`, { method: 'DELETE' })
-  const data = await res.json()
-  if (data.detail) return alert(data.detail)
-  await loadPermissions()
+function deletePermission(p) {
+  openDialog('confirm', { message: `Delete permission ${p.id}?`, action: async () => {
+    const params = new URLSearchParams({ permission_id: p.id })
+    const res = await fetch(`/auth/admin/permission?${params.toString()}`, { method: 'DELETE' })
+    const data = await res.json(); if (data.detail) throw new Error(data.detail)
+    await loadPermissions()
+  } })
 }
 
 onMounted(() => {
@@ -454,9 +356,53 @@ async function toggleRolePermission(role, permId, checked) {
     const data = await res.json()
     if (data.detail) throw new Error(data.detail)
   } catch (e) {
-    alert(e.message || 'Failed to update role permission')
+    authStore.showMessage(e.message || 'Failed to update role permission')
     role.permissions = prev // revert
   }
+}
+
+function openDialog(type, data) { dialog.value = { type, data, busy: false, error: '' } }
+function closeDialog() { dialog.value = { type: null, data: null, busy: false, error: '' } }
+
+async function submitDialog() {
+  if (!dialog.value.type || dialog.value.busy) return
+  dialog.value.busy = true; dialog.value.error = ''
+  try {
+    const t = dialog.value.type
+    if (t === 'org-create') {
+      const name = dialog.value.data.name?.trim(); if (!name) throw new Error('Name required')
+      const res = await fetch('/auth/admin/orgs', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ display_name: name, permissions: [] }) })
+      const d = await res.json(); if (d.detail) throw new Error(d.detail); await Promise.all([loadOrgs(), loadPermissions()])
+    } else if (t === 'org-update') {
+      const { org } = dialog.value.data; const name = dialog.value.data.name?.trim(); if (!name) throw new Error('Name required')
+      const res = await fetch(`/auth/admin/orgs/${org.uuid}`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ display_name: name, permissions: org.permissions }) })
+      const d = await res.json(); if (d.detail) throw new Error(d.detail); await loadOrgs()
+    } else if (t === 'role-create') {
+      const { org } = dialog.value.data; const name = dialog.value.data.name?.trim(); if (!name) throw new Error('Name required')
+      const res = await fetch(`/auth/admin/orgs/${org.uuid}/roles`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ display_name: name, permissions: [] }) })
+      const d = await res.json(); if (d.detail) throw new Error(d.detail); await loadOrgs()
+    } else if (t === 'role-update') {
+      const { role } = dialog.value.data; const name = dialog.value.data.name?.trim(); if (!name) throw new Error('Name required')
+      const permsCsv = dialog.value.data.perms || ''
+      const perms = permsCsv.split(',').map(s=>s.trim()).filter(Boolean)
+      const res = await fetch(`/auth/admin/roles/${role.uuid}`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ display_name: name, permissions: perms }) })
+      const d = await res.json(); if (d.detail) throw new Error(d.detail); await loadOrgs()
+    } else if (t === 'user-create') {
+      const { org, role } = dialog.value.data; const name = dialog.value.data.name?.trim(); if (!name) throw new Error('Name required')
+      const res = await fetch(`/auth/admin/orgs/${org.uuid}/users`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ display_name: name, role: role.display_name }) })
+      const d = await res.json(); if (d.detail) throw new Error(d.detail); await loadOrgs()
+    } else if (t === 'perm-display') {
+      const { permission } = dialog.value.data; const display = dialog.value.data.display_name?.trim(); if (!display) throw new Error('Display name required')
+      const params = new URLSearchParams({ permission_id: permission.id, display_name: display })
+      const res = await fetch(`/auth/admin/permission?${params.toString()}`, { method: 'PUT' })
+      const d = await res.json(); if (d.detail) throw new Error(d.detail); await loadPermissions()
+    } else if (t === 'confirm') {
+      const action = dialog.value.data.action; if (action) await action()
+    }
+    closeDialog()
+  } catch (e) {
+    dialog.value.error = e.message || 'Error'
+  } finally { dialog.value.busy = false }
 }
 </script>
 
@@ -595,7 +541,7 @@ async function toggleRolePermission(role, permId, checked) {
               <div class="role-header">
                 <strong class="role-name" :title="r.uuid">
                   <span>{{ r.display_name }}</span>
-                  <button @click="updateRole(r)" class="icon-btn" aria-label="Rename role" title="Rename role">✏️</button>
+                  <button @click="updateRole(r)" class="icon-btn" aria-label="Edit role" title="Edit role">✏️</button>
                 </strong>
                 <div class="role-actions">
                   <button @click="createUserInRole(selectedOrg, r)" class="plus-btn" aria-label="Add user" title="Add user">➕</button>
@@ -683,16 +629,18 @@ async function toggleRolePermission(role, permId, checked) {
               </div>
               <div class="perm-cell perm-users center">{{ permissionSummary[p.id]?.userCount || 0 }}</div>
               <div class="perm-cell perm-actions center">
-                <template v-if="editingPermId !== p.id">
-                  <button @click="renamePermissionDisplay(p)" class="icon-btn" aria-label="Change display name" title="Change display name">✏️</button>
-                  <button @click="startRenamePermissionId(p)" class="icon-btn" aria-label="Change id" title="Change id">🆔</button>
-                  <button @click="deletePermission(p)" class="icon-btn delete-icon" aria-label="Delete permission" title="Delete permission">❌</button>
-                </template>
-                <form v-else class="inline-id-form" @submit.prevent="submitRenamePermissionId(p)">
-                  <input v-model="renameIdValue" @input="sanitizeRenameId" required :pattern="PERMISSION_ID_PATTERN" class="id-input" title="Allowed: A-Za-z0-9:._~-" />
-                  <button type="submit" class="icon-btn" aria-label="Save">✔</button>
-                  <button type="button" class="icon-btn" @click="cancelRenameId" aria-label="Cancel">✖</button>
-                </form>
+                <div class="perm-actions-inner" :class="{ editing: editingPermId === p.id }">
+                  <div class="actions-view">
+                    <button @click="renamePermissionDisplay(p)" class="icon-btn" aria-label="Change display name" title="Change display name">✏️</button>
+                    <button @click="startRenamePermissionId(p)" class="icon-btn" aria-label="Change id" title="Change id">🆔</button>
+                    <button @click="deletePermission(p)" class="icon-btn delete-icon" aria-label="Delete permission" title="Delete permission">❌</button>
+                  </div>
+                  <form class="inline-id-form overlay" @submit.prevent="submitRenamePermissionId(p)">
+                    <input v-model="renameIdValue" @input="sanitizeRenameId" required :pattern="PERMISSION_ID_PATTERN" class="id-input" title="Allowed: A-Za-z0-9:._~-" />
+                    <button type="submit" class="icon-btn" aria-label="Save">✔</button>
+                    <button type="button" class="icon-btn" @click="cancelRenameId" aria-label="Cancel">✖</button>
+                  </form>
+                </div>
               </div>
             </template>
           </div>
@@ -701,6 +649,59 @@ async function toggleRolePermission(role, permId, checked) {
     </div>
   </div>
   <StatusMessage />
+  <div v-if="dialog.type" class="modal-overlay" @keydown.esc.prevent.stop="closeDialog" tabindex="-1">
+    <div class="modal" role="dialog" aria-modal="true">
+      <h3 class="modal-title">
+        <template v-if="dialog.type==='org-create'">Create Organization</template>
+        <template v-else-if="dialog.type==='org-update'">Rename Organization</template>
+        <template v-else-if="dialog.type==='role-create'">Create Role</template>
+        <template v-else-if="dialog.type==='role-update'">Edit Role</template>
+        <template v-else-if="dialog.type==='user-create'">Add User To Role</template>
+        <template v-else-if="dialog.type==='perm-display'">Edit Permission Display</template>
+        <template v-else-if="dialog.type==='confirm'">Confirm</template>
+      </h3>
+      <form @submit.prevent="submitDialog" class="modal-form">
+        <template v-if="dialog.type==='org-create' || dialog.type==='org-update'">
+          <label>Name
+            <input v-model="dialog.data.name" :placeholder="dialog.type==='org-update'? dialog.data.org.display_name : 'Organization name'" required />
+          </label>
+        </template>
+        <template v-else-if="dialog.type==='role-create'">
+          <label>Role Name
+            <input v-model="dialog.data.name" placeholder="Role name" required />
+          </label>
+        </template>
+        <template v-else-if="dialog.type==='role-update'">
+          <label>Role Name
+            <input v-model="dialog.data.name" :placeholder="dialog.data.role.display_name" required />
+          </label>
+          <label>Permissions (comma separated)
+            <textarea v-model="dialog.data.perms" rows="2" placeholder="perm:a, perm:b"></textarea>
+          </label>
+        </template>
+        <template v-else-if="dialog.type==='user-create'">
+          <p class="small muted">Role: {{ dialog.data.role.display_name }}</p>
+          <label>Display Name
+            <input v-model="dialog.data.name" placeholder="User display name" required />
+          </label>
+        </template>
+        <template v-else-if="dialog.type==='perm-display'">
+          <p class="small muted">ID: {{ dialog.data.permission.id }}</p>
+            <label>Display Name
+              <input v-model="dialog.data.display_name" :placeholder="dialog.data.permission.display_name" required />
+            </label>
+        </template>
+        <template v-else-if="dialog.type==='confirm'">
+          <p>{{ dialog.data.message }}</p>
+        </template>
+        <div v-if="dialog.error" class="error small">{{ dialog.error }}</div>
+        <div class="modal-actions">
+          <button type="submit" :disabled="dialog.busy">{{ dialog.type==='confirm' ? 'OK' : 'Save' }}</button>
+          <button type="button" @click="closeDialog" :disabled="dialog.busy">Cancel</button>
+        </div>
+      </form>
+    </div>
+  </div>
 </template>
 
 <style scoped>
@@ -798,6 +799,27 @@ button, .perm-actions button, .org-actions button, .role-actions button { width:
 .permission-grid .center { justify-content: center; }
 .permission-grid .perm-actions { gap: .25rem; }
 .permission-grid .perm-actions .icon-btn { font-size: .9rem; }
+/* Inline edit overlay to avoid layout shift */
+.perm-actions-inner { position: relative; display:flex; width:100%; justify-content:center; }
+.perm-actions-inner .inline-id-form.overlay { position:absolute; inset:0; display:none; align-items:center; justify-content:center; gap:.25rem; background:rgba(255,255,255,.9); backdrop-filter:blur(2px); padding:0 .15rem; }
+.perm-actions-inner.editing .inline-id-form.overlay { display:inline-flex; }
+.perm-actions-inner.editing .actions-view { visibility:hidden; }
+/* Inline forms */
+.inline-form, .inline-id-form { display:inline-flex; gap:.25rem; align-items:center; }
+.inline-form input, .inline-id-form input { padding:.25rem .4rem; font-size:.6rem; border:1px solid #ccc; border-radius:4px; }
+.inline-form button, .inline-id-form button { font-size:.6rem; padding:.3rem .5rem; }
+.inline-id-form .id-input { width:120px; }
+/* Modal */
+.modal-overlay { position:fixed; inset:0; background:rgba(0,0,0,.4); display:flex; justify-content:center; align-items:flex-start; padding-top:8vh; z-index:200; }
+.modal { background:#fff; border-radius:10px; padding:1rem 1.1rem; width: min(420px, 90%); box-shadow:0 10px 30px rgba(0,0,0,.25); animation:pop .18s ease; }
+@keyframes pop { from { transform:translateY(10px); opacity:0 } to { transform:translateY(0); opacity:1 } }
+.modal-title { margin:0 0 .65rem; font-size:1rem; }
+.modal-form { display:flex; flex-direction:column; gap:.65rem; }
+.modal-form label { display:flex; flex-direction:column; font-size:.65rem; gap:.25rem; font-weight:600; }
+.modal-form input, .modal-form textarea { border:1px solid #ccc; border-radius:6px; padding:.45rem .55rem; font-size:.7rem; font-weight:400; font-family:inherit; }
+.modal-form textarea { resize:vertical; }
+.modal-actions { display:flex; gap:.5rem; justify-content:flex-end; margin-top:.25rem; }
+.modal-actions button { font-size:.65rem; }
 /* Org pill editing */
 .perm-orgs { flex-wrap: wrap; gap: .25rem; }
 .perm-orgs .org-pill { background:#eef4ff; border:1px solid #d0dcf0; padding:2px 6px; border-radius:999px; font-size:.55rem; display:inline-flex; align-items:center; gap:4px; }
