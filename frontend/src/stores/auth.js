@@ -5,6 +5,7 @@ export const useAuthStore = defineStore('auth', {
   state: () => ({
     // Auth State
     userInfo: null, // Contains the full user info response: {user, credentials, aaguid_info, session_type, authenticated}
+    settings: null, // Server provided settings (/auth/settings)
     isLoading: false,
     resetToken: null, // transient reset token
     restrictedMode: false, // If true, app loaded outside /auth/ and should restrict to login or permission denied
@@ -105,6 +106,19 @@ export const useAuthStore = defineStore('auth', {
       }
       this.userInfo = result
       console.log('User info loaded:', result)
+    },
+    async loadSettings() {
+      try {
+        const res = await fetch('/auth/settings')
+        if (!res.ok) return
+        const data = await res.json()
+        this.settings = data
+        if (data?.rp_name) {
+          document.title = data.rp_name
+        }
+      } catch (_) {
+        // ignore
+      }
     },
     async deleteCredential(uuid) {
       const response = await fetch(`/auth/credential/${uuid}`, {method: 'Delete'})

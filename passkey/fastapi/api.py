@@ -53,6 +53,18 @@ def register_api_routes(app: FastAPI):
         s = await authz.verify(auth, perm)
         return {"valid": True, "user_uuid": str(s.user_uuid)}
 
+    @app.get("/auth/settings")
+    async def get_settings():
+        """Return server runtime settings safe for public consumption.
+
+        Provides relying party metadata used by the frontend to brand UI.
+        """
+        pk = global_passkey.instance
+        return {
+            "rp_id": pk.rp_id,
+            "rp_name": pk.rp_name,
+        }
+
     @app.post("/auth/user-info")
     async def api_user_info(reset: str | None = None, auth=Cookie(None)):
         """Get user information.
