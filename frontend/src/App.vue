@@ -26,6 +26,8 @@ onMounted(async () => {
   if (!location.pathname.startsWith('/auth/')) {
     store.setRestrictedMode(true)
   }
+  // Load branding / settings first (non-blocking for auth flow)
+  await store.loadSettings()
   // Was an error message passed in the URL hash?
   const message = location.hash.substring(1)
   if (message) {

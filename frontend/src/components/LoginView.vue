@@ -1,7 +1,7 @@
 <template>
   <div class="container">
     <div class="view active">
-      <h1>🔐 Passkey Login</h1>
+  <h1>🔐 {{ (authStore.settings?.rp_name || 'Passkey') + ' Login' }}</h1>
       <form @submit.prevent="handleLogin">
         <button
           type="submit"

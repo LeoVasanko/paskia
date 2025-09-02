@@ -277,8 +277,12 @@ function deletePermission(p) {
   } })
 }
 
-onMounted(() => {
+onMounted(async () => {
   window.addEventListener('hashchange', parseHash)
+  await authStore.loadSettings()
+  if (authStore.settings?.rp_name) {
+    document.title = authStore.settings.rp_name + ' Admin'
+  }
   load()
 })
 
@@ -435,7 +439,7 @@ async function submitDialog() {
 <template>
   <div class="container">
     <h1 v-if="!selectedUser">
-      <template v-if="!selectedOrg">Passkey Admin</template>
+      <template v-if="!selectedOrg">{{ (authStore.settings?.rp_name || 'Passkey') + ' Admin' }}</template>
       <template v-else>Organization Admin</template>
       <a href="/auth/" class="back-link" title="Back to User App">User</a>
       <a v-if="selectedOrg && info?.is_global_admin" @click.prevent="goOverview" href="#overview" class="nav-link" title="Back to overview">Overview</a>
