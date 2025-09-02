@@ -5,7 +5,8 @@ class AwaitableWebSocket extends WebSocket {
   #opened = false
 
   constructor(resolve, reject, url, protocols, binaryType) {
-    super(url, protocols)
+    // Support relative URLs even on old browsers that don't
+    super(new URL(url, location.href.replace(/^http/, 'ws')), protocols)
     this.binaryType = binaryType || 'blob'
     this.onopen = () => {
       this.#opened = true
@@ -74,10 +75,10 @@ class AwaitableWebSocket extends WebSocket {
   }
 }
 
-// Construct an async WebSocket with await aWebSocket(url) - supports relative URLs even with old browsers that don't
+// Construct an async WebSocket with await aWebSocket(url) - relative URLs OK
 export default function aWebSocket(url, options = {}) {
   const { protocols, binaryType } = options
   return new Promise((resolve, reject) => {
-    new AwaitableWebSocket(resolve, reject, new URL(url, location.href), protocols, binaryType)
+    new AwaitableWebSocket(resolve, reject, url, protocols, binaryType)
   })
 }
