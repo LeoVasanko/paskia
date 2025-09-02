@@ -1,6 +1,7 @@
 <script setup>
 import { ref, onMounted, onBeforeUnmount, computed, watch } from 'vue'
 import CredentialList from '@/components/CredentialList.vue'
+import UserBasicInfo from '@/components/UserBasicInfo.vue'
 import RegistrationLinkModal from '@/components/RegistrationLinkModal.vue'
 import StatusMessage from '@/components/StatusMessage.vue'
 import { useAuthStore } from '@/stores/auth'
@@ -368,30 +369,17 @@ async function toggleRolePermission(role, permId, checked) {
 function openDialog(type, data) { dialog.value = { type, data, busy: false, error: '' } }
 function closeDialog() { dialog.value = { type: null, data: null, busy: false, error: '' } }
 
-// Admin user rename
-const editingUserName = ref(false)
-const editUserNameValue = ref('')
-const editUserNameValid = computed(()=> true) // backend validates
-function beginEditUserName() {
-  if (!selectedUser.value) return
-  editingUserName.value = true
-  editUserNameValue.value = ''
-}
-function cancelEditUserName() { editingUserName.value = false }
-async function submitEditUserName() {
-  if (!editingUserName.value) return
-  try {
-    const res = await fetch(`/auth/admin/users/${selectedUser.value.uuid}/display-name`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ display_name: editUserNameValue.value }) })
-    const data = await res.json(); if (!res.ok || data.detail) throw new Error(data.detail || 'Rename failed')
-    editingUserName.value = false
-    await loadOrgs()
-    const r = await fetch(`/auth/admin/users/${selectedUser.value.uuid}`)
-    const jd = await r.json(); if (!r.ok || jd.detail) throw new Error(jd.detail || 'Reload failed')
-    userDetail.value = jd
-    authStore.showMessage('User renamed', 'success', 1500)
-  } catch (e) {
-    authStore.showMessage(e.message || 'Rename failed')
+async function onUserNameSaved() {
+  await loadOrgs()
+  if (selectedUser.value) {
+    try {
+      const r = await fetch(`/auth/admin/users/${selectedUser.value.uuid}`)
+      const jd = await r.json()
+      if (!r.ok || jd.detail) throw new Error(jd.detail || 'Reload failed')
+      userDetail.value = jd
+    } catch (e) { authStore.showMessage(e.message || 'Failed to reload user', 'error') }
   }
+  authStore.showMessage('User renamed', 'success', 1500)
 }
 
 async function submitDialog() {
@@ -488,24 +476,26 @@ async function submitDialog() {
 
         <!-- User Detail Page -->
         <div v-if="selectedUser" class="card user-detail">
-          <h2 class="user-title">
-            <span v-if="!editingUserName">{{ userDetail?.display_name || selectedUser.display_name }} <button class="icon-btn" @click="beginEditUserName" title="Rename user">✏️</button></span>
-            <span v-else>
-              <input v-model="editUserNameValue" :placeholder="userDetail?.display_name || selectedUser.display_name" maxlength="64" @keyup.enter="submitEditUserName" />
-              <button class="icon-btn" @click="submitEditUserName">💾</button>
-              <button class="icon-btn" @click="cancelEditUserName">✖</button>
-            </span>
-          </h2>
-          <div v-if="userDetail && !userDetail.error" class="user-meta">
-            <p class="small">Organization: {{ userDetail.org.display_name }}</p>
-            <p class="small">Role: {{ userDetail.role }}</p>
-            <p class="small">Visits: {{ userDetail.visits }}</p>
-            <p class="small">Created: {{ userDetail.created_at ? new Date(userDetail.created_at).toLocaleString() : '—' }}</p>
-            <p class="small">Last Seen: {{ userDetail.last_seen ? new Date(userDetail.last_seen).toLocaleString() : '—' }}</p>
+          <UserBasicInfo
+            v-if="userDetail && !userDetail.error"
+            :name="userDetail.display_name || selectedUser.display_name"
+            :visits="userDetail.visits"
+            :created-at="userDetail.created_at"
+            :last-seen="userDetail.last_seen"
+            :loading="loading"
+            :update-endpoint="`/auth/admin/users/${selectedUser.uuid}/display-name`"
+            @saved="onUserNameSaved"
+          >
+            <span><strong>Organization:</strong></span>
+            <span>{{ userDetail.org.display_name }}</span>
+            <span><strong>Role:</strong></span>
+            <span>{{ userDetail.role }}</span>
+          </UserBasicInfo>
+          <div v-else-if="userDetail?.error" class="error small">{{ userDetail.error }}</div>
+          <template v-if="userDetail && !userDetail.error">
             <h3 class="cred-title">Registered Passkeys</h3>
             <CredentialList :credentials="userDetail.credentials" :aaguid-info="userDetail.aaguid_info" />
-          </div>
-          <div v-else-if="userDetail?.error" class="error small">{{ userDetail.error }}</div>
+          </template>
           <div class="actions">
             <button @click="generateUserRegistrationLink(selectedUser)">Generate Registration Token</button>
             <button @click="goOverview" v-if="info.is_global_admin" class="icon-btn" title="Overview">🏠</button>
