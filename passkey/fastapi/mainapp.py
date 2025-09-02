@@ -4,12 +4,11 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import Cookie, FastAPI, HTTPException, Query, Request, Response
-from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
+from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from passkey.util import passphrase
 
-from ..globals import passkey as global_passkey
 from . import admin, api, authz, ws
 
 STATIC_DIR = Path(__file__).parent.parent / "frontend-build"
@@ -50,39 +49,20 @@ async def lifespan(app: FastAPI):  # pragma: no cover - startup path
 
 
 app = FastAPI(lifespan=lifespan)
-app.mount("/auth/ws", ws.app)
 app.mount("/auth/admin", admin.app)
 app.mount("/auth/api", api.app)
-
-
-# Global exception handlers
-@app.exception_handler(ValueError)
-async def value_error_handler(request: Request, exc: ValueError):
-    """Handle ValueError exceptions globally with 400 status code."""
-    return JSONResponse(status_code=400, content={"detail": str(exc)})
-
-
-@app.exception_handler(Exception)
-async def general_exception_handler(request: Request, exc: Exception):
-    """Handle all other exceptions globally with 500 status code."""
-    logging.exception("Internal Server Error")
-    return JSONResponse(status_code=500, content={"detail": "Internal server error"})
-
-
-# Serve static files
-app.mount(
-    "/auth/assets", StaticFiles(directory=STATIC_DIR / "assets"), name="static assets"
-)
+app.mount("/auth/ws", ws.app)
+app.mount("/auth/assets", StaticFiles(directory=STATIC_DIR / "assets"), name="assets")
 
 
 @app.get("/auth/")
-async def redirect_to_index():
+async def frontend():
     """Serve the main authentication app."""
     return FileResponse(STATIC_DIR / "index.html")
 
 
-@app.get("/auth/{reset_token}")
-async def reset_authentication(request: Request, reset_token: str):
+@app.get("/auth/{reset}")
+async def reset_authentication(request: Request, reset: str):
     """Validate reset token and redirect with it as query parameter (no cookies).
 
     After validation we 303 redirect to /auth/?reset=<token>. The frontend will:
@@ -90,12 +70,9 @@ async def reset_authentication(request: Request, reset_token: str):
     - Use it via Authorization header or websocket query param
     - history.replaceState to remove it from the address bar/history
     """
-    if not passphrase.is_well_formed(reset_token):
+    if not passphrase.is_well_formed(reset):
         raise HTTPException(status_code=404)
-    origin = global_passkey.instance.origin
-    # Do not verify existence/expiry here; frontend + user-info endpoint will handle invalid tokens.
-    url = f"{origin}/auth/?reset={reset_token}"
-    return RedirectResponse(url=url, status_code=303)
+    return RedirectResponse(request.url_for("frontend", reset=reset), status_code=303)
 
 
 @app.get("/auth/forward-auth")
