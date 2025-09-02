@@ -74,10 +74,10 @@ class AwaitableWebSocket extends WebSocket {
   }
 }
 
-// Construct an async WebSocket with await aWebSocket(url)
+// Construct an async WebSocket with await aWebSocket(url) - supports relative URLs even with old browsers that don't
 export default function aWebSocket(url, options = {}) {
   const { protocols, binaryType } = options
   return new Promise((resolve, reject) => {
-    new AwaitableWebSocket(resolve, reject, url, protocols, binaryType)
+    new AwaitableWebSocket(resolve, reject, new URL(url, location.href), protocols, binaryType)
   })
 }
