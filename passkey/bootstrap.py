@@ -18,13 +18,13 @@ from .util import passphrase, tokens
 
 
 def _init_logger() -> logging.Logger:
-    l = logging.getLogger(__name__)
-    if not l.handlers and not logging.getLogger().handlers:
+    logger = logging.getLogger(__name__)
+    if not logger.handlers and not logging.getLogger().handlers:
         h = logging.StreamHandler()
         h.setFormatter(logging.Formatter("%(message)s"))
-        l.addHandler(h)
-        l.setLevel(logging.INFO)
-    return l
+        logger.addHandler(h)
+        logger.setLevel(logging.INFO)
+    return logger
 
 
 logger = _init_logger()
