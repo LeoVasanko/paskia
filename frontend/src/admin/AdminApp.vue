@@ -483,14 +483,11 @@ async function submitDialog() {
             :created-at="userDetail.created_at"
             :last-seen="userDetail.last_seen"
             :loading="loading"
+            :org-display-name="userDetail.org.display_name"
+            :role-name="userDetail.role"
             :update-endpoint="`/auth/admin/users/${selectedUser.uuid}/display-name`"
             @saved="onUserNameSaved"
-          >
-            <span><strong>Organization:</strong></span>
-            <span>{{ userDetail.org.display_name }}</span>
-            <span><strong>Role:</strong></span>
-            <span>{{ userDetail.role }}</span>
-          </UserBasicInfo>
+          />
           <div v-else-if="userDetail?.error" class="error small">{{ userDetail.error }}</div>
           <template v-if="userDetail && !userDetail.error">
             <h3 class="cred-title">Registered Passkeys</h3>

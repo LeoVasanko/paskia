@@ -19,7 +19,10 @@
         <button class="mini-btn" @click="cancelEdit" :disabled="busy || loading" title="Cancel">✖</button>
       </span>
     </h3>
-    <slot />
+    <div v-if="orgDisplayName || roleName" class="org-role-sub">
+      <div class="org-line" v-if="orgDisplayName">{{ orgDisplayName }}</div>
+      <div class="role-line" v-if="roleName">{{ roleName }}</div>
+    </div>
     <span><strong>Visits:</strong></span>
     <span>{{ visits || 0 }}</span>
     <span><strong>Registered:</strong></span>
@@ -41,7 +44,9 @@ const props = defineProps({
   lastSeen: { type: [String, Number, Date], default: null },
   updateEndpoint: { type: String, default: null },
   canEdit: { type: Boolean, default: true },
-  loading: { type: Boolean, default: false }
+  loading: { type: Boolean, default: false },
+  orgDisplayName: { type: String, default: '' },
+  roleName: { type: String, default: '' }
 })
 
 const emit = defineEmits(['saved'])
@@ -77,6 +82,9 @@ watch(() => props.name, () => { if (!props.name) editingName.value = false })
 <style scoped>
 .user-info { display: grid; grid-template-columns: auto 1fr; gap: 10px; }
 .user-info h3 { grid-column: span 2; }
+.org-role-sub { grid-column: span 2; display:flex; flex-direction:column; margin: -0.15rem 0 0.25rem; }
+.org-line { font-size: .7rem; font-weight:600; line-height:1.1; }
+.role-line { font-size:.6rem; color:#555; line-height:1.1; }
 .user-info span { text-align: left; }
 .user-name-heading { display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; margin: 0 0 0.25rem 0; }
 .user-name-row { display: inline-flex; align-items: center; gap: 0.35rem; max-width: 100%; }
