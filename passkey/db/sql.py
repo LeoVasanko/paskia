@@ -271,6 +271,17 @@ class DB(DatabaseInterface):
         async with self.session() as session:
             session.add(UserModel.from_dataclass(user))
 
+    async def update_user_display_name(self, user_uuid: UUID, display_name: str) -> None:
+        async with self.session() as session:
+            stmt = (
+                update(UserModel)
+                .where(UserModel.uuid == user_uuid.bytes)
+                .values(display_name=display_name)
+            )
+            result = await session.execute(stmt)
+            if result.rowcount == 0:  # type: ignore[attr-defined]
+                raise ValueError("User not found")
+
     async def create_role(self, role: Role) -> None:
         async with self.session() as session:
             # Create role record
@@ -388,6 +399,55 @@ class DB(DatabaseInterface):
                 last_verified=credential.last_verified,
             )
             session.add(credential_model)
+
+    async def create_credential_session(
+        self,
+        user_uuid: UUID,
+        credential: Credential,
+        reset_key: bytes | None,
+        session_key: bytes,
+        session_expires: datetime,
+        session_info: dict,
+        display_name: str | None = None,
+    ) -> None:
+        """Atomic credential + (optional old session delete) + (optional rename) + new session."""
+        async with self.session() as session:
+            # Insert credential
+            session.add(
+                CredentialModel(
+                    uuid=credential.uuid.bytes,
+                    credential_id=credential.credential_id,
+                    user_uuid=credential.user_uuid.bytes,
+                    aaguid=credential.aaguid.bytes,
+                    public_key=credential.public_key,
+                    sign_count=credential.sign_count,
+                    created_at=credential.created_at,
+                    last_used=credential.last_used,
+                    last_verified=credential.last_verified,
+                )
+            )
+            # Delete old session if provided
+            if reset_key:
+                await session.execute(
+                    delete(SessionModel).where(SessionModel.key == reset_key)
+                )
+            # Optional rename
+            if display_name:
+                await session.execute(
+                    update(UserModel)
+                    .where(UserModel.uuid == user_uuid.bytes)
+                    .values(display_name=display_name)
+                )
+            # New session
+            session.add(
+                SessionModel(
+                    key=session_key,
+                    user_uuid=user_uuid.bytes,
+                    credential_uuid=credential.uuid.bytes,
+                    expires=session_expires,
+                    info=session_info,
+                )
+            )
 
     async def delete_credential(self, uuid: UUID, user_uuid: UUID) -> None:
         async with self.session() as session:

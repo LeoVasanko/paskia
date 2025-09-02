@@ -3,7 +3,15 @@
     <div class="view active">
   <h1>👋 Welcome! <a v-if="isAdmin" href="/auth/admin/" class="admin-link" title="Admin Console">Admin</a></h1>
       <div v-if="authStore.userInfo?.user" class="user-info">
-        <h3>👤 {{ authStore.userInfo.user.user_name }}</h3>
+        <h3>
+          👤
+          <template v-if="!editingName">{{ authStore.userInfo.user.user_name }} <button class="mini-btn" @click="startEdit" title="Edit name">✏️</button></template>
+          <template v-else>
+            <input v-model="newName" :disabled="authStore.isLoading" maxlength="64" @keyup.enter="saveName" />
+            <button class="mini-btn" @click="saveName" :disabled="!validName || authStore.isLoading">💾</button>
+            <button class="mini-btn" @click="cancelEdit" :disabled="authStore.isLoading">✖</button>
+          </template>
+        </h3>
         <span><strong>Visits:</strong></span>
         <span>{{ authStore.userInfo.user.visits || 0 }}</span>
         <span><strong>Registered:</strong></span>
@@ -147,6 +155,25 @@ const logout = async () => {
 }
 
 const isAdmin = computed(() => !!(authStore.userInfo?.is_global_admin || authStore.userInfo?.is_org_admin))
+
+// Name editing state & actions
+const editingName = ref(false)
+const newName = ref('')
+const validName = computed(() => newName.value.trim().length > 0 && newName.value.trim().length <= 64)
+function startEdit() { editingName.value = true; newName.value = authStore.userInfo?.user?.user_name || '' }
+function cancelEdit() { editingName.value = false }
+async function saveName() {
+  if (!validName.value) return
+  try {
+    authStore.isLoading = true
+    const res = await fetch('/auth/user/display-name', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ display_name: newName.value.trim() }) })
+    const data = await res.json(); if (!res.ok || data.detail) throw new Error(data.detail || 'Update failed')
+    await authStore.loadUserInfo()
+    editingName.value = false
+    authStore.showMessage('Name updated', 'success', 1500)
+  } catch (e) { authStore.showMessage(e.message || 'Failed to update name', 'error') }
+  finally { authStore.isLoading = false }
+}
 </script>
 
 <style scoped>
@@ -161,6 +188,7 @@ const isAdmin = computed(() => !!(authStore.userInfo?.is_global_admin || authSto
 .user-info span {
   text-align: left;
 }
+.mini-btn { font-size: 0.7em; margin-left: 0.3em; }
 </style>
 
 <style scoped>

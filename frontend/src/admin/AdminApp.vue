@@ -364,6 +364,32 @@ async function toggleRolePermission(role, permId, checked) {
 function openDialog(type, data) { dialog.value = { type, data, busy: false, error: '' } }
 function closeDialog() { dialog.value = { type: null, data: null, busy: false, error: '' } }
 
+// Admin user rename
+const editingUserName = ref(false)
+const editUserNameValue = ref('')
+const editUserNameValid = computed(()=> editUserNameValue.value.trim().length > 0 && editUserNameValue.value.trim().length <= 64)
+function beginEditUserName() {
+  if (!selectedUser.value) return
+  editingUserName.value = true
+  editUserNameValue.value = userDetail.value?.display_name || selectedUser.value.display_name || ''
+}
+function cancelEditUserName() { editingUserName.value = false }
+async function submitEditUserName() {
+  if (!editingUserName.value || !editUserNameValid.value) return
+  try {
+    const res = await fetch(`/auth/admin/users/${selectedUser.value.uuid}/display-name`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ display_name: editUserNameValue.value.trim() }) })
+    const data = await res.json(); if (!res.ok || data.detail) throw new Error(data.detail || 'Rename failed')
+    editingUserName.value = false
+    await loadOrgs()
+    const r = await fetch(`/auth/admin/users/${selectedUser.value.uuid}`)
+    const jd = await r.json(); if (!r.ok || jd.detail) throw new Error(jd.detail || 'Reload failed')
+    userDetail.value = jd
+    authStore.showMessage('User renamed', 'success', 1500)
+  } catch (e) {
+    authStore.showMessage(e.message || 'Rename failed')
+  }
+}
+
 async function submitDialog() {
   if (!dialog.value.type || dialog.value.busy) return
   dialog.value.busy = true; dialog.value.error = ''
@@ -458,7 +484,14 @@ async function submitDialog() {
 
         <!-- User Detail Page -->
         <div v-if="selectedUser" class="card user-detail">
-          <h2 class="user-title"><span>{{ userDetail?.display_name || selectedUser.display_name }}</span></h2>
+          <h2 class="user-title">
+            <span v-if="!editingUserName">{{ userDetail?.display_name || selectedUser.display_name }} <button class="icon-btn" @click="beginEditUserName" title="Rename user">✏️</button></span>
+            <span v-else>
+              <input v-model="editUserNameValue" maxlength="64" @keyup.enter="submitEditUserName" />
+              <button class="icon-btn" @click="submitEditUserName" :disabled="!editUserNameValid">💾</button>
+              <button class="icon-btn" @click="cancelEditUserName">✖</button>
+            </span>
+          </h2>
           <div v-if="userDetail && !userDetail.error" class="user-meta">
             <p class="small">Organization: {{ userDetail.org.display_name }}</p>
             <p class="small">Role: {{ userDetail.role }}</p>

@@ -100,6 +100,10 @@ class DatabaseInterface(ABC):
     async def create_user(self, user: User) -> None:
         """Create a new user."""
 
+    @abstractmethod
+    async def update_user_display_name(self, user_uuid: UUID, display_name: str) -> None:
+        """Update a user's display name."""
+
     # Role operations
     @abstractmethod
     async def create_role(self, role: Role) -> None:
@@ -311,6 +315,27 @@ class DatabaseInterface(ABC):
     @abstractmethod
     async def get_session_context(self, session_key: bytes) -> SessionContext | None:
         """Get complete session context including user, organization, role, and permissions."""
+
+        # Combined atomic operations
+        @abstractmethod
+        async def create_credential_session(
+            self,
+            user_uuid: UUID,
+            credential: Credential,
+            reset_key: bytes | None,
+            session_key: bytes,
+            session_expires: datetime,
+            session_info: dict,
+            display_name: str | None = None,
+        ) -> None:
+            """Atomically add a credential and create a session.
+
+            Steps (single transaction):
+                1. Insert credential
+                2. Optionally delete old session (e.g. reset token) if provided
+                3. Optionally update user's display name
+                4. Insert new session referencing the credential
+            """
 
 
 __all__ = [

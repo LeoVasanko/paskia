@@ -5,9 +5,10 @@ from uuid import UUID
 from fastapi import Cookie, FastAPI, WebSocket, WebSocketDisconnect
 from webauthn.helpers.exceptions import InvalidAuthenticationResponse
 
-from ..authsession import create_session, get_reset, get_session
+from ..authsession import create_session, expires, get_reset, get_session
 from ..globals import db, passkey
 from ..util import passphrase
+from ..util.tokens import create_token, session_key
 from .session import infodict
 
 
@@ -55,7 +56,7 @@ async def register_chat(
 @app.websocket("/register")
 @websocket_error_handler
 async def websocket_register_add(
-    ws: WebSocket, reset: str | None = None, auth=Cookie(None)
+    ws: WebSocket, reset: str | None = None, name: str | None = None, auth=Cookie(None)
 ):
     """Register a new credential for an existing user.
 
@@ -64,11 +65,9 @@ async def websocket_register_add(
     - Reset token supplied as ?reset=... (auth cookie ignored)
     """
     origin = ws.headers["origin"]
-    is_reset = False
     if reset is not None:
         if not passphrase.is_well_formed(reset):
             raise ValueError("Invalid reset token")
-        is_reset = True
         s = await get_reset(reset)
     else:
         if not auth:
@@ -76,23 +75,30 @@ async def websocket_register_add(
         s = await get_session(auth)
     user_uuid = s.user_uuid
 
-    # Get user information to get the user_name
+    # Get user information and determine effective user_name for this registration
     user = await db.instance.get_user_by_uuid(user_uuid)
     user_name = user.display_name
+    if name is not None:
+        stripped = name.strip()
+        if stripped:
+            user_name = stripped
     challenge_ids = await db.instance.get_credentials_by_user_uuid(user_uuid)
 
     # WebAuthn registration
     credential = await register_chat(ws, user_uuid, user_name, challenge_ids, origin)
-    # IMPORTANT: Insert the credential before creating a session that references it
-    # to satisfy the sessions.credential_uuid foreign key (now enforced).
-    await db.instance.create_credential(credential)
 
-    if is_reset:
-        # Invalidate the one-time reset session only after credential persisted
-        await db.instance.delete_session(s.key)
-        auth = await create_session(
-            user_uuid, credential.uuid, infodict(ws, "authenticated")
-        )
+    # Create a new session and store everything in database
+    token = create_token()
+    await db.instance.create_credential_session(  # type: ignore[attr-defined]
+        user_uuid=user_uuid,
+        credential=credential,
+        reset_key=(s.key if reset is not None else None),
+        session_key=session_key(token),
+        session_expires=expires(),
+        session_info=infodict(ws, "authenticated"),
+        display_name=user_name,
+    )
+    auth = token
 
     assert isinstance(auth, str) and len(auth) == 16
     await ws.send_json(
