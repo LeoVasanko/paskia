@@ -271,7 +271,9 @@ class DB(DatabaseInterface):
         async with self.session() as session:
             session.add(UserModel.from_dataclass(user))
 
-    async def update_user_display_name(self, user_uuid: UUID, display_name: str) -> None:
+    async def update_user_display_name(
+        self, user_uuid: UUID, display_name: str
+    ) -> None:
         async with self.session() as session:
             stmt = (
                 update(UserModel)
