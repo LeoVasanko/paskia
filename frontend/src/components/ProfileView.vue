@@ -3,14 +3,24 @@
     <div class="view active">
   <h1>👋 Welcome! <a v-if="isAdmin" href="/auth/admin/" class="admin-link" title="Admin Console">Admin</a></h1>
       <div v-if="authStore.userInfo?.user" class="user-info">
-        <h3>
-          👤
-          <template v-if="!editingName">{{ authStore.userInfo.user.user_name }} <button class="mini-btn" @click="startEdit" title="Edit name">✏️</button></template>
-          <template v-else>
-            <input v-model="newName" :placeholder="authStore.userInfo.user.user_name" :disabled="authStore.isLoading" maxlength="64" @keyup.enter="saveName" />
-            <button class="mini-btn" @click="saveName" :disabled="authStore.isLoading">💾</button>
-            <button class="mini-btn" @click="cancelEdit" :disabled="authStore.isLoading">✖</button>
-          </template>
+        <h3 class="user-name-heading">
+          <span class="icon">👤</span>
+          <span v-if="!editingName" class="user-name-row">
+            <span class="display-name" :title="authStore.userInfo.user.user_name">{{ authStore.userInfo.user.user_name }}</span>
+            <button class="mini-btn" @click="startEdit" title="Edit name">✏️</button>
+          </span>
+          <span v-else class="user-name-row editing">
+            <input
+              v-model="newName"
+              class="name-input"
+              :placeholder="authStore.userInfo.user.user_name"
+              :disabled="authStore.isLoading"
+              maxlength="64"
+              @keyup.enter="saveName"
+            />
+            <button class="mini-btn" @click="saveName" :disabled="authStore.isLoading" title="Save name">💾</button>
+            <button class="mini-btn" @click="cancelEdit" :disabled="authStore.isLoading" title="Cancel">✖</button>
+          </span>
         </h3>
         <span><strong>Visits:</strong></span>
         <span>{{ authStore.userInfo.user.visits || 0 }}</span>
@@ -186,7 +196,61 @@ async function saveName() {
 .user-info span {
   text-align: left;
 }
-.mini-btn { font-size: 0.7em; margin-left: 0.3em; }
+.user-name-heading {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+  margin: 0 0 0.25rem 0;
+}
+.user-name-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  max-width: 100%;
+}
+.user-name-row.editing { flex: 1 1 auto; }
+.icon { flex: 0 0 auto; }
+.display-name {
+  font-weight: 600;
+  font-size: 1.05em;
+  line-height: 1.2;
+  max-width: 14ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.name-input {
+  width: auto;
+  flex: 1 1 140px;
+  min-width: 120px;
+  padding: 6px 8px;
+  font-size: 0.9em;
+  border: 1px solid #a9c5d6;
+  border-radius: 6px;
+}
+.user-name-heading .name-input { width: auto; }
+.name-input:focus { outline: 2px solid #667eea55; border-color: #667eea; }
+.mini-btn {
+  width: auto;
+  padding: 4px 6px;
+  margin: 0;
+  font-size: 0.75em;
+  line-height: 1;
+  background: #eef5fa;
+  border: 1px solid #b7d2e3;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.2s, transform 0.15s;
+}
+.mini-btn:hover:not(:disabled) { background: #dcecf6; }
+.mini-btn:active:not(:disabled) { transform: translateY(1px); }
+.mini-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+@media (max-width: 480px) {
+  .user-name-heading { flex-direction: column; align-items: flex-start; }
+  .user-name-row.editing { width: 100%; }
+  .display-name { max-width: 100%; }
+}
 </style>
 
 <style scoped>
