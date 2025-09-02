@@ -1,16 +1,13 @@
 import argparse
 import asyncio
-import atexit
-import contextlib
 import ipaddress
 import logging
 import os
-import signal
-import subprocess
-from pathlib import Path
 from urllib.parse import urlparse
 
 import uvicorn
+
+from passkey.util import frontend
 
 DEFAULT_HOST = "localhost"
 DEFAULT_SERVE_PORT = 4401
@@ -180,36 +177,11 @@ def main():
             run_kwargs["host"] = host
             run_kwargs["port"] = port
 
-    bun_process: subprocess.Popen | None = None
     if devmode:
-        # Spawn frontend dev server (bun) only in the original parent (avoid duplicates on reload)
+        # Spawn frontend dev server (bun or npm) only once in parent process
         if os.environ.get("PASSKEY_BUN_PARENT") != "1":
             os.environ["PASSKEY_BUN_PARENT"] = "1"
-            frontend_dir = Path(__file__).parent.parent.parent / "frontend"
-            if (frontend_dir / "package.json").exists():
-                try:
-                    bun_process = subprocess.Popen(
-                        ["bun", "--bun", "run", "dev"], cwd=str(frontend_dir)
-                    )
-                    logging.info("Started bun dev server")
-                except FileNotFoundError:
-                    logging.warning(
-                        "bun not found: skipping frontend dev server (install bun)"
-                    )
-
-            def _terminate_bun():  # pragma: no cover
-                if bun_process and bun_process.poll() is None:
-                    with contextlib.suppress(Exception):
-                        bun_process.terminate()
-
-            atexit.register(_terminate_bun)
-
-            def _signal_handler(signum, frame):  # pragma: no cover
-                _terminate_bun()
-                raise SystemExit(0)
-
-            signal.signal(signal.SIGINT, _signal_handler)
-            signal.signal(signal.SIGTERM, _signal_handler)
+            frontend.run_dev()
 
     if all_ifaces and not uds:
         # If reload enabled, fallback to single dual-stack attempt (::) to keep reload simple

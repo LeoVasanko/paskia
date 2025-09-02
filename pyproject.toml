@@ -38,5 +38,5 @@ isort.known-first-party = ["passkey"]
 passkey-auth = "passkey.fastapi.__main__:main"
 
 [tool.hatch.build]
-artifacts = ["passkeyauth/frontend-static"]
+artifacts = ["passkey/frontend-build"]
 targets.sdist.hooks.custom.path = "scripts/build-frontend.py"
