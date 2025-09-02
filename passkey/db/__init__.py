@@ -101,7 +101,9 @@ class DatabaseInterface(ABC):
         """Create a new user."""
 
     @abstractmethod
-    async def update_user_display_name(self, user_uuid: UUID, display_name: str) -> None:
+    async def update_user_display_name(
+        self, user_uuid: UUID, display_name: str
+    ) -> None:
         """Update a user's display name."""
 
     # Role operations
