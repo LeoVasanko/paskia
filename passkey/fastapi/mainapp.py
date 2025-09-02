@@ -1,4 +1,3 @@
-import contextlib
 import logging
 import os
 from contextlib import asynccontextmanager
@@ -8,8 +7,7 @@ from fastapi import Cookie, FastAPI, HTTPException, Query, Request, Response
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from ..authsession import get_session
-from . import authz, ws
+from . import admin, authz, ws
 from .api import register_api_routes
 from .reset import register_reset_routes
 
@@ -51,6 +49,8 @@ async def lifespan(app: FastAPI):  # pragma: no cover - startup path
 
 
 app = FastAPI(lifespan=lifespan)
+app.mount("/auth/ws", ws.app)
+app.mount("/auth/admin", admin.app)
 
 
 # Global exception handlers
@@ -65,10 +65,6 @@ async def general_exception_handler(request: Request, exc: Exception):
     """Handle all other exceptions globally with 500 status code."""
     logging.exception("Internal Server Error")
     return JSONResponse(status_code=500, content={"detail": "Internal server error"})
-
-
-# Mount the WebSocket subapp
-app.mount("/auth/ws", ws.app)
 
 
 @app.get("/auth/forward-auth")
@@ -102,27 +98,6 @@ app.mount(
 async def redirect_to_index():
     """Serve the main authentication app."""
     return FileResponse(STATIC_DIR / "index.html")
-
-
-@app.get("/auth/admin")
-async def serve_admin(auth=Cookie(None)):
-    """Serve the admin app entry point if an authenticated session exists.
-
-    If no valid authenticated session cookie is present, return a 401 with the
-    main app's index.html so the frontend can initiate login/registration flow.
-    """
-    if auth:
-        with contextlib.suppress(ValueError):
-            s = await get_session(auth)
-            if s.info and s.info.get("type") == "authenticated":
-                return FileResponse(STATIC_DIR / "admin" / "index.html")
-
-    # Not authenticated: serve main index with 401
-    return FileResponse(
-        STATIC_DIR / "index.html",
-        status_code=401,
-        headers={"WWW-Authenticate": "Bearer"},
-    )
 
 
 # Register API routes
