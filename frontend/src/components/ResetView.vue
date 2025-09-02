@@ -28,26 +28,17 @@
 <script setup>
 import { useAuthStore } from '@/stores/auth'
 import passkey from '@/utils/passkey'
-import { ref, watchEffect } from 'vue'
+import { ref } from 'vue'
 
 const authStore = useAuthStore()
-const user_name = ref('')
-
-// Initialize local name from store (once loaded)
-watchEffect(() => {
-  if (!user_name.value && authStore.userInfo?.user?.user_name) {
-    user_name.value = authStore.userInfo.user.user_name
-  }
-})
+const user_name = ref('') // intentionally blank; original shown via placeholder
 
 async function register() {
   authStore.isLoading = true
   authStore.showMessage('Starting registration...', 'info')
 
   try {
-  const trimmed = (user_name.value || '').trim()
-  const nameToSend = trimmed.length ? trimmed : null
-  const result = await passkey.register(authStore.resetToken, nameToSend)
+  const result = await passkey.register(authStore.resetToken, user_name.value)
   console.log("Result", result)
   await authStore.setSessionCookie(result.session_token)
   // resetToken cleared by setSessionCookie; ensure again

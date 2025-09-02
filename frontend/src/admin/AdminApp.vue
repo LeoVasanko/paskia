@@ -367,17 +367,17 @@ function closeDialog() { dialog.value = { type: null, data: null, busy: false, e
 // Admin user rename
 const editingUserName = ref(false)
 const editUserNameValue = ref('')
-const editUserNameValid = computed(()=> editUserNameValue.value.trim().length > 0 && editUserNameValue.value.trim().length <= 64)
+const editUserNameValid = computed(()=> true) // backend validates
 function beginEditUserName() {
   if (!selectedUser.value) return
   editingUserName.value = true
-  editUserNameValue.value = userDetail.value?.display_name || selectedUser.value.display_name || ''
+  editUserNameValue.value = ''
 }
 function cancelEditUserName() { editingUserName.value = false }
 async function submitEditUserName() {
-  if (!editingUserName.value || !editUserNameValid.value) return
+  if (!editingUserName.value) return
   try {
-    const res = await fetch(`/auth/admin/users/${selectedUser.value.uuid}/display-name`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ display_name: editUserNameValue.value.trim() }) })
+    const res = await fetch(`/auth/admin/users/${selectedUser.value.uuid}/display-name`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ display_name: editUserNameValue.value }) })
     const data = await res.json(); if (!res.ok || data.detail) throw new Error(data.detail || 'Rename failed')
     editingUserName.value = false
     await loadOrgs()
@@ -487,8 +487,8 @@ async function submitDialog() {
           <h2 class="user-title">
             <span v-if="!editingUserName">{{ userDetail?.display_name || selectedUser.display_name }} <button class="icon-btn" @click="beginEditUserName" title="Rename user">✏️</button></span>
             <span v-else>
-              <input v-model="editUserNameValue" maxlength="64" @keyup.enter="submitEditUserName" />
-              <button class="icon-btn" @click="submitEditUserName" :disabled="!editUserNameValid">💾</button>
+              <input v-model="editUserNameValue" :placeholder="userDetail?.display_name || selectedUser.display_name" maxlength="64" @keyup.enter="submitEditUserName" />
+              <button class="icon-btn" @click="submitEditUserName">💾</button>
               <button class="icon-btn" @click="cancelEditUserName">✖</button>
             </span>
           </h2>

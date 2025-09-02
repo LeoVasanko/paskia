@@ -7,8 +7,8 @@
           👤
           <template v-if="!editingName">{{ authStore.userInfo.user.user_name }} <button class="mini-btn" @click="startEdit" title="Edit name">✏️</button></template>
           <template v-else>
-            <input v-model="newName" :disabled="authStore.isLoading" maxlength="64" @keyup.enter="saveName" />
-            <button class="mini-btn" @click="saveName" :disabled="!validName || authStore.isLoading">💾</button>
+            <input v-model="newName" :placeholder="authStore.userInfo.user.user_name" :disabled="authStore.isLoading" maxlength="64" @keyup.enter="saveName" />
+            <button class="mini-btn" @click="saveName" :disabled="authStore.isLoading">💾</button>
             <button class="mini-btn" @click="cancelEdit" :disabled="authStore.isLoading">✖</button>
           </template>
         </h3>
@@ -159,14 +159,12 @@ const isAdmin = computed(() => !!(authStore.userInfo?.is_global_admin || authSto
 // Name editing state & actions
 const editingName = ref(false)
 const newName = ref('')
-const validName = computed(() => newName.value.trim().length > 0 && newName.value.trim().length <= 64)
-function startEdit() { editingName.value = true; newName.value = authStore.userInfo?.user?.user_name || '' }
+function startEdit() { editingName.value = true; newName.value = '' }
 function cancelEdit() { editingName.value = false }
 async function saveName() {
-  if (!validName.value) return
   try {
     authStore.isLoading = true
-    const res = await fetch('/auth/user/display-name', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ display_name: newName.value.trim() }) })
+  const res = await fetch('/auth/user/display-name', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ display_name: newName.value }) })
     const data = await res.json(); if (!res.ok || data.detail) throw new Error(data.detail || 'Update failed')
     await authStore.loadUserInfo()
     editingName.value = false
