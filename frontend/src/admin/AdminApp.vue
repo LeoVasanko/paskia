@@ -312,6 +312,12 @@ const selectedUser = computed(() => {
   return null
 })
 
+const pageHeading = computed(() => {
+  if (selectedUser.value) return 'Organization Admin'
+  if (selectedOrg.value) return 'Organization Admin'
+  return (authStore.settings?.rp_name || 'Passkey') + ' Admin'
+})
+
 watch(selectedUser, async (u) => {
   if (!u) { userDetail.value = null; return }
   try {
@@ -426,11 +432,16 @@ async function submitDialog() {
 
 <template>
   <div class="container">
-    <h1 v-if="!selectedUser">
-      <template v-if="!selectedOrg">{{ (authStore.settings?.rp_name || 'Passkey') + ' Admin' }}</template>
-      <template v-else>Organization Admin</template>
+    <h1>
+      {{ pageHeading }}
       <a href="/auth/" class="back-link" title="Back to User App">User</a>
-      <a v-if="selectedOrg && info?.is_global_admin" @click.prevent="goOverview" href="#overview" class="nav-link" title="Back to overview">Overview</a>
+      <a
+        v-if="info?.is_global_admin && (selectedOrg || selectedUser)"
+        @click.prevent="goOverview"
+        href="#overview"
+        class="nav-link"
+        title="Back to overview"
+      >Overview</a>
     </h1>
     <div v-if="loading">Loading…</div>
     <div v-else-if="error" class="error">{{ error }}</div>
