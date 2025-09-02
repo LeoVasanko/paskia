@@ -138,20 +138,20 @@ def main():
 
     default_port = DEFAULT_DEV_PORT if args.command == "dev" else DEFAULT_SERVE_PORT
     host, port, uds, all_ifaces = parse_endpoint(args.hostport, default_port)
-    reload_enabled = args.command == "dev"
+    devmode = args.command == "dev"
 
     # Determine origin (dev mode default override)
-    effective_origin = args.origin
-    if reload_enabled and not effective_origin:
-        # Use a distinct port (4403) for RP origin in dev if not explicitly provided
-        effective_origin = "http://localhost:4403"
+    origin = args.origin
+    if devmode and not args.origin and not args.rp_id:
+        # Dev mode: Vite runs on another port, override:
+        origin = "http://localhost:4403"
 
     # Export configuration via environment for lifespan initialization in each process
     os.environ.setdefault("PASSKEY_RP_ID", args.rp_id)
     if args.rp_name:
         os.environ["PASSKEY_RP_NAME"] = args.rp_name
-    if effective_origin:
-        os.environ["PASSKEY_ORIGIN"] = effective_origin
+    if origin:
+        os.environ["PASSKEY_ORIGIN"] = origin
 
     # One-time initialization + bootstrap before starting any server processes.
     # Lifespan in worker processes will call globals.init with bootstrap disabled.
@@ -161,7 +161,7 @@ def main():
         _globals.init(
             rp_id=args.rp_id,
             rp_name=args.rp_name,
-            origin=effective_origin,
+            origin=origin,
             default_admin=os.getenv("PASSKEY_DEFAULT_ADMIN") or None,
             default_org=os.getenv("PASSKEY_DEFAULT_ORG") or None,
             bootstrap=True,
@@ -169,7 +169,7 @@ def main():
     )
 
     run_kwargs: dict = {
-        "reload": reload_enabled,
+        "reload": devmode,
         "log_level": "info",
     }
     if uds:
@@ -181,7 +181,7 @@ def main():
             run_kwargs["port"] = port
 
     bun_process: subprocess.Popen | None = None
-    if reload_enabled:
+    if devmode:
         # Spawn frontend dev server (bun) only in the original parent (avoid duplicates on reload)
         if os.environ.get("PASSKEY_BUN_PARENT") != "1":
             os.environ["PASSKEY_BUN_PARENT"] = "1"
@@ -189,7 +189,7 @@ def main():
             if (frontend_dir / "package.json").exists():
                 try:
                     bun_process = subprocess.Popen(
-                        ["bun", "run", "dev"], cwd=str(frontend_dir)
+                        ["bun", "--bun", "run", "dev"], cwd=str(frontend_dir)
                     )
                     logging.info("Started bun dev server")
                 except FileNotFoundError:
@@ -213,7 +213,7 @@ def main():
 
     if all_ifaces and not uds:
         # If reload enabled, fallback to single dual-stack attempt (::) to keep reload simple
-        if reload_enabled:
+        if devmode:
             run_kwargs["host"] = "::"
             run_kwargs["port"] = port
             uvicorn.run("passkey.fastapi:app", **run_kwargs)
