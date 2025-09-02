@@ -414,6 +414,11 @@ class DB(DatabaseInterface):
     ) -> None:
         """Atomic credential + (optional old session delete) + (optional rename) + new session."""
         async with self.session() as session:
+            # Ensure credential has last_used / last_verified for immediate login semantics
+            if credential.last_used is None:
+                credential.last_used = credential.created_at
+            if credential.last_verified is None:
+                credential.last_verified = credential.last_used
             # Insert credential
             session.add(
                 CredentialModel(
@@ -449,6 +454,12 @@ class DB(DatabaseInterface):
                     expires=session_expires,
                     info=session_info,
                 )
+            )
+            # Login side-effects: update user analytics (last_seen + visits increment)
+            await session.execute(
+                update(UserModel)
+                .where(UserModel.uuid == user_uuid.bytes)
+                .values(last_seen=credential.last_used, visits=UserModel.visits + 1)
             )
 
     async def delete_credential(self, uuid: UUID, user_uuid: UUID) -> None:
