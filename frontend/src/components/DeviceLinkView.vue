@@ -46,7 +46,7 @@ const copyLink = async (event) => {
 
 onMounted(async () => {
   try {
-    const response = await fetch('/auth/create-link', { method: 'POST' })
+  const response = await fetch('/auth/api/create-link', { method: 'POST' })
     const result = await response.json()
     if (result.detail) throw new Error(result.detail)
 

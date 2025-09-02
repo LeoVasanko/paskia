@@ -167,7 +167,7 @@ async function load() {
   loading.value = true
   error.value = null
   try {
-    const res = await fetch('/auth/user-info', { method: 'POST' })
+  const res = await fetch('/auth/api/user-info', { method: 'POST' })
     const data = await res.json()
     if (data.detail) throw new Error(data.detail)
     info.value = data

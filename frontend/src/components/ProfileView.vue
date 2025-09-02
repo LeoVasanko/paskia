@@ -9,7 +9,7 @@
         :created-at="authStore.userInfo.user.created_at"
         :last-seen="authStore.userInfo.user.last_seen"
         :loading="authStore.isLoading"
-        update-endpoint="/auth/user/display-name"
+  update-endpoint="/auth/api/user/display-name"
         @saved="authStore.loadUserInfo()"
       />
 
