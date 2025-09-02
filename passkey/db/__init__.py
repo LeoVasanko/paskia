@@ -337,6 +337,7 @@ class DatabaseInterface(ABC):
                 2. Optionally delete old session (e.g. reset token) if provided
                 3. Optionally update user's display name
                 4. Insert new session referencing the credential
+                5. Update user's last_seen and increment visits (treat as a login)
             """
 
 
