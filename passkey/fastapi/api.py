@@ -487,6 +487,40 @@ def register_api_routes(app: FastAPI):
             "aaguid_info": aaguid_info,
         }
 
+    @app.put("/auth/user/display-name")
+    async def user_update_display_name(payload: dict = Body(...), auth=Cookie(None)):
+        """Authenticated user updates their own display name."""
+        if not auth:
+            raise HTTPException(status_code=401, detail="Authentication Required")
+        s = await get_session(auth)
+        new_name = (payload.get("display_name") or "").strip()
+        if not new_name:
+            raise HTTPException(status_code=400, detail="display_name required")
+        if len(new_name) > 64:
+            raise HTTPException(status_code=400, detail="display_name too long")
+        await db.instance.update_user_display_name(s.user_uuid, new_name)
+        return {"status": "ok"}
+
+    @app.put("/auth/admin/users/{user_uuid}/display-name")
+    async def admin_update_user_display_name(
+        user_uuid: UUID, payload: dict = Body(...), auth=Cookie(None)
+    ):
+        """Admin updates a user's display name."""
+        ctx, is_global_admin, is_org_admin = await _get_ctx_and_admin_flags(auth)
+        try:
+            user_org, _role_name = await db.instance.get_user_organization(user_uuid)
+        except ValueError:
+            raise HTTPException(status_code=404, detail="User not found")
+        if not (is_global_admin or (is_org_admin and user_org.uuid == ctx.org.uuid)):
+            raise HTTPException(status_code=403, detail="Insufficient permissions")
+        new_name = (payload.get("display_name") or "").strip()
+        if not new_name:
+            raise HTTPException(status_code=400, detail="display_name required")
+        if len(new_name) > 64:
+            raise HTTPException(status_code=400, detail="display_name too long")
+        await db.instance.update_user_display_name(user_uuid, new_name)
+        return {"status": "ok"}
+
     # Admin API: Permissions (global)
 
     @app.get("/auth/admin/permissions")
