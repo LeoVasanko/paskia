@@ -32,7 +32,7 @@ export const useAuthStore = defineStore('auth', {
       }
     },
     async setSessionCookie(sessionToken) {
-      const response = await fetch('/auth/set-session', {
+  const response = await fetch('/auth/api/set-session', {
         method: 'POST',
         headers: {'Authorization': `Bearer ${sessionToken}`},
       })
@@ -87,7 +87,7 @@ export const useAuthStore = defineStore('auth', {
     async loadUserInfo() {
       const headers = {}
       // Reset tokens are only passed via query param now, not Authorization header
-      const url = this.resetToken ? `/auth/user-info?reset=${encodeURIComponent(this.resetToken)}` : '/auth/user-info'
+  const url = this.resetToken ? `/auth/api/user-info?reset=${encodeURIComponent(this.resetToken)}` : '/auth/api/user-info'
       const response = await fetch(url, { method: 'POST', headers })
       let result = null
       try {
@@ -109,7 +109,7 @@ export const useAuthStore = defineStore('auth', {
     },
     async loadSettings() {
       try {
-        const res = await fetch('/auth/settings')
+  const res = await fetch('/auth/api/settings')
         if (!res.ok) return
         const data = await res.json()
         this.settings = data
@@ -121,7 +121,7 @@ export const useAuthStore = defineStore('auth', {
       }
     },
     async deleteCredential(uuid) {
-      const response = await fetch(`/auth/credential/${uuid}`, {method: 'Delete'})
+  const response = await fetch(`/auth/api/credential/${uuid}`, {method: 'Delete'})
       const result = await response.json()
       if (result.detail) throw new Error(`Server: ${result.detail}`)
 
@@ -129,7 +129,7 @@ export const useAuthStore = defineStore('auth', {
     },
     async logout() {
       try {
-        await fetch('/auth/logout', {method: 'POST'})
+  await fetch('/auth/api/logout', {method: 'POST'})
       } catch (error) {
         console.error('Logout error:', error)
       }
