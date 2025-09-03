@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import contextlib
 import logging
-from pathlib import Path
 from uuid import UUID, uuid4
 
 from fastapi import Body, Cookie, FastAPI, HTTPException
@@ -20,10 +19,8 @@ from fastapi.responses import FileResponse, JSONResponse
 from ..authsession import expires, get_session
 from ..globals import db
 from ..globals import passkey as global_passkey
-from ..util import passphrase, querysafe, tokens
+from ..util import frontend, passphrase, querysafe, tokens
 from ..util.tokens import session_key
-
-STATIC_DIR = Path(__file__).parent.parent / "frontend-build"
 
 app = FastAPI()
 
@@ -60,9 +57,9 @@ async def admin_frontend(auth=Cookie(None)):
         with contextlib.suppress(ValueError):
             s = await get_session(auth)
             if s.info and s.info.get("type") == "authenticated":
-                return FileResponse(STATIC_DIR / "admin" / "index.html")
+                return FileResponse(frontend.file("admin/index.html"))
     return FileResponse(
-        STATIC_DIR / "index.html",
+        frontend.file("index.html"),
         status_code=401,
         headers={"WWW-Authenticate": "Bearer"},
     )

@@ -1,17 +1,14 @@
 import logging
 import os
 from contextlib import asynccontextmanager
-from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
-from passkey.util import passphrase
+from passkey.util import frontend, passphrase
 
 from . import admin, api, ws
-
-STATIC_DIR = Path(__file__).parent.parent / "frontend-build"
 
 
 @asynccontextmanager
@@ -52,27 +49,18 @@ app = FastAPI(lifespan=lifespan)
 app.mount("/auth/admin", admin.app)
 app.mount("/auth/api", api.app)
 app.mount("/auth/ws", ws.app)
-app.mount("/auth/assets", StaticFiles(directory=STATIC_DIR / "assets"), name="assets")
+app.mount("/auth/assets", StaticFiles(directory=frontend.file("assets")), name="assets")
 
 
 @app.get("/auth/")
-async def frontend():
+async def frontapp():
     """Serve the main authentication app."""
-    return FileResponse(STATIC_DIR / "index.html")
+    return FileResponse(frontend.file("index.html"))
 
 
 @app.get("/auth/{reset}")
-async def reset_authentication(request: Request, reset: str):
-    """Validate reset token and redirect with it as query parameter (no cookies).
-
-    After validation we 303 redirect to /auth/?reset=<token>. The frontend will:
-    - Read the token from location.search
-    - Use it via Authorization header or websocket query param
-    - history.replaceState to remove it from the address bar/history
-    """
+async def reset_link(request: Request, reset: str):
+    """Pretty URL for reset links."""
     if not passphrase.is_well_formed(reset):
         raise HTTPException(status_code=404)
-    return RedirectResponse(request.url_for("frontend", reset=reset), status_code=303)
-
-
-## forward-auth endpoint moved to /auth/api/forward in api.py
+    return RedirectResponse(request.url_for("frontapp", reset=reset), status_code=303)
