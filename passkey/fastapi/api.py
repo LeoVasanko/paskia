@@ -1,3 +1,4 @@
+import logging
 from contextlib import suppress
 from uuid import UUID
 
@@ -11,6 +12,7 @@ from fastapi import (
     Request,
     Response,
 )
+from fastapi.responses import JSONResponse
 from fastapi.security import HTTPBearer
 
 from .. import aaguid
@@ -24,6 +26,19 @@ from . import authz, session
 bearer_auth = HTTPBearer(auto_error=True)
 
 app = FastAPI()
+
+
+@app.exception_handler(ValueError)
+async def value_error_handler(_request: Request, exc: ValueError):  # pragma: no cover
+    return JSONResponse(status_code=400, content={"detail": str(exc)})
+
+
+@app.exception_handler(Exception)
+async def general_exception_handler(
+    _request: Request, exc: Exception
+):  # pragma: no cover
+    logging.exception("Unhandled exception in API app")
+    return JSONResponse(status_code=500, content={"detail": "Internal server error"})
 
 
 @app.post("/validate")

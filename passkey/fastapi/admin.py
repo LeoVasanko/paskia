@@ -10,6 +10,7 @@ the /auth/admin path prefix. The routes defined here therefore omit the
 from __future__ import annotations
 
 import contextlib
+import logging
 from pathlib import Path
 from uuid import UUID, uuid4
 
@@ -32,6 +33,12 @@ async def value_error_handler(_request, exc: ValueError):  # pragma: no cover - 
     return JSONResponse(status_code=400, content={"detail": str(exc)})
 
 
+@app.exception_handler(Exception)
+async def general_exception_handler(_request, exc: Exception):
+    logging.exception("Unhandled exception in admin app")
+    return JSONResponse(status_code=500, content={"detail": "Internal server error"})
+
+
 async def _get_ctx_and_admin_flags(auth_cookie: str):
     """Helper to get session context and admin flags from cookie."""
     if not auth_cookie:
@@ -47,13 +54,8 @@ async def _get_ctx_and_admin_flags(auth_cookie: str):
 
 
 @app.get("/")
-@app.get("")
-async def serve_admin_root(auth=Cookie(None)):
-    """Serve the admin SPA root if an authenticated session exists.
-
-    Mirrors previous behavior from mainapp. If no valid session, serve the
-    main index.html with 401 so frontend can trigger login flow.
-    """
+async def admin_frontend(auth=Cookie(None)):
+    """Serve the admin SPA root if an authorized session exists."""
     if auth:
         with contextlib.suppress(ValueError):
             s = await get_session(auth)
