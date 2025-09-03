@@ -147,7 +147,7 @@ async function loadOrgs() {
   if (data.detail) throw new Error(data.detail)
   // Restructure to attach users to roles instead of flat user list at org level
   orgs.value = data.map(o => {
-    const roles = o.roles.map(r => ({ ...r, users: [] }))
+    const roles = o.roles.map(r => ({ ...r, org_uuid: o.uuid, users: [] }))
     const roleMap = Object.fromEntries(roles.map(r => [r.display_name, r]))
     for (const u of o.users || []) {
       if (roleMap[u.role]) roleMap[u.role].users.push(u)
@@ -250,7 +250,7 @@ function updateRole(role) { openDialog('role-update', { role }) }
 
 function deleteRole(role) {
   openDialog('confirm', { message: `Delete role ${role.display_name}?`, action: async () => {
-    const res = await fetch(`/auth/admin/roles/${role.uuid}`, { method: 'DELETE' })
+    const res = await fetch(`/auth/admin/orgs/${role.org_uuid}/roles/${role.uuid}`, { method: 'DELETE' })
     const data = await res.json(); if (data.detail) throw new Error(data.detail)
     await loadOrgs()
   } })
@@ -321,7 +321,7 @@ const pageHeading = computed(() => {
 watch(selectedUser, async (u) => {
   if (!u) { userDetail.value = null; return }
   try {
-    const res = await fetch(`/auth/admin/users/${u.uuid}`)
+  const res = await fetch(`/auth/admin/orgs/${u.org_uuid}/users/${u.uuid}`)
     const data = await res.json()
     if (data.detail) throw new Error(data.detail)
     userDetail.value = data
@@ -359,7 +359,7 @@ async function toggleRolePermission(role, permId, checked) {
   const prev = [...role.permissions]
   role.permissions = next
   try {
-    const res = await fetch(`/auth/admin/roles/${role.uuid}`, {
+  const res = await fetch(`/auth/admin/orgs/${role.org_uuid}/roles/${role.uuid}`, {
       method: 'PUT',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ display_name: role.display_name, permissions: next })
@@ -379,7 +379,7 @@ async function onUserNameSaved() {
   await loadOrgs()
   if (selectedUser.value) {
     try {
-      const r = await fetch(`/auth/admin/users/${selectedUser.value.uuid}`)
+  const r = await fetch(`/auth/admin/orgs/${selectedUser.value.org_uuid}/users/${selectedUser.value.uuid}`)
       const jd = await r.json()
       if (!r.ok || jd.detail) throw new Error(jd.detail || 'Reload failed')
       userDetail.value = jd
@@ -409,7 +409,7 @@ async function submitDialog() {
       const { role } = dialog.value.data; const name = dialog.value.data.name?.trim(); if (!name) throw new Error('Name required')
       const permsCsv = dialog.value.data.perms || ''
       const perms = permsCsv.split(',').map(s=>s.trim()).filter(Boolean)
-      const res = await fetch(`/auth/admin/roles/${role.uuid}`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ display_name: name, permissions: perms }) })
+  const res = await fetch(`/auth/admin/orgs/${role.org_uuid}/roles/${role.uuid}`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ display_name: name, permissions: perms }) })
       const d = await res.json(); if (d.detail) throw new Error(d.detail); await loadOrgs()
     } else if (t === 'user-create') {
       const { org, role } = dialog.value.data; const name = dialog.value.data.name?.trim(); if (!name) throw new Error('Name required')
@@ -496,7 +496,7 @@ async function submitDialog() {
             :loading="loading"
             :org-display-name="userDetail.org.display_name"
             :role-name="userDetail.role"
-            :update-endpoint="`/auth/admin/users/${selectedUser.uuid}/display-name`"
+            :update-endpoint="`/auth/admin/orgs/${selectedUser.org_uuid}/users/${selectedUser.uuid}/display-name`"
             @saved="onUserNameSaved"
           />
           <div v-else-if="userDetail?.error" class="error small">{{ userDetail.error }}</div>
@@ -512,7 +512,7 @@ async function submitDialog() {
           <p class="matrix-hint muted">Use the token dialog to register a new credential for the member.</p>
           <RegistrationLinkModal
             v-if="showRegModal"
-            :endpoint="`/auth/admin/users/${selectedUser.uuid}/create-link`"
+            :endpoint="`/auth/admin/orgs/${selectedUser.org_uuid}/users/${selectedUser.uuid}/create-link`"
             :auto-copy="false"
             @close="showRegModal = false"
             @copied="onLinkCopied"

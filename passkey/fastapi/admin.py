@@ -8,6 +8,7 @@ from ..authsession import expires
 from ..globals import db
 from ..globals import passkey as global_passkey
 from ..util import frontend, passphrase, permutil, querysafe, tokens
+from . import authz
 
 app = FastAPI()
 
@@ -25,10 +26,11 @@ async def general_exception_handler(_request, exc: Exception):
 
 @app.get("/")
 async def admin_frontend(auth=Cookie(None)):
-    ctx = await permutil.session_context(auth)
-    if permutil.has_any(ctx, ["auth:admin", "auth:org:*"]):
+    try:
+        await authz.verify(auth, ["auth:admin", "auth:org:*"], match=permutil.has_any)
         return FileResponse(frontend.file("admin/index.html"))
-    return FileResponse(frontend.file("index.html"), status_code=401 if ctx else 403)
+    except HTTPException as e:
+        return FileResponse(frontend.file("index.html"), status_code=e.status_code)
 
 
 # -------------------- Organizations --------------------
@@ -36,12 +38,10 @@ async def admin_frontend(auth=Cookie(None)):
 
 @app.get("/orgs")
 async def admin_list_orgs(auth=Cookie(None)):
-    ctx = await permutil.session_context(auth)
-    if not permutil.has_any(ctx, ["auth:admin", "auth:org:*"]):
-        raise ValueError("Insufficient permissions")
+    ctx = await authz.verify(auth, ["auth:admin", "auth:org:*"], match=permutil.has_any)
     orgs = await db.instance.list_organizations()
-    if not permutil.has_any(ctx, ["auth:admin"]):  # limit org admin to their own org
-        orgs = [o for o in orgs if o.uuid == ctx.org.uuid]
+    if "auth:admin" not in ctx.role.permissions:
+        orgs = [o for o in orgs if f"auth:org:{o.uuid}" in ctx.role.permissions]
 
     def role_to_dict(r):
         return {
@@ -75,9 +75,7 @@ async def admin_list_orgs(auth=Cookie(None)):
 
 @app.post("/orgs")
 async def admin_create_org(payload: dict = Body(...), auth=Cookie(None)):
-    ctx = await permutil.session_context(auth)
-    if not permutil.has_any(ctx, ["auth:admin"]):
-        raise ValueError("Global admin required")
+    await authz.verify(auth, ["auth:admin"])
     from ..db import Org as OrgDC  # local import to avoid cycles
 
     org_uuid = uuid4()
@@ -92,9 +90,9 @@ async def admin_create_org(payload: dict = Body(...), auth=Cookie(None)):
 async def admin_update_org(
     org_uuid: UUID, payload: dict = Body(...), auth=Cookie(None)
 ):
-    ctx = await permutil.session_context(auth)
-    if not permutil.has_any(ctx, ["auth:admin"]):
-        raise ValueError("Global admin required")
+    await authz.verify(
+        auth, ["auth:admin", f"auth:org:{org_uuid}"], match=permutil.has_any
+    )
     from ..db import Org as OrgDC  # local import to avoid cycles
 
     current = await db.instance.get_organization(str(org_uuid))
@@ -107,14 +105,10 @@ async def admin_update_org(
 
 @app.delete("/orgs/{org_uuid}")
 async def admin_delete_org(org_uuid: UUID, auth=Cookie(None)):
-    ctx = await permutil.session_context(auth)
-    if not permutil.has_any(ctx, ["auth:admin"]):
-        raise ValueError("Global admin required")
-    try:
-        acting_org_uuid = ctx.org.uuid if ctx.org else None
-    except Exception:  # pragma: no cover - defensive
-        acting_org_uuid = None
-    if acting_org_uuid and acting_org_uuid == org_uuid:
+    ctx = await authz.verify(
+        auth, ["auth:admin", f"auth:org:{org_uuid}"], match=permutil.has_any
+    )
+    if ctx.org.uuid == org_uuid:
         raise ValueError("Cannot delete the organization you belong to")
     await db.instance.delete_organization(org_uuid)
     return {"status": "ok"}
@@ -124,15 +118,7 @@ async def admin_delete_org(org_uuid: UUID, auth=Cookie(None)):
 async def admin_add_org_permission(
     org_uuid: UUID, permission_id: str, auth=Cookie(None)
 ):
-    ctx = await permutil.session_context(auth)
-    if not (
-        permutil.has_any(ctx, ["auth:admin"])
-        or (
-            permutil.has_any(ctx, [f"auth:org:{org_uuid}"]) and ctx.org.uuid == org_uuid
-        )
-    ):
-        raise ValueError("Insufficient permissions")
-    querysafe.assert_safe(permission_id, field="permission_id")
+    await authz.verify(auth, ["auth:admin"])
     await db.instance.add_permission_to_organization(str(org_uuid), permission_id)
     return {"status": "ok"}
 
@@ -141,16 +127,7 @@ async def admin_add_org_permission(
 async def admin_remove_org_permission(
     org_uuid: UUID, permission_id: str, auth=Cookie(None)
 ):
-    ctx = await permutil.session_context(auth)
-    if not ctx or not (
-        permutil.has_any(ctx, ["auth:admin"])
-        or (
-            permutil.has_any(ctx, [f"auth:org:{org_uuid}"])
-            and getattr(ctx.org, "uuid", None) == org_uuid
-        )
-    ):
-        raise ValueError("Insufficient permissions")
-    querysafe.assert_safe(permission_id, field="permission_id")
+    await authz.verify(auth, ["auth:admin"])
     await db.instance.remove_permission_from_organization(str(org_uuid), permission_id)
     return {"status": "ok"}
 
@@ -162,15 +139,7 @@ async def admin_remove_org_permission(
 async def admin_create_role(
     org_uuid: UUID, payload: dict = Body(...), auth=Cookie(None)
 ):
-    ctx = await permutil.session_context(auth)
-    if not ctx or not (
-        permutil.has_any(ctx, ["auth:admin"])
-        or (
-            permutil.has_any(ctx, [f"auth:org:{org_uuid}"])
-            and getattr(ctx.org, "uuid", None) == org_uuid
-        )
-    ):
-        raise ValueError("Insufficient permissions")
+    await authz.verify(auth, ["auth:admin", f"auth:org:{org_uuid}"])
     from ..db import Role as RoleDC
 
     role_uuid = uuid4()
@@ -192,25 +161,22 @@ async def admin_create_role(
     return {"uuid": str(role_uuid)}
 
 
-@app.put("/roles/{role_uuid}")
+@app.put("/orgs/{org_uuid}/roles/{role_uuid}")
 async def admin_update_role(
-    role_uuid: UUID, payload: dict = Body(...), auth=Cookie(None)
+    org_uuid: UUID, role_uuid: UUID, payload: dict = Body(...), auth=Cookie(None)
 ):
-    ctx = await permutil.session_context(auth)
+    # Verify caller is global admin or admin of provided org
+    await authz.verify(
+        auth, ["auth:admin", f"auth:org:{org_uuid}"], match=permutil.has_any
+    )
     role = await db.instance.get_role(role_uuid)
-    if not ctx or not (
-        permutil.has_any(ctx, ["auth:admin"])
-        or (
-            permutil.has_any(ctx, [f"auth:org:{role.org_uuid}"])
-            and getattr(ctx.org, "uuid", None) == role.org_uuid
-        )
-    ):
-        raise ValueError("Insufficient permissions")
+    if role.org_uuid != org_uuid:
+        raise HTTPException(status_code=404, detail="Role not found in organization")
     from ..db import Role as RoleDC
 
     display_name = payload.get("display_name") or role.display_name
     permissions = payload.get("permissions") or role.permissions
-    org = await db.instance.get_organization(str(role.org_uuid))
+    org = await db.instance.get_organization(str(org_uuid))
     grantable = set(org.permissions or [])
     for pid in permissions:
         await db.instance.get_permission(pid)
@@ -218,7 +184,7 @@ async def admin_update_role(
             raise ValueError(f"Permission not grantable by org: {pid}")
     updated = RoleDC(
         uuid=role_uuid,
-        org_uuid=role.org_uuid,
+        org_uuid=org_uuid,
         display_name=display_name,
         permissions=permissions,
     )
@@ -226,18 +192,14 @@ async def admin_update_role(
     return {"status": "ok"}
 
 
-@app.delete("/roles/{role_uuid}")
-async def admin_delete_role(role_uuid: UUID, auth=Cookie(None)):
-    ctx = await permutil.session_context(auth)
+@app.delete("/orgs/{org_uuid}/roles/{role_uuid}")
+async def admin_delete_role(org_uuid: UUID, role_uuid: UUID, auth=Cookie(None)):
+    await authz.verify(
+        auth, ["auth:admin", f"auth:org:{org_uuid}"], match=permutil.has_any
+    )
     role = await db.instance.get_role(role_uuid)
-    if not ctx or not (
-        permutil.has_any(ctx, ["auth:admin"])
-        or (
-            permutil.has_any(ctx, [f"auth:org:{role.org_uuid}"])
-            and getattr(ctx.org, "uuid", None) == role.org_uuid
-        )
-    ):
-        raise ValueError("Insufficient permissions")
+    if role.org_uuid != org_uuid:
+        raise HTTPException(status_code=404, detail="Role not found in organization")
     await db.instance.delete_role(role_uuid)
     return {"status": "ok"}
 
@@ -249,15 +211,9 @@ async def admin_delete_role(role_uuid: UUID, auth=Cookie(None)):
 async def admin_create_user(
     org_uuid: UUID, payload: dict = Body(...), auth=Cookie(None)
 ):
-    ctx = await permutil.session_context(auth)
-    if not ctx or not (
-        permutil.has_any(ctx, ["auth:admin"])
-        or (
-            permutil.has_any(ctx, [f"auth:org:{org_uuid}"])
-            and getattr(ctx.org, "uuid", None) == org_uuid
-        )
-    ):
-        raise ValueError("Insufficient permissions")
+    await authz.verify(
+        auth, ["auth:admin", f"auth:org:{org_uuid}"], match=permutil.has_any
+    )
     display_name = payload.get("display_name")
     role_name = payload.get("role")
     if not display_name or not role_name:
@@ -284,15 +240,9 @@ async def admin_create_user(
 async def admin_update_user_role(
     org_uuid: UUID, user_uuid: UUID, payload: dict = Body(...), auth=Cookie(None)
 ):
-    ctx = await permutil.session_context(auth)
-    if not ctx or not (
-        permutil.has_any(ctx, ["auth:admin"])
-        or (
-            permutil.has_any(ctx, [f"auth:org:{org_uuid}"])
-            and getattr(ctx.org, "uuid", None) == org_uuid
-        )
-    ):
-        raise ValueError("Insufficient permissions")
+    await authz.verify(
+        auth, ["auth:admin", f"auth:org:{org_uuid}"], match=permutil.has_any
+    )
     new_role = payload.get("role")
     if not new_role:
         raise ValueError("role is required")
@@ -309,19 +259,22 @@ async def admin_update_user_role(
     return {"status": "ok"}
 
 
-@app.post("/users/{user_uuid}/create-link")
-async def admin_create_user_registration_link(user_uuid: UUID, auth=Cookie(None)):
-    ctx = await permutil.session_context(auth)
+@app.post("/orgs/{org_uuid}/users/{user_uuid}/create-link")
+async def admin_create_user_registration_link(
+    org_uuid: UUID, user_uuid: UUID, auth=Cookie(None)
+):
     try:
         user_org, _role_name = await db.instance.get_user_organization(user_uuid)
     except ValueError:
         raise HTTPException(status_code=404, detail="User not found")
-    if not ctx or not (
-        permutil.has_any(ctx, ["auth:admin"])
-        or (
-            permutil.has_any(ctx, [f"auth:org:{user_org.uuid}"])
-            and getattr(ctx.org, "uuid", None) == user_org.uuid
-        )
+    if user_org.uuid != org_uuid:
+        raise HTTPException(status_code=404, detail="User not found in organization")
+    ctx = await authz.verify(
+        auth, ["auth:admin", f"auth:org:{org_uuid}"], match=permutil.has_any
+    )
+    if (
+        "auth:admin" not in ctx.role.permissions
+        and f"auth:org:{org_uuid}" not in ctx.role.permissions
     ):
         raise HTTPException(status_code=403, detail="Insufficient permissions")
     token = passphrase.generate()
@@ -336,19 +289,20 @@ async def admin_create_user_registration_link(user_uuid: UUID, auth=Cookie(None)
     return {"url": url, "expires": expires().isoformat()}
 
 
-@app.get("/users/{user_uuid}")
-async def admin_get_user_detail(user_uuid: UUID, auth=Cookie(None)):
-    ctx = await permutil.session_context(auth)
+@app.get("/orgs/{org_uuid}/users/{user_uuid}")
+async def admin_get_user_detail(org_uuid: UUID, user_uuid: UUID, auth=Cookie(None)):
     try:
         user_org, role_name = await db.instance.get_user_organization(user_uuid)
     except ValueError:
         raise HTTPException(status_code=404, detail="User not found")
-    if not ctx or not (
-        permutil.has_any(ctx, ["auth:admin"])
-        or (
-            permutil.has_any(ctx, [f"auth:org:{user_org.uuid}"])
-            and getattr(ctx.org, "uuid", None) == user_org.uuid
-        )
+    if user_org.uuid != org_uuid:
+        raise HTTPException(status_code=404, detail="User not found in organization")
+    ctx = await authz.verify(
+        auth, ["auth:admin", f"auth:org:{org_uuid}"], match=permutil.has_any
+    )
+    if (
+        "auth:admin" not in ctx.role.permissions
+        and f"auth:org:{org_uuid}" not in ctx.role.permissions
     ):
         raise HTTPException(status_code=403, detail="Insufficient permissions")
     user = await db.instance.get_user_by_uuid(user_uuid)
@@ -389,21 +343,22 @@ async def admin_get_user_detail(user_uuid: UUID, auth=Cookie(None)):
     }
 
 
-@app.put("/users/{user_uuid}/display-name")
+@app.put("/orgs/{org_uuid}/users/{user_uuid}/display-name")
 async def admin_update_user_display_name(
-    user_uuid: UUID, payload: dict = Body(...), auth=Cookie(None)
+    org_uuid: UUID, user_uuid: UUID, payload: dict = Body(...), auth=Cookie(None)
 ):
-    ctx = await permutil.session_context(auth)
     try:
         user_org, _role_name = await db.instance.get_user_organization(user_uuid)
     except ValueError:
         raise HTTPException(status_code=404, detail="User not found")
-    if not ctx or not (
-        permutil.has_any(ctx, ["auth:admin"])
-        or (
-            permutil.has_any(ctx, [f"auth:org:{user_org.uuid}"])
-            and getattr(ctx.org, "uuid", None) == user_org.uuid
-        )
+    if user_org.uuid != org_uuid:
+        raise HTTPException(status_code=404, detail="User not found in organization")
+    ctx = await authz.verify(
+        auth, ["auth:admin", f"auth:org:{org_uuid}"], match=permutil.has_any
+    )
+    if (
+        "auth:admin" not in ctx.role.permissions
+        and f"auth:org:{org_uuid}" not in ctx.role.permissions
     ):
         raise HTTPException(status_code=403, detail="Insufficient permissions")
     new_name = (payload.get("display_name") or "").strip()
@@ -420,18 +375,14 @@ async def admin_update_user_display_name(
 
 @app.get("/permissions")
 async def admin_list_permissions(auth=Cookie(None)):
-    ctx = await permutil.session_context(auth)
-    if not ctx or not permutil.has_any(ctx, ["auth:admin", "auth:org:*"]):
-        raise ValueError("Insufficient permissions")
+    await authz.verify(auth, ["auth:admin"], match=permutil.has_any)
     perms = await db.instance.list_permissions()
     return [{"id": p.id, "display_name": p.display_name} for p in perms]
 
 
 @app.post("/permissions")
 async def admin_create_permission(payload: dict = Body(...), auth=Cookie(None)):
-    ctx = await permutil.session_context(auth)
-    if not ctx or not permutil.has_any(ctx, ["auth:admin"]):
-        raise ValueError("Global admin required")
+    await authz.verify(auth, ["auth:admin"])
     from ..db import Permission as PermDC
 
     perm_id = payload.get("id")
@@ -447,9 +398,7 @@ async def admin_create_permission(payload: dict = Body(...), auth=Cookie(None)):
 async def admin_update_permission(
     permission_id: str, display_name: str, auth=Cookie(None)
 ):
-    ctx = await permutil.session_context(auth)
-    if not ctx or not permutil.has_any(ctx, ["auth:admin"]):
-        raise ValueError("Global admin required")
+    await authz.verify(auth, ["auth:admin"])
     from ..db import Permission as PermDC
 
     if not display_name:
@@ -463,9 +412,7 @@ async def admin_update_permission(
 
 @app.post("/permission/rename")
 async def admin_rename_permission(payload: dict = Body(...), auth=Cookie(None)):
-    ctx = await permutil.session_context(auth)
-    if not ctx or not permutil.has_any(ctx, ["auth:admin"]):
-        raise ValueError("Global admin required")
+    await authz.verify(auth, ["auth:admin"])
     old_id = payload.get("old_id")
     new_id = payload.get("new_id")
     display_name = payload.get("display_name")
@@ -485,9 +432,7 @@ async def admin_rename_permission(payload: dict = Body(...), auth=Cookie(None)):
 
 @app.delete("/permission")
 async def admin_delete_permission(permission_id: str, auth=Cookie(None)):
-    ctx = await permutil.session_context(auth)
-    if not ctx or not permutil.has_any(ctx, ["auth:admin"]):
-        raise ValueError("Global admin required")
+    await authz.verify(auth, ["auth:admin"])
     querysafe.assert_safe(permission_id, field="permission_id")
     await db.instance.delete_permission(permission_id)
     return {"status": "ok"}
