@@ -63,4 +63,5 @@ async def reset_link(request: Request, reset: str):
     """Pretty URL for reset links."""
     if not passphrase.is_well_formed(reset):
         raise HTTPException(status_code=404)
-    return RedirectResponse(request.url_for("frontapp", reset=reset), status_code=303)
+    url = request.url_for("frontapp").include_query_params(reset=reset)
+    return RedirectResponse(url, status_code=303)
