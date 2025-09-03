@@ -29,12 +29,11 @@ dev = [
 [tool.ruff]
 target-version = "py39"
 line-length = 88
+
+[tool.ruff.lint]
 select = ["E", "F", "I", "N", "W", "UP"]
 ignore = ["E501"]  # Line too long
-
-[tool.ruff.isort]
-known-first-party = ["passkey"]
-
+isort.known-first-party = ["passkey"]
 [project.scripts]
 passkey-auth = "passkey.fastapi.__main__:main"
 
