@@ -3,13 +3,13 @@ import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import Cookie, FastAPI, HTTPException, Query, Request, Response
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from passkey.util import passphrase
 
-from . import admin, api, authz, ws
+from . import admin, api, ws
 
 STATIC_DIR = Path(__file__).parent.parent / "frontend-build"
 
@@ -75,22 +75,4 @@ async def reset_authentication(request: Request, reset: str):
     return RedirectResponse(request.url_for("frontend", reset=reset), status_code=303)
 
 
-@app.get("/auth/forward-auth")
-async def forward_authentication(request: Request, perm=Query(None), auth=Cookie(None)):
-    """A validation endpoint to use with Caddy forward_auth or Nginx auth_request.
-
-    Query Params:
-    - perm: repeated permission IDs the authenticated user must possess (ALL required).
-
-    Success: 204 No Content with x-auth-user-uuid header.
-    Failure (unauthenticated / unauthorized): 4xx with index.html body so the
-    client (reverse proxy or browser) can initiate auth flow.
-    """
-    try:
-        s = await authz.verify(auth, perm)
-        return Response(
-            status_code=204,
-            headers={"x-auth-user-uuid": str(s.user_uuid)},
-        )
-    except HTTPException as e:
-        return FileResponse(STATIC_DIR / "index.html", e.status_code)
+## forward-auth endpoint moved to /auth/api/forward in api.py

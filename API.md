@@ -8,7 +8,7 @@ This document describes all API endpoints available in the PassKey Auth FastAPI 
 
 ### HTTP Endpoints
 GET /auth/ - Main authentication app
-GET /auth/forward-auth - Authentication validation for Caddy/Nginx
+GET /auth/api/forward - Authentication validation for Caddy/Nginx (was /auth/forward-auth)
 POST /auth/validate - Token validation endpoint
 POST /auth/user-info - Get authenticated user information
 POST /auth/logout - Logout current user

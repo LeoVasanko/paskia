@@ -47,6 +47,23 @@ async def validate_token(perm=Query(None), auth=Cookie(None)):
     return {"valid": True, "user_uuid": str(s.user_uuid)}
 
 
+@app.get("/forward")
+async def forward_authentication(perm=Query(None), auth=Cookie(None)):
+    """Forward auth validation for Caddy/Nginx (moved from /auth/forward-auth).
+
+    Query Params:
+    - perm: repeated permission IDs the authenticated user must possess (ALL required).
+
+    Success: 204 No Content with x-auth-user-uuid header.
+    Failure (unauthenticated / unauthorized): 4xx JSON body with detail.
+    """
+    try:
+        s = await authz.verify(auth, perm)
+        return Response(status_code=204, headers={"x-auth-user-uuid": str(s.user_uuid)})
+    except HTTPException as e:  # pass through explicitly
+        raise e
+
+
 @app.get("/settings")
 async def get_settings():
     pk = global_passkey.instance
