@@ -8,7 +8,7 @@ export const useAuthStore = defineStore('auth', {
     settings: null, // Server provided settings (/auth/settings)
     isLoading: false,
     resetToken: null, // transient reset token
-    restrictedMode: false, // If true, app loaded outside /auth/ and should restrict to login or permission denied
+    restrictedMode: false, // Anywhere other than /auth/: restrict to login or permission denied
 
     // UI State
     currentView: 'login',
@@ -129,12 +129,13 @@ export const useAuthStore = defineStore('auth', {
     },
     async logout() {
       try {
-  await fetch('/auth/api/logout', {method: 'POST'})
+        await fetch('/auth/api/logout', {method: 'POST'})
+        this.userInfo = null
+        if (this.restrictedMode) location.reload()
       } catch (error) {
         console.error('Logout error:', error)
+        this.showMessage(error.message, 'error')
       }
-
-      this.userInfo = null
     },
   }
 })

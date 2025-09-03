@@ -22,8 +22,12 @@ import PermissionDeniedView from '@/components/PermissionDeniedView.vue'
 const store = useAuthStore()
 
 onMounted(async () => {
-  // Detect restricted mode: any path not starting with /auth/
-  if (!location.pathname.startsWith('/auth/')) {
+  // Detect restricted mode:
+  // We only allow full functionality on the exact /auth/ (or /auth) path.
+  // Any other path (including /, /foo, /auth/admin, etc.) is treated as restricted
+  // so the app will only show login or permission denied views.
+  const path = location.pathname
+  if (!(path === '/auth/' || path === '/auth')) {
     store.setRestrictedMode(true)
   }
   // Load branding / settings first (non-blocking for auth flow)

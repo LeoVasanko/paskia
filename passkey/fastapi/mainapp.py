@@ -46,10 +46,12 @@ async def lifespan(app: FastAPI):  # pragma: no cover - startup path
 
 
 app = FastAPI(lifespan=lifespan)
-app.mount("/auth/admin", admin.app)
-app.mount("/auth/api", api.app)
-app.mount("/auth/ws", ws.app)
-app.mount("/auth/assets", StaticFiles(directory=frontend.file("assets")), name="assets")
+app.mount("/auth/admin/", admin.app)
+app.mount("/auth/api/", api.app)
+app.mount("/auth/ws/", ws.app)
+app.mount(
+    "/auth/assets/", StaticFiles(directory=frontend.file("assets")), name="assets"
+)
 
 
 @app.get("/auth/")
@@ -61,6 +63,9 @@ async def frontapp():
 @app.get("/auth/{reset}")
 async def reset_link(request: Request, reset: str):
     """Pretty URL for reset links."""
+    if reset == "admin":
+        # Admin app missing trailing slash lands here, be friendly to user
+        return RedirectResponse(request.url_for("adminapp"), status_code=303)
     if not passphrase.is_well_formed(reset):
         raise HTTPException(status_code=404)
     url = request.url_for("frontapp").include_query_params(reset=reset)

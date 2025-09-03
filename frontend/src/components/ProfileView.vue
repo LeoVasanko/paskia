@@ -144,7 +144,6 @@ const deleteCredential = async (credentialId) => {
 
 const logout = async () => {
   await authStore.logout()
-  authStore.currentView = 'login'
 }
 
 const isAdmin = computed(() => !!(authStore.userInfo?.is_global_admin || authStore.userInfo?.is_org_admin))
