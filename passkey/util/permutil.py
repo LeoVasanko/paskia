@@ -11,7 +11,7 @@ __all__ = ["has_any", "has_all", "session_context"]
 
 def _match(perms: set[str], patterns: Sequence[str]):
     return (
-        any(fnmatchcase(p, pat) for p in perms) if "*" in pat else False
+        any(fnmatchcase(p, pat) for p in perms) if "*" in pat else pat in perms
         for pat in patterns
     )
 
