@@ -130,8 +130,7 @@ export const useAuthStore = defineStore('auth', {
     async logout() {
       try {
         await fetch('/auth/api/logout', {method: 'POST'})
-        this.userInfo = null
-        if (this.restrictedMode) location.reload()
+        location.reload()
       } catch (error) {
         console.error('Logout error:', error)
         this.showMessage(error.message, 'error')
