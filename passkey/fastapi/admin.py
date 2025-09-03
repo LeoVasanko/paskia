@@ -1,8 +1,8 @@
 import logging
 from uuid import UUID, uuid4
 
-from fastapi import Body, Cookie, FastAPI, HTTPException
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi import Body, Cookie, FastAPI, HTTPException, Request
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 
 from ..authsession import expires
 from ..globals import db
@@ -24,8 +24,14 @@ async def general_exception_handler(_request, exc: Exception):
     return JSONResponse(status_code=500, content={"detail": "Internal server error"})
 
 
+@app.get("")
+def adminapp_slashmissing(request: Request):
+    print("HERE")
+    return RedirectResponse(url=request.url_for("adminapp"))
+
+
 @app.get("/")
-async def admin_frontend(auth=Cookie(None)):
+async def adminapp(auth=Cookie(None)):
     try:
         await authz.verify(auth, ["auth:admin", "auth:org:*"], match=permutil.has_any)
         return FileResponse(frontend.file("admin/index.html"))

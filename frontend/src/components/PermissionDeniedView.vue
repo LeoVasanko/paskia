@@ -32,7 +32,6 @@ function back() {
 }
 async function logout() {
   await authStore.logout()
-  authStore.currentView = 'login'
 }
 </script>
 <style scoped>
