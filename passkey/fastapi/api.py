@@ -19,7 +19,7 @@ from .. import aaguid
 from ..authsession import delete_credential, expires, get_reset, get_session
 from ..globals import db
 from ..globals import passkey as global_passkey
-from ..util import passphrase, tokens
+from ..util import passphrase, permutil, tokens
 from ..util.tokens import session_key
 from . import authz, session
 
@@ -42,13 +42,13 @@ async def general_exception_handler(
 
 
 @app.post("/validate")
-async def validate_token(perm=Query(None), auth=Cookie(None)):
-    s = await authz.verify(auth, perm)
-    return {"valid": True, "user_uuid": str(s.user_uuid)}
+async def validate_token(perm: list[str] = Query([]), auth=Cookie(None)):
+    ctx = await authz.verify(auth, perm)
+    return {"valid": True, "user_uuid": str(ctx.session.user_uuid)}
 
 
 @app.get("/forward")
-async def forward_authentication(perm=Query(None), auth=Cookie(None)):
+async def forward_authentication(perm: list[str] = Query([]), auth=Cookie(None)):
     """Forward auth validation for Caddy/Nginx (moved from /auth/forward-auth).
 
     Query Params:
@@ -58,8 +58,10 @@ async def forward_authentication(perm=Query(None), auth=Cookie(None)):
     Failure (unauthenticated / unauthorized): 4xx JSON body with detail.
     """
     try:
-        s = await authz.verify(auth, perm)
-        return Response(status_code=204, headers={"x-auth-user-uuid": str(s.user_uuid)})
+        ctx = await authz.verify(auth, perm)
+        return Response(
+            status_code=204, headers={"x-auth-user-uuid": str(ctx.session.user_uuid)}
+        )
     except HTTPException as e:  # pass through explicitly
         raise e
 
@@ -96,7 +98,8 @@ async def api_user_info(reset: str | None = None, auth=Cookie(None)):
         }
 
     assert authenticated and auth is not None
-    ctx = await db.instance.get_session_context(session_key(auth))
+
+    ctx = await permutil.session_context(auth)
     credential_ids = await db.instance.get_credentials_by_user_uuid(s.user_uuid)
     credentials: list[dict] = []
     user_aaguids: set[str] = set()
