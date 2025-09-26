@@ -65,7 +65,6 @@ async def forward_authentication(perm: list[str] = Query([]), auth=Cookie(None))
         if ctx.permissions:
             role_permissions.update(permission.id for permission in ctx.permissions)
 
-        session_info = ctx.session.info or {}
         remote_headers: dict[str, str] = {
             "Remote-User": str(ctx.user.uuid),
             "Remote-Name": ctx.user.display_name,
@@ -75,15 +74,8 @@ async def forward_authentication(perm: list[str] = Query([]), auth=Cookie(None))
             "Remote-Role": str(ctx.role.uuid),
             "Remote-Role-Name": ctx.role.display_name,
             "Remote-Session-Expires": ctx.session.expires.isoformat(),
+            "Remote-Credential": str(ctx.session.credential_uuid),
         }
-
-        session_type = session_info.get("type")
-        if session_type:
-            remote_headers["Remote-Session-Type"] = str(session_type)
-
-        if ctx.session.credential_uuid:
-            remote_headers["Remote-Credential"] = str(ctx.session.credential_uuid)
-
         return Response(status_code=204, headers=remote_headers)
     except HTTPException as e:
         return FileResponse(frontend.file("index.html"), status_code=e.status_code)
