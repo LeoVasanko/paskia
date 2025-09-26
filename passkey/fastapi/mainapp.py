@@ -54,6 +54,12 @@ app.mount(
 )
 
 
+@app.get("/")
+async def frontapp_redirect(request: Request):
+    """Redirect root (in case accessed on backend) to the main authentication app."""
+    return RedirectResponse(request.url_for("frontapp"), status_code=303)
+
+
 @app.get("/auth/")
 async def frontapp():
     """Serve the main authentication app."""

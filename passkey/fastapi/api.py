@@ -12,8 +12,10 @@ from fastapi import (
     Request,
     Response,
 )
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.security import HTTPBearer
+
+from passkey.util import frontend
 
 from .. import aaguid
 from ..authsession import delete_credential, expires, get_reset, get_session
@@ -49,21 +51,42 @@ async def validate_token(perm: list[str] = Query([]), auth=Cookie(None)):
 
 @app.get("/forward")
 async def forward_authentication(perm: list[str] = Query([]), auth=Cookie(None)):
-    """Forward auth validation for Caddy/Nginx (moved from /auth/forward-auth).
+    """Forward auth validation for Caddy/Nginx.
 
     Query Params:
     - perm: repeated permission IDs the authenticated user must possess (ALL required).
 
-    Success: 204 No Content with x-auth-user-uuid header.
+    Success: 204 No Content with Remote-* headers describing the authenticated user.
     Failure (unauthenticated / unauthorized): 4xx JSON body with detail.
     """
     try:
         ctx = await authz.verify(auth, perm)
-        return Response(
-            status_code=204, headers={"x-auth-user-uuid": str(ctx.session.user_uuid)}
-        )
-    except HTTPException as e:  # pass through explicitly
-        raise e
+        role_permissions = set(ctx.role.permissions or [])
+        if ctx.permissions:
+            role_permissions.update(permission.id for permission in ctx.permissions)
+
+        session_info = ctx.session.info or {}
+        remote_headers: dict[str, str] = {
+            "Remote-User": str(ctx.user.uuid),
+            "Remote-Name": ctx.user.display_name,
+            "Remote-Groups": ",".join(sorted(role_permissions)),
+            "Remote-Org": str(ctx.org.uuid),
+            "Remote-Org-Name": ctx.org.display_name,
+            "Remote-Role": str(ctx.role.uuid),
+            "Remote-Role-Name": ctx.role.display_name,
+            "Remote-Session-Expires": ctx.session.expires.isoformat(),
+        }
+
+        session_type = session_info.get("type")
+        if session_type:
+            remote_headers["Remote-Session-Type"] = str(session_type)
+
+        if ctx.session.credential_uuid:
+            remote_headers["Remote-Credential"] = str(ctx.session.credential_uuid)
+
+        return Response(status_code=204, headers=remote_headers)
+    except HTTPException as e:
+        return FileResponse(frontend.file("index.html"), status_code=e.status_code)
 
 
 @app.get("/settings")
