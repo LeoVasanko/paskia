@@ -9,6 +9,17 @@ This document describes all API endpoints available in the PassKey Auth FastAPI 
 ### HTTP Endpoints
 GET /auth/ - Main authentication app
 GET /auth/api/forward - Authentication validation for Caddy/Nginx (was /auth/forward-auth)
+		- On success returns `204 No Content` with the following headers:
+			- `Remote-User`: authenticated user UUID
+			- `Remote-Name`: display name
+			- `Remote-Groups`: comma-separated permission IDs (no spaces)
+			- `Remote-Org`: organization UUID
+			- `Remote-Org-Name`: organization display name
+			- `Remote-Role`: role UUID
+			- `Remote-Role-Name`: role display name
+			- `Remote-Session-Expires`: session expiry timestamp (ISO 8601)
+			- `Remote-Session-Type` (optional): session type metadata when available
+			- `Remote-Credential` (optional): credential UUID backing the session
 POST /auth/validate - Token validation endpoint
 POST /auth/user-info - Get authenticated user information
 POST /auth/logout - Logout current user

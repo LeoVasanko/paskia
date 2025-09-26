@@ -1,0 +1,17 @@
+# Permission to use within your endpoints that need authentication/authorization, that
+# is different depending on the route (otherwise use auth/all).
+forward_auth {$AUTH_UPSTREAM:localhost:4401} {
+    uri /auth/api/forward?{args[0]}
+    copy_headers {
+        Remote-User
+        Remote-Name
+        Remote-Groups
+        Remote-Org
+        Remote-Org-Name
+        Remote-Role
+        Remote-Role-Name
+        Remote-Session-Expires
+        Remote-Session-Type
+        Remote-Credential
+    }
+}

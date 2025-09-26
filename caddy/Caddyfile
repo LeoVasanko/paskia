@@ -1,0 +1,30 @@
+localhost {
+	import auth/setup
+	# Only users with myapp:reports and auth admin permissions
+	handle_path /reports {
+		import auth/require perm=myapp:reports&perm=auth:admin
+		respond "Reports area (protected) for {http.request.header.remote-org-name}" 200
+	}
+	# Public paths (no auth)
+	@public path /favicon.ico /.well-known/*
+	handle @public {
+		reverse_proxy :3000
+	}
+	# Respond with user's display name
+	handle_path /hello {
+		import auth/require ""
+		respond "Hello, {http.request.header.remote-name}! Your permissions: {http.request.header.remote-groups}" 200
+	}
+	# Default route, requires authentication but no authorization
+	handle {
+		import auth/require ""
+		reverse_proxy :3000
+	}
+}
+
+localhost:4404 {
+	# Full site protected, /auth/ reserved for auth service
+	import auth/all perm=auth:admin {
+		reverse_proxy :3000
+	}
+}

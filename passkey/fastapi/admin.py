@@ -1,8 +1,8 @@
 import logging
 from uuid import UUID, uuid4
 
-from fastapi import Body, Cookie, FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
+from fastapi import Body, Cookie, FastAPI, HTTPException
+from fastapi.responses import FileResponse, JSONResponse
 
 from ..authsession import expires
 from ..globals import db
@@ -22,12 +22,6 @@ async def value_error_handler(_request, exc: ValueError):  # pragma: no cover - 
 async def general_exception_handler(_request, exc: Exception):
     logging.exception("Unhandled exception in admin app")
     return JSONResponse(status_code=500, content={"detail": "Internal server error"})
-
-
-@app.get("")
-def adminapp_slashmissing(request: Request):
-    print("HERE")
-    return RedirectResponse(url=request.url_for("adminapp"))
 
 
 @app.get("/")

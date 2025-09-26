@@ -1,0 +1,6 @@
+# Enable auth site at /auth (setup) and require authentication on all paths
+import setup
+handle {
+    import require {args[0]}
+    {block}
+}
