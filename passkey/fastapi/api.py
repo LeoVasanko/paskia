@@ -1,5 +1,6 @@
 import logging
 from contextlib import suppress
+from datetime import datetime, timedelta
 from uuid import UUID
 
 from fastapi import (
@@ -18,7 +19,14 @@ from fastapi.security import HTTPBearer
 from passkey.util import frontend
 
 from .. import aaguid
-from ..authsession import delete_credential, expires, get_reset, get_session
+from ..authsession import (
+    EXPIRES,
+    delete_credential,
+    expires,
+    get_reset,
+    get_session,
+    refresh_session_token,
+)
 from ..globals import db
 from ..globals import passkey as global_passkey
 from ..util import passphrase, permutil, tokens
@@ -28,6 +36,11 @@ from . import authz, session
 bearer_auth = HTTPBearer(auto_error=True)
 
 app = FastAPI()
+
+# Refresh only if at least this much of the session lifetime has been *consumed*.
+# Consumption is derived from (now + EXPIRES) - current_expires.
+# This guarantees a minimum spacing between DB writes even with frequent /validate calls.
+_REFRESH_INTERVAL = timedelta(minutes=5)
 
 
 @app.exception_handler(ValueError)
@@ -42,9 +55,32 @@ async def general_exception_handler(_request: Request, exc: Exception):
 
 
 @app.post("/validate")
-async def validate_token(perm: list[str] = Query([]), auth=Cookie(None)):
+async def validate_token(
+    response: Response, perm: list[str] = Query([]), auth=Cookie(None)
+):
+    """Validate the current session and extend its expiry.
+
+    Always refreshes the session (sliding expiration) and re-sets the cookie with a
+    renewed max-age. This keeps active users logged in without needing a separate
+    refresh endpoint.
+    """
     ctx = await authz.verify(auth, perm)
-    return {"valid": True, "user_uuid": str(ctx.session.user_uuid)}
+    renewed = False
+    if auth:
+        consumed = EXPIRES - (ctx.session.expires - datetime.now())
+        if not timedelta(0) < consumed < _REFRESH_INTERVAL:
+            try:
+                await refresh_session_token(auth)
+                session.set_session_cookie(response, auth)
+                renewed = True
+            except ValueError:
+                # Session disappeared, e.g. due to concurrent logout
+                raise HTTPException(status_code=401, detail="Session expired")
+    return {
+        "valid": True,
+        "user_uuid": str(ctx.session.user_uuid),
+        "renewed": renewed,
+    }
 
 
 @app.get("/forward")
