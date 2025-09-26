@@ -18,8 +18,7 @@ GET /auth/api/forward - Authentication validation for Caddy/Nginx (was /auth/for
 			- `Remote-Role`: role UUID
 			- `Remote-Role-Name`: role display name
 			- `Remote-Session-Expires`: session expiry timestamp (ISO 8601)
-			- `Remote-Session-Type` (optional): session type metadata when available
-			- `Remote-Credential` (optional): credential UUID backing the session
+			- `Remote-Credential`: credential UUID backing the session
 POST /auth/validate - Token validation endpoint
 POST /auth/user-info - Get authenticated user information
 POST /auth/logout - Logout current user

@@ -8,7 +8,8 @@ localhost {
 	# Public paths (no auth)
 	@public path /favicon.ico /.well-known/*
 	handle @public {
-		reverse_proxy :3000
+		root * /var/www/
+        file_server
 	}
 	# Respond with user's display name
 	handle_path /hello {

@@ -11,7 +11,6 @@ forward_auth {$AUTH_UPSTREAM:localhost:4401} {
         Remote-Role
         Remote-Role-Name
         Remote-Session-Expires
-        Remote-Session-Type
         Remote-Credential
     }
 }

@@ -12,6 +12,10 @@ A minimal FastAPI WebAuthn server with WebSocket support for passkey registratio
 - 🛠️ Development tools: `ruff` for linting and formatting
 - 🧹 Clean architecture with local challenge management
 
+## Docs
+
+- Caddy integration: see `CADDY.md` for short, copy-paste snippets to secure your site with Caddy.
+
 ## Requirements
 
 - Python 3.9+

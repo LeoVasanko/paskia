@@ -2,5 +2,5 @@
 header -Remote-*
 @auth_api path /auth /auth/*
 handle @auth_api {
-    reverse_proxy {$AUTH_UPSTREAM:localhost:4401}
+    reverse_proxy {$AUTH_UPSTREAM::4401}
 }
