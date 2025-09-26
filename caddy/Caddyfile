@@ -23,8 +23,14 @@ localhost {
 	}
 }
 
-localhost:4404 {
-	# Full site protected, /auth/ reserved for auth service
+example.com {
+	# Public endpoints in handle blocks before auth
+	@public path /favicon.ico /.well-known/*
+	handle @public {
+		root * /var/www/
+		file_server
+	}
+	# The rest of the site protected, /auth/ reserved for auth service
 	import auth/all perm=auth:admin {
 		reverse_proxy :3000
 	}
