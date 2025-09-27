@@ -2,6 +2,8 @@
 # is different depending on the route (otherwise use auth/all).
 forward_auth {$AUTH_UPSTREAM:localhost:4401} {
     uri /auth/api/forward?{args[0]}
+    header_up Connection keep-alive  # Much higher performance
+    header_up -Upgrade  # Disable Upgrade: WebSocket
     copy_headers {
         Remote-User
         Remote-Name
