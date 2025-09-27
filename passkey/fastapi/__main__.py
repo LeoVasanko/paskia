@@ -131,11 +131,30 @@ def main():
     )
     add_common_options(dev)
 
+    # reset subcommand
+    reset = sub.add_parser(
+        "reset",
+        help=(
+            "Create a credential reset link for a user. Provide part of the display name or UUID. "
+            "If omitted, targets the master admin (first Administration role user in an auth:admin org)."
+        ),
+    )
+    reset.add_argument(
+        "query",
+        nargs="?",
+        help="User UUID (full) or case-insensitive substring of display name. If omitted, master admin is used.",
+    )
+    add_common_options(reset)
+
     args = parser.parse_args()
 
-    default_port = DEFAULT_DEV_PORT if args.command == "dev" else DEFAULT_SERVE_PORT
-    host, port, uds, all_ifaces = parse_endpoint(args.hostport, default_port)
-    devmode = args.command == "dev"
+    if args.command in {"serve", "dev"}:
+        default_port = DEFAULT_DEV_PORT if args.command == "dev" else DEFAULT_SERVE_PORT
+        host, port, uds, all_ifaces = parse_endpoint(args.hostport, default_port)
+        devmode = args.command == "dev"
+    else:
+        host = port = uds = all_ifaces = None  # type: ignore
+        devmode = False
 
     # Determine origin (dev mode default override)
     origin = args.origin
@@ -165,56 +184,62 @@ def main():
         )
     )
 
-    run_kwargs: dict = {
-        "reload": devmode,
-        "log_level": "info",
-    }
-    if uds:
-        run_kwargs["uds"] = uds
-    else:
-        # For :port form (all interfaces) we will handle separately
-        if not all_ifaces:
-            run_kwargs["host"] = host
-            run_kwargs["port"] = port
+    # Handle recover-admin command (no server start)
+    if args.command == "reset":
+        from passkey.fastapi import reset as reset_cmd  # local import
 
-    if devmode:
-        # Spawn frontend dev server (bun or npm) only once in parent process
-        if os.environ.get("PASSKEY_BUN_PARENT") != "1":
-            os.environ["PASSKEY_BUN_PARENT"] = "1"
-            frontend.run_dev()
+        exit_code = reset_cmd.run(getattr(args, "query", None))
+        raise SystemExit(exit_code)
 
-    if all_ifaces and not uds:
-        # If reload enabled, fallback to single dual-stack attempt (::) to keep reload simple
-        if devmode:
-            run_kwargs["host"] = "::"
-            run_kwargs["port"] = port
-            uvicorn.run("passkey.fastapi:app", **run_kwargs)
+    if args.command in {"serve", "dev"}:
+        run_kwargs: dict = {
+            "reload": devmode,
+            "log_level": "info",
+        }
+        if uds:
+            run_kwargs["uds"] = uds
         else:
-            # Start two servers concurrently: IPv4 and IPv6
-            from uvicorn import Config, Server  # noqa: E402 local import
+            if not all_ifaces:
+                run_kwargs["host"] = host
+                run_kwargs["port"] = port
 
-            from passkey.fastapi import app as fastapi_app  # noqa: E402 local import
+        if devmode:
+            if os.environ.get("PASSKEY_BUN_PARENT") != "1":
+                os.environ["PASSKEY_BUN_PARENT"] = "1"
+                frontend.run_dev()
 
-            async def serve_both():
-                servers = []
-                assert port is not None
-                for h in ("0.0.0.0", "::"):
-                    try:
-                        cfg = Config(
-                            app=fastapi_app,
-                            host=h,
-                            port=port,
-                            log_level="info",
-                        )
-                        servers.append(Server(cfg))
-                    except Exception as e:  # pragma: no cover
-                        logging.warning(f"Failed to configure server for {h}: {e}")
-                tasks = [asyncio.create_task(s.serve()) for s in servers]
-                await asyncio.gather(*tasks)
+        if all_ifaces and not uds:
+            if devmode:
+                run_kwargs["host"] = "::"
+                run_kwargs["port"] = port
+                uvicorn.run("passkey.fastapi:app", **run_kwargs)
+            else:
+                from uvicorn import Config, Server  # noqa: E402 local import
 
-            asyncio.run(serve_both())
-    else:
-        uvicorn.run("passkey.fastapi:app", **run_kwargs)
+                from passkey.fastapi import (
+                    app as fastapi_app,  # noqa: E402 local import
+                )
+
+                async def serve_both():
+                    servers = []
+                    assert port is not None
+                    for h in ("0.0.0.0", "::"):
+                        try:
+                            cfg = Config(
+                                app=fastapi_app,
+                                host=h,
+                                port=port,
+                                log_level="info",
+                            )
+                            servers.append(Server(cfg))
+                        except Exception as e:  # pragma: no cover
+                            logging.warning(f"Failed to configure server for {h}: {e}")
+                    tasks = [asyncio.create_task(s.serve()) for s in servers]
+                    await asyncio.gather(*tasks)
+
+                asyncio.run(serve_both())
+        else:
+            uvicorn.run("passkey.fastapi:app", **run_kwargs)
 
 
 if __name__ == "__main__":

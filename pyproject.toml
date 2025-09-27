@@ -34,6 +34,7 @@ line-length = 88
 select = ["E", "F", "I", "N", "W", "UP"]
 ignore = ["E501"]  # Line too long
 isort.known-first-party = ["passkey"]
+
 [project.scripts]
 passkey-auth = "passkey.fastapi.__main__:main"
 
