@@ -31,14 +31,12 @@ app = FastAPI()
 
 
 @app.exception_handler(ValueError)
-async def value_error_handler(_request: Request, exc: ValueError):  # pragma: no cover
+async def value_error_handler(_request: Request, exc: ValueError):
     return JSONResponse(status_code=400, content={"detail": str(exc)})
 
 
 @app.exception_handler(Exception)
-async def general_exception_handler(
-    _request: Request, exc: Exception
-):  # pragma: no cover
+async def general_exception_handler(_request: Request, exc: Exception):
     logging.exception("Unhandled exception in API app")
     return JSONResponse(status_code=500, content={"detail": "Internal server error"})
 
