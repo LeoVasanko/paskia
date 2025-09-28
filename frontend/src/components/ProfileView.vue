@@ -1,7 +1,8 @@
 <template>
   <div class="container">
     <div class="view active">
-  <h1>👋 Welcome! <a v-if="isAdmin" href="/auth/admin/" class="admin-link" title="Admin Console">Admin</a></h1>
+      <h1>👋 Welcome!</h1>
+      <Breadcrumbs :entries="[{ label: 'Auth', href: '/auth/' }, ...(isAdmin ? [{ label: 'Admin', href: '/auth/admin/' }] : [])]" />
       <UserBasicInfo
         v-if="authStore.userInfo?.user"
         :name="authStore.userInfo.user.user_name"
@@ -9,7 +10,7 @@
         :created-at="authStore.userInfo.user.created_at"
         :last-seen="authStore.userInfo.user.last_seen"
         :loading="authStore.isLoading"
-  update-endpoint="/auth/api/user/display-name"
+        update-endpoint="/auth/api/user/display-name"
         @saved="authStore.loadUserInfo()"
       />
 
@@ -80,6 +81,7 @@
 
 <script setup>
 import { ref, onMounted, onUnmounted, computed } from 'vue'
+import Breadcrumbs from '@/components/Breadcrumbs.vue'
 import { useAuthStore } from '@/stores/auth'
 import { formatDate } from '@/utils/helpers'
 import passkey from '@/utils/passkey'

@@ -5,7 +5,7 @@
     <ProfileView v-if="store.currentView === 'profile'" />
     <DeviceLinkView v-if="store.currentView === 'device-link'" />
     <ResetView v-if="store.currentView === 'reset'" />
-  <PermissionDeniedView v-if="store.currentView === 'permission-denied'" />
+    <PermissionDeniedView v-if="store.currentView === 'permission-denied'" />
   </div>
 </template>
 
@@ -44,9 +44,9 @@ onMounted(async () => {
   if (reset) {
     store.resetToken = reset
     // Remove query param to avoid lingering in history / clipboard
-  const targetPath = '/auth/'
-  const currentPath = location.pathname.endsWith('/') ? location.pathname : location.pathname + '/'
-  history.replaceState(null, '', currentPath.startsWith('/auth') ? '/auth/' : targetPath)
+    const targetPath = '/auth/'
+    const currentPath = location.pathname.endsWith('/') ? location.pathname : location.pathname + '/'
+    history.replaceState(null, '', currentPath.startsWith('/auth') ? '/auth/' : targetPath)
   }
   try {
     await store.loadUserInfo()

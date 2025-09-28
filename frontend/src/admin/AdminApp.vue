@@ -1,5 +1,6 @@
 <script setup>
 import { ref, onMounted, onBeforeUnmount, computed, watch } from 'vue'
+import Breadcrumbs from '@/components/Breadcrumbs.vue'
 import CredentialList from '@/components/CredentialList.vue'
 import UserBasicInfo from '@/components/UserBasicInfo.vue'
 import RegistrationLinkModal from '@/components/RegistrationLinkModal.vue'
@@ -318,6 +319,27 @@ const pageHeading = computed(() => {
   return (authStore.settings?.rp_name || 'Passkey') + ' Admin'
 })
 
+// Breadcrumb entries for admin app.
+const breadcrumbEntries = computed(() => {
+  const entries = [
+    { label: 'Auth', href: '/auth/' },
+    { label: 'Admin', href: '/auth/admin/' }
+  ]
+  // Determine organization for user view if selectedOrg not explicitly chosen.
+  let orgForUser = null
+  if (selectedUser.value) {
+    orgForUser = orgs.value.find(o => o.uuid === selectedUser.value.org_uuid) || null
+  }
+  const orgToShow = selectedOrg.value || orgForUser
+  if (orgToShow) {
+    entries.push({ label: orgToShow.display_name, href: `#org/${orgToShow.uuid}` })
+  }
+  if (selectedUser.value) {
+    entries.push({ label: selectedUser.value.display_name || 'User', href: `#user/${selectedUser.value.uuid}` })
+  }
+  return entries
+})
+
 watch(selectedUser, async (u) => {
   if (!u) { userDetail.value = null; return }
   try {
@@ -432,17 +454,8 @@ async function submitDialog() {
 
 <template>
   <div class="container">
-    <h1>
-      {{ pageHeading }}
-      <a href="/auth/" class="back-link" title="Back to User App">User</a>
-      <a
-        v-if="info?.is_global_admin && (selectedOrg || selectedUser)"
-        @click.prevent="goOverview"
-        href="#overview"
-        class="nav-link"
-        title="Back to overview"
-      >Overview</a>
-    </h1>
+    <h1>{{ pageHeading }}</h1>
+    <Breadcrumbs :entries="breadcrumbEntries" />
     <div v-if="loading">Loading…</div>
     <div v-else-if="error" class="error">{{ error }}</div>
     <div v-else>
@@ -454,9 +467,8 @@ async function submitDialog() {
       </div>
       <div v-else>
 
-  <!-- Removed user-specific info (current org, effective permissions, admin flags) -->
-
-        <!-- Overview Page -->
+        
+        
   <div v-if="!selectedUser && !selectedOrg && (info.is_global_admin || info.is_org_admin)" class="card">
           <h2>Organizations</h2>
           <div class="actions">
@@ -484,8 +496,6 @@ async function submitDialog() {
             </tbody>
           </table>
         </div>
-
-        <!-- User Detail Page -->
         <div v-if="selectedUser" class="card user-detail">
           <UserBasicInfo
             v-if="userDetail && !userDetail.error"
@@ -519,7 +529,7 @@ async function submitDialog() {
           />
         </div>
 
-        <!-- Organization Detail Page -->
+        
         <div v-else-if="selectedOrg" class="card">
           <h2 class="org-title" :title="selectedOrg.uuid">
             <span class="org-name">{{ selectedOrg.display_name }}</span>
@@ -533,7 +543,7 @@ async function submitDialog() {
                 class="perm-matrix-grid"
                 :style="{ gridTemplateColumns: 'minmax(180px, 1fr) ' + selectedOrg.roles.map(()=> '2.2rem').join(' ') + ' 2.2rem' }"
               >
-                <!-- Headers -->
+                
                 <div class="grid-head perm-head">Permission</div>
                 <div
                   v-for="r in selectedOrg.roles"
@@ -545,7 +555,7 @@ async function submitDialog() {
                 </div>
                 <div class="grid-head role-head add-role-head" title="Add role" @click="createRole(selectedOrg)" role="button">➕</div>
 
-                <!-- Data Rows -->
+                
                 <template v-for="pid in selectedOrg.permissions" :key="pid">
                   <div class="perm-name" :title="pid">{{ permissionDisplayName(pid) }}</div>
                   <div
@@ -583,14 +593,14 @@ async function submitDialog() {
                 </div>
               </div>
               <template v-if="r.users.length > 0">
-        <ul class="user-list">
+                <ul class="user-list">
                   <li
                     v-for="u in r.users"
                     :key="u.uuid"
                     class="user-chip"
                     draggable="true"
                     @dragstart="e => onUserDragStart(e, u, selectedOrg.uuid)"
-          @click="openUser(u)"
+                    @click="openUser(u)"
                     :title="u.uuid"
                   >
                     <span class="name">{{ u.display_name }}</span>
@@ -606,7 +616,7 @@ async function submitDialog() {
           </div>
         </div>
 
-  <div v-if="!selectedUser && !selectedOrg && (info.is_global_admin || info.is_org_admin)" class="card">
+        <div v-if="!selectedUser && !selectedOrg && (info.is_global_admin || info.is_org_admin)" class="card">
           <h2>All Permissions</h2>
           <div class="actions">
             <button v-if="!showCreatePermission" @click="showCreatePermission = true">+ Create Permission</button>
