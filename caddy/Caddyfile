@@ -1,4 +1,5 @@
 localhost {
+	# Setup the authentication site at /auth/
 	import auth/setup
 	# Only users with myapp:reports and auth admin permissions
 	handle_path /reports {
@@ -19,19 +20,6 @@ localhost {
 	# Default route, requires authentication but no authorization
 	handle {
 		import auth/require ""
-		reverse_proxy :3000
-	}
-}
-
-example.com {
-	# Public endpoints in handle blocks before auth
-	@public path /favicon.ico /.well-known/*
-	handle @public {
-		root * /var/www/
-		file_server
-	}
-	# The rest of the site protected, /auth/ reserved for auth service
-	import auth/all perm=auth:admin {
 		reverse_proxy :3000
 	}
 }
