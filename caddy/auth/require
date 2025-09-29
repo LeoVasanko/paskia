@@ -1,5 +1,7 @@
-# Permission to use within your endpoints that need authentication/authorization, that
-# is different depending on the route (otherwise use auth/all).
+# Permission to use within your endpoints that need authentication/authorization
+# Argument is mandatory and provides a query string to /auth/api/forward
+#   "" means just authentication
+#   perm=yourservice:login to require specific permission
 forward_auth {$AUTH_UPSTREAM:localhost:4401} {
     uri /auth/api/forward?{args[0]}
     header_up Connection keep-alive  # Much higher performance
