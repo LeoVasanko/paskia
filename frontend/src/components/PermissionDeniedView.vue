@@ -3,7 +3,6 @@
     <div class="view-content view-content--narrow">
       <header class="view-header">
         <h1>🚫 Forbidden</h1>
-        <p class="view-lede">You don’t have the permissions required to view this page.</p>
       </header>
       <section class="section-block">
         <div class="section-body">
