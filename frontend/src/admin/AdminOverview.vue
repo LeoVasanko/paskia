@@ -10,17 +10,28 @@ const props = defineProps({
 
 const emit = defineEmits(['createOrg', 'openOrg', 'updateOrg', 'deleteOrg', 'toggleOrgPermission', 'openDialog', 'deletePermission', 'renamePermissionDisplay'])
 
-const sortedOrgs = computed(() => [...props.orgs].sort((a,b)=> a.display_name.localeCompare(b.display_name)))
+const sortedOrgs = computed(() => [...props.orgs].sort((a,b)=> {
+  const nameCompare = a.display_name.localeCompare(b.display_name)
+  return nameCompare !== 0 ? nameCompare : a.uuid.localeCompare(b.uuid)
+}))
 const sortedPermissions = computed(() => [...props.permissions].sort((a,b)=> a.id.localeCompare(b.id)))
 
 function permissionDisplayName(id) {
   return props.permissions.find(p => p.id === id)?.display_name || id
 }
+
+function getRoleNames(org) {
+  return org.roles
+    .slice()
+    .sort((a, b) => a.display_name.localeCompare(b.display_name))
+    .map(r => r.display_name)
+    .join(', ')
+}
 </script>
 
 <template>
   <div class="permissions-section">
-    <h2>Organizations</h2>
+    <h2>{{ info.is_global_admin ? 'Organizations' : 'Your Organizations' }}</h2>
     <div class="actions">
       <button v-if="info.is_global_admin" @click="$emit('createOrg')">+ Create Org</button>
     </div>
@@ -34,14 +45,14 @@ function permissionDisplayName(id) {
         </tr>
       </thead>
       <tbody>
-        <tr v-for="o in orgs" :key="o.uuid">
+        <tr v-for="o in sortedOrgs" :key="o.uuid">
           <td>
             <a href="#org/{{o.uuid}}" @click.prevent="$emit('openOrg', o)">{{ o.display_name }}</a>
-            <button v-if="info.is_global_admin" @click="$emit('updateOrg', o)" class="icon-btn edit-org-btn" aria-label="Rename organization" title="Rename organization">✏️</button>
+            <button v-if="info.is_global_admin || info.is_org_admin" @click="$emit('updateOrg', o)" class="icon-btn edit-org-btn" aria-label="Rename organization" title="Rename organization">✏️</button>
           </td>
-          <td>{{ o.roles.length }}</td>
-          <td>{{ o.roles.reduce((acc,r)=>acc + r.users.length,0) }}</td>
-          <td v-if="info.is_global_admin">
+          <td class="role-names">{{ getRoleNames(o) }}</td>
+          <td class="center">{{ o.roles.reduce((acc,r)=>acc + r.users.length,0) }}</td>
+          <td v-if="info.is_global_admin" class="center">
             <button @click="$emit('deleteOrg', o)" class="icon-btn delete-icon" aria-label="Delete organization" title="Delete organization">❌</button>
           </td>
         </tr>
@@ -49,7 +60,7 @@ function permissionDisplayName(id) {
     </table>
   </div>
 
-  <div class="permissions-section">
+  <div v-if="info.is_global_admin" class="permissions-section">
     <h2>Permissions</h2>
     <div class="matrix-wrapper">
       <div class="matrix-scroll">
@@ -88,7 +99,7 @@ function permissionDisplayName(id) {
       <p class="matrix-hint muted">Toggle which permissions each organization can grant to its members.</p>
     </div>
     <div class="actions">
-      <button v-if="info.is_global_admin" @click="$emit('openDialog', 'perm-create', {})">+ Create Permission</button>
+      <button v-if="info.is_global_admin" @click="$emit('openDialog', 'perm-create', { display_name: '', id: '' })">+ Create Permission</button>
     </div>
     <table class="org-table">
         <thead>
@@ -107,7 +118,6 @@ function permissionDisplayName(id) {
               </div>
               <div class="perm-id-info">
                 <span class="id-text">{{ p.id }}</span>
-                <button @click="$emit('renamePermissionDisplay', p)" class="icon-btn edit-id-btn" aria-label="Edit id" title="Edit id">🆔</button>
               </div>
             </td>
             <td class="perm-members center">{{ permissionSummary[p.id]?.userCount || 0 }}</td>
@@ -127,6 +137,8 @@ function permissionDisplayName(id) {
 .actions button { width: auto; }
 .org-table a { text-decoration: none; color: var(--color-link); }
 .org-table a:hover { text-decoration: underline; }
+.org-table .center { width: 6rem; min-width: 6rem; }
+.org-table .role-names { max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .perm-name-cell { display: flex; flex-direction: column; gap: 0.3rem; }
 .perm-title { font-weight: 600; color: var(--color-heading); }
 .perm-id-info { font-size: 0.8rem; color: var(--color-text-muted); }

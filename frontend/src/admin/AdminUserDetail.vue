@@ -3,6 +3,7 @@ import { ref } from 'vue'
 import UserBasicInfo from '@/components/UserBasicInfo.vue'
 import CredentialList from '@/components/CredentialList.vue'
 import RegistrationLinkModal from '@/components/RegistrationLinkModal.vue'
+import { useAuthStore } from '@/stores/auth'
 
 const props = defineProps({
   selectedUser: Object,
@@ -12,17 +13,35 @@ const props = defineProps({
   showRegModal: Boolean
 })
 
-const emit = defineEmits(['generateUserRegistrationLink', 'goOverview', 'openOrg', 'onUserNameSaved', 'closeRegModal'])
+const emit = defineEmits(['generateUserRegistrationLink', 'goOverview', 'openOrg', 'onUserNameSaved', 'closeRegModal', 'editUserName'])
 
-const showRegModal = ref(false)
+const authStore = useAuthStore()
 
 function onLinkCopied() {
-  // This could emit an event or show a message
+  authStore.showMessage('Link copied to clipboard!')
 }
+
+function handleEditName() {
+  emit('editUserName', props.selectedUser)
+}
+
+function handleDelete(credential) {
+  fetch(`/auth/admin/orgs/${props.selectedUser.org_uuid}/users/${props.selectedUser.uuid}/credentials/${credential.credential_uuid}`, { method: 'DELETE' })
+    .then(res => res.json())
+    .then(data => {
+      if (data.status === 'ok') {
+        emit('onUserNameSaved') // Reuse to refresh user detail
+      } else {
+        console.error('Failed to delete credential', data)
+      }
+    })
+    .catch(err => console.error('Delete credential error', err))
+}
+
 </script>
 
 <template>
-  <div class="card surface user-detail">
+  <div class="user-detail">
     <UserBasicInfo
       v-if="userDetail && !userDetail.error"
       :name="userDetail.display_name || selectedUser.display_name"
@@ -34,15 +53,15 @@ function onLinkCopied() {
       :role-name="userDetail.role"
       :update-endpoint="`/auth/admin/orgs/${selectedUser.org_uuid}/users/${selectedUser.uuid}/display-name`"
       @saved="$emit('onUserNameSaved')"
+      @edit-name="handleEditName"
     />
     <div v-else-if="userDetail?.error" class="error small">{{ userDetail.error }}</div>
     <template v-if="userDetail && !userDetail.error">
       <h3 class="cred-title">Registered Passkeys</h3>
-      <CredentialList :credentials="userDetail.credentials" :aaguid-info="userDetail.aaguid_info" />
+      <CredentialList :credentials="userDetail.credentials" :aaguid-info="userDetail.aaguid_info" :allow-delete="true" @delete="handleDelete" />
     </template>
     <div class="actions">
       <button @click="$emit('generateUserRegistrationLink', selectedUser)">Generate Registration Token</button>
-      <button @click="$emit('goOverview')" class="icon-btn" title="Overview">🏠</button>
       <button v-if="selectedOrg" @click="$emit('openOrg', selectedOrg)" class="icon-btn" title="Back to Org">↩️</button>
     </div>
     <p class="matrix-hint muted">Use the token dialog to register a new credential for the member.</p>
@@ -57,7 +76,6 @@ function onLinkCopied() {
 </template>
 
 <style scoped>
-.card.surface { padding: var(--space-lg); }
 .user-detail { display: flex; flex-direction: column; gap: var(--space-lg); }
 .cred-title { font-size: 1.25rem; font-weight: 600; color: var(--color-heading); margin-bottom: var(--space-md); }
 .actions { display: flex; flex-wrap: wrap; gap: var(--space-sm); align-items: center; }

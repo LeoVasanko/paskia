@@ -8,6 +8,17 @@ const props = defineProps({
 
 const emit = defineEmits(['updateOrg', 'createRole', 'updateRole', 'deleteRole', 'createUserInRole', 'openUser', 'toggleRolePermission', 'onRoleDragOver', 'onRoleDrop', 'onUserDragStart'])
 
+const sortedRoles = computed(() => {
+  return [...props.selectedOrg.roles].sort((a, b) => {
+    const nameA = a.display_name.toLowerCase()
+    const nameB = b.display_name.toLowerCase()
+    if (nameA !== nameB) {
+      return nameA.localeCompare(nameB)
+    }
+    return a.uuid.localeCompare(b.uuid)
+  })
+})
+
 function permissionDisplayName(id) {
   return props.permissions.find(p => p.id === id)?.display_name || id
 }
@@ -18,22 +29,20 @@ function toggleRolePermission(role, pid, checked) {
 </script>
 
 <template>
-  <div class="card surface">
-    <h2 class="org-title" :title="selectedOrg.uuid">
-      <span class="org-name">{{ selectedOrg.display_name }}</span>
-      <button @click="$emit('updateOrg', selectedOrg)" class="icon-btn" aria-label="Rename organization" title="Rename organization">✏️</button>
-    </h2>
-    <div class="org-actions"></div>
+  <h2 class="org-title" :title="selectedOrg.uuid">
+    <span class="org-name">{{ selectedOrg.display_name }}</span>
+    <button @click="$emit('updateOrg', selectedOrg)" class="icon-btn" aria-label="Rename organization" title="Rename organization">✏️</button>
+  </h2>
 
     <div class="matrix-wrapper">
       <div class="matrix-scroll">
         <div
           class="perm-matrix-grid"
-          :style="{ gridTemplateColumns: 'minmax(180px, 1fr) ' + selectedOrg.roles.map(()=> '2.2rem').join(' ') + ' 2.2rem' }"
+          :style="{ gridTemplateColumns: 'minmax(180px, 1fr) ' + sortedRoles.map(()=> '2.2rem').join(' ') + ' 2.2rem' }"
         >
           <div class="grid-head perm-head">Permission</div>
           <div
-            v-for="r in selectedOrg.roles"
+            v-for="r in sortedRoles"
             :key="'head-' + r.uuid"
             class="grid-head role-head"
             :title="r.display_name"
@@ -45,7 +54,7 @@ function toggleRolePermission(role, pid, checked) {
           <template v-for="pid in selectedOrg.permissions" :key="pid">
             <div class="perm-name" :title="pid">{{ permissionDisplayName(pid) }}</div>
             <div
-              v-for="r in selectedOrg.roles"
+              v-for="r in sortedRoles"
               :key="r.uuid + '-' + pid"
               class="matrix-cell"
             >
@@ -63,7 +72,7 @@ function toggleRolePermission(role, pid, checked) {
     </div>
     <div class="roles-grid">
       <div
-        v-for="r in selectedOrg.roles"
+        v-for="r in sortedRoles"
         :key="r.uuid"
         class="role-column"
         @dragover="$emit('onRoleDragOver', $event)"
@@ -81,7 +90,14 @@ function toggleRolePermission(role, pid, checked) {
         <template v-if="r.users.length > 0">
           <ul class="user-list">
             <li
-              v-for="u in r.users"
+              v-for="u in r.users.slice().sort((a, b) => {
+                const nameA = a.display_name.toLowerCase()
+                const nameB = b.display_name.toLowerCase()
+                if (nameA !== nameB) {
+                  return nameA.localeCompare(nameB)
+                }
+                return a.uuid.localeCompare(b.uuid)
+              })"
               :key="u.uuid"
               class="user-chip"
               draggable="true"
@@ -100,7 +116,6 @@ function toggleRolePermission(role, pid, checked) {
         </div>
       </div>
     </div>
-  </div>
 </template>
 
 <style scoped>

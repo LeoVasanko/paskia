@@ -193,10 +193,9 @@ async def api_user_info(reset: str | None = None, auth=Cookie(None)):
         }
         effective_permissions = [p.id for p in (ctx.permissions or [])]
         is_global_admin = "auth:admin" in (role_info["permissions"] or [])
-        if org_info:
-            is_org_admin = f"auth:org:{org_info['uuid']}" in (
-                role_info["permissions"] or []
-            )
+        is_org_admin = any(
+            p.startswith("auth:org:") for p in (role_info["permissions"] or [])
+        )
 
     return {
         "authenticated": True,

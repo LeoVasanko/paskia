@@ -2,21 +2,9 @@
   <div v-if="userLoaded" class="user-info">
     <h3 class="user-name-heading">
       <span class="icon">👤</span>
-      <span v-if="!editingName" class="user-name-row">
+      <span class="user-name-row">
         <span class="display-name" :title="name">{{ name }}</span>
-        <button v-if="canEdit && updateEndpoint" class="mini-btn" @click="startEdit" title="Edit name">✏️</button>
-      </span>
-      <span v-else class="user-name-row editing">
-        <input
-          v-model="newName"
-          class="name-input"
-          :placeholder="name"
-          :disabled="busy || loading"
-          maxlength="64"
-          @keyup.enter="saveName"
-        />
-        <button class="mini-btn" @click="saveName" :disabled="busy || loading" title="Save name">💾</button>
-        <button class="mini-btn" @click="cancelEdit" :disabled="busy || loading" title="Cancel">✖</button>
+        <button v-if="canEdit && updateEndpoint" class="mini-btn" @click="emit('editName')" title="Edit name">✏️</button>
       </span>
     </h3>
     <div v-if="orgDisplayName || roleName" class="org-role-sub">
@@ -49,34 +37,10 @@ const props = defineProps({
   roleName: { type: String, default: '' }
 })
 
-const emit = defineEmits(['saved'])
+const emit = defineEmits(['saved', 'editName'])
 const authStore = useAuthStore()
 
-const editingName = ref(false)
-const newName = ref('')
-const busy = ref(false)
 const userLoaded = computed(() => !!props.name)
-
-function startEdit() { editingName.value = true; newName.value = '' }
-function cancelEdit() { editingName.value = false }
-async function saveName() {
-  if (!props.updateEndpoint) { editingName.value = false; return }
-  try {
-    busy.value = true
-    authStore.isLoading = true
-    const bodyName = newName.value.trim()
-    if (!bodyName) { cancelEdit(); return }
-    const res = await fetch(props.updateEndpoint, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ display_name: bodyName }) })
-    let data = {}
-    try { data = await res.json() } catch (_) {}
-    if (!res.ok || data.detail) throw new Error(data.detail || 'Update failed')
-    editingName.value = false
-    authStore.showMessage('Name updated', 'success', 1500)
-    emit('saved')
-  } catch (e) { authStore.showMessage(e.message || 'Failed to update name', 'error') }
-  finally { busy.value = false; authStore.isLoading = false }
-}
-watch(() => props.name, () => { if (!props.name) editingName.value = false })
 </script>
 
 <style scoped>
