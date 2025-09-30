@@ -1,91 +1,67 @@
 <template>
-  <div class="container">
-    <div class="view active">
-      <h1>👋 Welcome!</h1>
-      <Breadcrumbs :entries="[{ label: 'Auth', href: '/auth/' }, ...(isAdmin ? [{ label: 'Admin', href: '/auth/admin/' }] : [])]" />
-      <UserBasicInfo
-        v-if="authStore.userInfo?.user"
-        :name="authStore.userInfo.user.user_name"
-        :visits="authStore.userInfo.user.visits || 0"
-        :created-at="authStore.userInfo.user.created_at"
-        :last-seen="authStore.userInfo.user.last_seen"
-        :loading="authStore.isLoading"
-        update-endpoint="/auth/api/user/display-name"
-        @saved="authStore.loadUserInfo()"
-      />
+  <section class="view-root" data-view="profile">
+    <div class="view-content">
+      <header class="view-header">
+        <h1>👋 Welcome!</h1>
+        <Breadcrumbs :entries="[{ label: 'Auth', href: '/auth/' }, ...(isAdmin ? [{ label: 'Admin', href: '/auth/admin/' }] : [])]" />
+        <p class="view-lede">Manage your account details and passkeys.</p>
+      </header>
 
-      <h2>Your Passkeys</h2>
-      <div class="credential-list">
-        <div v-if="authStore.isLoading">
-          <p>Loading credentials...</p>
+      <section class="section-block">
+        <UserBasicInfo
+          v-if="authStore.userInfo?.user"
+          :name="authStore.userInfo.user.user_name"
+          :visits="authStore.userInfo.user.visits || 0"
+          :created-at="authStore.userInfo.user.created_at"
+          :last-seen="authStore.userInfo.user.last_seen"
+          :loading="authStore.isLoading"
+          update-endpoint="/auth/api/user/display-name"
+          @saved="authStore.loadUserInfo()"
+        />
+      </section>
+
+      <section class="section-block">
+        <div class="section-header">
+          <h2>Your Passkeys</h2>
+          <p class="section-description">Keep at least one trusted passkey so you can always sign in.</p>
         </div>
-        <div v-else-if="authStore.userInfo?.credentials?.length === 0">
-          <p>No passkeys found.</p>
-        </div>
-        <div v-else>
-          <div
-            v-for="credential in authStore.userInfo?.credentials || []"
-            :key="credential.credential_uuid"
-            :class="['credential-item', { 'current-session': credential.is_current_session }]"
-          >
-            <div class="credential-header">
-              <div class="credential-icon">
-                <img
-                  v-if="getCredentialAuthIcon(credential)"
-                  :src="getCredentialAuthIcon(credential)"
-                  :alt="getCredentialAuthName(credential)"
-                  class="auth-icon"
-                  width="32"
-                  height="32"
-                >
-                <span v-else class="auth-emoji">🔑</span>
-              </div>
-              <div class="credential-info">
-                <h4>{{ getCredentialAuthName(credential) }}</h4>
-              </div>
-              <div class="credential-dates">
-                <span class="date-label">Created:</span>
-                <span class="date-value">{{ formatDate(credential.created_at) }}</span>
-                <span class="date-label">Last used:</span>
-                <span class="date-value">{{ formatDate(credential.last_used) }}</span>
-              </div>
-              <div class="credential-actions">
-                <button
-                  @click="deleteCredential(credential.credential_uuid)"
-                  class="btn-delete-credential"
-                  :disabled="credential.is_current_session"
-                  :title="credential.is_current_session ? 'Cannot delete current session credential' : ''"
-                >
-                  🗑️
-                </button>
-              </div>
-            </div>
+        <div class="section-body">
+          <CredentialList
+            :credentials="authStore.userInfo?.credentials || []"
+            :aaguid-info="authStore.userInfo?.aaguid_info || {}"
+            :loading="authStore.isLoading"
+            allow-delete
+            @delete="handleDelete"
+          />
+          <div class="button-row">
+            <button @click="addNewCredential" class="btn-primary">
+              Add New Passkey
+            </button>
+            <button @click="authStore.currentView = 'device-link'" class="btn-secondary">
+              Add Another Device
+            </button>
           </div>
         </div>
-      </div>
+      </section>
 
-      <div class="button-group" style="display: flex; gap: 10px;">
-        <button @click="addNewCredential" class="btn-primary">
-          Add New Passkey
-        </button>
-        <button @click="authStore.currentView = 'device-link'" class="btn-primary">
-          Add Another Device
-        </button>
-      </div>
-      <button @click="logout" class="btn-danger" style="width: 100%;">
-        Logout
-      </button>
+      <section class="section-block">
+        <div class="button-row">
+          <button @click="logout" class="btn-danger logout-button">
+            Logout
+          </button>
+        </div>
+      </section>
     </div>
-  </div>
+  </section>
 </template>
 
 <script setup>
 import { ref, onMounted, onUnmounted, computed } from 'vue'
 import Breadcrumbs from '@/components/Breadcrumbs.vue'
-import { useAuthStore } from '@/stores/auth'
-import { formatDate } from '@/utils/helpers'
-import passkey from '@/utils/passkey'
+import CredentialList from '@/components/CredentialList.vue'
 import UserBasicInfo from '@/components/UserBasicInfo.vue'
+import { useAuthStore } from '@/stores/auth'
+import passkey from '@/utils/passkey'
 
 const authStore = useAuthStore()
 const updateInterval = ref(null)
@@ -105,20 +81,6 @@ onUnmounted(() => {
   }
 })
 
-const getCredentialAuthName = (credential) => {
-  const authInfo = authStore.userInfo?.aaguid_info?.[credential.aaguid]
-  return authInfo ? authInfo.name : 'Unknown Authenticator'
-}
-
-const getCredentialAuthIcon = (credential) => {
-  const authInfo = authStore.userInfo?.aaguid_info?.[credential.aaguid]
-  if (!authInfo) return null
-
-  const isDarkMode = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches
-  const iconKey = isDarkMode ? 'icon_dark' : 'icon_light'
-  return authInfo[iconKey] || null
-}
-
 const addNewCredential = async () => {
   try {
     authStore.isLoading = true
@@ -134,7 +96,9 @@ const addNewCredential = async () => {
   }
 }
 
-const deleteCredential = async (credentialId) => {
+const handleDelete = async (credential) => {
+  const credentialId = credential?.credential_uuid
+  if (!credentialId) return
   if (!confirm('Are you sure you want to delete this passkey?')) return
   try {
     await authStore.deleteCredential(credentialId)
@@ -152,19 +116,31 @@ const isAdmin = computed(() => !!(authStore.userInfo?.is_global_admin || authSto
 </script>
 
 <style scoped>
-/* Removed inline user info styles; now provided by UserBasicInfo component */
-.admin-link {
-  font-size: 0.6em;
-  margin-left: 0.75rem;
-  text-decoration: none;
-  background: var(--color-background-soft, #eee);
-  padding: 0.2em 0.6em;
-  border-radius: 999px;
-  border: 1px solid var(--color-border, #ccc);
-  vertical-align: middle;
-  line-height: 1.2;
+.view-lede {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: 1rem;
 }
-.admin-link:hover {
-  background: var(--color-background-mute, #ddd);
+
+.section-header {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.section-description {
+  margin: 0;
+  color: var(--color-text-muted);
+}
+
+.logout-button {
+  align-self: flex-start;
+}
+
+@media (max-width: 720px) {
+  .logout-button {
+    width: 100%;
+  }
 }
 </style>
+

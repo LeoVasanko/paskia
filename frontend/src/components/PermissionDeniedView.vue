@@ -1,19 +1,27 @@
 <template>
-  <div class="container">
-    <div class="view active">
-      <h1>🚫 Forbidden</h1>
-      <div v-if="authStore.userInfo?.authenticated" class="user-header">
-        <span class="user-emoji" aria-hidden="true">{{ userEmoji }}</span>
-        <span class="user-name">{{ displayName }}</span>
-      </div>
-      <p>You lack the permissions required for this page.</p>
-      <div class="actions">
-        <button class="btn-secondary" @click="back">Back</button>
-        <button class="btn-primary" @click="goAuth">Account</button>
-        <button class="btn-danger" @click="logout">Logout</button>
-      </div>
+  <section class="view-root view-denied">
+    <div class="view-content view-content--narrow">
+      <header class="view-header">
+        <h1>🚫 Forbidden</h1>
+        <p class="view-lede">You don’t have the permissions required to view this page.</p>
+      </header>
+      <section class="section-block">
+        <div class="section-body">
+          <div v-if="authStore.userInfo?.authenticated" class="user-header">
+            <span class="user-emoji" aria-hidden="true">{{ userEmoji }}</span>
+            <span class="user-name">{{ displayName }}</span>
+          </div>
+          <p>You lack the permissions required for this page.</p>
+          <div class="button-row">
+            <button class="btn-secondary" @click="back">Back</button>
+            <button class="btn-primary" @click="goAuth">Account</button>
+            <button class="btn-danger" @click="logout">Logout</button>
+          </div>
+          <p class="hint">If you believe this is an error, contact your administrator.</p>
+        </div>
+      </section>
     </div>
-  </div>
+  </section>
 </template>
 <script setup>
 import { useAuthStore } from '@/stores/auth'
@@ -35,9 +43,55 @@ async function logout() {
 }
 </script>
 <style scoped>
-.user-header { display:flex; align-items:center; gap:.5rem; font-size:1.1rem; margin-bottom:.75rem; }
-.user-emoji { font-size:1.5rem; line-height:1; }
-.user-name { font-weight:600; }
-.actions { margin-top:1.5rem; display:flex; gap:.5rem; flex-wrap:nowrap; }
-.hint { font-size:.9rem; opacity:.85; }
+.view-content--narrow {
+  max-width: 540px;
+}
+
+.view-lede {
+  margin: 0;
+  color: var(--color-text-muted);
+}
+
+.user-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 1.1rem;
+}
+
+.user-emoji {
+  font-size: 1.5rem;
+  line-height: 1;
+}
+
+.user-name {
+  font-weight: 600;
+  color: var(--color-heading);
+}
+
+.button-row {
+  width: 100%;
+  justify-content: stretch;
+}
+
+.button-row button {
+  flex: 1 1 0;
+}
+
+.hint {
+  font-size: 0.9rem;
+  color: var(--color-text-muted);
+  margin: 0;
+}
+
+@media (max-width: 720px) {
+  .button-row {
+    flex-direction: column;
+  }
+
+  .button-row button {
+    width: 100%;
+    flex: 1 1 auto;
+  }
+}
 </style>

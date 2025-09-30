@@ -1,11 +1,13 @@
 <template>
-  <div>
+  <div class="app-shell">
     <StatusMessage />
-    <LoginView v-if="store.currentView === 'login'" />
-    <ProfileView v-if="store.currentView === 'profile'" />
-    <DeviceLinkView v-if="store.currentView === 'device-link'" />
-    <ResetView v-if="store.currentView === 'reset'" />
-    <PermissionDeniedView v-if="store.currentView === 'permission-denied'" />
+    <main class="app-main">
+      <LoginView v-if="store.currentView === 'login'" />
+      <ProfileView v-if="store.currentView === 'profile'" />
+      <DeviceLinkView v-if="store.currentView === 'device-link'" />
+      <ResetView v-if="store.currentView === 'reset'" />
+      <PermissionDeniedView v-if="store.currentView === 'permission-denied'" />
+    </main>
   </div>
 </template>
 
