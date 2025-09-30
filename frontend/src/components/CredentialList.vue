@@ -2,7 +2,7 @@
   <div class="credential-list">
     <div v-if="loading"><p>Loading credentials...</p></div>
     <div v-else-if="!credentials?.length"><p>No passkeys found.</p></div>
-    <div v-else>
+    <template v-else>
       <div
         v-for="credential in credentials"
         :key="credential.credential_uuid"
@@ -39,7 +39,7 @@
           </div>
         </div>
       </div>
-    </div>
+    </template>
   </div>
 </template>
 
@@ -69,16 +69,119 @@ const getCredentialAuthIcon = (credential) => {
 </script>
 
 <style scoped>
-.credential-list { display: flex; flex-direction: column; gap: .75rem; margin-top: .5rem; }
-.credential-item { border: 1px solid #ddd; border-radius: 8px; padding: .5rem .75rem; background: #fff; }
-.credential-header { display: flex; align-items: center; gap: 1rem; }
-.credential-icon { width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; }
-.auth-icon { border-radius: 6px; }
-.credential-info { flex: 1 1 auto; }
-.credential-info h4 { margin: 0; font-size: .9rem; }
-.credential-dates { display: grid; grid-auto-flow: column; gap: .4rem; font-size: .65rem; align-items: center; }
-.date-label { font-weight: 600; }
-.credential-actions { margin-left: auto; }
-.btn-delete-credential { background: none; border: none; cursor: pointer; font-size: .9rem; }
-.btn-delete-credential:disabled { opacity: .3; cursor: not-allowed; }
+.credential-list {
+  width: 100%;
+  margin-top: var(--space-sm);
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 1rem 1.25rem;
+  align-items: stretch;
+}
+
+.credential-item {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: 0.85rem 1rem;
+  background: var(--color-surface);
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  width: 28rem;
+  height: 100%;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+}
+
+.credential-item:hover {
+  border-color: var(--color-border-strong);
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.12);
+  transform: translateY(-1px);
+}
+
+.credential-item.current-session {
+  border-color: var(--color-accent);
+  background: rgba(37, 99, 235, 0.08);
+}
+
+.credential-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 1rem;
+  flex-wrap: wrap;
+  flex: 1 1 auto;
+}
+
+.credential-icon {
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  background: var(--color-surface-subtle, transparent);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+}
+
+.auth-icon {
+  border-radius: var(--radius-sm);
+}
+
+.credential-info {
+  flex: 1 1 150px;
+  min-width: 0;
+}
+
+.credential-info h4 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--color-heading);
+}
+
+.credential-dates {
+  display: grid;
+  grid-auto-flow: row;
+  grid-template-columns: auto 1fr;
+  gap: 0.35rem 0.5rem;
+  font-size: 0.75rem;
+  align-items: center;
+  color: var(--color-text-muted);
+}
+
+.date-label {
+  font-weight: 600;
+}
+
+.date-value {
+  color: var(--color-text);
+}
+
+.credential-actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+}
+
+.btn-delete-credential {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 1rem;
+  color: var(--color-danger);
+  padding: 0.25rem 0.35rem;
+  border-radius: var(--radius-sm);
+}
+
+.btn-delete-credential:hover:not(:disabled) {
+  background: rgba(220, 38, 38, 0.08);
+}
+
+.btn-delete-credential:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+@media (max-width: 600px) {
+  .credential-list {
+    grid-template-columns: 1fr;
+  }
+}
 </style>

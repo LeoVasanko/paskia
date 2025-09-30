@@ -29,14 +29,10 @@ const crumbs = computed(() => {
 </template>
 
 <style scoped>
-.breadcrumbs { margin: .25rem 0 .5rem; line-height:1.2; }
-.breadcrumbs ol { list-style: none; padding: 0; margin: 0; display: flex; flex-wrap: wrap; align-items: center; }
-.breadcrumbs li { display: inline-flex; align-items: center; }
-.breadcrumbs a { text-decoration: none; color: #0366d6; padding: 0 .15rem; border-radius:4px; }
-.breadcrumbs a:hover, .breadcrumbs a:focus { text-decoration: underline; }
-.breadcrumbs .sep { color: #888; margin: 0 .1rem; }
-@media (prefers-color-scheme: dark) {
-  .breadcrumbs a { color: #4ea3ff; }
-  .breadcrumbs .sep { color: #aaa; }
-}
+.breadcrumbs { margin: .25rem 0 .5rem; line-height:1.2; color: var(--color-text-muted); }
+.breadcrumbs ol { list-style: none; padding: 0; margin: 0; display: flex; flex-wrap: wrap; align-items: center; gap: .25rem; }
+.breadcrumbs li { display: inline-flex; align-items: center; gap: .25rem; font-size: .9rem; }
+.breadcrumbs a { text-decoration: none; color: var(--color-link); padding: 0 .25rem; border-radius:4px; transition: color 0.2s ease, background 0.2s ease; }
+.breadcrumbs a:hover, .breadcrumbs a:focus-visible { text-decoration: underline; color: var(--color-link-hover); outline: none; }
+.breadcrumbs .sep { color: var(--color-text-muted); margin: 0; }
 </style>

@@ -1,34 +1,36 @@
 <template>
-  <div class="container">
-    <div class="view active">
-  <h1>🔐 {{ (authStore.settings?.rp_name || 'Passkey') + ' Login' }}</h1>
-      <form @submit.prevent="handleLogin">
-        <button
-          type="submit"
-          class="btn-primary"
-          :disabled="authStore.isLoading"
-        >
-          {{ authStore.isLoading ? 'Authenticating...' : 'Login with Your Device' }}
-        </button>
-      </form>
+  <section class="view-root view-login">
+    <div class="view-content view-content--narrow">
+      <header class="view-header">
+        <h1>🔐 {{ (authStore.settings?.rp_name || 'Passkey') + ' Login' }}</h1>
+        <p class="view-lede">Sign in securely with a device you trust.</p>
+      </header>
+      <section class="section-block">
+        <form class="section-body" @submit.prevent="handleLogin">
+          <button
+            type="submit"
+            class="btn-primary"
+            :disabled="authStore.isLoading"
+          >
+            {{ authStore.isLoading ? 'Authenticating...' : 'Login with Your Device' }}
+          </button>
+        </form>
+      </section>
     </div>
-  </div>
+  </section>
 </template>
 
 <script setup>
 import { useAuthStore } from '@/stores/auth'
-import { computed } from 'vue'
 
 const authStore = useAuthStore()
 
 const handleLogin = async () => {
   try {
-    console.log('Login button clicked')
     authStore.showMessage('Starting authentication...', 'info')
     await authStore.authenticate()
     authStore.showMessage('Authentication successful!', 'success', 2000)
     if (authStore.restrictedMode) {
-      // Restricted mode: reload so the app re-mounts and selectView() applies (will become permission denied)
       location.reload()
     } else if (location.pathname === '/auth/') {
       authStore.currentView = 'profile'
@@ -40,3 +42,24 @@ const handleLogin = async () => {
   }
 }
 </script>
+
+<style scoped>
+.view-content--narrow {
+  max-width: 420px;
+}
+
+.view-lede {
+  margin: 0;
+  color: var(--color-text-muted);
+}
+
+.view-login .section-body {
+  gap: 1.5rem;
+}
+
+@media (max-width: 720px) {
+  button {
+    width: 100%;
+  }
+}
+</style>
