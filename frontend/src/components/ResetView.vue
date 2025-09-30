@@ -1,37 +1,39 @@
 <template>
-  <section class="view-root view-reset">
-    <div class="view-content view-content--narrow">
-      <header class="view-header">
-        <h1>🔑 Add New Credential</h1>
-        <p class="view-lede">
-          Finish setting up your passkey to complete {{ authStore.userInfo?.session_type }}.
-        </p>
-      </header>
-      <section class="section-block">
-        <div class="section-body">
-          <label class="name-edit">
-            <span>👤 Name</span>
-            <input
-              type="text"
-              v-model="user_name"
-              :placeholder="authStore.userInfo?.user?.user_name || 'Your name'"
+  <div class="dialog-backdrop">
+    <div class="dialog-container">
+      <div class="dialog-content">
+        <header class="view-header">
+          <h1>🔑 Add New Credential</h1>
+          <p class="view-lede">
+            Finish setting up your passkey to complete {{ authStore.userInfo?.session_type }}.
+          </p>
+        </header>
+        <section class="section-block">
+          <div class="section-body">
+            <label class="name-edit">
+              <span>👤 Name</span>
+              <input
+                type="text"
+                v-model="user_name"
+                :placeholder="authStore.userInfo?.user?.user_name || 'Your name'"
+                :disabled="authStore.isLoading"
+                maxlength="64"
+                @keyup.enter="register"
+              />
+            </label>
+            <p>Proceed to complete {{ authStore.userInfo?.session_type }}:</p>
+            <button
+              class="btn-primary"
               :disabled="authStore.isLoading"
-              maxlength="64"
-              @keyup.enter="register"
-            />
-          </label>
-          <p>Proceed to complete {{ authStore.userInfo?.session_type }}:</p>
-          <button
-            class="btn-primary"
-            :disabled="authStore.isLoading"
-            @click="register"
-          >
-            {{ authStore.isLoading ? 'Registering…' : 'Register Passkey' }}
-          </button>
-        </div>
-      </section>
+              @click="register"
+            >
+              {{ authStore.isLoading ? 'Registering…' : 'Register Passkey' }}
+            </button>
+          </div>
+        </section>
+      </div>
     </div>
-  </section>
+  </div>
 </template>
 
 <script setup>
@@ -63,10 +65,6 @@ async function register() {
 </script>
 
 <style scoped>
-.view-content--narrow {
-  max-width: 480px;
-}
-
 .view-lede {
   margin: 0;
   color: var(--color-text-muted);

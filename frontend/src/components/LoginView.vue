@@ -1,23 +1,25 @@
 <template>
-  <section class="view-root view-login">
-    <div class="view-content view-content--narrow">
-      <header class="view-header">
-        <h1>🔐 {{ (authStore.settings?.rp_name || 'Passkey') + ' Login' }}</h1>
-        <p class="view-lede">Sign in securely with a device you trust.</p>
-      </header>
-      <section class="section-block">
-        <form class="section-body" @submit.prevent="handleLogin">
-          <button
-            type="submit"
-            class="btn-primary"
-            :disabled="authStore.isLoading"
-          >
-            {{ authStore.isLoading ? 'Authenticating...' : 'Login with Your Device' }}
-          </button>
-        </form>
-      </section>
+  <div class="dialog-backdrop">
+    <div class="dialog-container">
+      <div class="dialog-content dialog-content--narrow">
+        <header class="view-header">
+          <h1>🔐 {{ (authStore.settings?.rp_name || location.origin)}}</h1>
+          <p class="view-lede">User authentication is required for access.</p>
+        </header>
+        <section class="section-block">
+          <form class="section-body" @submit.prevent="handleLogin">
+            <button
+              type="submit"
+              class="btn-primary"
+              :disabled="authStore.isLoading"
+            >
+              {{ authStore.isLoading ? 'Authenticating...' : 'Login with Your Device' }}
+            </button>
+          </form>
+        </section>
+      </div>
     </div>
-  </section>
+  </div>
 </template>
 
 <script setup>
@@ -44,16 +46,12 @@ const handleLogin = async () => {
 </script>
 
 <style scoped>
-.view-content--narrow {
-  max-width: 420px;
-}
-
 .view-lede {
   margin: 0;
   color: var(--color-text-muted);
 }
 
-.view-login .section-body {
+.section-body {
   gap: 1.5rem;
 }
 

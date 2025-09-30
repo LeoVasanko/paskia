@@ -2,17 +2,25 @@
   <div class="app-shell">
     <StatusMessage />
     <main class="app-main">
-      <LoginView v-if="store.currentView === 'login'" />
-      <ProfileView v-if="store.currentView === 'profile'" />
-      <DeviceLinkView v-if="store.currentView === 'device-link'" />
-      <ResetView v-if="store.currentView === 'reset'" />
-      <PermissionDeniedView v-if="store.currentView === 'permission-denied'" />
+      <!-- Only render views after authentication status is determined -->
+      <template v-if="initialized">
+        <LoginView v-if="store.currentView === 'login'" />
+        <ProfileView v-if="store.currentView === 'profile'" />
+        <DeviceLinkView v-if="store.currentView === 'device-link'" />
+        <ResetView v-if="store.currentView === 'reset'" />
+        <PermissionDeniedView v-if="store.currentView === 'permission-denied'" />
+      </template>
+      <!-- Show loading state while determining auth status -->
+      <div v-else class="loading-container">
+        <div class="loading-spinner"></div>
+        <p>Loading...</p>
+      </div>
     </main>
   </div>
 </template>
 
 <script setup>
-import { onMounted } from 'vue'
+import { onMounted, ref } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import StatusMessage from '@/components/StatusMessage.vue'
 import LoginView from '@/components/LoginView.vue'
@@ -22,6 +30,7 @@ import ResetView from '@/components/ResetView.vue'
 import PermissionDeniedView from '@/components/PermissionDeniedView.vue'
 
 const store = useAuthStore()
+const initialized = ref(false)
 
 onMounted(async () => {
   // Detect restricted mode:
@@ -52,10 +61,43 @@ onMounted(async () => {
   }
   try {
     await store.loadUserInfo()
+    initialized.value = true
+    store.selectView()
   } catch (error) {
     console.log('Failed to load user info:', error)
     store.currentView = 'login'
+    initialized.value = true
+    store.selectView()
   }
-  store.selectView()
 })
 </script>
+
+<style scoped>
+.loading-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100vh;
+  gap: 1rem;
+}
+
+.loading-spinner {
+  width: 40px;
+  height: 40px;
+  border: 4px solid var(--color-border);
+  border-top: 4px solid var(--color-primary);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.loading-container p {
+  color: var(--color-text-muted);
+  margin: 0;
+}
+</style>
