@@ -54,7 +54,9 @@ const permissionSummary = computed(() => {
   const summary = {}
   for (const o of orgs.value) {
     const orgBase = { uuid: o.uuid, display_name: o.display_name }
-    // Org-level permissions (direct)
+    const orgPerms = new Set(o.permissions || [])
+    
+    // Org-level permissions (direct) - only count if org can grant them
     for (const pid of o.permissions || []) {
       if (!summary[pid]) summary[pid] = { orgs: [], orgSet: new Set(), userCount: 0 }
       if (!summary[pid].orgSet.has(o.uuid)) {
@@ -62,9 +64,13 @@ const permissionSummary = computed(() => {
         summary[pid].orgSet.add(o.uuid)
       }
     }
-    // Role-based permissions (inheritance)
+    
+    // Role-based permissions (inheritance) - only count if org can grant them
     for (const r of o.roles) {
       for (const pid of r.permissions) {
+        // Only count if the org can grant this permission
+        if (!orgPerms.has(pid)) continue
+        
         if (!summary[pid]) summary[pid] = { orgs: [], orgSet: new Set(), userCount: 0 }
         if (!summary[pid].orgSet.has(o.uuid)) {
           summary[pid].orgs.push(orgBase)
@@ -164,6 +170,7 @@ async function load() {
       if (!window.location.hash || window.location.hash === '#overview') {
         currentOrgId.value = orgs.value[0].uuid
         window.location.hash = `#org/${currentOrgId.value}`
+        authStore.showMessage(`Navigating to ${orgs.value[0].display_name} Administration`, 'info', 3000)
       } else {
         parseHash()
       }
@@ -178,14 +185,16 @@ async function load() {
 // Org actions
 function createOrg() { openDialog('org-create', {}) }
 
-function updateOrg(org) { openDialog('org-update', { org }) }
+function updateOrg(org) { openDialog('org-update', { org, name: org.display_name }) }
+
+function editUserName(user) { openDialog('user-update-name', { user, name: user.display_name }) }
 
 function deleteOrg(org) {
   if (!info.value?.is_global_admin) { authStore.showMessage('Global admin only'); return }
   openDialog('confirm', { message: `Delete organization ${org.display_name}?`, action: async () => {
     const res = await fetch(`/auth/admin/orgs/${org.uuid}`, { method: 'DELETE' })
     const data = await res.json(); if (data.detail) throw new Error(data.detail)
-    await loadOrgs()
+    await Promise.all([loadOrgs(), loadPermissions()])
   } })
 }
 
@@ -231,7 +240,7 @@ async function removeOrgPermission() { /* obsolete */ }
 // Role actions
 function createRole(org) { openDialog('role-create', { org }) }
 
-function updateRole(role) { openDialog('role-update', { role }) }
+function updateRole(role) { openDialog('role-update', { role, name: role.display_name }) }
 
 function deleteRole(role) {
   openDialog('confirm', { message: `Delete role ${role.display_name}?`, action: async () => {
@@ -239,6 +248,31 @@ function deleteRole(role) {
     const data = await res.json(); if (data.detail) throw new Error(data.detail)
     await loadOrgs()
   } })
+}
+
+async function toggleRolePermission(role, pid, checked) {
+  // Calculate new permissions array
+  const newPermissions = checked 
+    ? [...role.permissions, pid] 
+    : role.permissions.filter(p => p !== pid)
+  
+  // Optimistic update
+  const prevPermissions = [...role.permissions]
+  role.permissions = newPermissions
+  
+  try {
+    const res = await fetch(`/auth/admin/orgs/${role.org_uuid}/roles/${role.uuid}`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ display_name: role.display_name, permissions: newPermissions })
+    })
+    const data = await res.json()
+    if (data.detail) throw new Error(data.detail)
+    await loadOrgs()
+  } catch (e) {
+    authStore.showMessage(e.message || 'Failed to update role permission')
+    role.permissions = prevPermissions // revert
+  }
 }
 
 // Permission actions
@@ -288,9 +322,9 @@ const selectedUser = computed(() => {
 })
 
 const pageHeading = computed(() => {
-  if (selectedUser.value) return 'Organization Admin'
-  if (selectedOrg.value) return 'Organization Admin'
-  return (authStore.settings?.rp_name || 'Passkey') + ' Admin'
+  if (selectedUser.value) return 'Admin: User'
+  if (selectedOrg.value) return 'Admin: Org'
+  return (authStore.settings?.rp_name || 'Master') + ' Admin'
 })
 
 // Breadcrumb entries for admin app.
@@ -401,14 +435,16 @@ async function submitDialog() {
       const d = await res.json(); if (d.detail) throw new Error(d.detail); await loadOrgs()
     } else if (t === 'role-update') {
       const { role } = dialog.value.data; const name = dialog.value.data.name?.trim(); if (!name) throw new Error('Name required')
-      const permsCsv = dialog.value.data.perms || ''
-      const perms = permsCsv.split(',').map(s=>s.trim()).filter(Boolean)
-  const res = await fetch(`/auth/admin/orgs/${role.org_uuid}/roles/${role.uuid}`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ display_name: name, permissions: perms }) })
+      const res = await fetch(`/auth/admin/orgs/${role.org_uuid}/roles/${role.uuid}`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ display_name: name, permissions: role.permissions }) })
       const d = await res.json(); if (d.detail) throw new Error(d.detail); await loadOrgs()
     } else if (t === 'user-create') {
       const { org, role } = dialog.value.data; const name = dialog.value.data.name?.trim(); if (!name) throw new Error('Name required')
       const res = await fetch(`/auth/admin/orgs/${org.uuid}/users`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ display_name: name, role: role.display_name }) })
       const d = await res.json(); if (d.detail) throw new Error(d.detail); await loadOrgs()
+    } else if (t === 'user-update-name') {
+      const { user } = dialog.value.data; const name = dialog.value.data.name?.trim(); if (!name) throw new Error('Name required')
+      const res = await fetch(`/auth/admin/orgs/${user.org_uuid}/users/${user.uuid}/display-name`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ display_name: name }) })
+      const d = await res.json(); if (d.detail) throw new Error(d.detail); await onUserNameSaved()
     } else if (t === 'perm-display') {
       const { permission } = dialog.value.data
       const newId = dialog.value.data.id?.trim()
@@ -431,10 +467,10 @@ async function submitDialog() {
       await loadPermissions()
     } else if (t === 'perm-create') {
       const id = dialog.value.data.id?.trim(); if (!id) throw new Error('ID required')
-      const name = dialog.value.data.name?.trim(); if (!name) throw new Error('Display name required')
-      const res = await fetch('/auth/admin/permissions', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id, display_name: name }) })
+      const display_name = dialog.value.data.display_name?.trim(); if (!display_name) throw new Error('Display name required')
+      const res = await fetch('/auth/admin/permissions', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id, display_name }) })
       const data = await res.json(); if (data.detail) throw new Error(data.detail)
-      await loadPermissions(); dialog.value.data.id = ''; dialog.value.data.name = ''
+      await loadPermissions(); dialog.value.data.display_name = ''; dialog.value.data.id = ''
     } else if (t === 'confirm') {
       const action = dialog.value.data.action; if (action) await action()
     }
@@ -454,9 +490,6 @@ async function submitDialog() {
           <header class="view-header">
             <h1>{{ pageHeading }}</h1>
             <Breadcrumbs :entries="breadcrumbEntries" />
-            <p class="view-lede" v-if="info?.authenticated">
-              Manage organizations, roles, permissions, and passkeys for your relying party.
-            </p>
           </header>
 
           <section class="section-block admin-section">
@@ -498,6 +531,7 @@ async function submitDialog() {
                     @go-overview="goOverview"
                     @open-org="openOrg"
                     @on-user-name-saved="onUserNameSaved"
+                    @edit-user-name="editUserName"
                     @close-reg-modal="showRegModal = false"
                   />
                   <AdminOrgDetail

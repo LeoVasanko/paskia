@@ -17,6 +17,7 @@ from sqlalchemy import (
     String,
     delete,
     event,
+    insert,
     select,
     update,
 )
@@ -971,8 +972,10 @@ class DB(DatabaseInterface):
             )
             if role.permissions:
                 for perm_id in set(role.permissions):
-                    session.add(
-                        RolePermission(role_uuid=role.uuid.bytes, permission_id=perm_id)
+                    await session.execute(
+                        insert(RolePermission).values(
+                            role_uuid=role.uuid.bytes, permission_id=perm_id
+                        )
                     )
 
     async def delete_role(self, role_uuid: UUID) -> None:
@@ -1200,10 +1203,15 @@ class DB(DatabaseInterface):
             org_perm_result = await session.execute(org_perm_stmt)
             organization.permissions = [row[0] for row in org_perm_result.fetchall()]
 
+            # Filter effective permissions: only include permissions that the org can grant
+            effective_permissions = [
+                p for p in permissions if p.id in organization.permissions
+            ]
+
             return SessionContext(
                 session=session_obj,
                 user=user_obj,
                 org=organization,
                 role=role,
-                permissions=permissions if permissions else None,
+                permissions=effective_permissions if effective_permissions else None,
             )

@@ -17,6 +17,7 @@
           :loading="authStore.isLoading"
           update-endpoint="/auth/api/user/display-name"
           @saved="authStore.loadUserInfo()"
+          @edit-name="openNameDialog"
         />
       </section>
 
@@ -51,20 +52,44 @@
           </button>
         </div>
       </section>
+
+      <!-- Name Edit Dialog -->
+      <Modal v-if="showNameDialog" @close="showNameDialog = false">
+        <h3>Edit Display Name</h3>
+        <form @submit.prevent="saveName" class="modal-form">
+          <NameEditForm
+            label="Display Name"
+            v-model="newName"
+            :busy="saving"
+            @cancel="showNameDialog = false"
+          />
+        </form>
+      </Modal>
     </div>
   </section>
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted, computed } from 'vue'
+import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
 import Breadcrumbs from '@/components/Breadcrumbs.vue'
 import CredentialList from '@/components/CredentialList.vue'
 import UserBasicInfo from '@/components/UserBasicInfo.vue'
+import Modal from '@/components/Modal.vue'
+import NameEditForm from '@/components/NameEditForm.vue'
 import { useAuthStore } from '@/stores/auth'
 import passkey from '@/utils/passkey'
 
 const authStore = useAuthStore()
 const updateInterval = ref(null)
+const showNameDialog = ref(false)
+const newName = ref('')
+const saving = ref(false)
+
+watch(showNameDialog, (newVal) => {
+  if (newVal) {
+    newName.value = authStore.userInfo?.user?.user_name || ''
+  }
+})
 
 onMounted(() => {
   updateInterval.value = setInterval(() => {
@@ -112,7 +137,37 @@ const logout = async () => {
   await authStore.logout()
 }
 
+const openNameDialog = () => {
+  newName.value = authStore.userInfo?.user?.user_name || ''
+  showNameDialog.value = true
+}
+
 const isAdmin = computed(() => !!(authStore.userInfo?.is_global_admin || authStore.userInfo?.is_org_admin))
+
+const saveName = async () => {
+  const name = newName.value.trim()
+  if (!name) {
+    authStore.showMessage('Name cannot be empty', 'error')
+    return
+  }
+  try {
+    saving.value = true
+    const res = await fetch('/auth/api/user/display-name', {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ display_name: name })
+    })
+    const data = await res.json()
+    if (!res.ok || data.detail) throw new Error(data.detail || 'Update failed')
+  showNameDialog.value = false
+    await authStore.loadUserInfo()
+    authStore.showMessage('Name updated successfully!', 'success', 3000)
+  } catch (e) {
+    authStore.showMessage(e.message || 'Failed to update name', 'error')
+  } finally {
+    saving.value = false
+  }
+}
 </script>
 
 <style scoped>
