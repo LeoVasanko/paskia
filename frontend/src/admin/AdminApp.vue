@@ -5,6 +5,10 @@ import CredentialList from '@/components/CredentialList.vue'
 import UserBasicInfo from '@/components/UserBasicInfo.vue'
 import RegistrationLinkModal from '@/components/RegistrationLinkModal.vue'
 import StatusMessage from '@/components/StatusMessage.vue'
+import AdminOverview from './AdminOverview.vue'
+import AdminOrgDetail from './AdminOrgDetail.vue'
+import AdminUserDetail from './AdminUserDetail.vue'
+import AdminDialogs from './AdminDialogs.vue'
 import { useAuthStore } from '@/stores/auth'
 
 const info = ref(null)
@@ -467,221 +471,51 @@ async function submitDialog() {
                   <p>Insufficient permissions.</p>
                 </div>
                 <div v-else class="admin-panels">
-                  <div v-if="!selectedUser && !selectedOrg && (info.is_global_admin || info.is_org_admin)" class="permissions-section">
-                    <h2>Organizations</h2>
-                    <div class="actions">
-                      <button v-if="info.is_global_admin" @click="createOrg">+ Create Org</button>
-                    </div>
-                    <table class="org-table">
-                      <thead>
-                        <tr>
-                          <th>Name</th>
-                          <th>Roles</th>
-                          <th>Members</th>
-                          <th v-if="info.is_global_admin">Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        <tr v-for="o in orgs" :key="o.uuid">
-                          <td>
-                            <a href="#org/{{o.uuid}}" @click.prevent="openOrg(o)">{{ o.display_name }}</a>
-                            <button v-if="info.is_global_admin" @click="updateOrg(o)" class="icon-btn edit-org-btn" aria-label="Rename organization" title="Rename organization">✏️</button>
-                          </td>
-                          <td>{{ o.roles.length }}</td>
-                          <td>{{ o.roles.reduce((acc,r)=>acc + r.users.length,0) }}</td>
-                          <td v-if="info.is_global_admin">
-                            <button @click="deleteOrg(o)" class="icon-btn delete-icon" aria-label="Delete organization" title="Delete organization">❌</button>
-                          </td>
-                        </tr>
-                      </tbody>
-                    </table>
-                  </div>
+                                    <AdminOverview
+                    v-if="!selectedUser && !selectedOrg && (info.is_global_admin || info.is_org_admin)"
+                    :info="info"
+                    :orgs="orgs"
+                    :permissions="permissions"
+                    :permission-summary="permissionSummary"
+                    @create-org="createOrg"
+                    @open-org="openOrg"
+                    @update-org="updateOrg"
+                    @delete-org="deleteOrg"
+                    @toggle-org-permission="toggleOrgPermission"
+                    @open-dialog="openDialog"
+                    @delete-permission="deletePermission"
+                    @rename-permission-display="renamePermissionDisplay"
+                  />
 
-                  <div v-if="selectedUser" class="card surface user-detail">
-                    <UserBasicInfo
-                      v-if="userDetail && !userDetail.error"
-                      :name="userDetail.display_name || selectedUser.display_name"
-                      :visits="userDetail.visits"
-                      :created-at="userDetail.created_at"
-                      :last-seen="userDetail.last_seen"
-                      :loading="loading"
-                      :org-display-name="userDetail.org.display_name"
-                      :role-name="userDetail.role"
-                      :update-endpoint="`/auth/admin/orgs/${selectedUser.org_uuid}/users/${selectedUser.uuid}/display-name`"
-                      @saved="onUserNameSaved"
-                    />
-                    <div v-else-if="userDetail?.error" class="error small">{{ userDetail.error }}</div>
-                    <template v-if="userDetail && !userDetail.error">
-                      <h3 class="cred-title">Registered Passkeys</h3>
-                      <CredentialList :credentials="userDetail.credentials" :aaguid-info="userDetail.aaguid_info" />
-                    </template>
-                    <div class="actions">
-                      <button @click="generateUserRegistrationLink(selectedUser)">Generate Registration Token</button>
-                      <button @click="goOverview" v-if="info.is_global_admin" class="icon-btn" title="Overview">🏠</button>
-                      <button @click="openOrg(selectedOrg)" v-if="selectedOrg" class="icon-btn" title="Back to Org">↩️</button>
-                    </div>
-                    <p class="matrix-hint muted">Use the token dialog to register a new credential for the member.</p>
-                    <RegistrationLinkModal
-                      v-if="showRegModal"
-                      :endpoint="`/auth/admin/orgs/${selectedUser.org_uuid}/users/${selectedUser.uuid}/create-link`"
-                      :auto-copy="false"
-                      @close="showRegModal = false"
-                      @copied="onLinkCopied"
-                    />
-                  </div>
-                  <div v-else-if="selectedOrg" class="card surface">
-                    <h2 class="org-title" :title="selectedOrg.uuid">
-                      <span class="org-name">{{ selectedOrg.display_name }}</span>
-                      <button @click="updateOrg(selectedOrg)" class="icon-btn" aria-label="Rename organization" title="Rename organization">✏️</button>
-                    </h2>
-                    <div class="org-actions"></div>
+                  <AdminUserDetail
+                    v-else-if="selectedUser"
+                    :selected-user="selectedUser"
+                    :user-detail="userDetail"
+                    :selected-org="selectedOrg"
+                    :loading="loading"
+                    :show-reg-modal="showRegModal"
+                    @generate-user-registration-link="generateUserRegistrationLink"
+                    @go-overview="goOverview"
+                    @open-org="openOrg"
+                    @on-user-name-saved="onUserNameSaved"
+                    @close-reg-modal="showRegModal = false"
+                  />
+                  <AdminOrgDetail
+                    v-else-if="selectedOrg"
+                    :selected-org="selectedOrg"
+                    :permissions="permissions"
+                    @update-org="updateOrg"
+                    @create-role="createRole"
+                    @update-role="updateRole"
+                    @delete-role="deleteRole"
+                    @create-user-in-role="createUserInRole"
+                    @open-user="openUser"
+                    @toggle-role-permission="toggleRolePermission"
+                    @on-role-drag-over="onRoleDragOver"
+                    @on-role-drop="onRoleDrop"
+                    @on-user-drag-start="onUserDragStart"
+                  />
 
-                    <div class="matrix-wrapper">
-                      <div class="matrix-scroll">
-                        <div
-                          class="perm-matrix-grid"
-                          :style="{ gridTemplateColumns: 'minmax(180px, 1fr) ' + selectedOrg.roles.map(()=> '2.2rem').join(' ') + ' 2.2rem' }"
-                        >
-                          <div class="grid-head perm-head">Permission</div>
-                          <div
-                            v-for="r in selectedOrg.roles"
-                            :key="'head-' + r.uuid"
-                            class="grid-head role-head"
-                            :title="r.display_name"
-                          >
-                            <span>{{ r.display_name }}</span>
-                          </div>
-                          <div class="grid-head role-head add-role-head" title="Add role" @click="createRole(selectedOrg)" role="button">➕</div>
-
-                          <template v-for="pid in selectedOrg.permissions" :key="pid">
-                            <div class="perm-name" :title="pid">{{ permissionDisplayName(pid) }}</div>
-                            <div
-                              v-for="r in selectedOrg.roles"
-                              :key="r.uuid + '-' + pid"
-                              class="matrix-cell"
-                            >
-                              <input
-                                type="checkbox"
-                                :checked="r.permissions.includes(pid)"
-                                @change="e => toggleRolePermission(r, pid, e.target.checked)"
-                              />
-                            </div>
-                            <div class="matrix-cell add-role-cell" />
-                          </template>
-                        </div>
-                      </div>
-                      <p class="matrix-hint muted">Toggle which permissions each role grants.</p>
-                    </div>
-                    <div class="roles-grid">
-                      <div
-                        v-for="r in selectedOrg.roles"
-                        :key="r.uuid"
-                        class="role-column"
-                        @dragover="onRoleDragOver"
-                        @drop="e => onRoleDrop(e, selectedOrg, r)"
-                      >
-                        <div class="role-header">
-                          <strong class="role-name" :title="r.uuid">
-                            <span>{{ r.display_name }}</span>
-                            <button @click="updateRole(r)" class="icon-btn" aria-label="Edit role" title="Edit role">✏️</button>
-                          </strong>
-                          <div class="role-actions">
-                            <button @click="createUserInRole(selectedOrg, r)" class="plus-btn" aria-label="Add user" title="Add user">➕</button>
-                          </div>
-                        </div>
-                        <template v-if="r.users.length > 0">
-                          <ul class="user-list">
-                            <li
-                              v-for="u in r.users"
-                              :key="u.uuid"
-                              class="user-chip"
-                              draggable="true"
-                              @dragstart="e => onUserDragStart(e, u, selectedOrg.uuid)"
-                              @click="openUser(u)"
-                              :title="u.uuid"
-                            >
-                              <span class="name">{{ u.display_name }}</span>
-                              <span class="meta">{{ u.last_seen ? new Date(u.last_seen).toLocaleDateString() : '—' }}</span>
-                            </li>
-                          </ul>
-                        </template>
-                        <div v-else class="empty-role">
-                          <p class="empty-text muted">No members</p>
-                          <button @click="deleteRole(r)" class="icon-btn delete-icon" aria-label="Delete empty role" title="Delete role">❌</button>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div v-if="!selectedUser && !selectedOrg && (info.is_global_admin || info.is_org_admin)" class="permissions-section">
-                    <h2>Permissions</h2>
-                    <div class="matrix-wrapper">
-                      <div class="matrix-scroll">
-                        <div
-                          class="perm-matrix-grid"
-                          :style="{ gridTemplateColumns: 'minmax(180px, 1fr) ' + orgs.map(()=> '2.2rem').join(' ') }"
-                        >
-                          <div class="grid-head perm-head">Permission</div>
-                          <div
-                            v-for="o in [...orgs].sort((a,b)=> a.display_name.localeCompare(b.display_name))"
-                            :key="'head-' + o.uuid"
-                            class="grid-head org-head"
-                            :title="o.display_name"
-                          >
-                            <span>{{ o.display_name }}</span>
-                          </div>
-
-                          <template v-for="p in [...permissions].sort((a,b)=> a.id.localeCompare(b.id))" :key="p.id">
-                            <div class="perm-name" :title="p.id">
-                              <span class="display-text">{{ p.display_name }}</span>
-                            </div>
-                            <div
-                              v-for="o in [...orgs].sort((a,b)=> a.display_name.localeCompare(b.display_name))"
-                              :key="o.uuid + '-' + p.id"
-                              class="matrix-cell"
-                            >
-                              <input
-                                type="checkbox"
-                                :checked="o.permissions.includes(p.id)"
-                                @change="e => toggleOrgPermission(o, p.id, e.target.checked)"
-                              />
-                            </div>
-                          </template>
-                        </div>
-                      </div>
-                      <p class="matrix-hint muted">Toggle which permissions each organization can grant to its members.</p>
-                    </div>
-                    <div class="actions">
-                      <button v-if="info.is_global_admin" @click="openDialog('perm-create', {})">+ Create Permission</button>
-                    </div>
-                    <table class="org-table">
-                        <thead>
-                          <tr>
-                            <th scope="col">Permission</th>
-                            <th scope="col" class="center">Members</th>
-                            <th scope="col" class="center">Actions</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          <tr v-for="p in [...permissions].sort((a,b)=> a.id.localeCompare(b.id))" :key="p.id">
-                            <td class="perm-name-cell">
-                              <div class="perm-title">
-                                <span class="display-text">{{ p.display_name }}</span>
-                                <button @click="renamePermissionDisplay(p)" class="icon-btn edit-display-btn" aria-label="Edit display name" title="Edit display name">✏️</button>
-                              </div>
-                              <div class="perm-id-info">
-                                <span class="id-text">{{ p.id }}</span>
-                                <button @click="renamePermissionDisplay(p)" class="icon-btn edit-id-btn" aria-label="Edit id" title="Edit id">🆔</button>
-                              </div>
-                            </td>
-                            <td class="perm-members center">{{ permissionSummary[p.id]?.userCount || 0 }}</td>
-                            <td class="perm-actions center">
-                              <button @click="deletePermission(p)" class="icon-btn delete-icon" aria-label="Delete permission" title="Delete permission">❌</button>
-                            </td>
-                          </tr>
-                        </tbody>
-                      </table>
-                  </div>
                 </div>
               </template>
             </div>
@@ -689,70 +523,12 @@ async function submitDialog() {
         </div>
       </section>
     </main>
-    <div v-if="dialog.type" class="modal-overlay" @keydown.esc.prevent.stop="closeDialog" tabindex="-1">
-      <div class="modal" role="dialog" aria-modal="true">
-        <h3 class="modal-title">
-          <template v-if="dialog.type==='org-create'">Create Organization</template>
-          <template v-else-if="dialog.type==='org-update'">Rename Organization</template>
-          <template v-else-if="dialog.type==='role-create'">Create Role</template>
-          <template v-else-if="dialog.type==='role-update'">Edit Role</template>
-          <template v-else-if="dialog.type==='user-create'">Add User To Role</template>
-          <template v-else-if="dialog.type==='perm-create'">Create Permission</template>
-          <template v-else-if="dialog.type==='perm-display'">Edit Permission Display</template>
-          <template v-else-if="dialog.type==='confirm'">Confirm</template>
-        </h3>
-        <form @submit.prevent="submitDialog" class="modal-form">
-          <template v-if="dialog.type==='org-create' || dialog.type==='org-update'">
-            <label>Name
-              <input v-model="dialog.data.name" :placeholder="dialog.type==='org-update'? dialog.data.org.display_name : 'Organization name'" required />
-            </label>
-          </template>
-          <template v-else-if="dialog.type==='role-create'">
-            <label>Role Name
-              <input v-model="dialog.data.name" placeholder="Role name" required />
-            </label>
-          </template>
-          <template v-else-if="dialog.type==='role-update'">
-            <label>Role Name
-              <input v-model="dialog.data.name" :placeholder="dialog.data.role.display_name" required />
-            </label>
-            <label>Permissions (comma separated)
-              <textarea v-model="dialog.data.perms" rows="2" placeholder="perm:a, perm:b"></textarea>
-            </label>
-          </template>
-          <template v-else-if="dialog.type==='user-create'">
-            <p class="small muted">Role: {{ dialog.data.role.display_name }}</p>
-            <label>Display Name
-              <input v-model="dialog.data.name" placeholder="User display name" required />
-            </label>
-          </template>
-          <template v-else-if="dialog.type==='perm-create'">
-            <label>Permission ID
-              <input v-model="dialog.data.id" placeholder="permission id" required :pattern="PERMISSION_ID_PATTERN" title="Allowed: A-Za-z0-9:._~-" />
-            </label>
-            <label>Display Name
-              <input v-model="dialog.data.name" placeholder="display name" required />
-            </label>
-          </template>
-          <template v-else-if="dialog.type==='perm-display'">
-            <label>Permission ID
-              <input v-model="dialog.data.id" :placeholder="dialog.data.permission.id" required :pattern="PERMISSION_ID_PATTERN" title="Allowed: A-Za-z0-9:._~-" />
-            </label>
-            <label>Display Name
-              <input v-model="dialog.data.display_name" :placeholder="dialog.data.permission.display_name" required />
-            </label>
-          </template>
-          <template v-else-if="dialog.type==='confirm'">
-            <p>{{ dialog.data.message }}</p>
-          </template>
-          <div v-if="dialog.error" class="error small">{{ dialog.error }}</div>
-          <div class="modal-actions">
-            <button type="submit" :disabled="dialog.busy">{{ dialog.type==='confirm' ? 'OK' : 'Save' }}</button>
-            <button type="button" @click="closeDialog" :disabled="dialog.busy">Cancel</button>
-          </div>
-        </form>
-      </div>
-    </div>
+    <AdminDialogs
+      :dialog="dialog"
+      :permission-id-pattern="PERMISSION_ID_PATTERN"
+      @submit-dialog="submitDialog"
+      @close-dialog="closeDialog"
+    />
   </div>
 </template>
 
@@ -762,134 +538,4 @@ async function submitDialog() {
 .admin-section { margin-top: var(--space-xl); }
 .admin-section-body { display: flex; flex-direction: column; gap: var(--space-xl); }
 .admin-panels { display: flex; flex-direction: column; gap: var(--space-xl); }
-.permissions-section { margin-bottom: var(--space-xl); }
-.permissions-section h2 { margin-bottom: var(--space-md); }
-.actions { display: flex; flex-wrap: wrap; gap: var(--space-sm); align-items: center; }
-.actions button { width: auto; }
-.org-table a { text-decoration: none; color: var(--color-link); }
-.org-table a:hover { text-decoration: underline; }
-.perm-name-cell { display: flex; flex-direction: column; gap: 0.3rem; }
-.perm-title { font-weight: 600; color: var(--color-heading); }
-.perm-id-info { font-size: 0.8rem; color: var(--color-text-muted); }
-.plus-btn { background: var(--color-accent-soft); color: var(--color-accent); border: none; border-radius: var(--radius-sm); padding: 0.25rem 0.45rem; font-size: 1.1rem; cursor: pointer; }
-.plus-btn:hover { background: rgba(37, 99, 235, 0.18); }
-.user-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: var(--space-xs); }
-.user-chip { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: 0.45rem 0.6rem; display: flex; justify-content: space-between; gap: var(--space-sm); cursor: grab; }
-.user-chip .meta { font-size: 0.7rem; color: var(--color-text-muted); }
-.empty-role { border: 1px dashed var(--color-border-strong); border-radius: var(--radius-md); padding: var(--space-sm); display: flex; flex-direction: column; gap: var(--space-xs); align-items: flex-start; }
-.icon-btn { background: none; border: none; color: var(--color-text-muted); padding: 0.2rem; border-radius: var(--radius-sm); cursor: pointer; transition: background 0.2s ease, color 0.2s ease; }
-.icon-btn:hover { color: var(--color-heading); background: var(--color-surface-muted); }
-.delete-icon { color: var(--color-danger); }
-.delete-icon:hover { background: var(--color-danger-bg); color: var(--color-danger-text); }
-.matrix-wrapper { margin: var(--space-md) 0; padding: var(--space-lg); }
-.matrix-scroll { overflow-x: auto; }
-.matrix-hint { font-size: 0.8rem; color: var(--color-text-muted); }
-.perm-matrix-grid { display: inline-grid; gap: 0.25rem; align-items: stretch; }
-.perm-matrix-grid > * { padding: 0.35rem 0.45rem; font-size: 0.75rem; }
-.perm-matrix-grid .grid-head { color: var(--color-text-muted); text-transform: uppercase; font-weight: 600; letter-spacing: 0.05em; }
-.perm-matrix-grid .perm-head { display: flex; align-items: flex-end; justify-content: flex-start; padding: 0.35rem 0.45rem; font-size: 0.75rem; }
-.perm-matrix-grid .role-head { display: flex; align-items: flex-end; justify-content: center; }
-.perm-matrix-grid .role-head span { writing-mode: vertical-rl; transform: rotate(180deg); font-size: 0.65rem; }
-.perm-matrix-grid .org-head { display: flex; align-items: flex-end; justify-content: center; }
-.perm-matrix-grid .org-head span { writing-mode: vertical-rl; transform: rotate(180deg); font-size: 0.65rem; }
-.perm-matrix-grid .add-role-head,
-.perm-matrix-grid .add-permission-head { cursor: pointer; }
-.perm-name { font-weight: 600; color: var(--color-heading); padding: 0.35rem 0.45rem; font-size: 0.75rem; }
-.perm-orgs { gap: 0.5rem; }
-.perm-orgs-list { display: flex; flex-wrap: wrap; gap: 0.4rem; }
-.org-pill { display: inline-flex; align-items: center; gap: 0.3rem; padding: 0.2rem 0.55rem; border-radius: 999px; background: var(--color-surface-muted); border: 1px solid var(--color-border); font-size: 0.75rem; }
-.pill-x { background: none; border: none; color: var(--color-danger); cursor: pointer; }
-.pill-x:hover { color: var(--color-danger-text); }
-.org-add-wrapper { display: inline-flex; align-items: center; gap: var(--space-xs); position: relative; }
-.add-org-btn { background: var(--color-accent-soft); color: var(--color-accent); border: none; border-radius: var(--radius-sm); padding: 0.2rem 0.4rem; cursor: pointer; }
-.add-org-btn:hover { background: rgba(37, 99, 235, 0.18); }
-.org-add-menu { position: absolute; top: calc(100% + var(--space-xs)); right: 0; background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-md); box-shadow: var(--shadow-lg); padding: var(--space-xs); min-width: 220px; z-index: 20; }
-.org-add-list { display: flex; flex-direction: column; gap: var(--space-xs); max-height: 240px; overflow-y: auto; }
-.org-add-item { background: none; border: 1px solid transparent; border-radius: var(--radius-sm); padding: 0.45rem 0.6rem; text-align: left; cursor: pointer; }
-.org-add-item:hover { background: var(--color-surface-muted); border-color: var(--color-border-strong); }
-.org-add-footer { display: flex; justify-content: flex-end; margin-top: var(--space-xs); }
-.org-add-cancel { background: none; border: none; color: var(--color-text-muted); cursor: pointer; }
-.display-text { margin-right: var(--space-xs); }
-.edit-display-btn { padding: 0.1rem 0.2rem; font-size: 0.8rem; }
-.edit-org-btn { padding: 0.1rem 0.2rem; font-size: 0.8rem; margin-left: var(--space-xs); }
-.perm-actions { text-align: center; }
-.small { font-size: 0.9rem; }
-.muted { color: var(--color-text-muted); }
-.error { color: var(--color-danger-text); }
-
-.modal-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.5);
-  backdrop-filter: blur(.1rem);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
-}
-
-.modal {
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-xl);
-  padding: var(--space-lg);
-  max-width: 500px;
-  width: 90%;
-  max-height: 90vh;
-  overflow-y: auto;
-}
-
-.modal-title {
-  margin: 0 0 var(--space-md) 0;
-  font-size: 1.25rem;
-  font-weight: 600;
-  color: var(--color-heading);
-}
-
-.modal-form {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-md);
-}
-
-.modal-form label {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-xs);
-  font-weight: 500;
-}
-
-.modal-form input,
-.modal-form textarea {
-  padding: var(--space-sm);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  background: var(--color-surface);
-  color: var(--color-text);
-}
-
-.modal-form input:focus,
-.modal-form textarea:focus {
-  outline: none;
-  border-color: var(--color-accent);
-  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.1);
-}
-
-.modal-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: var(--space-sm);
-  margin-top: var(--space-lg);
-}
-
-@media (max-width: 720px) {
-  .card.surface { padding: var(--space-md); }
-  .actions { flex-direction: column; align-items: flex-start; }
-  .roles-grid { flex-direction: column; }
-  .org-add-menu { left: 0; right: auto; }
-}
 </style>
