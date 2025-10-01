@@ -1,26 +1,28 @@
 <template>
-  <section class="view-root view-denied">
-    <div class="view-content view-content--narrow">
-      <header class="view-header">
-        <h1>🚫 Forbidden</h1>
-      </header>
-      <section class="section-block">
-        <div class="section-body">
-          <div v-if="authStore.userInfo?.authenticated" class="user-header">
-            <span class="user-emoji" aria-hidden="true">{{ userEmoji }}</span>
-            <span class="user-name">{{ displayName }}</span>
+  <div class="dialog-backdrop">
+    <div class="dialog-container">
+      <div class="dialog-content dialog-content--wide">
+        <header class="view-header">
+          <h1>🚫 Forbidden</h1>
+        </header>
+        <section class="section-block">
+          <div class="section-body">
+            <div v-if="authStore.userInfo?.authenticated" class="user-header">
+              <span class="user-emoji" aria-hidden="true">{{ userEmoji }}</span>
+              <span class="user-name">{{ displayName }}</span>
+            </div>
+            <p>You lack the permissions required for this page.</p>
+            <div class="button-row">
+              <button class="btn-secondary" @click="back">Back</button>
+              <button class="btn-primary" @click="goAuth">Account</button>
+              <button class="btn-danger" @click="logout">Logout</button>
+            </div>
+            <p class="hint">If you believe this is an error, contact your administrator.</p>
           </div>
-          <p>You lack the permissions required for this page.</p>
-          <div class="button-row">
-            <button class="btn-secondary" @click="back">Back</button>
-            <button class="btn-primary" @click="goAuth">Account</button>
-            <button class="btn-danger" @click="logout">Logout</button>
-          </div>
-          <p class="hint">If you believe this is an error, contact your administrator.</p>
-        </div>
-      </section>
+        </section>
+      </div>
     </div>
-  </section>
+  </div>
 </template>
 <script setup>
 import { useAuthStore } from '@/stores/auth'
@@ -42,10 +44,6 @@ async function logout() {
 }
 </script>
 <style scoped>
-.view-content--narrow {
-  max-width: 540px;
-}
-
 .view-lede {
   margin: 0;
   color: var(--color-text-muted);

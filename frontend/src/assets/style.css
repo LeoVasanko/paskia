@@ -597,3 +597,49 @@ th {
     top: 1rem;
   }
 }
+
+/* Dialog styles for auth views */
+.dialog-backdrop {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.dialog-container {
+  max-width: 90vw;
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+.dialog-content {
+  flex: none;
+  width: 100%;
+  max-width: 480px;
+  padding: 2rem;
+  background: var(--color-surface);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+  border: 1px solid var(--color-border);
+}
+
+.dialog-content--wide {
+  max-width: 540px;
+}
+
+.dialog-content--narrow {
+  max-width: 420px;
+}
+
+@media (max-width: 720px) {
+  .dialog-content {
+    padding: 1.5rem;
+  }
+}
