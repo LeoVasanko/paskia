@@ -162,7 +162,6 @@ a:focus-visible {
 
 .view-header h1 {
   margin: 0;
-  font-size: clamp(1.85rem, 2.5vw + 1rem, 2.6rem);
   font-weight: 600;
   color: var(--color-heading);
 }

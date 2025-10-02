@@ -330,8 +330,8 @@ const pageHeading = computed(() => {
 // Breadcrumb entries for admin app.
 const breadcrumbEntries = computed(() => {
   const entries = [
-    { label: 'Auth', href: '/auth/' },
-    { label: 'Admin', href: '/auth/admin/' }
+    { label: 'Auth', href: authStore.uiHref() },
+    { label: 'Admin', href: authStore.adminHomeHref() }
   ]
   // Determine organization for user view if selectedOrg not explicitly chosen.
   let orgForUser = null

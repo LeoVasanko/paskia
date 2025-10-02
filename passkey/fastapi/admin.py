@@ -6,7 +6,6 @@ from fastapi.responses import FileResponse, JSONResponse
 
 from ..authsession import expires
 from ..globals import db
-from ..globals import passkey as global_passkey
 from ..util import frontend, hostutil, passphrase, permutil, querysafe, tokens
 from . import authz
 
@@ -358,10 +357,8 @@ async def admin_create_user_registration_link(
         expires=expires(),
         info={"type": "device addition", "created_by_admin": True},
     )
-    origin = hostutil.effective_origin(
-        request.url.scheme, request.headers.get("host"), global_passkey.instance.rp_id
-    )
-    url = f"{origin}/auth/{token}"
+    base = hostutil.auth_site_base_url(request.url.scheme, request.headers.get("host"))
+    url = f"{base}{token}"
     return {"url": url, "expires": expires().isoformat()}
 
 
