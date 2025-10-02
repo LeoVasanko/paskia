@@ -357,8 +357,9 @@ async def admin_create_user_registration_link(
         expires=expires(),
         info={"type": "device addition", "created_by_admin": True},
     )
-    base = hostutil.auth_site_base_url(request.url.scheme, request.headers.get("host"))
-    url = f"{base}{token}"
+    url = hostutil.reset_link_url(
+        token, request.url.scheme, request.headers.get("host")
+    )
     return {"url": url, "expires": expires().isoformat()}
 
 

@@ -274,8 +274,9 @@ async def api_create_link(request: Request, auth=Cookie(None)):
         expires=expires(),
         info=session.infodict(request, "device addition"),
     )
-    base = hostutil.auth_site_base_url(request.url.scheme, request.headers.get("host"))
-    url = f"{base}{token}"
+    url = hostutil.reset_link_url(
+        token, request.url.scheme, request.headers.get("host")
+    )
     return {
         "message": "Registration link generated successfully",
         "url": url,

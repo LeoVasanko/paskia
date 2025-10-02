@@ -69,8 +69,7 @@ async def _create_reset(user, role_name: str):
         expires=_authsession.expires(),
         info={"type": "manual reset", "role": role_name},
     )
-    base = hostutil.auth_site_base_url()
-    return f"{base}{token}", token
+    return hostutil.reset_link_url(token), token
 
 
 async def _main(query: str | None) -> int:
