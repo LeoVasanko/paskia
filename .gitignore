@@ -6,3 +6,4 @@ dist/
 passkey-auth.sqlite
 /passkey/frontend-build
 /test_*.py
+passkey/_version.py
