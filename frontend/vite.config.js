@@ -35,6 +35,10 @@ export default defineConfig(({ command, mode }) => ({
           if (url === '/auth/' || url === '/auth') return '/'
           if (url === '/auth/admin' || url === '/auth/admin/') return '/admin/'
           if (url.startsWith('/auth/assets/')) return url.replace(/^\/auth/, '')
+          if (/^\/auth\/([a-z]+\.){4}[a-z]+\/?$/.test(url)) return '/reset/index.html'
+          if (/^\/([a-z]+\.){4}[a-z]+\/?$/.test(url)) return '/reset/index.html'
+          if (url === '/auth/restricted' || url === '/auth/restricted/') return '/restricted/index.html'
+          if (url === '/restricted' || url === '/restricted/') return '/restricted/index.html'
           // Everything else (including /auth/admin/* APIs) should proxy.
         }
       }
@@ -47,7 +51,9 @@ export default defineConfig(({ command, mode }) => ({
     rollupOptions: {
       input: {
         index: resolve(__dirname, 'index.html'),
-        admin: resolve(__dirname, 'admin/index.html')
+        admin: resolve(__dirname, 'admin/index.html'),
+        reset: resolve(__dirname, 'reset/index.html'),
+        restricted: resolve(__dirname, 'restricted/index.html')
       },
       output: {}
     }

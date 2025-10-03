@@ -94,6 +94,13 @@ def add_common_options(p: argparse.ArgumentParser) -> None:
     )
     p.add_argument("--rp-name", help="Relying Party name (default: same as rp-id)")
     p.add_argument("--origin", help="Origin URL (default: https://<rp-id>)")
+    p.add_argument(
+        "--auth-host",
+        help=(
+            "Dedicated host (optionally with scheme/port) to serve the auth UI at the root,"
+            " e.g. auth.example.com or https://auth.example.com"
+        ),
+    )
 
 
 def main():
@@ -168,6 +175,16 @@ def main():
         os.environ["PASSKEY_RP_NAME"] = args.rp_name
     if origin:
         os.environ["PASSKEY_ORIGIN"] = origin
+    if getattr(args, "auth_host", None):
+        os.environ["PASSKEY_AUTH_HOST"] = args.auth_host
+    else:
+        # Preserve pre-set env variable if CLI option omitted
+        args.auth_host = os.environ.get("PASSKEY_AUTH_HOST")
+
+    if getattr(args, "auth_host", None):
+        from passkey.util import hostutil as _hostutil  # local import
+
+        _hostutil.reload_config()
 
     # One-time initialization + bootstrap before starting any server processes.
     # Lifespan in worker processes will call globals.init with bootstrap disabled.

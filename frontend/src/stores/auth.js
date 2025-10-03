@@ -7,8 +7,6 @@ export const useAuthStore = defineStore('auth', {
     userInfo: null, // Contains the full user info response: {user, credentials, aaguid_info, session_type, authenticated}
     settings: null, // Server provided settings (/auth/settings)
     isLoading: false,
-    resetToken: null, // transient reset token
-    restrictedMode: false, // Anywhere other than /auth/: restrict to login or permission denied
 
     // UI State
     currentView: 'login',
@@ -18,7 +16,21 @@ export const useAuthStore = defineStore('auth', {
       show: false
     },
   }),
+  getters: {
+    uiBasePath(state) {
+      const configured = state.settings?.ui_base_path || '/auth/'
+      if (!configured.endsWith('/')) return `${configured}/`
+      return configured
+    },
+    adminUiPath() {
+      const base = this.uiBasePath
+      return base === '/' ? '/admin/' : `${base}admin/`
+    },
+  },
   actions: {
+    setLoading(flag) {
+      this.isLoading = !!flag
+    },
     showMessage(message, type = 'info', duration = 3000) {
       this.status = {
         message,
@@ -31,8 +43,17 @@ export const useAuthStore = defineStore('auth', {
         }, duration)
       }
     },
+    uiHref(suffix = '') {
+      const trimmed = suffix.startsWith('/') ? suffix.slice(1) : suffix
+      if (!trimmed) return this.uiBasePath
+      if (this.uiBasePath === '/') return `/${trimmed}`
+      return `${this.uiBasePath}${trimmed}`
+    },
+    adminHomeHref() {
+      return this.adminUiPath
+    },
     async setSessionCookie(sessionToken) {
-  const response = await fetch('/auth/api/set-session', {
+      const response = await fetch('/auth/api/set-session', {
         method: 'POST',
         headers: {'Authorization': `Bearer ${sessionToken}`},
       })
@@ -40,9 +61,6 @@ export const useAuthStore = defineStore('auth', {
       if (result.detail) {
         throw new Error(result.detail)
       }
-  // On successful session establishment, discard any reset token to avoid
-  // sending stale Authorization headers on subsequent API calls.
-  this.resetToken = null
       return result
     },
     async register() {
@@ -51,6 +69,7 @@ export const useAuthStore = defineStore('auth', {
         const result = await register()
         await this.setSessionCookie(result.session_token)
         await this.loadUserInfo()
+        this.selectView()
         return result
       } finally {
         this.isLoading = false
@@ -63,6 +82,7 @@ export const useAuthStore = defineStore('auth', {
 
         await this.setSessionCookie(result.session_token)
         await this.loadUserInfo()
+        this.selectView()
 
         return result
       } finally {
@@ -70,25 +90,12 @@ export const useAuthStore = defineStore('auth', {
       }
     },
     selectView() {
-      if (this.restrictedMode) {
-        // In restricted mode only allow login or show permission denied if already authenticated
-        if (!this.userInfo) this.currentView = 'login'
-        else if (this.userInfo.authenticated) this.currentView = 'permission-denied'
-        else this.currentView = 'login' // do not expose reset/registration flows outside /auth/
-        return
-      }
       if (!this.userInfo) this.currentView = 'login'
       else if (this.userInfo.authenticated) this.currentView = 'profile'
-      else this.currentView = 'reset'
-    },
-    setRestrictedMode(flag) {
-      this.restrictedMode = !!flag
+      else this.currentView = 'login'
     },
     async loadUserInfo() {
-      const headers = {}
-      // Reset tokens are only passed via query param now, not Authorization header
-  const url = this.resetToken ? `/auth/api/user-info?reset=${encodeURIComponent(this.resetToken)}` : '/auth/api/user-info'
-      const response = await fetch(url, { method: 'POST', headers })
+      const response = await fetch('/auth/api/user-info', { method: 'POST' })
       let result = null
       try {
         result = await response.json()

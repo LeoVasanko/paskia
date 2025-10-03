@@ -14,7 +14,7 @@ import uuid7
 
 from . import authsession, globals
 from .db import Org, Permission, Role, User
-from .util import passphrase, tokens
+from .util import hostutil, passphrase, tokens
 
 
 def _init_logger() -> logging.Logger:
@@ -47,7 +47,8 @@ async def _create_and_log_admin_reset_link(user_uuid, message, session_type) -> 
         expires=authsession.expires(),
         info={"type": session_type},
     )
-    reset_link = f"{globals.passkey.instance.origin}/auth/{token}"
+    base = hostutil.auth_site_base_url()
+    reset_link = f"{base}{token}"
     logger.info(ADMIN_RESET_MESSAGE, message, reset_link)
     return reset_link
 

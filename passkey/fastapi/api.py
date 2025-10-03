@@ -13,7 +13,7 @@ from fastapi import (
     Request,
     Response,
 )
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import JSONResponse
 from fastapi.security import HTTPBearer
 
 from passkey.util import frontend
@@ -112,13 +112,20 @@ async def forward_authentication(perm: list[str] = Query([]), auth=Cookie(None))
         }
         return Response(status_code=204, headers=remote_headers)
     except HTTPException as e:
-        return FileResponse(frontend.file("index.html"), status_code=e.status_code)
+        html = frontend.file("restricted", "index.html").read_bytes()
+        return Response(html, status_code=e.status_code, media_type="text/html")
 
 
 @app.get("/settings")
 async def get_settings():
     pk = global_passkey.instance
-    return {"rp_id": pk.rp_id, "rp_name": pk.rp_name}
+    base_path = hostutil.ui_base_path()
+    return {
+        "rp_id": pk.rp_id,
+        "rp_name": pk.rp_name,
+        "ui_base_path": base_path,
+        "auth_host": hostutil.configured_auth_host(),
+    }
 
 
 @app.post("/user-info")
@@ -267,10 +274,8 @@ async def api_create_link(request: Request, auth=Cookie(None)):
         expires=expires(),
         info=session.infodict(request, "device addition"),
     )
-    origin = hostutil.effective_origin(
-        request.url.scheme, request.headers.get("host"), global_passkey.instance.rp_id
-    )
-    url = f"{origin}/auth/{token}"
+    base = hostutil.auth_site_base_url(request.url.scheme, request.headers.get("host"))
+    url = f"{base}{token}"
     return {
         "message": "Registration link generated successfully",
         "url": url,

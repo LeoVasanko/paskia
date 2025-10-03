@@ -17,7 +17,7 @@ from uuid import UUID
 
 from passkey import authsession as _authsession
 from passkey import globals as _g
-from passkey.util import passphrase
+from passkey.util import hostutil, passphrase
 from passkey.util import tokens as _tokens
 
 
@@ -69,7 +69,8 @@ async def _create_reset(user, role_name: str):
         expires=_authsession.expires(),
         info={"type": "manual reset", "role": role_name},
     )
-    return f"{_g.passkey.instance.origin}/auth/{token}", token
+    base = hostutil.auth_site_base_url()
+    return f"{base}{token}", token
 
 
 async def _main(query: str | None) -> int:

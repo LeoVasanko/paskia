@@ -2,11 +2,11 @@ import logging
 import os
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import Cookie, FastAPI, HTTPException
 from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
-from passkey.util import frontend, passphrase
+from passkey.util import frontend, hostutil, passphrase
 
 from . import admin, api, ws
 
@@ -53,26 +53,37 @@ app.mount(
     "/auth/assets/", StaticFiles(directory=frontend.file("assets")), name="assets"
 )
 
+# Navigable URLs are defined here. We support both / and /auth/ as the base path
+# / is used on a dedicated auth site, /auth/ on app domains with auth
+
 
 @app.get("/")
-async def frontapp_redirect(request: Request):
-    """Redirect root (in case accessed on backend) to the main authentication app."""
-    return RedirectResponse(request.url_for("frontapp"), status_code=303)
-
-
 @app.get("/auth/")
 async def frontapp():
-    """Serve the main authentication app."""
     return FileResponse(frontend.file("index.html"))
 
 
+@app.get("/admin", include_in_schema=False)
+@app.get("/auth/admin", include_in_schema=False)
+async def admin_root_redirect():
+    return RedirectResponse(f"{hostutil.ui_base_path()}admin/", status_code=307)
+
+
+@app.get("/admin/", include_in_schema=False)
+async def admin_root(auth=Cookie(None)):
+    return await admin.adminapp(auth)  # Delegate to handler of /auth/admin/
+
+
+@app.get("/{reset}")
 @app.get("/auth/{reset}")
-async def reset_link(request: Request, reset: str):
-    """Pretty URL for reset links."""
-    if reset == "admin":
-        # Admin app missing trailing slash lands here, be friendly to user
-        return RedirectResponse(request.url_for("adminapp"), status_code=303)
+async def reset_link(reset: str):
+    """Serve the SPA directly with an injected reset token."""
     if not passphrase.is_well_formed(reset):
         raise HTTPException(status_code=404)
-    url = request.url_for("frontapp").include_query_params(reset=reset)
-    return RedirectResponse(url, status_code=303)
+    return FileResponse(frontend.file("reset", "index.html"))
+
+
+@app.get("/restricted", include_in_schema=False)
+@app.get("/auth/restricted", include_in_schema=False)
+async def restricted_view():
+    return FileResponse(frontend.file("restricted", "index.html"))

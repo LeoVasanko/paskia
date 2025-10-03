@@ -3,7 +3,7 @@
     <div class="view-content">
       <header class="view-header">
         <h1>👋 Welcome!</h1>
-        <Breadcrumbs :entries="[{ label: 'Auth', href: '/auth/' }, ...(isAdmin ? [{ label: 'Admin', href: '/auth/admin/' }] : [])]" />
+  <Breadcrumbs :entries="breadcrumbEntries" />
         <p class="view-lede">Manage your account details and passkeys.</p>
       </header>
 
@@ -143,6 +143,12 @@ const openNameDialog = () => {
 }
 
 const isAdmin = computed(() => !!(authStore.userInfo?.is_global_admin || authStore.userInfo?.is_org_admin))
+
+const breadcrumbEntries = computed(() => {
+  const entries = [{ label: 'Auth', href: authStore.uiHref() }]
+  if (isAdmin.value) entries.push({ label: 'Admin', href: authStore.adminHomeHref() })
+  return entries
+})
 
 const saveName = async () => {
   const name = newName.value.trim()
