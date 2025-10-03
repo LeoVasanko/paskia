@@ -29,7 +29,7 @@ from ..authsession import (
 )
 from ..globals import db
 from ..globals import passkey as global_passkey
-from ..util import passphrase, permutil, tokens
+from ..util import hostutil, passphrase, permutil, tokens
 from ..util.tokens import session_key
 from . import authz, session
 
@@ -267,7 +267,9 @@ async def api_create_link(request: Request, auth=Cookie(None)):
         expires=expires(),
         info=session.infodict(request, "device addition"),
     )
-    origin = global_passkey.instance.origin.rstrip("/")
+    origin = hostutil.effective_origin(
+        request.url.scheme, request.headers.get("host"), global_passkey.instance.rp_id
+    )
     url = f"{origin}/auth/{token}"
     return {
         "message": "Registration link generated successfully",

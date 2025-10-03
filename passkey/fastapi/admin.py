@@ -1,13 +1,13 @@
 import logging
 from uuid import UUID, uuid4
 
-from fastapi import Body, Cookie, FastAPI, HTTPException
+from fastapi import Body, Cookie, FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse
 
 from ..authsession import expires
 from ..globals import db
 from ..globals import passkey as global_passkey
-from ..util import frontend, passphrase, permutil, querysafe, tokens
+from ..util import frontend, hostutil, passphrase, permutil, querysafe, tokens
 from . import authz
 
 app = FastAPI()
@@ -335,7 +335,7 @@ async def admin_update_user_role(
 
 @app.post("/orgs/{org_uuid}/users/{user_uuid}/create-link")
 async def admin_create_user_registration_link(
-    org_uuid: UUID, user_uuid: UUID, auth=Cookie(None)
+    org_uuid: UUID, user_uuid: UUID, request: Request, auth=Cookie(None)
 ):
     try:
         user_org, _role_name = await db.instance.get_user_organization(user_uuid)
@@ -358,7 +358,9 @@ async def admin_create_user_registration_link(
         expires=expires(),
         info={"type": "device addition", "created_by_admin": True},
     )
-    origin = global_passkey.instance.origin
+    origin = hostutil.effective_origin(
+        request.url.scheme, request.headers.get("host"), global_passkey.instance.rp_id
+    )
     url = f"{origin}/auth/{token}"
     return {"url": url, "expires": expires().isoformat()}
 
