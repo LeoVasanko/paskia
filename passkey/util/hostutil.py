@@ -42,25 +42,30 @@ def ui_base_path() -> str:
     return "/" if is_root_mode() else "/auth/"
 
 
-def _format_base_url(scheme: str, netloc: str) -> str:
-    scheme_part = scheme or _default_origin_scheme()
-    base = f"{scheme_part}://{netloc}"
-    return base if base.endswith("/") else f"{base}/"
-
-
 def auth_site_base_url(scheme: str | None = None, host: str | None = None) -> str:
     cfg = _load_config()
     if cfg:
         cfg_scheme, cfg_host = cfg
         scheme_to_use = cfg_scheme or scheme or _default_origin_scheme()
-        return _format_base_url(scheme_to_use, cfg_host)
+        netloc = cfg_host
+    else:
+        if host:
+            scheme_to_use = scheme or _default_origin_scheme()
+            netloc = host.strip("/")
+        else:
+            origin = global_passkey.instance.origin.rstrip("/")
+            return f"{origin}{ui_base_path()}"
 
-    if host:
-        scheme_to_use = scheme or _default_origin_scheme()
-        return _format_base_url(scheme_to_use, host.strip("/"))
+    base = f"{scheme_to_use}://{netloc}".rstrip("/")
+    path = ui_base_path().lstrip("/")
+    return f"{base}/{path}" if path else f"{base}/"
 
-    origin = global_passkey.instance.origin.rstrip("/")
-    return f"{origin}/auth/"
+
+def reset_link_url(
+    token: str, scheme: str | None = None, host: str | None = None
+) -> str:
+    base = auth_site_base_url(scheme, host)
+    return f"{base}{token}"
 
 
 def reload_config() -> None:
