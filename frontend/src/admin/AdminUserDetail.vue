@@ -3,6 +3,7 @@ import { ref } from 'vue'
 import UserBasicInfo from '@/components/UserBasicInfo.vue'
 import CredentialList from '@/components/CredentialList.vue'
 import RegistrationLinkModal from '@/components/RegistrationLinkModal.vue'
+import SessionList from '@/components/SessionList.vue'
 import { useAuthStore } from '@/stores/auth'
 
 const props = defineProps({
@@ -57,18 +58,45 @@ function handleDelete(credential) {
     />
     <div v-else-if="userDetail?.error" class="error small">{{ userDetail.error }}</div>
     <template v-if="userDetail && !userDetail.error">
-      <h3 class="cred-title">Registered Passkeys</h3>
-      <CredentialList :credentials="userDetail.credentials" :aaguid-info="userDetail.aaguid_info" :allow-delete="true" @delete="handleDelete" />
+      <div class="registration-actions">
+        <button
+          class="btn-secondary reg-token-btn"
+          @click="$emit('generateUserRegistrationLink', selectedUser)"
+          :disabled="loading"
+        >Generate Registration Token</button>
+        <p class="matrix-hint muted">
+          Generate a one-time registration link so this user can register or add another passkey.
+          Copy the link from the dialog and send it to the user, or have the user scan the QR code on their device.
+        </p>
+      </div>
+      <section class="section-block" data-section="registered-passkeys">
+        <div class="section-header">
+          <h2>Registered Passkeys</h2>
+        </div>
+        <div class="section-body">
+          <CredentialList
+            :credentials="userDetail.credentials"
+            :aaguid-info="userDetail.aaguid_info"
+            :allow-delete="true"
+            @delete="handleDelete"
+          />
+        </div>
+      </section>
+      <SessionList
+        :sessions="userDetail.sessions || []"
+        :allow-terminate="false"
+        :empty-message="'This user has no active sessions.'"
+        :section-description="'View the active sessions for this user.'"
+      />
     </template>
-    <div class="actions">
-      <button @click="$emit('generateUserRegistrationLink', selectedUser)">Generate Registration Token</button>
+    <div class="actions ancillary-actions">
       <button v-if="selectedOrg" @click="$emit('openOrg', selectedOrg)" class="icon-btn" title="Back to Org">↩️</button>
     </div>
-    <p class="matrix-hint muted">Use the token dialog to register a new credential for the member.</p>
     <RegistrationLinkModal
       v-if="showRegModal"
       :endpoint="`/auth/admin/orgs/${selectedUser.org_uuid}/users/${selectedUser.uuid}/create-link`"
       :auto-copy="false"
+      :user-name="userDetail?.display_name || selectedUser.display_name"
       @close="$emit('closeRegModal')"
       @copied="onLinkCopied"
     />
@@ -77,9 +105,10 @@ function handleDelete(credential) {
 
 <style scoped>
 .user-detail { display: flex; flex-direction: column; gap: var(--space-lg); }
-.cred-title { font-size: 1.25rem; font-weight: 600; color: var(--color-heading); margin-bottom: var(--space-md); }
 .actions { display: flex; flex-wrap: wrap; gap: var(--space-sm); align-items: center; }
-.actions button { width: auto; }
+.ancillary-actions { margin-top: -0.5rem; }
+.reg-token-btn { align-self: flex-start; }
+.registration-actions { display: flex; flex-direction: column; gap: 0.5rem; }
 .icon-btn { background: none; border: none; color: var(--color-text-muted); padding: 0.2rem; border-radius: var(--radius-sm); cursor: pointer; transition: background 0.2s ease, color 0.2s ease; }
 .icon-btn:hover { color: var(--color-heading); background: var(--color-surface-muted); }
 .matrix-hint { font-size: 0.8rem; color: var(--color-text-muted); }

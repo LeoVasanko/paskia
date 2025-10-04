@@ -63,11 +63,12 @@ async def _resolve_targets(query: str | None):
 
 async def _create_reset(user, role_name: str):
     token = passphrase.generate()
-    await _g.db.instance.create_session(
+    expiry = _authsession.reset_expires()
+    await _g.db.instance.create_reset_token(
         user_uuid=user.uuid,
         key=_tokens.reset_key(token),
-        expires=_authsession.expires(),
-        info={"type": "manual reset", "role": role_name},
+        expiry=expiry,
+        token_type="manual reset",
     )
     return hostutil.reset_link_url(token), token
 

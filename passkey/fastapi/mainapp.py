@@ -2,7 +2,7 @@ import logging
 import os
 from contextlib import asynccontextmanager
 
-from fastapi import Cookie, FastAPI, HTTPException
+from fastapi import Cookie, FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -70,8 +70,8 @@ async def admin_root_redirect():
 
 
 @app.get("/admin/", include_in_schema=False)
-async def admin_root(auth=Cookie(None)):
-    return await admin.adminapp(auth)  # Delegate to handler of /auth/admin/
+async def admin_root(request: Request, auth=Cookie(None, alias="__Host-auth")):
+    return await admin.adminapp(request, auth)  # Delegate to handler of /auth/admin/
 
 
 @app.get("/{reset}")

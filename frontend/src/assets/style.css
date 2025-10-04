@@ -1,4 +1,3 @@
-/* Passkey Authentication – Unified Layout */
 
 :root {
   color-scheme: light dark;
@@ -440,60 +439,110 @@ th {
   color: var(--color-text);
 }
 
-.credential-list {
+:root { --card-width: 22rem; }
+
+.record-list,
+.credential-list,
+.session-list {
   width: 100%;
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  grid-auto-flow: row;
+  grid-template-columns: repeat(auto-fit, var(--card-width));
+  justify-content: start;
   gap: 1rem 1.25rem;
   align-items: stretch;
+  margin: 0 auto;
+  max-width: calc(var(--card-width) * 4 + 3 * 1.25rem);
 }
 
-.credential-item {
+@media (max-width: 1100px) {
+  .record-list,
+  .credential-list,
+  .session-list { max-width: calc(var(--card-width) * 3 + 2 * 1.25rem); }
+}
+
+@media (max-width: 720px) {
+  /* Keep record-list responsive, but leave credential-list and session-list as fixed-width grid */
+  .record-list { display: flex; flex-direction: column; max-width: 100%; }
+}
+
+.record-item,
+.credential-item,
+.session-item {
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
-  padding: 0.85rem 1rem;
+  padding: 1rem;
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-md);
   background: var(--color-surface);
   height: 100%;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+  position: relative;
 }
 
-.credential-item.current-session {
-  border-color: var(--color-accent);
-  background: rgba(37, 99, 235, 0.08);
+.record-item:hover,
+.credential-item:hover,
+.session-item:hover {
+  border-color: var(--color-border-strong);
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.12);
+  transform: translateY(-1px);
 }
 
-.credential-header {
+.record-item.is-current,
+.credential-item.current-session,
+.session-item.is-current { border-color: var(--color-accent); }
+
+.item-top {
   display: flex;
+  align-items: center;
   gap: 1rem;
-  align-items: flex-start;
-  flex-wrap: wrap;
-  flex: 1 1 auto;
 }
 
-.credential-icon {
+.item-icon {
   width: 40px;
   height: 40px;
   display: grid;
   place-items: center;
+  background: var(--color-surface-subtle, transparent);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+  flex-shrink: 0;
 }
 
-.credential-info {
-  flex: 1 1 auto;
+.auth-icon {
+  border-radius: var(--radius-sm);
 }
 
-.credential-info h4 {
+.item-title {
+  flex: 1;
   margin: 0;
   font-size: 1rem;
   font-weight: 600;
   color: var(--color-heading);
 }
 
+.item-actions {
+  flex-shrink: 0;
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.item-actions .badge + .btn-card-delete { margin-left: 0.25rem; }
+.item-actions .badge + .badge { margin-left: 0.25rem; }
+
+.item-details {
+  margin-left: calc(40px + 1rem);
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
 .credential-dates {
   display: grid;
   grid-auto-flow: row;
-  grid-template-columns: auto 1fr;
+  grid-template-columns: 7rem 1fr;
   gap: 0.35rem 0.5rem;
   font-size: 0.75rem;
   color: var(--color-text-muted);
@@ -509,27 +558,59 @@ th {
   color: var(--color-text);
 }
 
-.credential-actions {
-  margin-left: auto;
+.btn-card-delete { background: transparent; border: none; color: var(--color-danger); padding: 0.35rem 0.5rem; font-size: 1.05rem; line-height: 1; border-radius: var(--radius-sm); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
+.btn-card-delete:hover:not(:disabled) { background: rgba(220, 38, 38, 0.08); }
+.btn-card-delete:disabled { opacity: 0.4; cursor: not-allowed; }
+
+
+.session-emoji {
+  font-size: 1.2rem;
+}
+
+.session-details {
+  font-size: 0.9rem;
+  color: var(--color-text-muted);
+}
+
+.session-badges {
   display: flex;
-  align-items: center;
+  gap: var(--space-xs);
 }
 
-.btn-delete-credential {
-  background: transparent;
-  border: none;
-  color: var(--color-danger);
-  padding: 0.25rem 0.35rem;
-  font-size: 1.05rem;
+.badge {
+  padding: 0.2rem 0.5rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.8rem;
+  font-weight: 500;
 }
 
-.btn-delete-credential:hover:not(:disabled) {
-  background: rgba(220, 38, 38, 0.08);
+.badge-current {
+  background: var(--color-accent);
+  color: var(--color-accent-contrast);
+  box-shadow: 0 0 0 1px var(--color-accent) inset;
 }
 
-.btn-delete-credential:disabled {
-  opacity: 0.35;
-  cursor: not-allowed;
+.badge:not(.badge-current) {
+  background: var(--color-surface-subtle);
+  color: var(--color-text-muted);
+  border: 1px solid var(--color-border);
+}
+
+
+.session-meta-info {
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+  font-family: monospace;
+}
+
+.empty-state {
+  text-align: center;
+  padding: var(--space-lg);
+  color: var(--color-text-muted);
+}
+
+.empty-state p {
+  margin: 0;
 }
 
 .user-info {
@@ -597,7 +678,6 @@ th {
   }
 }
 
-/* Dialog styles for auth views */
 .dialog-backdrop {
   position: fixed;
   top: 0;

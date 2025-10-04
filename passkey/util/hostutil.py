@@ -2,7 +2,7 @@
 
 import os
 from functools import lru_cache
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urlsplit
 
 from ..globals import passkey as global_passkey
 
@@ -70,3 +70,17 @@ def reset_link_url(
 
 def reload_config() -> None:
     _load_config.cache_clear()
+
+
+def normalize_host(raw_host: str | None) -> str | None:
+    """Normalize a Host header or hostname by stripping port and lowercasing."""
+    if not raw_host:
+        return None
+    candidate = raw_host.strip()
+    if not candidate:
+        return None
+    # Ensure urlsplit can parse bare hosts (prepend //)
+    parsed = urlsplit(candidate if "//" in candidate else f"//{candidate}")
+    host = parsed.hostname or parsed.path or ""
+    host = host.strip("[]")  # Remove IPv6 brackets if present
+    return host.lower() if host else None

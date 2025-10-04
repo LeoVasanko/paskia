@@ -1,12 +1,22 @@
 import logging
+from datetime import timezone
 from uuid import UUID, uuid4
 
 from fastapi import Body, Cookie, FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse
 
-from ..authsession import expires
+from ..authsession import reset_expires
 from ..globals import db
-from ..util import frontend, hostutil, passphrase, permutil, querysafe, tokens
+from ..util import (
+    frontend,
+    hostutil,
+    passphrase,
+    permutil,
+    querysafe,
+    tokens,
+    useragent,
+)
+from ..util.tokens import encode_session_key, session_key
 from . import authz
 
 app = FastAPI()
@@ -24,9 +34,14 @@ async def general_exception_handler(_request, exc: Exception):
 
 
 @app.get("/")
-async def adminapp(auth=Cookie(None)):
+async def adminapp(request: Request, auth=Cookie(None, alias="__Host-auth")):
     try:
-        await authz.verify(auth, ["auth:admin", "auth:org:*"], match=permutil.has_any)
+        await authz.verify(
+            auth,
+            ["auth:admin", "auth:org:*"],
+            match=permutil.has_any,
+            host=request.headers.get("host"),
+        )
         return FileResponse(frontend.file("admin/index.html"))
     except HTTPException as e:
         return FileResponse(frontend.file("index.html"), status_code=e.status_code)
@@ -36,8 +51,13 @@ async def adminapp(auth=Cookie(None)):
 
 
 @app.get("/orgs")
-async def admin_list_orgs(auth=Cookie(None)):
-    ctx = await authz.verify(auth, ["auth:admin", "auth:org:*"], match=permutil.has_any)
+async def admin_list_orgs(request: Request, auth=Cookie(None, alias="__Host-auth")):
+    ctx = await authz.verify(
+        auth,
+        ["auth:admin", "auth:org:*"],
+        match=permutil.has_any,
+        host=request.headers.get("host"),
+    )
     orgs = await db.instance.list_organizations()
     if "auth:admin" not in ctx.role.permissions:
         orgs = [o for o in orgs if f"auth:org:{o.uuid}" in ctx.role.permissions]
@@ -73,8 +93,12 @@ async def admin_list_orgs(auth=Cookie(None)):
 
 
 @app.post("/orgs")
-async def admin_create_org(payload: dict = Body(...), auth=Cookie(None)):
-    await authz.verify(auth, ["auth:admin"])
+async def admin_create_org(
+    request: Request, payload: dict = Body(...), auth=Cookie(None, alias="__Host-auth")
+):
+    await authz.verify(
+        auth, ["auth:admin"], host=request.headers.get("host"), match=permutil.has_all
+    )
     from ..db import Org as OrgDC  # local import to avoid cycles
     from ..db import Role as RoleDC  # local import to avoid cycles
 
@@ -99,10 +123,16 @@ async def admin_create_org(payload: dict = Body(...), auth=Cookie(None)):
 
 @app.put("/orgs/{org_uuid}")
 async def admin_update_org(
-    org_uuid: UUID, payload: dict = Body(...), auth=Cookie(None)
+    org_uuid: UUID,
+    request: Request,
+    payload: dict = Body(...),
+    auth=Cookie(None, alias="__Host-auth"),
 ):
     ctx = await authz.verify(
-        auth, ["auth:admin", f"auth:org:{org_uuid}"], match=permutil.has_any
+        auth,
+        ["auth:admin", f"auth:org:{org_uuid}"],
+        match=permutil.has_any,
+        host=request.headers.get("host"),
     )
     from ..db import Org as OrgDC  # local import to avoid cycles
 
@@ -129,9 +159,14 @@ async def admin_update_org(
 
 
 @app.delete("/orgs/{org_uuid}")
-async def admin_delete_org(org_uuid: UUID, auth=Cookie(None)):
+async def admin_delete_org(
+    org_uuid: UUID, request: Request, auth=Cookie(None, alias="__Host-auth")
+):
     ctx = await authz.verify(
-        auth, ["auth:admin", f"auth:org:{org_uuid}"], match=permutil.has_any
+        auth,
+        ["auth:admin", f"auth:org:{org_uuid}"],
+        match=permutil.has_any,
+        host=request.headers.get("host"),
     )
     if ctx.org.uuid == org_uuid:
         raise ValueError("Cannot delete the organization you belong to")
@@ -156,18 +191,28 @@ async def admin_delete_org(org_uuid: UUID, auth=Cookie(None)):
 
 @app.post("/orgs/{org_uuid}/permission")
 async def admin_add_org_permission(
-    org_uuid: UUID, permission_id: str, auth=Cookie(None)
+    org_uuid: UUID,
+    permission_id: str,
+    request: Request,
+    auth=Cookie(None, alias="__Host-auth"),
 ):
-    await authz.verify(auth, ["auth:admin"])
+    await authz.verify(
+        auth, ["auth:admin"], host=request.headers.get("host"), match=permutil.has_all
+    )
     await db.instance.add_permission_to_organization(str(org_uuid), permission_id)
     return {"status": "ok"}
 
 
 @app.delete("/orgs/{org_uuid}/permission")
 async def admin_remove_org_permission(
-    org_uuid: UUID, permission_id: str, auth=Cookie(None)
+    org_uuid: UUID,
+    permission_id: str,
+    request: Request,
+    auth=Cookie(None, alias="__Host-auth"),
 ):
-    await authz.verify(auth, ["auth:admin"])
+    await authz.verify(
+        auth, ["auth:admin"], host=request.headers.get("host"), match=permutil.has_all
+    )
     await db.instance.remove_permission_from_organization(str(org_uuid), permission_id)
     return {"status": "ok"}
 
@@ -177,10 +222,16 @@ async def admin_remove_org_permission(
 
 @app.post("/orgs/{org_uuid}/roles")
 async def admin_create_role(
-    org_uuid: UUID, payload: dict = Body(...), auth=Cookie(None)
+    org_uuid: UUID,
+    request: Request,
+    payload: dict = Body(...),
+    auth=Cookie(None, alias="__Host-auth"),
 ):
     await authz.verify(
-        auth, ["auth:admin", f"auth:org:{org_uuid}"], match=permutil.has_any
+        auth,
+        ["auth:admin", f"auth:org:{org_uuid}"],
+        match=permutil.has_any,
+        host=request.headers.get("host"),
     )
     from ..db import Role as RoleDC
 
@@ -205,11 +256,18 @@ async def admin_create_role(
 
 @app.put("/orgs/{org_uuid}/roles/{role_uuid}")
 async def admin_update_role(
-    org_uuid: UUID, role_uuid: UUID, payload: dict = Body(...), auth=Cookie(None)
+    org_uuid: UUID,
+    role_uuid: UUID,
+    request: Request,
+    payload: dict = Body(...),
+    auth=Cookie(None, alias="__Host-auth"),
 ):
     # Verify caller is global admin or admin of provided org
     ctx = await authz.verify(
-        auth, ["auth:admin", f"auth:org:{org_uuid}"], match=permutil.has_any
+        auth,
+        ["auth:admin", f"auth:org:{org_uuid}"],
+        match=permutil.has_any,
+        host=request.headers.get("host"),
     )
     role = await db.instance.get_role(role_uuid)
     if role.org_uuid != org_uuid:
@@ -247,9 +305,17 @@ async def admin_update_role(
 
 
 @app.delete("/orgs/{org_uuid}/roles/{role_uuid}")
-async def admin_delete_role(org_uuid: UUID, role_uuid: UUID, auth=Cookie(None)):
+async def admin_delete_role(
+    org_uuid: UUID,
+    role_uuid: UUID,
+    request: Request,
+    auth=Cookie(None, alias="__Host-auth"),
+):
     ctx = await authz.verify(
-        auth, ["auth:admin", f"auth:org:{org_uuid}"], match=permutil.has_any
+        auth,
+        ["auth:admin", f"auth:org:{org_uuid}"],
+        match=permutil.has_any,
+        host=request.headers.get("host"),
     )
     role = await db.instance.get_role(role_uuid)
     if role.org_uuid != org_uuid:
@@ -268,10 +334,16 @@ async def admin_delete_role(org_uuid: UUID, role_uuid: UUID, auth=Cookie(None)):
 
 @app.post("/orgs/{org_uuid}/users")
 async def admin_create_user(
-    org_uuid: UUID, payload: dict = Body(...), auth=Cookie(None)
+    org_uuid: UUID,
+    request: Request,
+    payload: dict = Body(...),
+    auth=Cookie(None, alias="__Host-auth"),
 ):
     await authz.verify(
-        auth, ["auth:admin", f"auth:org:{org_uuid}"], match=permutil.has_any
+        auth,
+        ["auth:admin", f"auth:org:{org_uuid}"],
+        match=permutil.has_any,
+        host=request.headers.get("host"),
     )
     display_name = payload.get("display_name")
     role_name = payload.get("role")
@@ -297,10 +369,17 @@ async def admin_create_user(
 
 @app.put("/orgs/{org_uuid}/users/{user_uuid}/role")
 async def admin_update_user_role(
-    org_uuid: UUID, user_uuid: UUID, payload: dict = Body(...), auth=Cookie(None)
+    org_uuid: UUID,
+    user_uuid: UUID,
+    request: Request,
+    payload: dict = Body(...),
+    auth=Cookie(None, alias="__Host-auth"),
 ):
     ctx = await authz.verify(
-        auth, ["auth:admin", f"auth:org:{org_uuid}"], match=permutil.has_any
+        auth,
+        ["auth:admin", f"auth:org:{org_uuid}"],
+        match=permutil.has_any,
+        host=request.headers.get("host"),
     )
     new_role = payload.get("role")
     if not new_role:
@@ -334,7 +413,10 @@ async def admin_update_user_role(
 
 @app.post("/orgs/{org_uuid}/users/{user_uuid}/create-link")
 async def admin_create_user_registration_link(
-    org_uuid: UUID, user_uuid: UUID, request: Request, auth=Cookie(None)
+    org_uuid: UUID,
+    user_uuid: UUID,
+    request: Request,
+    auth=Cookie(None, alias="__Host-auth"),
 ):
     try:
         user_org, _role_name = await db.instance.get_user_organization(user_uuid)
@@ -343,7 +425,10 @@ async def admin_create_user_registration_link(
     if user_org.uuid != org_uuid:
         raise HTTPException(status_code=404, detail="User not found in organization")
     ctx = await authz.verify(
-        auth, ["auth:admin", f"auth:org:{org_uuid}"], match=permutil.has_any
+        auth,
+        ["auth:admin", f"auth:org:{org_uuid}"],
+        match=permutil.has_any,
+        host=request.headers.get("host"),
     )
     if (
         "auth:admin" not in ctx.role.permissions
@@ -351,20 +436,33 @@ async def admin_create_user_registration_link(
     ):
         raise HTTPException(status_code=403, detail="Insufficient permissions")
     token = passphrase.generate()
-    await db.instance.create_session(
+    expiry = reset_expires()
+    await db.instance.create_reset_token(
         user_uuid=user_uuid,
         key=tokens.reset_key(token),
-        expires=expires(),
-        info={"type": "device addition", "created_by_admin": True},
+        expiry=expiry,
+        token_type="device addition",
     )
     url = hostutil.reset_link_url(
         token, request.url.scheme, request.headers.get("host")
     )
-    return {"url": url, "expires": expires().isoformat()}
+    return {
+        "url": url,
+        "expires": (
+            expiry.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+            if expiry.tzinfo
+            else expiry.replace(tzinfo=timezone.utc).isoformat().replace("+00:00", "Z")
+        ),
+    }
 
 
 @app.get("/orgs/{org_uuid}/users/{user_uuid}")
-async def admin_get_user_detail(org_uuid: UUID, user_uuid: UUID, auth=Cookie(None)):
+async def admin_get_user_detail(
+    org_uuid: UUID,
+    user_uuid: UUID,
+    request: Request,
+    auth=Cookie(None, alias="__Host-auth"),
+):
     try:
         user_org, role_name = await db.instance.get_user_organization(user_uuid)
     except ValueError:
@@ -372,7 +470,10 @@ async def admin_get_user_detail(org_uuid: UUID, user_uuid: UUID, auth=Cookie(Non
     if user_org.uuid != org_uuid:
         raise HTTPException(status_code=404, detail="User not found in organization")
     ctx = await authz.verify(
-        auth, ["auth:admin", f"auth:org:{org_uuid}"], match=permutil.has_any
+        auth,
+        ["auth:admin", f"auth:org:{org_uuid}"],
+        match=permutil.has_any,
+        host=request.headers.get("host"),
     )
     if (
         "auth:admin" not in ctx.role.permissions
@@ -394,9 +495,41 @@ async def admin_get_user_detail(org_uuid: UUID, user_uuid: UUID, auth=Cookie(Non
             {
                 "credential_uuid": str(c.uuid),
                 "aaguid": aaguid_str,
-                "created_at": c.created_at.isoformat(),
-                "last_used": c.last_used.isoformat() if c.last_used else None,
-                "last_verified": c.last_verified.isoformat()
+                "created_at": (
+                    c.created_at.astimezone(timezone.utc)
+                    .isoformat()
+                    .replace("+00:00", "Z")
+                    if c.created_at.tzinfo
+                    else c.created_at.replace(tzinfo=timezone.utc)
+                    .isoformat()
+                    .replace("+00:00", "Z")
+                ),
+                "last_used": (
+                    c.last_used.astimezone(timezone.utc)
+                    .isoformat()
+                    .replace("+00:00", "Z")
+                    if c.last_used and c.last_used.tzinfo
+                    else (
+                        c.last_used.replace(tzinfo=timezone.utc)
+                        .isoformat()
+                        .replace("+00:00", "Z")
+                        if c.last_used
+                        else None
+                    )
+                ),
+                "last_verified": (
+                    c.last_verified.astimezone(timezone.utc)
+                    .isoformat()
+                    .replace("+00:00", "Z")
+                    if c.last_verified and c.last_verified.tzinfo
+                    else (
+                        c.last_verified.replace(tzinfo=timezone.utc)
+                        .isoformat()
+                        .replace("+00:00", "Z")
+                        if c.last_verified
+                        else None
+                    )
+                )
                 if c.last_verified
                 else None,
                 "sign_count": c.sign_count,
@@ -405,21 +538,77 @@ async def admin_get_user_detail(org_uuid: UUID, user_uuid: UUID, auth=Cookie(Non
     from .. import aaguid as aaguid_mod
 
     aaguid_info = aaguid_mod.filter(aaguids)
+
+    # Get sessions for the user
+    normalized_request_host = hostutil.normalize_host(request.headers.get("host"))
+    session_records = await db.instance.list_sessions_for_user(user_uuid)
+    current_session_key = session_key(auth)
+    sessions_payload: list[dict] = []
+    for entry in session_records:
+        sessions_payload.append(
+            {
+                "id": encode_session_key(entry.key),
+                "host": entry.host,
+                "ip": entry.ip,
+                "user_agent": useragent.compact_user_agent(entry.user_agent),
+                "last_renewed": (
+                    entry.renewed.astimezone(timezone.utc)
+                    .isoformat()
+                    .replace("+00:00", "Z")
+                    if entry.renewed.tzinfo
+                    else entry.renewed.replace(tzinfo=timezone.utc)
+                    .isoformat()
+                    .replace("+00:00", "Z")
+                ),
+                "is_current": entry.key == current_session_key,
+                "is_current_host": bool(
+                    normalized_request_host
+                    and entry.host
+                    and entry.host == normalized_request_host
+                ),
+            }
+        )
+
     return {
         "display_name": user.display_name,
         "org": {"display_name": user_org.display_name},
         "role": role_name,
         "visits": user.visits,
-        "created_at": user.created_at.isoformat() if user.created_at else None,
-        "last_seen": user.last_seen.isoformat() if user.last_seen else None,
+        "created_at": (
+            user.created_at.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+            if user.created_at and user.created_at.tzinfo
+            else (
+                user.created_at.replace(tzinfo=timezone.utc)
+                .isoformat()
+                .replace("+00:00", "Z")
+                if user.created_at
+                else None
+            )
+        ),
+        "last_seen": (
+            user.last_seen.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+            if user.last_seen and user.last_seen.tzinfo
+            else (
+                user.last_seen.replace(tzinfo=timezone.utc)
+                .isoformat()
+                .replace("+00:00", "Z")
+                if user.last_seen
+                else None
+            )
+        ),
         "credentials": creds,
         "aaguid_info": aaguid_info,
+        "sessions": sessions_payload,
     }
 
 
 @app.put("/orgs/{org_uuid}/users/{user_uuid}/display-name")
 async def admin_update_user_display_name(
-    org_uuid: UUID, user_uuid: UUID, payload: dict = Body(...), auth=Cookie(None)
+    org_uuid: UUID,
+    user_uuid: UUID,
+    request: Request,
+    payload: dict = Body(...),
+    auth=Cookie(None, alias="__Host-auth"),
 ):
     try:
         user_org, _role_name = await db.instance.get_user_organization(user_uuid)
@@ -428,7 +617,10 @@ async def admin_update_user_display_name(
     if user_org.uuid != org_uuid:
         raise HTTPException(status_code=404, detail="User not found in organization")
     ctx = await authz.verify(
-        auth, ["auth:admin", f"auth:org:{org_uuid}"], match=permutil.has_any
+        auth,
+        ["auth:admin", f"auth:org:{org_uuid}"],
+        match=permutil.has_any,
+        host=request.headers.get("host"),
     )
     if (
         "auth:admin" not in ctx.role.permissions
@@ -446,7 +638,11 @@ async def admin_update_user_display_name(
 
 @app.delete("/orgs/{org_uuid}/users/{user_uuid}/credentials/{credential_uuid}")
 async def admin_delete_user_credential(
-    org_uuid: UUID, user_uuid: UUID, credential_uuid: UUID, auth=Cookie(None)
+    org_uuid: UUID,
+    user_uuid: UUID,
+    credential_uuid: UUID,
+    request: Request,
+    auth=Cookie(None, alias="__Host-auth"),
 ):
     try:
         user_org, _role_name = await db.instance.get_user_organization(user_uuid)
@@ -455,7 +651,10 @@ async def admin_delete_user_credential(
     if user_org.uuid != org_uuid:
         raise HTTPException(status_code=404, detail="User not found in organization")
     ctx = await authz.verify(
-        auth, ["auth:admin", f"auth:org:{org_uuid}"], match=permutil.has_any
+        auth,
+        ["auth:admin", f"auth:org:{org_uuid}"],
+        match=permutil.has_any,
+        host=request.headers.get("host"),
     )
     if (
         "auth:admin" not in ctx.role.permissions
@@ -470,8 +669,15 @@ async def admin_delete_user_credential(
 
 
 @app.get("/permissions")
-async def admin_list_permissions(auth=Cookie(None)):
-    ctx = await authz.verify(auth, ["auth:admin", "auth:org:*"], match=permutil.has_any)
+async def admin_list_permissions(
+    request: Request, auth=Cookie(None, alias="__Host-auth")
+):
+    ctx = await authz.verify(
+        auth,
+        ["auth:admin", "auth:org:*"],
+        match=permutil.has_any,
+        host=request.headers.get("host"),
+    )
     perms = await db.instance.list_permissions()
 
     # Global admins see all permissions
@@ -485,8 +691,14 @@ async def admin_list_permissions(auth=Cookie(None)):
 
 
 @app.post("/permissions")
-async def admin_create_permission(payload: dict = Body(...), auth=Cookie(None)):
-    await authz.verify(auth, ["auth:admin"])
+async def admin_create_permission(
+    request: Request,
+    payload: dict = Body(...),
+    auth=Cookie(None, alias="__Host-auth"),
+):
+    await authz.verify(
+        auth, ["auth:admin"], host=request.headers.get("host"), match=permutil.has_all
+    )
     from ..db import Permission as PermDC
 
     perm_id = payload.get("id")
@@ -500,9 +712,14 @@ async def admin_create_permission(payload: dict = Body(...), auth=Cookie(None)):
 
 @app.put("/permission")
 async def admin_update_permission(
-    permission_id: str, display_name: str, auth=Cookie(None)
+    permission_id: str,
+    display_name: str,
+    request: Request,
+    auth=Cookie(None, alias="__Host-auth"),
 ):
-    await authz.verify(auth, ["auth:admin"])
+    await authz.verify(
+        auth, ["auth:admin"], host=request.headers.get("host"), match=permutil.has_all
+    )
     from ..db import Permission as PermDC
 
     if not display_name:
@@ -515,8 +732,14 @@ async def admin_update_permission(
 
 
 @app.post("/permission/rename")
-async def admin_rename_permission(payload: dict = Body(...), auth=Cookie(None)):
-    await authz.verify(auth, ["auth:admin"])
+async def admin_rename_permission(
+    request: Request,
+    payload: dict = Body(...),
+    auth=Cookie(None, alias="__Host-auth"),
+):
+    await authz.verify(
+        auth, ["auth:admin"], host=request.headers.get("host"), match=permutil.has_all
+    )
     old_id = payload.get("old_id")
     new_id = payload.get("new_id")
     display_name = payload.get("display_name")
@@ -540,8 +763,14 @@ async def admin_rename_permission(payload: dict = Body(...), auth=Cookie(None)):
 
 
 @app.delete("/permission")
-async def admin_delete_permission(permission_id: str, auth=Cookie(None)):
-    await authz.verify(auth, ["auth:admin"])
+async def admin_delete_permission(
+    permission_id: str,
+    request: Request,
+    auth=Cookie(None, alias="__Host-auth"),
+):
+    await authz.verify(
+        auth, ["auth:admin"], host=request.headers.get("host"), match=permutil.has_all
+    )
     querysafe.assert_safe(permission_id, field="permission_id")
 
     # Sanity check: prevent deleting critical permissions

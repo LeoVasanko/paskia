@@ -5,9 +5,9 @@ from uuid import UUID
 from fastapi import Cookie, FastAPI, WebSocket, WebSocketDisconnect
 from webauthn.helpers.exceptions import InvalidAuthenticationResponse
 
-from ..authsession import create_session, expires, get_reset, get_session
+from ..authsession import create_session, get_reset, get_session
 from ..globals import db, passkey
-from ..util import passphrase
+from ..util import hostutil, passphrase
 from ..util.tokens import create_token, session_key
 from .session import infodict
 
@@ -56,7 +56,10 @@ async def register_chat(
 @app.websocket("/register")
 @websocket_error_handler
 async def websocket_register_add(
-    ws: WebSocket, reset: str | None = None, name: str | None = None, auth=Cookie(None)
+    ws: WebSocket,
+    reset: str | None = None,
+    name: str | None = None,
+    auth=Cookie(None, alias="__Host-auth"),
 ):
     """Register a new credential for an existing user.
 
@@ -65,6 +68,9 @@ async def websocket_register_add(
     - Reset token supplied as ?reset=... (auth cookie ignored)
     """
     origin = ws.headers["origin"]
+    host = hostutil.normalize_host(ws.headers.get("host"))
+    if host is None:
+        raise ValueError("Missing host header")
     if reset is not None:
         if not passphrase.is_well_formed(reset):
             raise ValueError("Invalid reset token")
@@ -72,7 +78,7 @@ async def websocket_register_add(
     else:
         if not auth:
             raise ValueError("Authentication Required")
-        s = await get_session(auth)
+        s = await get_session(auth, host=host)
     user_uuid = s.user_uuid
 
     # Get user information and determine effective user_name for this registration
@@ -89,14 +95,16 @@ async def websocket_register_add(
 
     # Create a new session and store everything in database
     token = create_token()
+    metadata = infodict(ws, "authenticated")
     await db.instance.create_credential_session(  # type: ignore[attr-defined]
         user_uuid=user_uuid,
         credential=credential,
         reset_key=(s.key if reset is not None else None),
         session_key=session_key(token),
-        session_expires=expires(),
-        session_info=infodict(ws, "authenticated"),
         display_name=user_name,
+        host=host,
+        ip=metadata.get("ip"),
+        user_agent=metadata.get("user_agent"),
     )
     auth = token
 
@@ -115,6 +123,9 @@ async def websocket_register_add(
 @websocket_error_handler
 async def websocket_authenticate(ws: WebSocket):
     origin = ws.headers["origin"]
+    host = hostutil.normalize_host(ws.headers.get("host"))
+    if host is None:
+        raise ValueError("Missing host header")
     options, challenge = passkey.instance.auth_generate_options()
     await ws.send_json(options)
     # Wait for the client to use his authenticator to authenticate
@@ -128,10 +139,13 @@ async def websocket_authenticate(ws: WebSocket):
 
     # Create a session token for the authenticated user
     assert stored_cred.uuid is not None
+    metadata = infodict(ws, "auth")
     token = await create_session(
         user_uuid=stored_cred.user_uuid,
-        info=infodict(ws, "auth"),
         credential_uuid=stored_cred.uuid,
+        host=host,
+        ip=metadata.get("ip") or "",
+        user_agent=metadata.get("user_agent") or "",
     )
 
     await ws.send_json(

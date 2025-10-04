@@ -12,6 +12,7 @@ POST /auth/api/logout - Logout and delete session
 POST /auth/api/set-session - Set session cookie from Authorization header
 POST /auth/api/create-link - Create device addition link
 DELETE /auth/api/credential/{uuid} - Delete specific credential
+DELETE /auth/api/session/{session_id} - Terminate an active session
 POST /auth/api/validate - Session validation and renewal endpoint (fetch regularly)
 GET /auth/api/forward - Authentication validation for Caddy/Nginx
 		- On success returns `204 No Content` with [user info](Headers.md)

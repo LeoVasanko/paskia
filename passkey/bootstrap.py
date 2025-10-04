@@ -8,7 +8,7 @@ generating a reset link for initial admin setup.
 
 import asyncio
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 
 import uuid7
 
@@ -41,11 +41,12 @@ ADMIN_RESET_MESSAGE = """\
 async def _create_and_log_admin_reset_link(user_uuid, message, session_type) -> str:
     """Create an admin reset link and log it with the provided message."""
     token = passphrase.generate()
-    await globals.db.instance.create_session(
+    expiry = authsession.reset_expires()
+    await globals.db.instance.create_reset_token(
         user_uuid=user_uuid,
         key=tokens.reset_key(token),
-        expires=authsession.expires(),
-        info={"type": session_type},
+        expiry=expiry,
+        token_type=session_type,
     )
     reset_link = hostutil.reset_link_url(token)
     logger.info(ADMIN_RESET_MESSAGE, message, reset_link)
@@ -90,7 +91,7 @@ async def bootstrap_system(
         uuid=uuid7.create(),
         display_name=user_name or "Admin",
         role_uuid=role.uuid,
-        created_at=datetime.now(),
+        created_at=datetime.now(timezone.utc),
         visits=0,
     )
     await globals.db.instance.create_user(user)

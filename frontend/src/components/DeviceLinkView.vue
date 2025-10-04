@@ -5,74 +5,39 @@
         <h1>📱 Add Another Device</h1>
         <p class="view-lede">Generate a one-time link to set up passkeys on a new device.</p>
       </header>
-      <section class="section-block">
-        <div class="section-body">
-          <div class="device-link-section">
-            <div class="qr-container">
-              <a :href="url" class="qr-link" @click="copyLink">
-                <canvas ref="qrCanvas" class="qr-code"></canvas>
-                <p v-if="url">
-                  {{ url.replace(/^[^:]+:\/\//, '') }}
-                </p>
-                <p v-else>
-                  <em>Generating link...</em>
-                </p>
-              </a>
-              <p>
-                <strong>Scan and visit the URL on another device.</strong><br>
-                <small>⚠️ Expires in 24 hours and can only be used once.</small>
-              </p>
-            </div>
-          </div>
-          <div class="button-row">
-            <button @click="authStore.currentView = 'profile'" class="btn-secondary">
-              Back to Profile
-            </button>
-          </div>
-        </div>
-      </section>
+      <RegistrationLinkModal
+        inline
+        :endpoint="'/auth/api/create-link'"
+        :user-name="userName"
+        :auto-copy="false"
+        :prefix-copy-with-user-name="!!userName"
+        show-close-in-inline
+        @copied="onCopied"
+      />
+      <div class="button-row" style="margin-top:1rem;">
+        <button @click="authStore.currentView = 'profile'" class="btn-secondary">Back to Profile</button>
+      </div>
     </div>
   </section>
 </template>
 
 <script setup>
-import { ref, onMounted, nextTick } from 'vue'
+import { ref, onMounted } from 'vue'
 import { useAuthStore } from '@/stores/auth'
-import QRCode from 'qrcode/lib/browser'
+import RegistrationLinkModal from '@/components/RegistrationLinkModal.vue'
 
 const authStore = useAuthStore()
-const url = ref(null)
-const qrCanvas = ref(null)
-
-const copyLink = async (event) => {
-  event.preventDefault()
-  if (url.value) {
-    await navigator.clipboard.writeText(url.value)
-    authStore.showMessage('Link copied to clipboard!')
-    authStore.currentView = 'profile'
-  }
-}
-
-async function drawQr() {
-  if (!url.value || !qrCanvas.value) return
-  await nextTick()
-  QRCode.toCanvas(qrCanvas.value, url.value, { scale: 8 }, (error) => {
-    if (error) console.error('Failed to generate QR code:', error)
-  })
+const userName = ref(null)
+const onCopied = () => {
+  authStore.showMessage('Link copied to clipboard!', 'success', 2500)
+  authStore.currentView = 'profile'
 }
 
 onMounted(async () => {
-  try {
-    const response = await fetch('/auth/api/create-link', { method: 'POST' })
-    const result = await response.json()
-    if (result.detail) throw new Error(result.detail)
-
-    url.value = result.url
-    await drawQr()
-  } catch (error) {
-    authStore.showMessage(`Failed to create device link: ${error.message}`, 'error')
-    authStore.currentView = 'profile'
-  }
+  // Extract optional admin-provided query parameters (?user=Name&emoji=😀)
+  const params = new URLSearchParams(location.search)
+  const qUser = params.get('user')
+  if (qUser) userName.value = qUser.trim()
 })
 
 </script>
