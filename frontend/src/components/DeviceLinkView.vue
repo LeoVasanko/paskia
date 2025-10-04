@@ -7,7 +7,7 @@
       </header>
       <RegistrationLinkModal
         inline
-        :endpoint="'/auth/api/create-link'"
+                :endpoint="'/auth/api/user/create-link'"
         :user-name="userName"
         :auto-copy="false"
         :prefix-copy-with-user-name="!!userName"

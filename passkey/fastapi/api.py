@@ -370,7 +370,7 @@ async def api_logout(
     return {"message": "Logged out successfully"}
 
 
-@app.post("/logout-all")
+@app.post("/user/logout-all")
 async def api_logout_all(
     request: Request, response: Response, auth=Cookie(None, alias="__Host-auth")
 ):
@@ -386,7 +386,7 @@ async def api_logout_all(
     return {"message": "Logged out from all hosts"}
 
 
-@app.delete("/session/{session_id}")
+@app.delete("/user/session/{session_id}")
 async def api_delete_session(
     request: Request,
     response: Response,
@@ -431,7 +431,7 @@ async def api_set_session(
     }
 
 
-@app.delete("/credential/{uuid}")
+@app.delete("/user/credential/{uuid}")
 async def api_delete_credential(
     request: Request, uuid: UUID, auth: str = Cookie(None, alias="__Host-auth")
 ):
@@ -439,7 +439,7 @@ async def api_delete_credential(
     return {"message": "Credential deleted successfully"}
 
 
-@app.post("/create-link")
+@app.post("/user/create-link")
 async def api_create_link(request: Request, auth=Cookie(None, alias="__Host-auth")):
     s = await get_session(auth, host=request.headers.get("host"))
     token = passphrase.generate()
