@@ -30,8 +30,11 @@
               </div>
             </div>
             <div class="item-details">
-              <div class="session-details">Last used: {{ formatDate(session.last_renewed) }}</div>
-              <div class="session-meta-info">{{ session.user_agent }} {{ session.ip }}</div>
+              <div class="session-dates">
+                <span class="date-label">Last used:</span>
+                <span class="date-value">{{ formatDate(session.last_renewed) }}</span>
+                <span class="session-meta-info">{{ session.user_agent }} {{ session.ip }}</span>
+              </div>
             </div>
           </div>
         </template>
@@ -62,3 +65,9 @@ const sessionHostLabel = (session) => {
   return session.host
 }
 </script>
+
+<style>
+.session-meta-info {
+  grid-column: span 2;
+}
+</style>

@@ -462,7 +462,6 @@ th {
 }
 
 @media (max-width: 720px) {
-  /* Keep record-list responsive, but leave credential-list and session-list as fixed-width grid */
   .record-list { display: flex; flex-direction: column; max-width: 100%; }
 }
 
@@ -549,6 +548,16 @@ th {
   align-items: center;
 }
 
+.session-dates {
+  display: grid;
+  grid-auto-flow: row;
+  grid-template-columns: 7rem 1fr;
+  gap: 0.35rem 0.5rem;
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+  align-items: center;
+}
+
 .date-label {
   font-weight: 500;
   color: inherit;
@@ -565,16 +574,6 @@ th {
 
 .session-emoji {
   font-size: 1.2rem;
-}
-
-.session-details {
-  font-size: 0.9rem;
-  color: var(--color-text-muted);
-}
-
-.session-badges {
-  display: flex;
-  gap: var(--space-xs);
 }
 
 .badge {
@@ -598,7 +597,7 @@ th {
 
 
 .session-meta-info {
-  font-size: 0.8rem;
+  font-size: 0.75rem;
   color: var(--color-text-muted);
   font-family: monospace;
 }

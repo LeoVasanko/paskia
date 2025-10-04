@@ -83,13 +83,8 @@ const qrCanvas = ref(null)
 const displayUrl = computed(() => url.value ? url.value.replace(/^[^:]+:\/\//,'') : '')
 
 const expirationMessage = computed(() => {
-  if (!expires.value) return '⚠️ Expires soon and can only be used once.'
   const timeStr = formatDate(expires.value)
-  if (timeStr.startsWith('In ')) {
-    return `⚠️ Expires ${timeStr.substring(3)} and can only be used once.`
-  } else {
-    return `⚠️ Expires ${timeStr} and can only be used once.`
-  }
+  return `⚠️ Expires ${timeStr.startsWith('In ') ? timeStr.substring(3) : timeStr} and can only be used once.`
 })
 
 async function fetchLink() {
