@@ -8,7 +8,7 @@ This module provides a unified interface for WebAuthn operations including:
 """
 
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from urllib.parse import urlparse
 from uuid import UUID
 
@@ -163,7 +163,7 @@ class Passkey:
             aaguid=UUID(registration.aaguid),
             public_key=registration.credential_public_key,
             sign_count=registration.sign_count,
-            created_at=datetime.now(),
+            created_at=datetime.now(timezone.utc),
         )
 
     ### Authentication Methods ###
@@ -227,7 +227,7 @@ class Passkey:
             credential_current_sign_count=stored_cred.sign_count,
         )
         stored_cred.sign_count = verification.new_sign_count
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         stored_cred.last_used = now
         if verification.user_verified:
             stored_cred.last_verified = now

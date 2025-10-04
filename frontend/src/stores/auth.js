@@ -4,7 +4,7 @@ import { register, authenticate } from '@/utils/passkey'
 export const useAuthStore = defineStore('auth', {
   state: () => ({
     // Auth State
-    userInfo: null, // Contains the full user info response: {user, credentials, aaguid_info, session_type, authenticated}
+    userInfo: null, // Contains the full user info response: {user, credentials, aaguid_info}
     settings: null, // Server provided settings (/auth/settings)
     isLoading: false,
 
@@ -91,8 +91,7 @@ export const useAuthStore = defineStore('auth', {
     },
     selectView() {
       if (!this.userInfo) this.currentView = 'login'
-      else if (this.userInfo.authenticated) this.currentView = 'profile'
-      else this.currentView = 'login'
+      else this.currentView = 'profile'
     },
     async loadUserInfo() {
       const response = await fetch('/auth/api/user-info', { method: 'POST' })
@@ -134,13 +133,68 @@ export const useAuthStore = defineStore('auth', {
 
       await this.loadUserInfo()
     },
+    async terminateSession(sessionId) {
+      try {
+        const res = await fetch(`/auth/api/session/${sessionId}`, { method: 'DELETE' })
+        let payload = null
+        try {
+          payload = await res.json()
+        } catch (_) {
+          // ignore JSON parse errors
+        }
+        if (!res.ok || payload?.detail) {
+          const message = payload?.detail || 'Failed to terminate session'
+          throw new Error(message)
+        }
+        if (payload?.current_session_terminated) {
+          sessionStorage.clear()
+          location.reload()
+          return
+        }
+        await this.loadUserInfo()
+        this.showMessage('Session terminated', 'success', 2500)
+      } catch (error) {
+        console.error('Terminate session error:', error)
+        throw error
+      }
+    },
     async logout() {
       try {
-        await fetch('/auth/api/logout', {method: 'POST'})
+        const res = await fetch('/auth/api/logout', {method: 'POST'})
+        if (!res.ok) {
+          let message = 'Logout failed'
+          try {
+            const data = await res.json()
+            if (data?.detail) message = data.detail
+          } catch (_) {
+            // ignore JSON parse errors
+          }
+          throw new Error(message)
+        }
         sessionStorage.clear()
         location.reload()
       } catch (error) {
         console.error('Logout error:', error)
+        this.showMessage(error.message, 'error')
+      }
+    },
+    async logoutEverywhere() {
+      try {
+        const res = await fetch('/auth/api/logout-all', {method: 'POST'})
+        if (!res.ok) {
+          let message = 'Logout failed'
+          try {
+            const data = await res.json()
+            if (data?.detail) message = data.detail
+          } catch (_) {
+            // ignore JSON parse errors
+          }
+          throw new Error(message)
+        }
+        sessionStorage.clear()
+        location.reload()
+      } catch (error) {
+        console.error('Logout-all error:', error)
         this.showMessage(error.message, 'error')
       }
     },

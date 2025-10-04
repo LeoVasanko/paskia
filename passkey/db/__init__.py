@@ -63,9 +63,27 @@ class Credential:
 class Session:
     key: bytes
     user_uuid: UUID
-    expires: datetime
-    info: dict
-    credential_uuid: UUID | None = None
+    credential_uuid: UUID
+    host: str
+    ip: str
+    user_agent: str
+    renewed: datetime
+
+    def metadata(self) -> dict:
+        """Return session metadata for backwards compatibility."""
+        return {
+            "ip": self.ip,
+            "user_agent": self.user_agent,
+            "renewed": self.renewed.isoformat(),
+        }
+
+
+@dataclass
+class ResetToken:
+    key: bytes
+    user_uuid: UUID
+    expiry: datetime
+    token_type: str
 
 
 @dataclass
@@ -146,9 +164,11 @@ class DatabaseInterface(ABC):
         self,
         user_uuid: UUID,
         key: bytes,
-        expires: datetime,
-        info: dict,
-        credential_uuid: UUID | None = None,
+        credential_uuid: UUID,
+        host: str,
+        ip: str,
+        user_agent: str,
+        renewed: datetime,
     ) -> None:
         """Create a new session."""
 
@@ -162,13 +182,49 @@ class DatabaseInterface(ABC):
 
     @abstractmethod
     async def update_session(
-        self, key: bytes, expires: datetime, info: dict
+        self,
+        key: bytes,
+        *,
+        ip: str,
+        user_agent: str,
+        renewed: datetime,
     ) -> Session | None:
-        """Update session expiry and info."""
+        """Update session metadata and touch renewed timestamp."""
+
+    @abstractmethod
+    async def set_session_host(self, key: bytes, host: str) -> None:
+        """Bind a session to a specific host if not already set."""
+
+    @abstractmethod
+    async def list_sessions_for_user(self, user_uuid: UUID) -> list[Session]:
+        """Return all sessions for a user (including other hosts)."""
 
     @abstractmethod
     async def cleanup(self) -> None:
         """Called periodically to clean up expired records."""
+
+    @abstractmethod
+    async def delete_sessions_for_user(self, user_uuid: UUID) -> None:
+        """Delete all sessions belonging to the provided user."""
+
+    # Reset token operations
+    @abstractmethod
+    async def create_reset_token(
+        self,
+        user_uuid: UUID,
+        key: bytes,
+        expiry: datetime,
+        token_type: str,
+    ) -> None:
+        """Create a reset token for a user."""
+
+    @abstractmethod
+    async def get_reset_token(self, key: bytes) -> ResetToken | None:
+        """Retrieve a reset token by key."""
+
+    @abstractmethod
+    async def delete_reset_token(self, key: bytes) -> None:
+        """Delete a reset token by key."""
 
     # Organization operations
     @abstractmethod
@@ -315,36 +371,41 @@ class DatabaseInterface(ABC):
         """Create a new user and their first credential in a transaction."""
 
     @abstractmethod
-    async def get_session_context(self, session_key: bytes) -> SessionContext | None:
+    async def get_session_context(
+        self, session_key: bytes, host: str | None = None
+    ) -> SessionContext | None:
         """Get complete session context including user, organization, role, and permissions."""
 
-        # Combined atomic operations
-        @abstractmethod
-        async def create_credential_session(
-            self,
-            user_uuid: UUID,
-            credential: Credential,
-            reset_key: bytes | None,
-            session_key: bytes,
-            session_expires: datetime,
-            session_info: dict,
-            display_name: str | None = None,
-        ) -> None:
-            """Atomically add a credential and create a session.
+    # Combined atomic operations
+    @abstractmethod
+    async def create_credential_session(
+        self,
+        user_uuid: UUID,
+        credential: Credential,
+        reset_key: bytes | None,
+        session_key: bytes,
+        *,
+        display_name: str | None = None,
+        host: str | None = None,
+        ip: str | None = None,
+        user_agent: str | None = None,
+    ) -> None:
+        """Atomically add a credential and create a session.
 
-            Steps (single transaction):
-                1. Insert credential
-                2. Optionally delete old session (e.g. reset token) if provided
-                3. Optionally update user's display name
-                4. Insert new session referencing the credential
-                5. Update user's last_seen and increment visits (treat as a login)
-            """
+        Steps (single transaction):
+            1. Insert credential
+            2. Optionally delete old reset token if provided
+            3. Optionally update user's display name
+            4. Insert new session referencing the credential
+            5. Update user's last_seen and increment visits (treat as a login)
+        """
 
 
 __all__ = [
     "User",
     "Credential",
     "Session",
+    "ResetToken",
     "SessionContext",
     "Org",
     "Role",

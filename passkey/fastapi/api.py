@@ -1,6 +1,6 @@
 import logging
 from contextlib import suppress
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
 from fastapi import (
@@ -16,7 +16,7 @@ from fastapi import (
 from fastapi.responses import JSONResponse
 from fastapi.security import HTTPBearer
 
-from passkey.util import frontend
+from passkey.util import frontend, useragent
 
 from .. import aaguid
 from ..authsession import (
@@ -26,11 +26,12 @@ from ..authsession import (
     get_reset,
     get_session,
     refresh_session_token,
+    session_expiry,
 )
 from ..globals import db
 from ..globals import passkey as global_passkey
 from ..util import hostutil, passphrase, permutil, tokens
-from ..util.tokens import session_key
+from ..util.tokens import decode_session_key, encode_session_key, session_key
 from . import authz, session
 
 bearer_auth = HTTPBearer(auto_error=True)
@@ -56,7 +57,10 @@ async def general_exception_handler(_request: Request, exc: Exception):
 
 @app.post("/validate")
 async def validate_token(
-    response: Response, perm: list[str] = Query([]), auth=Cookie(None)
+    request: Request,
+    response: Response,
+    perm: list[str] = Query([]),
+    auth=Cookie(None, alias="__Host-auth"),
 ):
     """Validate the current session and extend its expiry.
 
@@ -64,13 +68,18 @@ async def validate_token(
     renewed max-age. This keeps active users logged in without needing a separate
     refresh endpoint.
     """
-    ctx = await authz.verify(auth, perm)
+    ctx = await authz.verify(auth, perm, host=request.headers.get("host"))
     renewed = False
     if auth:
-        consumed = EXPIRES - (ctx.session.expires - datetime.now())
+        current_expiry = session_expiry(ctx.session)
+        consumed = EXPIRES - (current_expiry - datetime.now())
         if not timedelta(0) < consumed < _REFRESH_INTERVAL:
             try:
-                await refresh_session_token(auth)
+                await refresh_session_token(
+                    auth,
+                    ip=request.client.host if request.client else "",
+                    user_agent=request.headers.get("user-agent") or "",
+                )
                 session.set_session_cookie(response, auth)
                 renewed = True
             except ValueError:
@@ -84,7 +93,11 @@ async def validate_token(
 
 
 @app.get("/forward")
-async def forward_authentication(perm: list[str] = Query([]), auth=Cookie(None)):
+async def forward_authentication(
+    request: Request,
+    perm: list[str] = Query([]),
+    auth=Cookie(None, alias="__Host-auth"),
+):
     """Forward auth validation for Caddy/Nginx.
 
     Query Params:
@@ -94,7 +107,7 @@ async def forward_authentication(perm: list[str] = Query([]), auth=Cookie(None))
     Failure (unauthenticated / unauthorized): 4xx JSON body with detail.
     """
     try:
-        ctx = await authz.verify(auth, perm)
+        ctx = await authz.verify(auth, perm, host=request.headers.get("host"))
         role_permissions = set(ctx.role.permissions or [])
         if ctx.permissions:
             role_permissions.update(permission.id for permission in ctx.permissions)
@@ -107,7 +120,17 @@ async def forward_authentication(perm: list[str] = Query([]), auth=Cookie(None))
             "Remote-Org-Name": ctx.org.display_name,
             "Remote-Role": str(ctx.role.uuid),
             "Remote-Role-Name": ctx.role.display_name,
-            "Remote-Session-Expires": ctx.session.expires.isoformat(),
+            "Remote-Session-Expires": (
+                session_expiry(ctx.session)
+                .astimezone(timezone.utc)
+                .isoformat()
+                .replace("+00:00", "Z")
+                if session_expiry(ctx.session).tzinfo
+                else session_expiry(ctx.session)
+                .replace(tzinfo=timezone.utc)
+                .isoformat()
+                .replace("+00:00", "Z")
+            ),
             "Remote-Credential": str(ctx.session.credential_uuid),
         }
         return Response(status_code=204, headers=remote_headers)
@@ -129,34 +152,43 @@ async def get_settings():
 
 
 @app.post("/user-info")
-async def api_user_info(reset: str | None = None, auth=Cookie(None)):
+async def api_user_info(
+    request: Request, reset: str | None = None, auth=Cookie(None, alias="__Host-auth")
+):
     authenticated = False
+    session_record = None
+    reset_token = None
     try:
         if reset:
             if not passphrase.is_well_formed(reset):
                 raise ValueError("Invalid reset token")
-            s = await get_reset(reset)
+            reset_token = await get_reset(reset)
+            target_user_uuid = reset_token.user_uuid
         else:
             if auth is None:
                 raise ValueError("Authentication Required")
-            s = await get_session(auth)
+            session_record = await get_session(auth, host=request.headers.get("host"))
             authenticated = True
+            target_user_uuid = session_record.user_uuid
     except ValueError as e:
         raise HTTPException(401, str(e))
 
-    u = await db.instance.get_user_by_uuid(s.user_uuid)
+    u = await db.instance.get_user_by_uuid(target_user_uuid)
 
-    if not authenticated:  # minimal response for reset tokens
+    if not authenticated and reset_token:  # minimal response for reset tokens
         return {
             "authenticated": False,
-            "session_type": s.info.get("type"),
+            "session_type": reset_token.token_type,
             "user": {"user_uuid": str(u.uuid), "user_name": u.display_name},
         }
 
-    assert authenticated and auth is not None
+    assert auth is not None
+    assert session_record is not None
 
-    ctx = await permutil.session_context(auth)
-    credential_ids = await db.instance.get_credentials_by_user_uuid(s.user_uuid)
+    ctx = await permutil.session_context(auth, request.headers.get("host"))
+    credential_ids = await db.instance.get_credentials_by_user_uuid(
+        session_record.user_uuid
+    )
     credentials: list[dict] = []
     user_aaguids: set[str] = set()
     for cred_id in credential_ids:
@@ -170,13 +202,45 @@ async def api_user_info(reset: str | None = None, auth=Cookie(None)):
             {
                 "credential_uuid": str(c.uuid),
                 "aaguid": aaguid_str,
-                "created_at": c.created_at.isoformat(),
-                "last_used": c.last_used.isoformat() if c.last_used else None,
-                "last_verified": c.last_verified.isoformat()
+                "created_at": (
+                    c.created_at.astimezone(timezone.utc)
+                    .isoformat()
+                    .replace("+00:00", "Z")
+                    if c.created_at.tzinfo
+                    else c.created_at.replace(tzinfo=timezone.utc)
+                    .isoformat()
+                    .replace("+00:00", "Z")
+                ),
+                "last_used": (
+                    c.last_used.astimezone(timezone.utc)
+                    .isoformat()
+                    .replace("+00:00", "Z")
+                    if c.last_used and c.last_used.tzinfo
+                    else (
+                        c.last_used.replace(tzinfo=timezone.utc)
+                        .isoformat()
+                        .replace("+00:00", "Z")
+                        if c.last_used
+                        else None
+                    )
+                ),
+                "last_verified": (
+                    c.last_verified.astimezone(timezone.utc)
+                    .isoformat()
+                    .replace("+00:00", "Z")
+                    if c.last_verified and c.last_verified.tzinfo
+                    else (
+                        c.last_verified.replace(tzinfo=timezone.utc)
+                        .isoformat()
+                        .replace("+00:00", "Z")
+                        if c.last_verified
+                        else None
+                    )
+                )
                 if c.last_verified
                 else None,
                 "sign_count": c.sign_count,
-                "is_current_session": s.credential_uuid == c.uuid,
+                "is_current_session": session_record.credential_uuid == c.uuid,
             }
         )
     credentials.sort(key=lambda cred: cred["created_at"])
@@ -204,14 +268,62 @@ async def api_user_info(reset: str | None = None, auth=Cookie(None)):
             p.startswith("auth:org:") for p in (role_info["permissions"] or [])
         )
 
+    normalized_request_host = hostutil.normalize_host(request.headers.get("host"))
+    session_records = await db.instance.list_sessions_for_user(session_record.user_uuid)
+    current_session_key = session_key(auth)
+    sessions_payload: list[dict] = []
+    for entry in session_records:
+        sessions_payload.append(
+            {
+                "id": encode_session_key(entry.key),
+                "host": entry.host,
+                "ip": entry.ip,
+                "user_agent": useragent.compact_user_agent(entry.user_agent),
+                "last_renewed": (
+                    entry.renewed.astimezone(timezone.utc)
+                    .isoformat()
+                    .replace("+00:00", "Z")
+                    if entry.renewed.tzinfo
+                    else entry.renewed.replace(tzinfo=timezone.utc)
+                    .isoformat()
+                    .replace("+00:00", "Z")
+                ),
+                "is_current": entry.key == current_session_key,
+                "is_current_host": bool(
+                    normalized_request_host
+                    and entry.host
+                    and entry.host == normalized_request_host
+                ),
+            }
+        )
+
     return {
         "authenticated": True,
-        "session_type": s.info.get("type"),
         "user": {
             "user_uuid": str(u.uuid),
             "user_name": u.display_name,
-            "created_at": u.created_at.isoformat() if u.created_at else None,
-            "last_seen": u.last_seen.isoformat() if u.last_seen else None,
+            "created_at": (
+                u.created_at.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+                if u.created_at and u.created_at.tzinfo
+                else (
+                    u.created_at.replace(tzinfo=timezone.utc)
+                    .isoformat()
+                    .replace("+00:00", "Z")
+                    if u.created_at
+                    else None
+                )
+            ),
+            "last_seen": (
+                u.last_seen.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+                if u.last_seen and u.last_seen.tzinfo
+                else (
+                    u.last_seen.replace(tzinfo=timezone.utc)
+                    .isoformat()
+                    .replace("+00:00", "Z")
+                    if u.last_seen
+                    else None
+                )
+            ),
             "visits": u.visits,
         },
         "org": org_info,
@@ -221,14 +333,17 @@ async def api_user_info(reset: str | None = None, auth=Cookie(None)):
         "is_org_admin": is_org_admin,
         "credentials": credentials,
         "aaguid_info": aaguid_info,
+        "sessions": sessions_payload,
     }
 
 
 @app.put("/user/display-name")
-async def user_update_display_name(payload: dict = Body(...), auth=Cookie(None)):
+async def user_update_display_name(
+    request: Request, payload: dict = Body(...), auth=Cookie(None, alias="__Host-auth")
+):
     if not auth:
         raise HTTPException(status_code=401, detail="Authentication Required")
-    s = await get_session(auth)
+    s = await get_session(auth, host=request.headers.get("host"))
     new_name = (payload.get("display_name") or "").strip()
     if not new_name:
         raise HTTPException(status_code=400, detail="display_name required")
@@ -239,18 +354,76 @@ async def user_update_display_name(payload: dict = Body(...), auth=Cookie(None))
 
 
 @app.post("/logout")
-async def api_logout(response: Response, auth=Cookie(None)):
+async def api_logout(
+    request: Request, response: Response, auth=Cookie(None, alias="__Host-auth")
+):
     if not auth:
+        return {"message": "Already logged out"}
+    try:
+        await get_session(auth, host=request.headers.get("host"))
+    except ValueError:
+        response.delete_cookie(session.AUTH_COOKIE_NAME, path="/")
         return {"message": "Already logged out"}
     with suppress(Exception):
         await db.instance.delete_session(session_key(auth))
-    response.delete_cookie("auth")
+    response.delete_cookie(session.AUTH_COOKIE_NAME, path="/")
     return {"message": "Logged out successfully"}
 
 
+@app.post("/logout-all")
+async def api_logout_all(
+    request: Request, response: Response, auth=Cookie(None, alias="__Host-auth")
+):
+    if not auth:
+        return {"message": "Already logged out"}
+    try:
+        s = await get_session(auth, host=request.headers.get("host"))
+    except ValueError:
+        response.delete_cookie(session.AUTH_COOKIE_NAME, path="/")
+        raise HTTPException(status_code=401, detail="Session expired")
+    await db.instance.delete_sessions_for_user(s.user_uuid)
+    response.delete_cookie(session.AUTH_COOKIE_NAME, path="/")
+    return {"message": "Logged out from all hosts"}
+
+
+@app.delete("/session/{session_id}")
+async def api_delete_session(
+    request: Request,
+    response: Response,
+    session_id: str,
+    auth=Cookie(None, alias="__Host-auth"),
+):
+    if not auth:
+        raise HTTPException(status_code=401, detail="Authentication Required")
+    try:
+        current_session = await get_session(auth, host=request.headers.get("host"))
+    except ValueError as exc:
+        response.delete_cookie(session.AUTH_COOKIE_NAME, path="/")
+        raise HTTPException(status_code=401, detail="Session expired") from exc
+
+    try:
+        target_key = decode_session_key(session_id)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=400, detail="Invalid session identifier"
+        ) from exc
+
+    target_session = await db.instance.get_session(target_key)
+    if not target_session or target_session.user_uuid != current_session.user_uuid:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    await db.instance.delete_session(target_key)
+    current_terminated = target_key == session_key(auth)
+    if current_terminated:
+        response.delete_cookie(session.AUTH_COOKIE_NAME, path="/")
+    return {"status": "ok", "current_session_terminated": current_terminated}
+
+
 @app.post("/set-session")
-async def api_set_session(response: Response, auth=Depends(bearer_auth)):
-    user = await get_session(auth.credentials)
+async def api_set_session(
+    request: Request, response: Response, auth=Depends(bearer_auth)
+):
+    user = await get_session(auth.credentials, host=request.headers.get("host"))
     session.set_session_cookie(response, auth.credentials)
     return {
         "message": "Session cookie set successfully",
@@ -259,20 +432,23 @@ async def api_set_session(response: Response, auth=Depends(bearer_auth)):
 
 
 @app.delete("/credential/{uuid}")
-async def api_delete_credential(uuid: UUID, auth: str = Cookie(None)):
-    await delete_credential(uuid, auth)
+async def api_delete_credential(
+    request: Request, uuid: UUID, auth: str = Cookie(None, alias="__Host-auth")
+):
+    await delete_credential(uuid, auth, host=request.headers.get("host"))
     return {"message": "Credential deleted successfully"}
 
 
 @app.post("/create-link")
-async def api_create_link(request: Request, auth=Cookie(None)):
-    s = await get_session(auth)
+async def api_create_link(request: Request, auth=Cookie(None, alias="__Host-auth")):
+    s = await get_session(auth, host=request.headers.get("host"))
     token = passphrase.generate()
-    await db.instance.create_session(
+    expiry = expires()
+    await db.instance.create_reset_token(
         user_uuid=s.user_uuid,
         key=tokens.reset_key(token),
-        expires=expires(),
-        info=session.infodict(request, "device addition"),
+        expiry=expiry,
+        token_type="device addition",
     )
     url = hostutil.reset_link_url(
         token, request.url.scheme, request.headers.get("host")
@@ -280,5 +456,9 @@ async def api_create_link(request: Request, auth=Cookie(None)):
     return {
         "message": "Registration link generated successfully",
         "url": url,
-        "expires": expires().isoformat(),
+        "expires": (
+            expiry.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+            if expiry.tzinfo
+            else expiry.replace(tzinfo=timezone.utc).isoformat().replace("+00:00", "Z")
+        ),
     }

@@ -7,7 +7,12 @@ from ..util import permutil
 logger = logging.getLogger(__name__)
 
 
-async def verify(auth: str | None, perm: list[str], match=permutil.has_all):
+async def verify(
+    auth: str | None,
+    perm: list[str],
+    match=permutil.has_all,
+    host: str | None = None,
+):
     """Validate session token and optional list of required permissions.
 
     Returns the session context.
@@ -19,7 +24,7 @@ async def verify(auth: str | None, perm: list[str], match=permutil.has_all):
     if not auth:
         raise HTTPException(status_code=401, detail="Authentication required")
 
-    ctx = await permutil.session_context(auth)
+    ctx = await permutil.session_context(auth, host)
     if not ctx:
         raise HTTPException(status_code=401, detail="Session not found")
 

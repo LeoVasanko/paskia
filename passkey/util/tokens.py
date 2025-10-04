@@ -15,6 +15,25 @@ def session_key(token: str) -> bytes:
     return b"sess" + base64.urlsafe_b64decode(token)
 
 
+def encode_session_key(key: bytes) -> str:
+    """Encode an opaque session key for external representation."""
+    return base64.urlsafe_b64encode(key).decode().rstrip("=")
+
+
+def decode_session_key(encoded: str) -> bytes:
+    """Decode an opaque session key from its public representation."""
+    if not encoded:
+        raise ValueError("Invalid session identifier")
+    padding = "=" * (-len(encoded) % 4)
+    try:
+        raw = base64.urlsafe_b64decode(encoded + padding)
+    except Exception as exc:  # pragma: no cover - defensive
+        raise ValueError("Invalid session identifier") from exc
+    if not raw.startswith(b"sess"):
+        raise ValueError("Invalid session identifier")
+    return raw
+
+
 def reset_key(passphrase: str) -> bytes:
     if not is_well_formed(passphrase):
         raise ValueError(

@@ -15,7 +15,7 @@
           :created-at="authStore.userInfo.user.created_at"
           :last-seen="authStore.userInfo.user.last_seen"
           :loading="authStore.isLoading"
-          update-endpoint="/auth/api/user/display-name"
+          update-endpoint="/auth/api/user-display-name"
           @saved="authStore.loadUserInfo()"
           @edit-name="openNameDialog"
         />
@@ -35,25 +35,19 @@
             @delete="handleDelete"
           />
           <div class="button-row">
-            <button @click="addNewCredential" class="btn-primary">
-              Add New Passkey
-            </button>
-            <button @click="authStore.currentView = 'device-link'" class="btn-secondary">
-              Add Another Device
-            </button>
+            <button @click="addNewCredential" class="btn-primary">Add New Passkey</button>
+            <button @click="showRegLink = true" class="btn-secondary">Add Another Device</button>
           </div>
         </div>
       </section>
 
-      <section class="section-block">
-        <div class="button-row">
-          <button @click="logout" class="btn-danger logout-button">
-            Logout
-          </button>
-        </div>
-      </section>
+      <SessionList
+        :sessions="sessions"
+        :terminating-sessions="terminatingSessions"
+        @terminate="terminateSession"
+        section-description="Review where you're signed in and end any sessions you no longer recognize."
+      />
 
-      <!-- Name Edit Dialog -->
       <Modal v-if="showNameDialog" @close="showNameDialog = false">
         <h3>Edit Display Name</h3>
         <form @submit.prevent="saveName" class="modal-form">
@@ -65,6 +59,21 @@
           />
         </form>
       </Modal>
+
+      <section class="section-block">
+        <div class="button-row logout-row single">
+          <button @click="logoutEverywhere" class="btn-danger logout-button">Logout all sessions</button>
+        </div>
+        <p class="logout-note">Immediately revokes access for every device and browser signed in to your account.</p>
+      </section>
+      <RegistrationLinkModal
+        v-if="showRegLink"
+        :endpoint="'/auth/api/create-link'"
+        :auto-copy="false"
+        :prefix-copy-with-user-name="false"
+        @close="showRegLink = false"
+        @copied="showRegLink = false; authStore.showMessage('Link copied to clipboard!', 'success', 2500)"
+      />
     </div>
   </section>
 </template>
@@ -76,35 +85,25 @@ import CredentialList from '@/components/CredentialList.vue'
 import UserBasicInfo from '@/components/UserBasicInfo.vue'
 import Modal from '@/components/Modal.vue'
 import NameEditForm from '@/components/NameEditForm.vue'
+import SessionList from '@/components/SessionList.vue'
+import RegistrationLinkModal from '@/components/RegistrationLinkModal.vue'
 import { useAuthStore } from '@/stores/auth'
 import passkey from '@/utils/passkey'
 
 const authStore = useAuthStore()
 const updateInterval = ref(null)
 const showNameDialog = ref(false)
+const showRegLink = ref(false)
 const newName = ref('')
 const saving = ref(false)
 
-watch(showNameDialog, (newVal) => {
-  if (newVal) {
-    newName.value = authStore.userInfo?.user?.user_name || ''
-  }
-})
+watch(showNameDialog, (newVal) => { if (newVal) newName.value = authStore.userInfo?.user?.user_name || '' })
 
 onMounted(() => {
-  updateInterval.value = setInterval(() => {
-    // Trigger Vue reactivity to update formatDate fields
-    if (authStore.userInfo) {
-      authStore.userInfo = { ...authStore.userInfo }
-    }
-  }, 60000) // Update every minute
+  updateInterval.value = setInterval(() => { if (authStore.userInfo) authStore.userInfo = { ...authStore.userInfo } }, 60000)
 })
 
-onUnmounted(() => {
-  if (updateInterval.value) {
-    clearInterval(updateInterval.value)
-  }
-})
+onUnmounted(() => { if (updateInterval.value) clearInterval(updateInterval.value) })
 
 const addNewCredential = async () => {
   try {
@@ -116,9 +115,7 @@ const addNewCredential = async () => {
   } catch (error) {
     console.error('Failed to add new passkey:', error)
     authStore.showMessage(error.message, 'error')
-  } finally {
-    authStore.isLoading = false
-  }
+  } finally { authStore.isLoading = false }
 }
 
 const handleDelete = async (credential) => {
@@ -128,80 +125,55 @@ const handleDelete = async (credential) => {
   try {
     await authStore.deleteCredential(credentialId)
     authStore.showMessage('Passkey deleted successfully!', 'success', 3000)
-  } catch (error) {
-    authStore.showMessage(`Failed to delete passkey: ${error.message}`, 'error')
+  } catch (error) { authStore.showMessage(`Failed to delete passkey: ${error.message}`, 'error') }
+}
+
+const sessions = computed(() => authStore.userInfo?.sessions || [])
+const terminatingSessions = ref({})
+
+const terminateSession = async (session) => {
+  const sessionId = session?.id
+  if (!sessionId) return
+  terminatingSessions.value = { ...terminatingSessions.value, [sessionId]: true }
+  try { await authStore.terminateSession(sessionId) }
+  catch (error) { authStore.showMessage(error.message || 'Failed to terminate session', 'error', 5000) }
+  finally {
+    const next = { ...terminatingSessions.value }
+    delete next[sessionId]
+    terminatingSessions.value = next
   }
 }
 
-const logout = async () => {
-  await authStore.logout()
-}
-
-const openNameDialog = () => {
-  newName.value = authStore.userInfo?.user?.user_name || ''
-  showNameDialog.value = true
-}
-
+const logoutEverywhere = async () => { await authStore.logoutEverywhere() }
+const openNameDialog = () => { newName.value = authStore.userInfo?.user?.user_name || ''; showNameDialog.value = true }
 const isAdmin = computed(() => !!(authStore.userInfo?.is_global_admin || authStore.userInfo?.is_org_admin))
-
-const breadcrumbEntries = computed(() => {
-  const entries = [{ label: 'Auth', href: authStore.uiHref() }]
-  if (isAdmin.value) entries.push({ label: 'Admin', href: authStore.adminHomeHref() })
-  return entries
-})
+const breadcrumbEntries = computed(() => { const entries = [{ label: 'Auth', href: authStore.uiHref() }]; if (isAdmin.value) entries.push({ label: 'Admin', href: authStore.adminHomeHref() }); return entries })
 
 const saveName = async () => {
   const name = newName.value.trim()
-  if (!name) {
-    authStore.showMessage('Name cannot be empty', 'error')
-    return
-  }
+  if (!name) { authStore.showMessage('Name cannot be empty', 'error'); return }
   try {
     saving.value = true
-    const res = await fetch('/auth/api/user/display-name', {
-      method: 'PUT',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ display_name: name })
-    })
+    const res = await fetch('/auth/api/user/display-name', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ display_name: name }) })
     const data = await res.json()
     if (!res.ok || data.detail) throw new Error(data.detail || 'Update failed')
-  showNameDialog.value = false
+    showNameDialog.value = false
     await authStore.loadUserInfo()
     authStore.showMessage('Name updated successfully!', 'success', 3000)
-  } catch (e) {
-    authStore.showMessage(e.message || 'Failed to update name', 'error')
-  } finally {
-    saving.value = false
-  }
+  } catch (e) { authStore.showMessage(e.message || 'Failed to update name', 'error') }
+  finally { saving.value = false }
 }
 </script>
 
 <style scoped>
-.view-lede {
-  margin: 0;
-  color: var(--color-text-muted);
-  font-size: 1rem;
-}
-
-.section-header {
-  display: flex;
-  flex-direction: column;
-  gap: 0.4rem;
-}
-
-.section-description {
-  margin: 0;
-  color: var(--color-text-muted);
-}
-
-.logout-button {
-  align-self: flex-start;
-}
-
-@media (max-width: 720px) {
-  .logout-button {
-    width: 100%;
-  }
-}
+.view-lede { margin: 0; color: var(--color-text-muted); font-size: 1rem; }
+.section-header { display: flex; flex-direction: column; gap: 0.4rem; }
+.section-description { margin: 0; color: var(--color-text-muted); }
+.empty-state { margin: 0; color: var(--color-text-muted); text-align: center; padding: 1rem 0; }
+.logout-button { align-self: flex-start; }
+.logout-row { gap: 1rem; }
+.logout-row.single { justify-content: flex-start; }
+.logout-note { margin: 0.75rem 0 0; color: var(--color-text-muted); font-size: 0.875rem; }
+@media (max-width: 720px) { .logout-button { width: 100%; } }
 </style>
 
