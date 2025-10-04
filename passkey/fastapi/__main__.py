@@ -14,6 +14,27 @@ DEFAULT_SERVE_PORT = 4401
 DEFAULT_DEV_PORT = 4402
 
 
+def is_subdomain(sub: str, domain: str) -> bool:
+    """Check if sub is a subdomain of domain (or equal)."""
+    sub_parts = sub.lower().split(".")
+    domain_parts = domain.lower().split(".")
+    if len(sub_parts) < len(domain_parts):
+        return False
+    return sub_parts[-len(domain_parts) :] == domain_parts
+
+
+def validate_auth_host(auth_host: str, rp_id: str) -> None:
+    """Validate that auth_host is a subdomain of rp_id."""
+    parsed = urlparse(auth_host if "://" in auth_host else f"//{auth_host}")
+    host = parsed.hostname or parsed.path
+    if not host:
+        raise SystemExit(f"Invalid auth-host: '{auth_host}'")
+    if not is_subdomain(host, rp_id):
+        raise SystemExit(
+            f"auth-host '{auth_host}' is not a subdomain of rp-id '{rp_id}'"
+        )
+
+
 def parse_endpoint(
     value: str | None, default_port: int
 ) -> tuple[str | None, int | None, str | None, bool]:
@@ -181,7 +202,8 @@ def main():
         # Preserve pre-set env variable if CLI option omitted
         args.auth_host = os.environ.get("PASSKEY_AUTH_HOST")
 
-    if getattr(args, "auth_host", None):
+    if args.auth_host:
+        validate_auth_host(args.auth_host, args.rp_id)
         from passkey.util import hostutil as _hostutil  # local import
 
         _hostutil.reload_config()
