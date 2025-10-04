@@ -25,9 +25,7 @@ def is_ui_path(path: str) -> bool:
 
 def is_restricted_path(path: str) -> bool:
     """Check if the path is restricted (API/admin endpoints)."""
-    return path.startswith(
-        ("/auth/api/admin", "/auth/api/user", "/auth/api/ws", "/auth/ws/")
-    )
+    return path.startswith(("/auth/api/admin/", "/auth/api/user/", "/auth/ws/"))
 
 
 def should_redirect_to_auth_host(path: str) -> bool:
