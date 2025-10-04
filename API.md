@@ -1,29 +1,104 @@
 # PassKey Auth API Documentation
 
-This document describes all API endpoints available in the PassKey Auth FastAPI application, that by default listens on `localhost:4401` ("for authentication required").
+This document lists the HTTP and WebSocket endpoints exposed by the PassKey Auth
+service and how they behave depending on whether a dedicated authentication host
+(`--auth-host` / environment `PASSKEY_AUTH_HOST`) is configured.
 
-### HTTP Endpoints
+## Base Paths & Host Modes
 
-GET /auth/ - Main authentication app
-GET /auth/admin/ - Admin app for managing organisations, users and permissions
-GET /auth/{reset_token} - Process password reset/share token
-POST /auth/api/user-info - Get authenticated user information
-POST /auth/api/logout - Logout and delete session
-POST /auth/api/set-session - Set session cookie from Authorization header
-POST /auth/api/create-link - Create device addition link
-DELETE /auth/api/credential/{uuid} - Delete specific credential
-DELETE /auth/api/session/{session_id} - Terminate an active session
-POST /auth/api/validate - Session validation and renewal endpoint (fetch regularly)
-GET /auth/api/forward - Authentication validation for Caddy/Nginx
-		- On success returns `204 No Content` with [user info](Headers.md)
-		- Otherwise returns
-		   * `401 Unauthorized` - authentication required
-		   * `403 Forbidden` - missing required permissions
-		   * Serves the authentication app for a login or permission denied page
-		- Does not renew session!
+Two deployment modes:
 
-### WebAuthn/Passkey endpoints (WebSockets)
+1. Multi‑host (default – no `--auth-host` provided)
+   - All endpoints are reachable on any host under the `/auth/` prefix.
+   - A convenience root (`/`) also serves the main app.
 
-WS /auth/ws/register - Register new user with passkey
-WS /auth/ws/add_credential - Add new credential for existing user
-WS /auth/ws/authenticate - Authenticate user with passkey
+2. Dedicated auth host (`--auth-host auth.example.com`)
+   - The specified auth host serves the UI at the root (`/`, `/admin/`, reset tokens, etc.).
+   - Other (non‑auth) hosts expose only non‑restricted API endpoints; UI is redirected to the auth host.
+   - Restricted endpoints on non‑auth hosts return `404` instead of redirecting.
+
+### Path Mapping When Auth Host Enabled
+
+| Purpose | On Auth Host | On Other Hosts (incoming) | Action |
+|---------|--------------|---------------------------|--------|
+| Main UI | `/` | `/auth/` or `/` | Redirect -> auth host `/` (strip leading `/auth` if present) |
+| Admin UI root | `/admin/` | `/auth/admin/` or `/admin/` | Redirect -> auth host `/admin/` (strip `/auth`) |
+| Reset / device addition token | `/{token}` | `/auth/{token}` | Redirect -> auth host `/{token}` (strip `/auth`) |
+| Static assets | `/auth/assets/*` | `/auth/assets/*` | Served directly (no redirect) |
+| Unrestricted API | `/auth/api/...` | `/auth/api/...` | Served directly |
+| Restricted API (admin,user,ws namespaces) | `/auth/api/{admin|user|ws}*` | same path | 404 on non‑auth hosts |
+| WebSocket (register/auth) | `/auth/ws/*` | `/auth/ws/*` | 404 on non‑auth hosts |
+
+Notes:
+- “Strip `/auth`” means only when the path starts with that exact segment.
+- A reset token is a single path segment validated by server logic; malformed tokens 404.
+- Method and body are preserved for UI redirects (307 Temporary Redirect).
+
+## HTTP UI Endpoints
+
+| Method | Path (multi‑host) | Path (auth host) | Description |
+|--------|-------------------|------------------|-------------|
+| GET | `/auth/` | `/` | Main authentication SPA |
+| GET | `/auth/admin/` | `/admin/` | Admin SPA root |
+| GET | `/auth/{reset_token}` | `/{reset_token}` | Reset / device addition SPA (token validated) |
+| GET | `/auth/restricted` | `/restricted` | Restricted / permission denied SPA |
+
+## Core API (Unrestricted – available on all hosts)
+
+Always under `/auth/api/` (even on auth host):
+
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/auth/api/validate` | Validate & (conditionally) renew session |
+| GET | `/auth/api/forward` | Auth proxy endpoint for reverse proxies (204 or 4xx) |
+| POST | `/auth/api/set-session` | Set cookie from Bearer token |
+| POST | `/auth/api/logout` | Logout current session |
+| POST | `/auth/api/user-info` | Authenticated user + context info (also handles reset tokens) |
+| POST | `/auth/api/create-link` | Create a device addition link (reset token) |
+| DELETE | `/auth/api/credential/{uuid}` | Delete user credential |
+| DELETE | `/auth/api/session/{session_id}` | Terminate a specific session |
+| POST | `/auth/api/user/logout-all` | Terminate all sessions for the user |
+| PUT | `/auth/api/user/display-name` | Update display name |
+
+## Restricted API Namespaces
+
+When `--auth-host` is set, requests to these paths on non‑auth hosts return 404:
+
+| Namespace | Examples |
+|-----------|----------|
+| `/auth/api/admin` | `/auth/api/admin/orgs`, `/auth/api/admin/orgs/{uuid}` ... |
+| `/auth/api/user` | Segment prefix – includes `/auth/api/user/...` endpoints (logout-all, display-name, session, credential) |
+| `/auth/api/ws` | (Reserved / future) |
+
+## WebSockets (Passkey)
+
+| Path | Description | Host Mode Behavior |
+|------|-------------|--------------------|
+| `/auth/ws/register` | Register new credential (new or existing user) | 404 on non‑auth hosts when auth host configured |
+| `/auth/ws/authenticate` | Authenticate user & issue session | 404 on non‑auth hosts when auth host configured |
+
+## Redirection & Status Codes
+
+| Scenario | Response |
+|----------|----------|
+| UI path on non‑auth host (auth host configured) | 307 redirect to auth host; `/auth` prefix stripped |
+| Reset token UI path on non‑auth host | 307 redirect (token preserved) |
+| Restricted API on non‑auth host | 404 |
+| Unrestricted API on any host | Normal response |
+| No auth host configured | All hosts behave like multi-host mode (no redirects; everything accessible) |
+
+## Headers for /auth/api/forward
+See `Headers.md` for details of headers returned on success (204).
+
+## Notes for Integrators
+1. Always use absolute `/auth/api/...` paths for programmatic requests (they do not move when an auth host is introduced).
+2. Bookmark / deep links to UI should resolve correctly after redirection if users access via a non-auth application host.
+3. Treat 404 from restricted namespaces on non-auth hosts as a signal to direct users to the central auth site.
+
+## Environment & CLI Summary
+| Option | Effect |
+|--------|--------|
+| `--auth-host` / `PASSKEY_AUTH_HOST` | Enables dedicated host mode, root-mounts UI there, restricts certain namespaces elsewhere |
+
+---
+This document reflects current behavior of the middleware-based host routing logic.

@@ -63,6 +63,7 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
 import passkey from '@/utils/passkey'
+import { getSettings, uiBasePath } from '@/utils/settings'
 
 const status = reactive({
   show: false,
@@ -87,11 +88,7 @@ const subtitleMessage = computed(() => {
   return `Finish setting up a passkey for ${userInfo.value?.user?.user_name || 'your account'}.`
 })
 
-const uiBasePath = computed(() => {
-  const base = settings.value?.ui_base_path || '/auth/'
-  if (base === '/') return '/'
-  return base.endsWith('/') ? base : `${base}/`
-})
+const basePath = computed(() => uiBasePath())
 
 const canRegister = computed(() => !!(token.value && userInfo.value))
 
@@ -109,13 +106,9 @@ function showMessage(message, type = 'info', duration = 3000) {
 
 async function fetchSettings() {
   try {
-    const res = await fetch('/auth/api/settings')
-    if (!res.ok) return
-    const data = await res.json()
+    const data = await getSettings()
     settings.value = data
-    if (data?.rp_name) {
-      document.title = `${data.rp_name} · Passkey Setup`
-    }
+    if (data?.rp_name) document.title = `${data.rp_name} · Passkey Setup`
   } catch (error) {
     console.warn('Unable to load settings', error)
   }

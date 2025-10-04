@@ -2,7 +2,7 @@ import logging
 import os
 from contextlib import asynccontextmanager
 
-from fastapi import Cookie, FastAPI, HTTPException, Request
+from fastapi import Cookie, FastAPI, HTTPException, Request, Response
 from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -46,6 +46,40 @@ async def lifespan(app: FastAPI):  # pragma: no cover - startup path
 
 
 app = FastAPI(lifespan=lifespan)
+
+
+@app.middleware("http")
+async def auth_host_redirect(request, call_next):  # pragma: no cover
+    cfg = hostutil.configured_auth_host()
+    if not cfg:
+        return await call_next(request)
+    cur = hostutil.normalize_host(request.headers.get("host"))
+    if not cur or cur == hostutil.normalize_host(cfg):
+        return await call_next(request)
+    p = request.url.path or "/"
+    ui = {"/", "/admin", "/admin/", "/auth/", "/auth/admin", "/auth/admin/"}
+    restricted = p.startswith(
+        ("/auth/api/admin", "/auth/api/user", "/auth/api/ws", "/auth/ws/")
+    )
+    ui_match = p in ui
+    if not ui_match:
+        # Treat reset token pages as UI (dynamic). Accept single-segment tokens.
+        if p.startswith("/auth/"):
+            t = p[6:]
+            if t and "/" not in t and passphrase.is_well_formed(t):
+                ui_match = True
+        else:
+            t = p[1:]
+            if t and "/" not in t and passphrase.is_well_formed(t):
+                ui_match = True
+    if not (ui_match or restricted):
+        return await call_next(request)
+    if restricted:
+        return Response(status_code=404)
+    newp = p[5:] or "/" if ui_match and p.startswith("/auth") else p
+    return RedirectResponse(f"{request.url.scheme}://{cfg}{newp}", 307)
+
+
 app.mount("/auth/admin/", admin.app)
 app.mount("/auth/api/", api.app)
 app.mount("/auth/ws/", ws.app)
@@ -59,8 +93,26 @@ app.mount(
 
 @app.get("/")
 @app.get("/auth/")
-async def frontapp():
-    return FileResponse(frontend.file("index.html"))
+async def frontapp(
+    request: Request, response: Response, auth=Cookie(None, alias="__Host-auth")
+):
+    """Serve the user profile SPA only for authenticated sessions; otherwise restricted SPA.
+
+    Login / authentication UX is centralized in the restricted app.
+    """
+    if not auth:
+        return FileResponse(frontend.file("restricted", "index.html"), status_code=401)
+    from ..authsession import get_session  # local import
+
+    try:
+        await get_session(auth, host=request.headers.get("host"))
+        return FileResponse(frontend.file("index.html"))
+    except Exception:
+        if auth:
+            from . import session as session_mod
+
+            session_mod.clear_session_cookie(response)
+        return FileResponse(frontend.file("restricted", "index.html"), status_code=401)
 
 
 @app.get("/admin", include_in_schema=False)
@@ -71,7 +123,7 @@ async def admin_root_redirect():
 
 @app.get("/admin/", include_in_schema=False)
 async def admin_root(request: Request, auth=Cookie(None, alias="__Host-auth")):
-    return await admin.adminapp(request, auth)  # Delegate to handler of /auth/admin/
+    return await admin.adminapp(request, auth)  # Delegated (enforces access control)
 
 
 @app.get("/{reset}")

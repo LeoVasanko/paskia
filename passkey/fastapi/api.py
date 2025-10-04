@@ -38,6 +38,17 @@ bearer_auth = HTTPBearer(auto_error=True)
 
 app = FastAPI()
 
+
+@app.exception_handler(HTTPException)
+async def http_exception_handler(_request: Request, exc: HTTPException):
+    """Ensure auth cookie is cleared on 401 responses (JSON responses only)."""
+    if exc.status_code == 401:
+        resp = JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
+        session.clear_session_cookie(resp)
+        return resp
+    return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
+
+
 # Refresh only if at least this much of the session lifetime has been *consumed*.
 # Consumption is derived from (now + EXPIRES) - current_expires.
 # This guarantees a minimum spacing between DB writes even with frequent /validate calls.
@@ -68,7 +79,11 @@ async def validate_token(
     renewed max-age. This keeps active users logged in without needing a separate
     refresh endpoint.
     """
-    ctx = await authz.verify(auth, perm, host=request.headers.get("host"))
+    try:
+        ctx = await authz.verify(auth, perm, host=request.headers.get("host"))
+    except HTTPException:
+        # Global handler will clear cookie if 401
+        raise
     renewed = False
     if auth:
         current_expiry = session_expiry(ctx.session)
@@ -83,7 +98,7 @@ async def validate_token(
                 session.set_session_cookie(response, auth)
                 renewed = True
             except ValueError:
-                # Session disappeared, e.g. due to concurrent logout
+                # Session disappeared, e.g. due to concurrent logout; global handler will clear
                 raise HTTPException(status_code=401, detail="Session expired")
     return {
         "valid": True,
@@ -95,6 +110,7 @@ async def validate_token(
 @app.get("/forward")
 async def forward_authentication(
     request: Request,
+    response: Response,
     perm: list[str] = Query([]),
     auth=Cookie(None, alias="__Host-auth"),
 ):
@@ -135,8 +151,13 @@ async def forward_authentication(
         }
         return Response(status_code=204, headers=remote_headers)
     except HTTPException as e:
+        # Let global handler clear cookie; still return HTML surface instead of JSON
         html = frontend.file("restricted", "index.html").read_bytes()
-        return Response(html, status_code=e.status_code, media_type="text/html")
+        status = e.status_code
+        # If 401 we still want cookie cleared; rely on handler by raising again not feasible (we need HTML)
+        if status == 401:
+            session.clear_session_cookie(response)
+        return Response(html, status_code=status, media_type="text/html")
 
 
 @app.get("/settings")
@@ -153,7 +174,10 @@ async def get_settings():
 
 @app.post("/user-info")
 async def api_user_info(
-    request: Request, reset: str | None = None, auth=Cookie(None, alias="__Host-auth")
+    request: Request,
+    response: Response,
+    reset: str | None = None,
+    auth=Cookie(None, alias="__Host-auth"),
 ):
     authenticated = False
     session_record = None
@@ -339,11 +363,17 @@ async def api_user_info(
 
 @app.put("/user/display-name")
 async def user_update_display_name(
-    request: Request, payload: dict = Body(...), auth=Cookie(None, alias="__Host-auth")
+    request: Request,
+    response: Response,
+    payload: dict = Body(...),
+    auth=Cookie(None, alias="__Host-auth"),
 ):
     if not auth:
         raise HTTPException(status_code=401, detail="Authentication Required")
-    s = await get_session(auth, host=request.headers.get("host"))
+    try:
+        s = await get_session(auth, host=request.headers.get("host"))
+    except ValueError as e:
+        raise HTTPException(status_code=401, detail="Session expired") from e
     new_name = (payload.get("display_name") or "").strip()
     if not new_name:
         raise HTTPException(status_code=400, detail="display_name required")
@@ -362,7 +392,6 @@ async def api_logout(
     try:
         await get_session(auth, host=request.headers.get("host"))
     except ValueError:
-        response.delete_cookie(session.AUTH_COOKIE_NAME, path="/")
         return {"message": "Already logged out"}
     with suppress(Exception):
         await db.instance.delete_session(session_key(auth))
@@ -379,10 +408,9 @@ async def api_logout_all(
     try:
         s = await get_session(auth, host=request.headers.get("host"))
     except ValueError:
-        response.delete_cookie(session.AUTH_COOKIE_NAME, path="/")
         raise HTTPException(status_code=401, detail="Session expired")
     await db.instance.delete_sessions_for_user(s.user_uuid)
-    response.delete_cookie(session.AUTH_COOKIE_NAME, path="/")
+    session.clear_session_cookie(response)
     return {"message": "Logged out from all hosts"}
 
 
@@ -398,7 +426,6 @@ async def api_delete_session(
     try:
         current_session = await get_session(auth, host=request.headers.get("host"))
     except ValueError as exc:
-        response.delete_cookie(session.AUTH_COOKIE_NAME, path="/")
         raise HTTPException(status_code=401, detail="Session expired") from exc
 
     try:
@@ -415,7 +442,7 @@ async def api_delete_session(
     await db.instance.delete_session(target_key)
     current_terminated = target_key == session_key(auth)
     if current_terminated:
-        response.delete_cookie(session.AUTH_COOKIE_NAME, path="/")
+        session.clear_session_cookie(response)  # explicit because 200
     return {"status": "ok", "current_session_terminated": current_terminated}
 
 
@@ -433,15 +460,28 @@ async def api_set_session(
 
 @app.delete("/user/credential/{uuid}")
 async def api_delete_credential(
-    request: Request, uuid: UUID, auth: str = Cookie(None, alias="__Host-auth")
+    request: Request,
+    response: Response,
+    uuid: UUID,
+    auth: str = Cookie(None, alias="__Host-auth"),
 ):
-    await delete_credential(uuid, auth, host=request.headers.get("host"))
+    try:
+        await delete_credential(uuid, auth, host=request.headers.get("host"))
+    except ValueError as e:
+        raise HTTPException(status_code=401, detail="Session expired") from e
     return {"message": "Credential deleted successfully"}
 
 
 @app.post("/user/create-link")
-async def api_create_link(request: Request, auth=Cookie(None, alias="__Host-auth")):
-    s = await get_session(auth, host=request.headers.get("host"))
+async def api_create_link(
+    request: Request,
+    response: Response,
+    auth=Cookie(None, alias="__Host-auth"),
+):
+    try:
+        s = await get_session(auth, host=request.headers.get("host"))
+    except ValueError as e:
+        raise HTTPException(status_code=401, detail="Session expired") from e
     token = passphrase.generate()
     expiry = expires()
     await db.instance.create_reset_token(

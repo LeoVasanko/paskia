@@ -85,10 +85,14 @@ async def get_session(token: str, host: str | None = None) -> Session:
         normalized_host = hostutil.normalize_host(host)
         if not normalized_host:
             raise ValueError("Invalid host")
-        if session.host is None:
+        current = session.host
+        if current is None:
+            # First time binding: store exact host:port (or IPv6 form) now.
             await db.instance.set_session_host(session.key, normalized_host)
             session.host = normalized_host
-        elif session.host != normalized_host:
+        elif current == normalized_host:
+            pass  # exact match ok
+        else:
             raise ValueError("Invalid or expired session token")
     return session
 

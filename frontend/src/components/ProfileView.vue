@@ -88,6 +88,7 @@ import NameEditForm from '@/components/NameEditForm.vue'
 import SessionList from '@/components/SessionList.vue'
 import RegistrationLinkModal from '@/components/RegistrationLinkModal.vue'
 import { useAuthStore } from '@/stores/auth'
+import { adminUiPath, makeUiHref } from '@/utils/settings'
 import passkey from '@/utils/passkey'
 
 const authStore = useAuthStore()
@@ -147,7 +148,7 @@ const terminateSession = async (session) => {
 const logoutEverywhere = async () => { await authStore.logoutEverywhere() }
 const openNameDialog = () => { newName.value = authStore.userInfo?.user?.user_name || ''; showNameDialog.value = true }
 const isAdmin = computed(() => !!(authStore.userInfo?.is_global_admin || authStore.userInfo?.is_org_admin))
-const breadcrumbEntries = computed(() => { const entries = [{ label: 'Auth', href: authStore.uiHref() }]; if (isAdmin.value) entries.push({ label: 'Admin', href: authStore.adminHomeHref() }); return entries })
+const breadcrumbEntries = computed(() => { const entries = [{ label: 'Auth', href: makeUiHref() }]; if (isAdmin.value) entries.push({ label: 'Admin', href: adminUiPath() }); return entries })
 
 const saveName = async () => {
   const name = newName.value.trim()

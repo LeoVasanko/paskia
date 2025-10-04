@@ -10,6 +10,7 @@ import AdminOrgDetail from './AdminOrgDetail.vue'
 import AdminUserDetail from './AdminUserDetail.vue'
 import AdminDialogs from './AdminDialogs.vue'
 import { useAuthStore } from '@/stores/auth'
+import { getSettings, adminUiPath, makeUiHref } from '@/utils/settings'
 
 const info = ref(null)
 const loading = ref(true)
@@ -289,10 +290,8 @@ function deletePermission(p) {
 
 onMounted(async () => {
   window.addEventListener('hashchange', parseHash)
-  await authStore.loadSettings()
-  if (authStore.settings?.rp_name) {
-    document.title = authStore.settings.rp_name + ' Admin'
-  }
+  const settings = await getSettings()
+  if (settings?.rp_name) document.title = settings.rp_name + ' Admin'
   load()
 })
 
@@ -324,14 +323,14 @@ const selectedUser = computed(() => {
 const pageHeading = computed(() => {
   if (selectedUser.value) return 'Admin: User'
   if (selectedOrg.value) return 'Admin: Org'
-  return (authStore.settings?.rp_name || 'Master') + ' Admin'
+  return ((authStore.settings?.rp_name) || 'Master') + ' Admin'
 })
 
 // Breadcrumb entries for admin app.
 const breadcrumbEntries = computed(() => {
   const entries = [
-    { label: 'Auth', href: authStore.uiHref() },
-    { label: 'Admin', href: authStore.adminHomeHref() }
+    { label: 'Auth', href: makeUiHref() },
+    { label: 'Admin', href: adminUiPath() }
   ]
   // Determine organization for user view if selectedOrg not explicitly chosen.
   let orgForUser = null
