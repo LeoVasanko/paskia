@@ -127,7 +127,7 @@ export const useAuthStore = defineStore('auth', {
       }
     },
     async deleteCredential(uuid) {
-  const response = await fetch(`/auth/api/credential/${uuid}`, {method: 'Delete'})
+  const response = await fetch(`/auth/api/user/credential/${uuid}`, {method: 'Delete'})
       const result = await response.json()
       if (result.detail) throw new Error(`Server: ${result.detail}`)
 
@@ -135,7 +135,7 @@ export const useAuthStore = defineStore('auth', {
     },
     async terminateSession(sessionId) {
       try {
-        const res = await fetch(`/auth/api/session/${sessionId}`, { method: 'DELETE' })
+        const res = await fetch(`/auth/api/user/session/${sessionId}`, { method: 'DELETE' })
         let payload = null
         try {
           payload = await res.json()
@@ -180,7 +180,7 @@ export const useAuthStore = defineStore('auth', {
     },
     async logoutEverywhere() {
       try {
-        const res = await fetch('/auth/api/logout-all', {method: 'POST'})
+        const res = await fetch('/auth/api/user/logout-all', {method: 'POST'})
         if (!res.ok) {
           let message = 'Logout failed'
           try {
