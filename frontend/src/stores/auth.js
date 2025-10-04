@@ -1,11 +1,15 @@
 import { defineStore } from 'pinia'
 import { register, authenticate } from '@/utils/passkey'
+import { getSettings } from '@/utils/settings'
 
 export const useAuthStore = defineStore('auth', {
   state: () => ({
     // Auth State
     userInfo: null, // Contains the full user info response: {user, credentials, aaguid_info}
     isLoading: false,
+
+    // Settings
+    settings: null,
 
     // UI State
     currentView: 'login',
@@ -73,6 +77,9 @@ export const useAuthStore = defineStore('auth', {
     selectView() {
       if (!this.userInfo) this.currentView = 'login'
       else this.currentView = 'profile'
+    },
+    async loadSettings() {
+      this.settings = await getSettings()
     },
     async loadUserInfo() {
       const response = await fetch('/auth/api/user-info', { method: 'POST' })
