@@ -76,6 +76,12 @@ async def frontapp(
 
     try:
         await get_session(auth, host=request.headers.get("host"))
+        cfg_host = hostutil.configured_auth_host()
+        if cfg_host:
+            cur_host = hostutil.normalize_host(request.headers.get("host"))
+            cfg_normalized = hostutil.normalize_host(cfg_host)
+            if cur_host and cfg_normalized and cur_host != cfg_normalized:
+                return FileResponse(frontend.file("host", "index.html"))
         return FileResponse(frontend.file("index.html"))
     except Exception:
         if auth:

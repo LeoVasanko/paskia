@@ -8,7 +8,15 @@ from passkey.util import hostutil, passphrase
 
 def is_ui_path(path: str) -> bool:
     """Check if the path is a UI endpoint."""
-    ui_paths = {"/", "/admin", "/admin/", "/auth/", "/auth/admin", "/auth/admin/"}
+    ui_paths = {
+        "/",
+        "/admin",
+        "/admin/",
+        "/auth",
+        "/auth/",
+        "/auth/admin",
+        "/auth/admin/",
+    }
     if path in ui_paths:
         return True
     # Treat reset token pages as UI (dynamic). Accept single-segment tokens.
@@ -30,6 +38,8 @@ def is_restricted_path(path: str) -> bool:
 
 def should_redirect_to_auth_host(path: str) -> bool:
     """Determine if the request should be redirected to the auth host."""
+    if path in {"/", "/auth", "/auth/"}:
+        return False
     return is_ui_path(path) or is_restricted_path(path)
 
 
@@ -47,7 +57,7 @@ def should_redirect_auth_path_to_root(path: str) -> bool:
     """Check if /auth/ UI path should be redirected to root on auth host."""
     if not path.startswith("/auth/"):
         return False
-    ui_paths = {"/auth/", "/auth/admin", "/auth/admin/"}
+    ui_paths = {"/auth", "/auth/", "/auth/admin", "/auth/admin/"}
     if path in ui_paths:
         return True
     # Check for reset token

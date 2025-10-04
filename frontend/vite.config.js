@@ -33,6 +33,8 @@ export default defineConfig(({ command, mode }) => ({
           // Bypass only root SPA entrypoints + static assets so Vite serves them for HMR.
           // Admin API endpoints (e.g., /auth/admin/orgs) must still hit backend.
           if (url === '/auth/' || url === '/auth') return '/'
+          if (url === '/auth/host' || url === '/auth/host/') return '/host/index.html'
+          if (url === '/host' || url === '/host/') return '/host/index.html'
           if (url === '/auth/admin' || url === '/auth/admin/') return '/admin/'
           if (url.startsWith('/auth/assets/')) return url.replace(/^\/auth/, '')
           if (/^\/auth\/([a-z]+\.){4}[a-z]+\/?$/.test(url)) return '/reset/index.html'
@@ -53,7 +55,8 @@ export default defineConfig(({ command, mode }) => ({
         index: resolve(__dirname, 'index.html'),
         admin: resolve(__dirname, 'admin/index.html'),
         reset: resolve(__dirname, 'reset/index.html'),
-        restricted: resolve(__dirname, 'restricted/index.html')
+        restricted: resolve(__dirname, 'restricted/index.html'),
+        host: resolve(__dirname, 'host/index.html')
       },
       output: {}
     }
