@@ -395,7 +395,7 @@ async def api_logout(
         return {"message": "Already logged out"}
     with suppress(Exception):
         await db.instance.delete_session(session_key(auth))
-    response.delete_cookie(session.AUTH_COOKIE_NAME, path="/")
+    session.clear_session_cookie(response)
     return {"message": "Logged out successfully"}
 
 
