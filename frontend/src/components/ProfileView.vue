@@ -62,13 +62,20 @@
 
       <section class="section-block">
         <div class="button-row logout-row" :class="{ single: !hasMultipleSessions }">
+          <button
+            type="button"
+            class="btn-secondary"
+            @click="history.back()"
+          >
+            Back
+          </button>
           <button v-if="!hasMultipleSessions" @click="logoutEverywhere" class="btn-danger logout-button" :disabled="authStore.isLoading">Logout</button>
           <template v-else>
             <button @click="logout" class="btn-danger logout-button" :disabled="authStore.isLoading">Logout</button>
             <button @click="logoutEverywhere" class="btn-danger logout-button" :disabled="authStore.isLoading">All</button>
           </template>
         </div>
-        <p class="logout-note" v-if="!hasMultipleSessions">End your current session on {{ currentSessionHost }}.</p>
+        <p class="logout-note" v-if="!hasMultipleSessions"><strong>Logout</strong> from {{ currentSessionHost }}.</p>
         <p class="logout-note" v-else><strong>Logout</strong> this session on {{ currentSessionHost }}, or <strong>All</strong> sessions across all sites and devices for {{ rpName }}. You'll need to log in again with your passkey afterwards.</p>
       </section>
       <RegistrationLinkModal

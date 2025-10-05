@@ -32,9 +32,17 @@
               <button
                 type="button"
                 class="btn-secondary"
-                @click="goBack"
+                @click="history.back()"
               >
                 Back
+              </button>
+              <button
+                type="button"
+                class="btn-danger"
+                :disabled="authStore.isLoading"
+                @click="logout"
+              >
+                {{ authStore.isLoading ? 'Signing out…' : 'Logout' }}
               </button>
               <button
                 v-if="authSiteUrl"
@@ -44,14 +52,6 @@
                 @click="goToAuthSite"
               >
                 Full Profile
-              </button>
-              <button
-                type="button"
-                class="btn-danger"
-                :disabled="authStore.isLoading"
-                @click="logout"
-              >
-                {{ authStore.isLoading ? 'Signing out…' : 'Logout' }}
               </button>
             </div>
             <p class="note"><strong>Logout</strong> from {{ currentHost }}, or access your <strong>Full Profile</strong> at {{ authSiteHost }} (you may need to sign in again).</p>
@@ -100,10 +100,6 @@ const authSiteUrl = computed(() => {
 const goToAuthSite = () => {
   if (!authSiteUrl.value) return
   window.location.href = authSiteUrl.value
-}
-
-const goBack = () => {
-  window.history.back()
 }
 
 const logout = async () => {
