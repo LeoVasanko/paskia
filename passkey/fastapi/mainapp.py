@@ -8,7 +8,7 @@ from fastapi.staticfiles import StaticFiles
 
 from passkey.util import frontend, hostutil, passphrase
 
-from . import admin, api, ws
+from . import admin, api, auth_host, ws
 
 
 @asynccontextmanager
@@ -47,38 +47,8 @@ async def lifespan(app: FastAPI):  # pragma: no cover - startup path
 
 app = FastAPI(lifespan=lifespan)
 
-
-@app.middleware("http")
-async def auth_host_redirect(request, call_next):  # pragma: no cover
-    cfg = hostutil.configured_auth_host()
-    if not cfg:
-        return await call_next(request)
-    cur = hostutil.normalize_host(request.headers.get("host"))
-    if not cur or cur == hostutil.normalize_host(cfg):
-        return await call_next(request)
-    p = request.url.path or "/"
-    ui = {"/", "/admin", "/admin/", "/auth/", "/auth/admin", "/auth/admin/"}
-    restricted = p.startswith(
-        ("/auth/api/admin", "/auth/api/user", "/auth/api/ws", "/auth/ws/")
-    )
-    ui_match = p in ui
-    if not ui_match:
-        # Treat reset token pages as UI (dynamic). Accept single-segment tokens.
-        if p.startswith("/auth/"):
-            t = p[6:]
-            if t and "/" not in t and passphrase.is_well_formed(t):
-                ui_match = True
-        else:
-            t = p[1:]
-            if t and "/" not in t and passphrase.is_well_formed(t):
-                ui_match = True
-    if not (ui_match or restricted):
-        return await call_next(request)
-    if restricted:
-        return Response(status_code=404)
-    newp = p[5:] or "/" if ui_match and p.startswith("/auth") else p
-    return RedirectResponse(f"{request.url.scheme}://{cfg}{newp}", 307)
-
+# Apply redirections to auth-host if configured (deny access to restricted endpoints, remove /auth/)
+app.middleware("http")(auth_host.redirect_middleware)
 
 app.mount("/auth/admin/", admin.app)
 app.mount("/auth/api/", api.app)
