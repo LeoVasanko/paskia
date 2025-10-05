@@ -13,7 +13,7 @@ from uuid import UUID
 
 from .config import SESSION_LIFETIME
 from .db import ResetToken, Session
-from .globals import db
+from .globals import db, passkey
 from .util import hostutil
 from .util.tokens import create_token, reset_key, session_key
 
@@ -48,6 +48,10 @@ async def create_session(
     normalized_host = hostutil.normalize_host(host)
     if not normalized_host:
         raise ValueError("Host required for session creation")
+    hostname = normalized_host.split(":")[0]  # Domain names only, IPs aren't supported
+    rp_id = passkey.instance.rp_id
+    if not (hostname == rp_id or hostname.endswith(f".{rp_id}")):
+        raise ValueError(f"Host must be the same as or a subdomain of {rp_id}")
     token = create_token()
     now = datetime.now(timezone.utc)
     await db.instance.create_session(
