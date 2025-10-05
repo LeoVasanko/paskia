@@ -6,10 +6,6 @@
         <header class="view-header">
           <h1>{{ headingTitle }}</h1>
           <p class="view-lede">{{ subheading }}</p>
-          <p v-if="authSiteUrl" class="view-hint">
-            Manage your full profile on
-            <a :href="authSiteUrl">{{ authSiteHost }}</a> (you may need to login again).
-          </p>
         </header>
 
         <section class="section-block">
@@ -34,13 +30,20 @@
           <div class="section-body host-actions">
             <div class="button-row">
               <button
-                v-if="authSiteUrl"
                 type="button"
                 class="btn-secondary"
+                @click="goBack"
+              >
+                Back
+              </button>
+              <button
+                v-if="authSiteUrl"
+                type="button"
+                class="btn-primary"
                 :disabled="authStore.isLoading"
                 @click="goToAuthSite"
               >
-                Open full profile
+                Full Profile
               </button>
               <button
                 type="button"
@@ -51,7 +54,7 @@
                 {{ authStore.isLoading ? 'Signing out…' : 'Logout' }}
               </button>
             </div>
-            <p class="note">Signed in on <strong>{{ currentHost }}</strong>.</p>
+            <p class="note"><strong>Logout</strong> from {{ currentHost }}, or access your <strong>Full Profile</strong> at {{ authSiteHost }} (you may need to sign in again).</p>
           </div>
         </section>
       </div>
@@ -80,7 +83,7 @@ const headingTitle = computed(() => {
 
 const subheading = computed(() => {
   const service = authStore.settings?.rp_name || 'this service'
-  return `You\u2019re signed in via ${service} on ${currentHost}.`
+  return `You're signed in to ${currentHost}.`
 })
 
 const authSiteHost = computed(() => authStore.settings?.auth_host || '')
@@ -97,6 +100,10 @@ const authSiteUrl = computed(() => {
 const goToAuthSite = () => {
   if (!authSiteUrl.value) return
   window.location.href = authSiteUrl.value
+}
+
+const goBack = () => {
+  window.history.back()
 }
 
 const logout = async () => {
