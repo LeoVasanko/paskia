@@ -2,7 +2,7 @@ import logging
 from datetime import timezone
 from uuid import UUID, uuid4
 
-from fastapi import Body, Cookie, FastAPI, HTTPException, Request
+from fastapi import Body, FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse
 
 from ..authsession import reset_expires
@@ -18,6 +18,7 @@ from ..util import (
 )
 from ..util.tokens import encode_session_key, session_key
 from . import authz
+from .session import AUTH_COOKIE
 
 app = FastAPI()
 
@@ -34,7 +35,7 @@ async def general_exception_handler(_request, exc: Exception):
 
 
 @app.get("/")
-async def adminapp(request: Request, auth=Cookie(None, alias="__Host-auth")):
+async def adminapp(request: Request, auth=AUTH_COOKIE):
     """Serve admin SPA only for authenticated users with admin/org permissions.
 
     On missing/invalid session or insufficient permissions, serve restricted SPA.
@@ -57,7 +58,7 @@ async def adminapp(request: Request, auth=Cookie(None, alias="__Host-auth")):
 
 
 @app.get("/orgs")
-async def admin_list_orgs(request: Request, auth=Cookie(None, alias="__Host-auth")):
+async def admin_list_orgs(request: Request, auth=AUTH_COOKIE):
     ctx = await authz.verify(
         auth,
         ["auth:admin", "auth:org:*"],
@@ -100,7 +101,7 @@ async def admin_list_orgs(request: Request, auth=Cookie(None, alias="__Host-auth
 
 @app.post("/orgs")
 async def admin_create_org(
-    request: Request, payload: dict = Body(...), auth=Cookie(None, alias="__Host-auth")
+    request: Request, payload: dict = Body(...), auth=AUTH_COOKIE
 ):
     await authz.verify(
         auth, ["auth:admin"], host=request.headers.get("host"), match=permutil.has_all
@@ -132,7 +133,7 @@ async def admin_update_org(
     org_uuid: UUID,
     request: Request,
     payload: dict = Body(...),
-    auth=Cookie(None, alias="__Host-auth"),
+    auth=AUTH_COOKIE,
 ):
     ctx = await authz.verify(
         auth,
@@ -165,9 +166,7 @@ async def admin_update_org(
 
 
 @app.delete("/orgs/{org_uuid}")
-async def admin_delete_org(
-    org_uuid: UUID, request: Request, auth=Cookie(None, alias="__Host-auth")
-):
+async def admin_delete_org(org_uuid: UUID, request: Request, auth=AUTH_COOKIE):
     ctx = await authz.verify(
         auth,
         ["auth:admin", f"auth:org:{org_uuid}"],
@@ -200,7 +199,7 @@ async def admin_add_org_permission(
     org_uuid: UUID,
     permission_id: str,
     request: Request,
-    auth=Cookie(None, alias="__Host-auth"),
+    auth=AUTH_COOKIE,
 ):
     await authz.verify(
         auth, ["auth:admin"], host=request.headers.get("host"), match=permutil.has_all
@@ -214,7 +213,7 @@ async def admin_remove_org_permission(
     org_uuid: UUID,
     permission_id: str,
     request: Request,
-    auth=Cookie(None, alias="__Host-auth"),
+    auth=AUTH_COOKIE,
 ):
     await authz.verify(
         auth, ["auth:admin"], host=request.headers.get("host"), match=permutil.has_all
@@ -231,7 +230,7 @@ async def admin_create_role(
     org_uuid: UUID,
     request: Request,
     payload: dict = Body(...),
-    auth=Cookie(None, alias="__Host-auth"),
+    auth=AUTH_COOKIE,
 ):
     await authz.verify(
         auth,
@@ -266,7 +265,7 @@ async def admin_update_role(
     role_uuid: UUID,
     request: Request,
     payload: dict = Body(...),
-    auth=Cookie(None, alias="__Host-auth"),
+    auth=AUTH_COOKIE,
 ):
     # Verify caller is global admin or admin of provided org
     ctx = await authz.verify(
@@ -315,7 +314,7 @@ async def admin_delete_role(
     org_uuid: UUID,
     role_uuid: UUID,
     request: Request,
-    auth=Cookie(None, alias="__Host-auth"),
+    auth=AUTH_COOKIE,
 ):
     ctx = await authz.verify(
         auth,
@@ -343,7 +342,7 @@ async def admin_create_user(
     org_uuid: UUID,
     request: Request,
     payload: dict = Body(...),
-    auth=Cookie(None, alias="__Host-auth"),
+    auth=AUTH_COOKIE,
 ):
     await authz.verify(
         auth,
@@ -379,7 +378,7 @@ async def admin_update_user_role(
     user_uuid: UUID,
     request: Request,
     payload: dict = Body(...),
-    auth=Cookie(None, alias="__Host-auth"),
+    auth=AUTH_COOKIE,
 ):
     ctx = await authz.verify(
         auth,
@@ -422,7 +421,7 @@ async def admin_create_user_registration_link(
     org_uuid: UUID,
     user_uuid: UUID,
     request: Request,
-    auth=Cookie(None, alias="__Host-auth"),
+    auth=AUTH_COOKIE,
 ):
     try:
         user_org, _role_name = await db.instance.get_user_organization(user_uuid)
@@ -472,7 +471,7 @@ async def admin_get_user_detail(
     org_uuid: UUID,
     user_uuid: UUID,
     request: Request,
-    auth=Cookie(None, alias="__Host-auth"),
+    auth=AUTH_COOKIE,
 ):
     try:
         user_org, role_name = await db.instance.get_user_organization(user_uuid)
@@ -619,7 +618,7 @@ async def admin_update_user_display_name(
     user_uuid: UUID,
     request: Request,
     payload: dict = Body(...),
-    auth=Cookie(None, alias="__Host-auth"),
+    auth=AUTH_COOKIE,
 ):
     try:
         user_org, _role_name = await db.instance.get_user_organization(user_uuid)
@@ -653,7 +652,7 @@ async def admin_delete_user_credential(
     user_uuid: UUID,
     credential_uuid: UUID,
     request: Request,
-    auth=Cookie(None, alias="__Host-auth"),
+    auth=AUTH_COOKIE,
 ):
     try:
         user_org, _role_name = await db.instance.get_user_organization(user_uuid)
@@ -680,9 +679,7 @@ async def admin_delete_user_credential(
 
 
 @app.get("/permissions")
-async def admin_list_permissions(
-    request: Request, auth=Cookie(None, alias="__Host-auth")
-):
+async def admin_list_permissions(request: Request, auth=AUTH_COOKIE):
     ctx = await authz.verify(
         auth,
         ["auth:admin", "auth:org:*"],
@@ -705,7 +702,7 @@ async def admin_list_permissions(
 async def admin_create_permission(
     request: Request,
     payload: dict = Body(...),
-    auth=Cookie(None, alias="__Host-auth"),
+    auth=AUTH_COOKIE,
 ):
     await authz.verify(
         auth, ["auth:admin"], host=request.headers.get("host"), match=permutil.has_all
@@ -726,7 +723,7 @@ async def admin_update_permission(
     permission_id: str,
     display_name: str,
     request: Request,
-    auth=Cookie(None, alias="__Host-auth"),
+    auth=AUTH_COOKIE,
 ):
     await authz.verify(
         auth, ["auth:admin"], host=request.headers.get("host"), match=permutil.has_all
@@ -746,7 +743,7 @@ async def admin_update_permission(
 async def admin_rename_permission(
     request: Request,
     payload: dict = Body(...),
-    auth=Cookie(None, alias="__Host-auth"),
+    auth=AUTH_COOKIE,
 ):
     await authz.verify(
         auth, ["auth:admin"], host=request.headers.get("host"), match=permutil.has_all
@@ -777,7 +774,7 @@ async def admin_rename_permission(
 async def admin_delete_permission(
     permission_id: str,
     request: Request,
-    auth=Cookie(None, alias="__Host-auth"),
+    auth=AUTH_COOKIE,
 ):
     await authz.verify(
         auth, ["auth:admin"], host=request.headers.get("host"), match=permutil.has_all

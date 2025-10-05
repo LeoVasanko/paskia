@@ -2,13 +2,14 @@ import logging
 import os
 from contextlib import asynccontextmanager
 
-from fastapi import Cookie, FastAPI, HTTPException, Request, Response
+from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from passkey.util import frontend, hostutil, passphrase
 
 from . import admin, api, auth_host, ws
+from .session import AUTH_COOKIE
 
 
 @asynccontextmanager
@@ -63,9 +64,7 @@ app.mount(
 
 @app.get("/")
 @app.get("/auth/")
-async def frontapp(
-    request: Request, response: Response, auth=Cookie(None, alias="__Host-auth")
-):
+async def frontapp(request: Request, response: Response, auth=AUTH_COOKIE):
     """Serve the user profile SPA only for authenticated sessions; otherwise restricted SPA.
 
     Login / authentication UX is centralized in the restricted app.
@@ -98,7 +97,7 @@ async def admin_root_redirect():
 
 
 @app.get("/admin/", include_in_schema=False)
-async def admin_root(request: Request, auth=Cookie(None, alias="__Host-auth")):
+async def admin_root(request: Request, auth=AUTH_COOKIE):
     return await admin.adminapp(request, auth)  # Delegated (enforces access control)
 
 

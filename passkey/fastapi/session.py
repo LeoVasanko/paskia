@@ -8,11 +8,12 @@ This module provides FastAPI-specific session management functionality:
 Generic session management functions have been moved to authsession.py
 """
 
-from fastapi import Request, Response, WebSocket
+from fastapi import Cookie, Request, Response, WebSocket
 
 from ..authsession import EXPIRES
 
 AUTH_COOKIE_NAME = "__Host-auth"
+AUTH_COOKIE = Cookie(None, alias=AUTH_COOKIE_NAME)
 
 
 def infodict(request: Request | WebSocket, type: str) -> dict:

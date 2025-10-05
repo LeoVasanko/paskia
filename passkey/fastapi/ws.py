@@ -2,14 +2,14 @@ import logging
 from functools import wraps
 from uuid import UUID
 
-from fastapi import Cookie, FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from webauthn.helpers.exceptions import InvalidAuthenticationResponse
 
 from ..authsession import create_session, get_reset, get_session
 from ..globals import db, passkey
 from ..util import passphrase
 from ..util.tokens import create_token, session_key
-from .session import infodict
+from .session import AUTH_COOKIE, infodict
 
 
 # WebSocket error handling decorator
@@ -59,7 +59,7 @@ async def websocket_register_add(
     ws: WebSocket,
     reset: str | None = None,
     name: str | None = None,
-    auth=Cookie(None, alias="__Host-auth"),
+    auth=AUTH_COOKIE,
 ):
     """Register a new credential for an existing user.
 
