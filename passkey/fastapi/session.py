@@ -35,3 +35,17 @@ def set_session_cookie(response: Response, token: str) -> None:
         path="/",
         samesite="lax",
     )
+
+
+def clear_session_cookie(response: Response) -> None:
+    # FastAPI's delete_cookie does not set the secure attribute
+    response.set_cookie(
+        key=AUTH_COOKIE_NAME,
+        value="",
+        max_age=0,
+        expires=0,
+        httponly=True,
+        secure=True,
+        path="/",
+        samesite="lax",
+    )

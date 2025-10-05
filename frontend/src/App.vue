@@ -2,10 +2,7 @@
   <div class="app-shell">
     <StatusMessage />
     <main class="app-main">
-      <template v-if="initialized">
-        <LoginView v-if="store.currentView === 'login'" />
-        <ProfileView v-if="store.currentView === 'profile'" />
-      </template>
+      <ProfileView v-if="initialized" />
       <div v-else class="loading-container">
         <div class="loading-spinner"></div>
         <p>Loading...</p>
@@ -17,27 +14,17 @@
 <script setup>
 import { onMounted, ref } from 'vue'
 import { useAuthStore } from '@/stores/auth'
+import { getSettings } from '@/utils/settings'
 import StatusMessage from '@/components/StatusMessage.vue'
-import LoginView from '@/components/LoginView.vue'
 import ProfileView from '@/components/ProfileView.vue'
 const store = useAuthStore()
 const initialized = ref(false)
 
 onMounted(async () => {
-  await store.loadSettings()
-  const message = location.hash.substring(1)
-  if (message) {
-    store.showMessage(decodeURIComponent(message), 'error')
-    history.replaceState(null, '', location.pathname)
-  }
-  try {
-    await store.loadUserInfo()
-  } catch (error) {
-    console.log('Failed to load user info:', error)
-  } finally {
-    initialized.value = true
-    store.selectView()
-  }
+  const settings = await getSettings()
+  if (settings?.rp_name) document.title = settings.rp_name
+  try { await store.loadUserInfo() } catch (_) { /* user info load errors ignored */ }
+  initialized.value = true
 })
 </script>
 

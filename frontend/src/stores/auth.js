@@ -5,7 +5,6 @@ export const useAuthStore = defineStore('auth', {
   state: () => ({
     // Auth State
     userInfo: null, // Contains the full user info response: {user, credentials, aaguid_info}
-    settings: null, // Server provided settings (/auth/settings)
     isLoading: false,
 
     // UI State
@@ -17,15 +16,6 @@ export const useAuthStore = defineStore('auth', {
     },
   }),
   getters: {
-    uiBasePath(state) {
-      const configured = state.settings?.ui_base_path || '/auth/'
-      if (!configured.endsWith('/')) return `${configured}/`
-      return configured
-    },
-    adminUiPath() {
-      const base = this.uiBasePath
-      return base === '/' ? '/admin/' : `${base}admin/`
-    },
   },
   actions: {
     setLoading(flag) {
@@ -42,15 +32,6 @@ export const useAuthStore = defineStore('auth', {
           this.status.show = false
         }, duration)
       }
-    },
-    uiHref(suffix = '') {
-      const trimmed = suffix.startsWith('/') ? suffix.slice(1) : suffix
-      if (!trimmed) return this.uiBasePath
-      if (this.uiBasePath === '/') return `/${trimmed}`
-      return `${this.uiBasePath}${trimmed}`
-    },
-    adminHomeHref() {
-      return this.adminUiPath
     },
     async setSessionCookie(sessionToken) {
       const response = await fetch('/auth/api/set-session', {
@@ -112,19 +93,6 @@ export const useAuthStore = defineStore('auth', {
       }
       this.userInfo = result
       console.log('User info loaded:', result)
-    },
-    async loadSettings() {
-      try {
-  const res = await fetch('/auth/api/settings')
-        if (!res.ok) return
-        const data = await res.json()
-        this.settings = data
-        if (data?.rp_name) {
-          document.title = data.rp_name
-        }
-      } catch (_) {
-        // ignore
-      }
     },
     async deleteCredential(uuid) {
   const response = await fetch(`/auth/api/user/credential/${uuid}`, {method: 'Delete'})
