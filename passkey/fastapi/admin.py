@@ -441,13 +441,18 @@ async def admin_create_user_registration_link(
         and f"auth:org:{org_uuid}" not in ctx.role.permissions
     ):
         raise HTTPException(status_code=403, detail="Insufficient permissions")
+
+    # Check if user has existing credentials
+    credentials = await db.instance.get_credentials_by_user_uuid(user_uuid)
+    token_type = "user registration" if not credentials else "account recovery"
+
     token = passphrase.generate()
     expiry = reset_expires()
     await db.instance.create_reset_token(
         user_uuid=user_uuid,
         key=tokens.reset_key(token),
         expiry=expiry,
-        token_type="device addition",
+        token_type=token_type,
     )
     url = hostutil.reset_link_url(
         token, request.url.scheme, request.headers.get("host")
