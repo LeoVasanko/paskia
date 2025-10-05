@@ -14,15 +14,14 @@
 <script setup>
 import { onMounted, ref } from 'vue'
 import { useAuthStore } from '@/stores/auth'
-import { getSettings } from '@/utils/settings'
 import StatusMessage from '@/components/StatusMessage.vue'
 import ProfileView from '@/components/ProfileView.vue'
 const store = useAuthStore()
 const initialized = ref(false)
 
 onMounted(async () => {
-  const settings = await getSettings()
-  if (settings?.rp_name) document.title = settings.rp_name
+  await store.loadSettings()
+  if (store.settings?.rp_name) document.title = store.settings.rp_name
   try { await store.loadUserInfo() } catch (_) { /* user info load errors ignored */ }
   initialized.value = true
 })

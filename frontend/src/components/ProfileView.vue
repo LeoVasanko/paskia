@@ -3,7 +3,7 @@
     <div class="view-content">
       <header class="view-header">
         <h1>👋 Welcome!</h1>
-  <Breadcrumbs :entries="breadcrumbEntries" />
+        <Breadcrumbs :entries="breadcrumbEntries" />
         <p class="view-lede">Manage your account details and passkeys.</p>
       </header>
 
@@ -61,10 +61,15 @@
       </Modal>
 
       <section class="section-block">
-        <div class="button-row logout-row single">
-          <button @click="logoutEverywhere" class="btn-danger logout-button">Logout all sessions</button>
+        <div class="button-row logout-row" :class="{ single: !hasMultipleSessions }">
+          <button v-if="!hasMultipleSessions" @click="logoutEverywhere" class="btn-danger logout-button" :disabled="authStore.isLoading">Logout</button>
+          <template v-else>
+            <button @click="logout" class="btn-danger logout-button" :disabled="authStore.isLoading">Logout</button>
+            <button @click="logoutEverywhere" class="btn-danger logout-button" :disabled="authStore.isLoading">All</button>
+          </template>
         </div>
-        <p class="logout-note">Immediately revokes access for every device and browser signed in to your account.</p>
+        <p class="logout-note" v-if="!hasMultipleSessions">End your current session on {{ currentSessionHost }}.</p>
+        <p class="logout-note" v-else><strong>Logout</strong> this session on {{ currentSessionHost }}, or <strong>All</strong> sessions across all sites and devices for {{ rpName }}. You'll need to log in again with your passkey afterwards.</p>
       </section>
       <RegistrationLinkModal
         v-if="showRegLink"
@@ -129,7 +134,12 @@ const handleDelete = async (credential) => {
   } catch (error) { authStore.showMessage(`Failed to delete passkey: ${error.message}`, 'error') }
 }
 
+const rpName = computed(() => authStore.settings?.rp_name || 'this service')
 const sessions = computed(() => authStore.userInfo?.sessions || [])
+const currentSessionHost = computed(() => {
+  const currentSession = sessions.value.find(session => session.is_current)
+  return currentSession?.host || 'this host'
+})
 const terminatingSessions = ref({})
 
 const terminateSession = async (session) => {
@@ -146,8 +156,10 @@ const terminateSession = async (session) => {
 }
 
 const logoutEverywhere = async () => { await authStore.logoutEverywhere() }
+const logout = async () => { await authStore.logout() }
 const openNameDialog = () => { newName.value = authStore.userInfo?.user?.user_name || ''; showNameDialog.value = true }
 const isAdmin = computed(() => !!(authStore.userInfo?.is_global_admin || authStore.userInfo?.is_org_admin))
+const hasMultipleSessions = computed(() => sessions.value.length > 1)
 const breadcrumbEntries = computed(() => { const entries = [{ label: 'Auth', href: makeUiHref() }]; if (isAdmin.value) entries.push({ label: 'Admin', href: adminUiPath() }); return entries })
 
 const saveName = async () => {
