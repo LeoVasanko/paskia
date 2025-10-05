@@ -3,7 +3,6 @@ from contextlib import suppress
 from datetime import datetime, timedelta, timezone
 
 from fastapi import (
-    Cookie,
     Depends,
     FastAPI,
     HTTPException,
@@ -29,6 +28,7 @@ from ..globals import passkey as global_passkey
 from ..util import hostutil, passphrase, permutil
 from ..util.tokens import encode_session_key, session_key
 from . import authz, session, user
+from .session import AUTH_COOKIE
 
 bearer_auth = HTTPBearer(auto_error=True)
 
@@ -69,7 +69,7 @@ async def validate_token(
     request: Request,
     response: Response,
     perm: list[str] = Query([]),
-    auth=Cookie(None, alias="__Host-auth"),
+    auth=AUTH_COOKIE,
 ):
     """Validate the current session and extend its expiry.
 
@@ -110,7 +110,7 @@ async def forward_authentication(
     request: Request,
     response: Response,
     perm: list[str] = Query([]),
-    auth=Cookie(None, alias="__Host-auth"),
+    auth=AUTH_COOKIE,
 ):
     """Forward auth validation for Caddy/Nginx.
 
@@ -175,7 +175,7 @@ async def api_user_info(
     request: Request,
     response: Response,
     reset: str | None = None,
-    auth=Cookie(None, alias="__Host-auth"),
+    auth=AUTH_COOKIE,
 ):
     authenticated = False
     session_record = None
@@ -360,9 +360,7 @@ async def api_user_info(
 
 
 @app.post("/logout")
-async def api_logout(
-    request: Request, response: Response, auth=Cookie(None, alias="__Host-auth")
-):
+async def api_logout(request: Request, response: Response, auth=AUTH_COOKIE):
     if not auth:
         return {"message": "Already logged out"}
     try:

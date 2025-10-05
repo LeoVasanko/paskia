@@ -3,7 +3,6 @@ from uuid import UUID
 
 from fastapi import (
     Body,
-    Cookie,
     FastAPI,
     HTTPException,
     Request,
@@ -19,6 +18,7 @@ from ..globals import db
 from ..util import hostutil, passphrase, tokens
 from ..util.tokens import decode_session_key, session_key
 from . import session
+from .session import AUTH_COOKIE
 
 app = FastAPI()
 
@@ -28,7 +28,7 @@ async def user_update_display_name(
     request: Request,
     response: Response,
     payload: dict = Body(...),
-    auth=Cookie(None, alias="__Host-auth"),
+    auth=AUTH_COOKIE,
 ):
     if not auth:
         raise HTTPException(status_code=401, detail="Authentication Required")
@@ -46,9 +46,7 @@ async def user_update_display_name(
 
 
 @app.post("/logout-all")
-async def api_logout_all(
-    request: Request, response: Response, auth=Cookie(None, alias="__Host-auth")
-):
+async def api_logout_all(request: Request, response: Response, auth=AUTH_COOKIE):
     if not auth:
         return {"message": "Already logged out"}
     try:
@@ -65,7 +63,7 @@ async def api_delete_session(
     request: Request,
     response: Response,
     session_id: str,
-    auth=Cookie(None, alias="__Host-auth"),
+    auth=AUTH_COOKIE,
 ):
     if not auth:
         raise HTTPException(status_code=401, detail="Authentication Required")
@@ -97,7 +95,7 @@ async def api_delete_credential(
     request: Request,
     response: Response,
     uuid: UUID,
-    auth: str = Cookie(None, alias="__Host-auth"),
+    auth: str = AUTH_COOKIE,
 ):
     try:
         await delete_credential(uuid, auth, host=request.headers.get("host"))
@@ -110,7 +108,7 @@ async def api_delete_credential(
 async def api_create_link(
     request: Request,
     response: Response,
-    auth=Cookie(None, alias="__Host-auth"),
+    auth=AUTH_COOKIE,
 ):
     try:
         s = await get_session(auth, host=request.headers.get("host"))
