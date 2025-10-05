@@ -7,7 +7,7 @@ from webauthn.helpers.exceptions import InvalidAuthenticationResponse
 
 from ..authsession import create_session, get_reset, get_session
 from ..globals import db, passkey
-from ..util import hostutil, passphrase
+from ..util import passphrase
 from ..util.tokens import create_token, session_key
 from .session import infodict
 
@@ -68,9 +68,7 @@ async def websocket_register_add(
     - Reset token supplied as ?reset=... (auth cookie ignored)
     """
     origin = ws.headers["origin"]
-    host = hostutil.normalize_host(ws.headers.get("host"))
-    if host is None:
-        raise ValueError("Missing host header")
+    host = origin.split("://", 1)[1]
     if reset is not None:
         if not passphrase.is_well_formed(reset):
             raise ValueError("Invalid reset token")
@@ -123,9 +121,7 @@ async def websocket_register_add(
 @websocket_error_handler
 async def websocket_authenticate(ws: WebSocket):
     origin = ws.headers["origin"]
-    host = hostutil.normalize_host(ws.headers.get("host"))
-    if host is None:
-        raise ValueError("Missing host header")
+    host = origin.split("://", 1)[1]
     options, challenge = passkey.instance.auth_generate_options()
     await ws.send_json(options)
     # Wait for the client to use his authenticator to authenticate
