@@ -10,7 +10,7 @@
       <div class="view-content">
         <div class="surface surface--tight" style="max-width: 560px; margin: 0 auto; width: 100%;">
           <header class="view-header" style="text-align: center;">
-            <h1>🔑 Complete Your Passkey Setup</h1>
+            <h1>🔑 Registration</h1>
             <p class="view-lede">
               {{ subtitleMessage }}
             </p>
@@ -38,13 +38,11 @@
                 <input
                   type="text"
                   v-model="displayName"
-                  :placeholder="namePlaceholder"
                   :disabled="loading"
                   maxlength="64"
                   @keyup.enter="registerPasskey"
                 />
               </label>
-              <p>Click below to finish {{ sessionDescriptor }}.</p>
               <button
                 class="btn-primary"
                 :disabled="loading"
@@ -81,11 +79,10 @@ const errorMessage = ref('')
 let statusTimer = null
 
 const sessionDescriptor = computed(() => userInfo.value?.session_type || 'your enrollment')
-const namePlaceholder = computed(() => userInfo.value?.user?.user_name || 'Your name')
 const subtitleMessage = computed(() => {
   if (initializing.value) return 'Preparing your secure enrollment…'
   if (!canRegister.value) return 'This reset link is no longer valid.'
-  return `Finish setting up a passkey for ${userInfo.value?.user?.user_name || 'your account'}.`
+  return `Finish up ${sessionDescriptor.value}. You may edit the name below if needed, and it will be saved to your passkey.`
 })
 
 const basePath = computed(() => uiBasePath())
@@ -128,6 +125,7 @@ async function fetchUserInfo() {
       return
     }
     userInfo.value = await res.json()
+    displayName.value = userInfo.value?.user?.user_name || ''
   } catch (error) {
     console.error('Failed to load user info', error)
     const message = 'We could not load your reset details. Try refreshing the page.'
