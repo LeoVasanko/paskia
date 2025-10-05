@@ -14,14 +14,14 @@ Two deployment modes:
 
 2. Dedicated auth host (`--auth-host auth.example.com`)
    - The specified auth host serves the UI at the root (`/`, `/admin/`, reset tokens, etc.).
-   - Other (non‑auth) hosts expose only non‑restricted API endpoints; UI is redirected to the auth host.
+   - Other (non‑auth) hosts show a lightweight account summary at `/` or `/auth/`, while other UI routes still redirect to the auth host.
    - Restricted endpoints on non‑auth hosts return `404` instead of redirecting.
 
 ### Path Mapping When Auth Host Enabled
 
 | Purpose | On Auth Host | On Other Hosts (incoming) | Action |
 |---------|--------------|---------------------------|--------|
-| Main UI | `/` | `/auth/` or `/` | Redirect -> auth host `/` (strip leading `/auth` if present) |
+| Main UI | `/` | `/auth/` or `/` | Serve account summary SPA (no redirect) |
 | Admin UI root | `/admin/` | `/auth/admin/` or `/admin/` | Redirect -> auth host `/admin/` (strip `/auth`) |
 | Reset / device addition token | `/{token}` | `/auth/{token}` | Redirect -> auth host `/{token}` (strip `/auth`) |
 | Static assets | `/auth/assets/*` | `/auth/assets/*` | Served directly (no redirect) |
@@ -38,7 +38,7 @@ Notes:
 
 | Method | Path (multi‑host) | Path (auth host) | Description |
 |--------|-------------------|------------------|-------------|
-| GET | `/auth/` | `/` | Main authentication SPA |
+| GET | `/auth/` | `/` | Main authentication SPA (non-auth hosts show an account summary view) |
 | GET | `/auth/admin/` | `/admin/` | Admin SPA root |
 | GET | `/auth/{reset_token}` | `/{reset_token}` | Reset / device addition SPA (token validated) |
 | GET | `/auth/restricted` | `/restricted` | Restricted / permission denied SPA |
