@@ -1,0 +1,10 @@
+localhost {
+	# Forwards API by caddy, bypassing the Vite dev proxy
+	# Avoids bug https://github.com/oven-sh/bun/issues/9882
+	handle /api/* {
+		reverse_proxy :4402   # directly to backend
+	}
+	handle {
+		reverse_proxy :4403   # vite dev server
+	}
+}
