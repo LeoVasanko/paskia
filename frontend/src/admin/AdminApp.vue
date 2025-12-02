@@ -1,10 +1,12 @@
 <script setup>
-import { ref, onMounted, onBeforeUnmount, computed, watch } from 'vue'
+import { ref, onMounted, onBeforeUnmount, onUnmounted, computed, watch } from 'vue'
 import Breadcrumbs from '@/components/Breadcrumbs.vue'
 import CredentialList from '@/components/CredentialList.vue'
 import UserBasicInfo from '@/components/UserBasicInfo.vue'
 import RegistrationLinkModal from '@/components/RegistrationLinkModal.vue'
 import StatusMessage from '@/components/StatusMessage.vue'
+import LoadingView from '@/components/LoadingView.vue'
+import AuthRequiredMessage from '@/components/AuthRequiredMessage.vue'
 import AdminOverview from './AdminOverview.vue'
 import AdminOrgDetail from './AdminOrgDetail.vue'
 import AdminUserDetail from './AdminUserDetail.vue'
@@ -14,6 +16,9 @@ import { getSettings, adminUiPath, makeUiHref } from '@/utils/settings'
 
 const info = ref(null)
 const loading = ref(true)
+const loadingMessage = ref('Loading...')
+const authenticated = ref(false)
+const showBackMessage = ref(false)
 const error = ref(null)
 const orgs = ref([])
 const permissions = ref([])
@@ -31,6 +36,16 @@ const editingPermDisplay = ref(null)
 const renameDisplayValue = ref('')
 const dialog = ref({ type: null, data: null, busy: false, error: '' })
 const safeIdRegex = /[^A-Za-z0-9:._~-]/g
+let authIframe = null
+
+watch(() => authStore.authRequired, (required) => {
+  if (required) {
+    authenticated.value = false
+    loading.value = true
+    showAuthIframe()
+    authStore.clearAuthRequired()
+  }
+})
 
 function sanitizeRenameId() { if (renameIdValue.value) renameIdValue.value = renameIdValue.value.replace(safeIdRegex, '') }
 
@@ -135,9 +150,12 @@ function parseHash() {
 
 async function loadOrgs() {
   const res = await fetch('/auth/admin/orgs')
+  if (res.status === 401) {
+    authStore.authRequired = true
+    throw new Error('Authentication required')
+  }
   const data = await res.json()
   if (data.detail) throw new Error(data.detail)
-  // Restructure to attach users to roles instead of flat user list at org level
   orgs.value = data.map(o => {
     const roles = o.roles.map(r => ({ ...r, org_uuid: o.uuid, users: [] }))
     const roleMap = Object.fromEntries(roles.map(r => [r.display_name, r]))
@@ -150,6 +168,10 @@ async function loadOrgs() {
 
 async function loadPermissions() {
   const res = await fetch('/auth/admin/permissions')
+  if (res.status === 401) {
+    authStore.authRequired = true
+    throw new Error('Authentication required')
+  }
   const data = await res.json()
   if (data.detail) throw new Error(data.detail)
   permissions.value = data
@@ -157,16 +179,22 @@ async function loadPermissions() {
 
 async function load() {
   loading.value = true
+  loadingMessage.value = 'Loading...'
   error.value = null
   try {
-  const res = await fetch('/auth/api/user-info', { method: 'POST' })
+    const res = await fetch('/auth/api/user-info', { method: 'POST' })
+    if (res.status === 401) {
+      authStore.authRequired = true
+      loading.value = true
+      return
+    }
     const data = await res.json()
     if (data.detail) throw new Error(data.detail)
     info.value = data
+    authenticated.value = true
     if (data.authenticated && (data.is_global_admin || data.is_org_admin)) {
       await Promise.all([loadOrgs(), loadPermissions()])
     }
-    // After loading orgs decide view if not global admin
     if (!data.is_global_admin && data.is_org_admin && orgs.value.length === 1) {
       if (!window.location.hash || window.location.hash === '#overview') {
         currentOrgId.value = orgs.value[0].uuid
@@ -288,11 +316,72 @@ function deletePermission(p) {
   } })
 }
 
+function showAuthIframe() {
+  hideAuthIframe()
+  authIframe = document.createElement('iframe')
+  authIframe.id = 'auth-iframe'
+  authIframe.title = 'Authentication'
+  authIframe.src = '/auth/restricted-api/?mode=login'
+  document.body.appendChild(authIframe)
+  loadingMessage.value = 'Authentication required...'
+}
+
+function hideAuthIframe() {
+  if (authIframe) {
+    authIframe.remove()
+    authIframe = null
+  }
+}
+
+function reloadPage() {
+  window.location.reload()
+}
+
+function handleAuthMessage(event) {
+  const data = event.data
+  if (!data?.type) return
+
+  switch (data.type) {
+    case 'auth-success':
+      hideAuthIframe()
+      loading.value = true
+      loadingMessage.value = 'Loading admin panel...'
+      authStore.clearAuthRequired()
+      load()
+      break
+
+    case 'auth-error':
+      if (!data.cancelled) {
+        authStore.showMessage(data.message || 'Authentication failed', 'error', 5000)
+      }
+      break
+
+    case 'auth-back':
+      hideAuthIframe()
+      loading.value = false
+      showBackMessage.value = true
+      break
+
+    case 'auth-close-request':
+      hideAuthIframe()
+      break
+  }
+}
+
 onMounted(async () => {
+  window.addEventListener('message', handleAuthMessage)
   window.addEventListener('hashchange', parseHash)
   const settings = await getSettings()
   if (settings?.rp_name) document.title = settings.rp_name + ' Admin'
-  load()
+  await load()
+  if (authStore.authRequired) {
+    showAuthIframe()
+  }
+})
+
+onUnmounted(() => {
+  window.removeEventListener('message', handleAuthMessage)
+  hideAuthIframe()
 })
 
 const selectedOrg = computed(() => orgs.value.find(o => o.uuid === currentOrgId.value) || null)
@@ -484,7 +573,13 @@ async function submitDialog() {
   <div class="app-shell admin-shell">
     <StatusMessage />
     <main class="app-main">
-      <section class="view-root view-root--wide view-admin">
+      <LoadingView v-if="loading" :message="loadingMessage" />
+      <AuthRequiredMessage 
+        v-else-if="showBackMessage" 
+        message="You need to authenticate to access the admin panel."
+        @reload="reloadPage" 
+      />
+      <section v-else class="view-root view-root--wide view-admin">
         <header class="view-header">
           <h1>{{ pageHeading }}</h1>
           <Breadcrumbs :entries="breadcrumbEntries" />
@@ -492,8 +587,7 @@ async function submitDialog() {
 
         <section class="section-block admin-section">
           <div class="section-body admin-section-body">
-            <div v-if="loading" class="surface surface--tight">Loading…</div>
-            <div v-else-if="error" class="surface surface--tight error">{{ error }}</div>
+            <div v-if="error" class="surface surface--tight error">{{ error }}</div>
             <template v-else>
               <div v-if="!info?.authenticated" class="surface surface--tight">
                 <p>You must be authenticated.</p>

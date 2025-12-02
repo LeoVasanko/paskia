@@ -3,19 +3,8 @@
     <StatusMessage />
     <main class="app-main">
       <ProfileView v-if="authenticated" />
-      <div v-else-if="loading" class="loading-container">
-        <div class="loading-spinner"></div>
-        <p>{{ loadingMessage }}</p>
-      </div>
-      <div v-else-if="showBackMessage" class="message-container">
-        <div class="message-content">
-          <h2>🔒 Authentication Required</h2>
-          <p>You need to authenticate to access this page.</p>
-          <div class="button-row">
-            <button class="btn-primary" @click="reloadPage">Reload Page</button>
-          </div>
-        </div>
-      </div>
+      <LoadingView v-else-if="loading" :message="loadingMessage" />
+      <AuthRequiredMessage v-else-if="showBackMessage" @reload="reloadPage" />
     </main>
   </div>
 </template>
@@ -25,6 +14,8 @@ import { onMounted, onUnmounted, ref, watch } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import StatusMessage from '@/components/StatusMessage.vue'
 import ProfileView from '@/components/ProfileView.vue'
+import LoadingView from '@/components/LoadingView.vue'
+import AuthRequiredMessage from '@/components/AuthRequiredMessage.vue'
 
 const store = useAuthStore()
 const loading = ref(true)
@@ -184,14 +175,4 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-.loading-container { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; gap: 1rem; }
-.loading-spinner { width: 40px; height: 40px; border: 4px solid var(--color-border); border-top: 4px solid var(--color-primary); border-radius: 50%; animation: spin 1s linear infinite; }
-@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-.loading-container p { color: var(--color-text-muted); margin: 0; }
-
-.message-container { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; padding: 2rem; }
-.message-content { text-align: center; max-width: 480px; }
-.message-content h2 { margin: 0 0 1rem; color: var(--color-heading); }
-.message-content p { color: var(--color-text-muted); margin: 0 0 1.5rem; }
-.message-content .button-row { display: flex; gap: 0.75rem; justify-content: center; }
 </style>
