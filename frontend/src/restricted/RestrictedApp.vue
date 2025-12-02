@@ -9,7 +9,7 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, onMounted } from 'vue'
 import RestrictedAuth from '@/components/RestrictedAuth.vue'
 import { uiBasePath } from '@/utils/settings'
 
@@ -44,4 +44,13 @@ function backNav() {
   } catch (_) { /* ignore */ }
   returnHome()
 }
+
+onMounted(() => {
+  // Handle Escape key to trigger back navigation
+  window.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') {
+      backNav()
+    }
+  })
+})
 </script>

@@ -116,21 +116,13 @@ async function fetchSettings() {
 async function fetchUserInfo() {
   try {
     const res = await fetch('/auth/api/user-info', { method: 'POST' })
-    if (!res.ok) {
-      const payload = await safeParseJson(res)
-      showMessage(payload.detail || 'Unable to load user session info.', 'error', 2000)
-      return
-    }
+    if (!res.ok) return
     userInfo.value = await res.json()
     // In login mode, if the user is authenticated but still here, they lack permissions.
     // In reauth mode, being authenticated is expected - we just need re-verification.
-    if (isAuthenticated.value && props.mode !== 'reauth') {
-      showMessage('Permission Denied', 'error', 2000)
-      emit('forbidden', userInfo.value)
-    }
+    if (isAuthenticated.value && props.mode !== 'reauth') emit('forbidden', userInfo.value)
   } catch (error) {
     console.error('Failed to load user info', error)
-    showMessage('Could not contact the authentication server', 'error', 2000)
   }
 }
 

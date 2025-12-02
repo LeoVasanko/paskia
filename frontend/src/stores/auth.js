@@ -7,6 +7,7 @@ export const useAuthStore = defineStore('auth', {
     // Auth State
     userInfo: null, // Contains the full user info response: {user, credentials, aaguid_info}
     isLoading: false,
+    authRequired: false, // Flag to trigger auth iframe
 
     // Settings
     settings: null,
@@ -24,6 +25,9 @@ export const useAuthStore = defineStore('auth', {
   actions: {
     setLoading(flag) {
       this.isLoading = !!flag
+    },
+    clearAuthRequired() {
+      this.authRequired = false
     },
     showMessage(message, type = 'info', duration = 3000) {
       this.status = {
@@ -89,9 +93,9 @@ export const useAuthStore = defineStore('auth', {
       } catch (_) {
         // ignore JSON parse errors (unlikely)
       }
-      if (response.status === 401 && result?.detail) {
-        this.showMessage(result.detail, 'error', 5000)
-        throw new Error(result.detail)
+      if (response.status === 401) {
+        this.authRequired = true
+        throw new Error(result?.detail || 'Authentication required')
       }
       if (result?.detail) {
         // Other error style
@@ -102,7 +106,11 @@ export const useAuthStore = defineStore('auth', {
       console.log('User info loaded:', result)
     },
     async deleteCredential(uuid) {
-  const response = await fetch(`/auth/api/user/credential/${uuid}`, {method: 'Delete'})
+      const response = await fetch(`/auth/api/user/credential/${uuid}`, {method: 'Delete'})
+      if (response.status === 401) {
+        this.authRequired = true
+        throw new Error('Authentication required')
+      }
       const result = await response.json()
       if (result.detail) throw new Error(`Server: ${result.detail}`)
 
@@ -111,6 +119,10 @@ export const useAuthStore = defineStore('auth', {
     async terminateSession(sessionId) {
       try {
         const res = await fetch(`/auth/api/user/session/${sessionId}`, { method: 'DELETE' })
+        if (res.status === 401) {
+          this.authRequired = true
+          throw new Error('Authentication required')
+        }
         let payload = null
         try {
           payload = await res.json()
