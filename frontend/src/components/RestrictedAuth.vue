@@ -29,8 +29,8 @@
                 <button v-if="canAuthenticate" class="btn-primary" :disabled="loading" @click="authenticateUser">
                   {{ loading ? (mode === 'reauth' ? 'Verifying…' : 'Signing in…') : (mode === 'reauth' ? 'Verify' : 'Login') }}
                 </button>
-                <button v-if="isAuthenticated && mode !== 'reauth'" class="btn-danger" :disabled="loading" @click="logoutUser">Logout</button>
-                <button v-if="isAuthenticated && mode !== 'reauth'" class="btn-primary" :disabled="loading" @click="openProfile">Profile</button>
+                <button v-if="isAuthenticated && mode !== 'reauth' && mode !== 'forbidden'" class="btn-danger" :disabled="loading" @click="logoutUser">Logout</button>
+                <button v-if="isAuthenticated && mode !== 'reauth' && mode !== 'forbidden'" class="btn-primary" :disabled="loading" @click="openProfile">Profile</button>
               </slot>
             </div>
           </div>
@@ -49,7 +49,7 @@ const props = defineProps({
   mode: {
     type: String,
     default: 'login',
-    validator: (value) => ['login', 'reauth'].includes(value)
+    validator: (value) => ['login', 'reauth', 'forbidden'].includes(value)
   }
 })
 
@@ -69,15 +69,17 @@ const canAuthenticate = computed(() => {
   if (initializing.value) return false
   // In reauth mode, allow authentication even if already authenticated
   if (props.mode === 'reauth') return true
-  // In login view or initial state, allow if not authenticated
-  return currentView.value !== 'forbidden'
+  // In forbidden mode or forbidden view, don't allow authentication
+  if (props.mode === 'forbidden' || currentView.value === 'forbidden') return false
+  // In login view or initial state, allow authentication
+  return true
 })
 
 const headingTitle = computed(() => {
   if (props.mode === 'reauth') {
     return `🔐 Additional Verification Required`
   }
-  if (currentView.value === 'forbidden') return '🚫 Forbidden'
+  if (props.mode === 'forbidden' || currentView.value === 'forbidden') return '🚫 Forbidden'
   return `🔐 ${settings.value?.rp_name || location.origin}`
 })
 
@@ -85,7 +87,10 @@ const headerMessage = computed(() => {
   if (props.mode === 'reauth') {
     return 'Please verify your identity to continue with this action.'
   }
-  return currentView.value === 'forbidden' ? 'You lack the required permissions.' : 'Please sign in with your passkey.'
+  if (props.mode === 'forbidden' || currentView.value === 'forbidden') {
+    return 'You lack the required permissions.'
+  }
+  return 'Please sign in with your passkey.'
 })
 
 const userDisplayName = computed(() => userInfo.value?.user?.user_name || 'User')

@@ -59,6 +59,11 @@ app.mount(
     StaticFiles(directory=frontend.file("auth", "assets")),
     name="assets",
 )
+app.mount(
+    "/int/",
+    StaticFiles(directory=frontend.file("int"), html=True),
+    name="int",
+)
 
 
 @app.get("/auth/restricted/")
