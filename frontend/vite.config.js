@@ -40,8 +40,9 @@ export default defineConfig(({ command }) => ({
         bypass: (req) => {
           const url = req.url?.split('?')[0]
           if (url?.startsWith('/auth/assets/')) return url.slice(5)
+          if (url === '/auth/api/restricted') return '/restricted/api/index.html'
 
-          const routes = { '': '/', host: '/host/index.html', admin: '/admin/', restricted: '/restricted/index.html', 'restricted-api': '/restricted-api/index.html' }
+          const routes = { '': '/', host: '/host/index.html', admin: '/admin/', 'restricted-forward': '/restricted/forward/index.html', 'restricted-api': '/restricted/api/index.html' }
           for (const [path, target] of Object.entries(routes)) {
             if ([`/auth/${path}`, `/auth/${path}/`, `/${path}`, `/${path}/`].includes(url)) return target
           }
@@ -59,8 +60,8 @@ export default defineConfig(({ command }) => ({
         index: resolve(__dirname, 'index.html'),
         admin: resolve(__dirname, 'admin/index.html'),
         reset: resolve(__dirname, 'reset/index.html'),
-        restricted: resolve(__dirname, 'restricted/index.html'),
-        'restricted-api': resolve(__dirname, 'restricted-api/index.html'),
+        'restricted-forward': resolve(__dirname, 'restricted/forward/index.html'),
+        'restricted-api': resolve(__dirname, 'restricted/api/index.html'),
         host: resolve(__dirname, 'host/index.html')
       }
     }
