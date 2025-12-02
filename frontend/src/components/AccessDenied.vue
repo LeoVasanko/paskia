@@ -1,8 +1,7 @@
 <template>
   <div class="message-container">
     <div class="message-content">
-      <h2>🔒 Authentication Required</h2>
-      <p>{{ message }}</p>
+      <h2>🔒 Access Denied</h2>
       <div class="button-row">
         <button class="btn-primary" @click="$emit('reload')">Reload Page</button>
       </div>
@@ -11,13 +10,6 @@
 </template>
 
 <script setup>
-defineProps({
-  message: {
-    type: String,
-    default: 'You need to authenticate to access this page.'
-  }
-})
-
 defineEmits(['reload'])
 </script>
 
@@ -37,13 +29,8 @@ defineEmits(['reload'])
 }
 
 .message-content h2 {
-  margin: 0 0 1rem;
-  color: var(--color-heading);
-}
-
-.message-content p {
-  color: var(--color-text-muted);
   margin: 0 0 1.5rem;
+  color: var(--color-heading);
 }
 
 .message-content .button-row {

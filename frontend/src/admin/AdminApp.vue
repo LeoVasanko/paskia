@@ -6,7 +6,7 @@ import UserBasicInfo from '@/components/UserBasicInfo.vue'
 import RegistrationLinkModal from '@/components/RegistrationLinkModal.vue'
 import StatusMessage from '@/components/StatusMessage.vue'
 import LoadingView from '@/components/LoadingView.vue'
-import AuthRequiredMessage from '@/components/AuthRequiredMessage.vue'
+import AuthRequiredMessage from '@/components/AccessDenied.vue'
 import AdminOverview from './AdminOverview.vue'
 import AdminOrgDetail from './AdminOrgDetail.vue'
 import AdminUserDetail from './AdminUserDetail.vue'
@@ -192,6 +192,15 @@ async function load() {
     if (data.detail) throw new Error(data.detail)
     info.value = data
     authenticated.value = true
+
+    // Check if user has required permissions
+    if (data.authenticated && !(data.is_global_admin || data.is_org_admin)) {
+      // User is authenticated but lacks required permissions - show auth iframe
+      authStore.authRequired = true
+      loading.value = true
+      return
+    }
+
     if (data.authenticated && (data.is_global_admin || data.is_org_admin)) {
       await Promise.all([loadOrgs(), loadPermissions()])
     }
@@ -360,6 +369,7 @@ function handleAuthMessage(event) {
       hideAuthIframe()
       loading.value = false
       showBackMessage.value = true
+      authStore.showMessage('Authentication cancelled', 'info', 3000)
       break
 
     case 'auth-close-request':
@@ -576,10 +586,9 @@ async function submitDialog() {
       <LoadingView v-if="loading" :message="loadingMessage" />
       <AuthRequiredMessage
         v-else-if="showBackMessage"
-        message="You need to authenticate to access the admin panel."
         @reload="reloadPage"
       />
-      <section v-else class="view-root view-root--wide view-admin">
+      <section v-else-if="authenticated && (info?.is_global_admin || info?.is_org_admin)" class="view-root view-root--wide view-admin">
         <header class="view-header">
           <h1>{{ pageHeading }}</h1>
           <Breadcrumbs :entries="breadcrumbEntries" />
@@ -588,14 +597,7 @@ async function submitDialog() {
         <section class="section-block admin-section">
           <div class="section-body admin-section-body">
             <div v-if="error" class="surface surface--tight error">{{ error }}</div>
-            <template v-else>
-              <div v-if="!info?.authenticated" class="surface surface--tight">
-                <p>You must be authenticated.</p>
-              </div>
-              <div v-else-if="!(info?.is_global_admin || info?.is_org_admin)" class="surface surface--tight">
-                <p>Insufficient permissions.</p>
-              </div>
-              <div v-else class="admin-panels">
+            <div v-else class="admin-panels">
                                   <AdminOverview
                   v-if="!selectedUser && !selectedOrg && (info.is_global_admin || info.is_org_admin)"
                   :info="info"
@@ -643,7 +645,6 @@ async function submitDialog() {
                 />
 
               </div>
-            </template>
           </div>
         </section>
       </section>
