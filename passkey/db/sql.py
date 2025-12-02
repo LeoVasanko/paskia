@@ -439,7 +439,7 @@ class DB(DatabaseInterface):
             credential_model = result.scalar_one_or_none()
 
             if not credential_model:
-                raise ValueError("This passkey is not registered with this service")
+                raise ValueError("Credential not found")
             return Credential(
                 uuid=UUID(bytes=credential_model.uuid),
                 credential_id=credential_model.credential_id,

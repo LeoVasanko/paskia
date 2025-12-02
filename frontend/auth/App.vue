@@ -57,7 +57,7 @@ function showAuthIframe() {
   authIframe = document.createElement('iframe')
   authIframe.id = 'auth-iframe'
   authIframe.title = 'Authentication'
-  authIframe.src = '/auth/api/restricted?mode=login'
+  authIframe.src = '/auth/restricted?mode=login'
   document.body.appendChild(authIframe)
   loadingMessage.value = 'Authentication required...'
 }
