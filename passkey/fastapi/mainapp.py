@@ -101,6 +101,17 @@ async def admin_root(request: Request, auth=AUTH_COOKIE):
     return await admin.adminapp(request, auth)  # Delegated (enforces access control)
 
 
+@app.get("/auth/restricted")
+async def restricted_view():
+    return FileResponse(frontend.file("restricted", "index.html"))
+
+
+@app.get("/auth/restricted-api")
+async def restricted_api_view():
+    return FileResponse(frontend.file("restricted-api", "index.html"))
+
+
+# Note: this catch-all handler must be the last route defined
 @app.get("/{reset}")
 @app.get("/auth/{reset}")
 async def reset_link(reset: str):
@@ -108,9 +119,3 @@ async def reset_link(reset: str):
     if not passphrase.is_well_formed(reset):
         raise HTTPException(status_code=404)
     return FileResponse(frontend.file("reset", "index.html"))
-
-
-@app.get("/restricted", include_in_schema=False)
-@app.get("/auth/restricted", include_in_schema=False)
-async def restricted_view():
-    return FileResponse(frontend.file("restricted", "index.html"))

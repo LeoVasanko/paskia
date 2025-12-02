@@ -1,22 +1,20 @@
 <template>
-  <section class="view-root view-device-link">
-    <div class="view-content view-content--narrow">
-      <header class="view-header">
-        <h1>📱 Add Another Device</h1>
-        <p class="view-lede">Generate a one-time link to set up passkeys on a new device.</p>
-      </header>
-      <RegistrationLinkModal
-        inline
-                :endpoint="'/auth/api/user/create-link'"
-        :user-name="userName"
-        :auto-copy="false"
-        :prefix-copy-with-user-name="!!userName"
-        show-close-in-inline
-        @copied="onCopied"
-      />
-      <div class="button-row" style="margin-top:1rem;">
-        <button @click="authStore.currentView = 'profile'" class="btn-secondary">Back to Profile</button>
-      </div>
+  <section class="view-root view-root--narrow view-device-link">
+    <header class="view-header">
+      <h1>📱 Add Another Device</h1>
+      <p class="view-lede">Generate a one-time link to set up passkeys on a new device.</p>
+    </header>
+    <RegistrationLinkModal
+      inline
+              :endpoint="'/auth/api/user/create-link'"
+      :user-name="userName"
+      :auto-copy="false"
+      :prefix-copy-with-user-name="!!userName"
+      show-close-in-inline
+      @copied="onCopied"
+    />
+    <div class="button-row" style="margin-top:1rem;">
+      <button @click="authStore.currentView = 'profile'" class="btn-secondary">Back to Profile</button>
     </div>
   </section>
 </template>
@@ -43,10 +41,6 @@ onMounted(async () => {
 </script>
 
 <style scoped>
-.view-content--narrow {
-  max-width: 540px;
-}
-
 .view-lede {
   margin: 0;
   color: var(--color-text-muted);

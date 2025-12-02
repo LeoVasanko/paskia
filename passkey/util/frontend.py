@@ -27,7 +27,7 @@ BUN_BUG = """\
 
 NO_FRONTEND = """\
 ┃
-┃ Note: only static build of the frontend is served at port 8078.
+┃ Note: only static build of the frontend is served at localhost:4402.
 ┃ The page will not update with frontend code changes.
 """
 

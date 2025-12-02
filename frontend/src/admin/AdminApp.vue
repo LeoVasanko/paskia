@@ -56,7 +56,7 @@ const permissionSummary = computed(() => {
   for (const o of orgs.value) {
     const orgBase = { uuid: o.uuid, display_name: o.display_name }
     const orgPerms = new Set(o.permissions || [])
-    
+
     // Org-level permissions (direct) - only count if org can grant them
     for (const pid of o.permissions || []) {
       if (!summary[pid]) summary[pid] = { orgs: [], orgSet: new Set(), userCount: 0 }
@@ -65,13 +65,13 @@ const permissionSummary = computed(() => {
         summary[pid].orgSet.add(o.uuid)
       }
     }
-    
+
     // Role-based permissions (inheritance) - only count if org can grant them
     for (const r of o.roles) {
       for (const pid of r.permissions) {
         // Only count if the org can grant this permission
         if (!orgPerms.has(pid)) continue
-        
+
         if (!summary[pid]) summary[pid] = { orgs: [], orgSet: new Set(), userCount: 0 }
         if (!summary[pid].orgSet.has(o.uuid)) {
           summary[pid].orgs.push(orgBase)
@@ -253,14 +253,14 @@ function deleteRole(role) {
 
 async function toggleRolePermission(role, pid, checked) {
   // Calculate new permissions array
-  const newPermissions = checked 
-    ? [...role.permissions, pid] 
+  const newPermissions = checked
+    ? [...role.permissions, pid]
     : role.permissions.filter(p => p !== pid)
-  
+
   // Optimistic update
   const prevPermissions = [...role.permissions]
   role.permissions = newPermissions
-  
+
   try {
     const res = await fetch(`/auth/admin/orgs/${role.org_uuid}/roles/${role.uuid}`, {
       method: 'PUT',
@@ -450,7 +450,7 @@ async function submitDialog() {
       const newDisplay = dialog.value.data.display_name?.trim()
       if (!newDisplay) throw new Error('Display name required')
       if (!newId) throw new Error('ID required')
-      
+
       if (newId !== permission.id) {
         // ID changed, use rename endpoint
         const body = { old_id: permission.id, new_id: newId, display_name: newDisplay }
@@ -484,76 +484,74 @@ async function submitDialog() {
   <div class="app-shell admin-shell">
     <StatusMessage />
     <main class="app-main">
-      <section class="view-root view-admin">
-        <div class="view-content view-content--wide">
-          <header class="view-header">
-            <h1>{{ pageHeading }}</h1>
-            <Breadcrumbs :entries="breadcrumbEntries" />
-          </header>
+      <section class="view-root view-root--wide view-admin">
+        <header class="view-header">
+          <h1>{{ pageHeading }}</h1>
+          <Breadcrumbs :entries="breadcrumbEntries" />
+        </header>
 
-          <section class="section-block admin-section">
-            <div class="section-body admin-section-body">
-              <div v-if="loading" class="surface surface--tight">Loading…</div>
-              <div v-else-if="error" class="surface surface--tight error">{{ error }}</div>
-              <template v-else>
-                <div v-if="!info?.authenticated" class="surface surface--tight">
-                  <p>You must be authenticated.</p>
-                </div>
-                <div v-else-if="!(info?.is_global_admin || info?.is_org_admin)" class="surface surface--tight">
-                  <p>Insufficient permissions.</p>
-                </div>
-                <div v-else class="admin-panels">
-                                    <AdminOverview
-                    v-if="!selectedUser && !selectedOrg && (info.is_global_admin || info.is_org_admin)"
-                    :info="info"
-                    :orgs="orgs"
-                    :permissions="permissions"
-                    :permission-summary="permissionSummary"
-                    @create-org="createOrg"
-                    @open-org="openOrg"
-                    @update-org="updateOrg"
-                    @delete-org="deleteOrg"
-                    @toggle-org-permission="toggleOrgPermission"
-                    @open-dialog="openDialog"
-                    @delete-permission="deletePermission"
-                    @rename-permission-display="renamePermissionDisplay"
-                  />
+        <section class="section-block admin-section">
+          <div class="section-body admin-section-body">
+            <div v-if="loading" class="surface surface--tight">Loading…</div>
+            <div v-else-if="error" class="surface surface--tight error">{{ error }}</div>
+            <template v-else>
+              <div v-if="!info?.authenticated" class="surface surface--tight">
+                <p>You must be authenticated.</p>
+              </div>
+              <div v-else-if="!(info?.is_global_admin || info?.is_org_admin)" class="surface surface--tight">
+                <p>Insufficient permissions.</p>
+              </div>
+              <div v-else class="admin-panels">
+                                  <AdminOverview
+                  v-if="!selectedUser && !selectedOrg && (info.is_global_admin || info.is_org_admin)"
+                  :info="info"
+                  :orgs="orgs"
+                  :permissions="permissions"
+                  :permission-summary="permissionSummary"
+                  @create-org="createOrg"
+                  @open-org="openOrg"
+                  @update-org="updateOrg"
+                  @delete-org="deleteOrg"
+                  @toggle-org-permission="toggleOrgPermission"
+                  @open-dialog="openDialog"
+                  @delete-permission="deletePermission"
+                  @rename-permission-display="renamePermissionDisplay"
+                />
 
-                  <AdminUserDetail
-                    v-else-if="selectedUser"
-                    :selected-user="selectedUser"
-                    :user-detail="userDetail"
-                    :selected-org="selectedOrg"
-                    :loading="loading"
-                    :show-reg-modal="showRegModal"
-                    @generate-user-registration-link="generateUserRegistrationLink"
-                    @go-overview="goOverview"
-                    @open-org="openOrg"
-                    @on-user-name-saved="onUserNameSaved"
-                    @edit-user-name="editUserName"
-                    @close-reg-modal="showRegModal = false"
-                  />
-                  <AdminOrgDetail
-                    v-else-if="selectedOrg"
-                    :selected-org="selectedOrg"
-                    :permissions="permissions"
-                    @update-org="updateOrg"
-                    @create-role="createRole"
-                    @update-role="updateRole"
-                    @delete-role="deleteRole"
-                    @create-user-in-role="createUserInRole"
-                    @open-user="openUser"
-                    @toggle-role-permission="toggleRolePermission"
-                    @on-role-drag-over="onRoleDragOver"
-                    @on-role-drop="onRoleDrop"
-                    @on-user-drag-start="onUserDragStart"
-                  />
+                <AdminUserDetail
+                  v-else-if="selectedUser"
+                  :selected-user="selectedUser"
+                  :user-detail="userDetail"
+                  :selected-org="selectedOrg"
+                  :loading="loading"
+                  :show-reg-modal="showRegModal"
+                  @generate-user-registration-link="generateUserRegistrationLink"
+                  @go-overview="goOverview"
+                  @open-org="openOrg"
+                  @on-user-name-saved="onUserNameSaved"
+                  @edit-user-name="editUserName"
+                  @close-reg-modal="showRegModal = false"
+                />
+                <AdminOrgDetail
+                  v-else-if="selectedOrg"
+                  :selected-org="selectedOrg"
+                  :permissions="permissions"
+                  @update-org="updateOrg"
+                  @create-role="createRole"
+                  @update-role="updateRole"
+                  @delete-role="deleteRole"
+                  @create-user-in-role="createUserInRole"
+                  @open-user="openUser"
+                  @toggle-role-permission="toggleRolePermission"
+                  @on-role-drag-over="onRoleDragOver"
+                  @on-role-drop="onRoleDrop"
+                  @on-user-drag-start="onUserDragStart"
+                />
 
-                </div>
-              </template>
-            </div>
-          </section>
-        </div>
+              </div>
+            </template>
+          </div>
+        </section>
       </section>
     </main>
     <AdminDialogs

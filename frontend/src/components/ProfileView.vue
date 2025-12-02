@@ -1,92 +1,90 @@
 <template>
   <section class="view-root" data-view="profile">
-    <div class="view-content">
-      <header class="view-header">
-        <h1>👋 Welcome!</h1>
-        <Breadcrumbs :entries="breadcrumbEntries" />
-        <p class="view-lede">Manage your account details and passkeys.</p>
-      </header>
+    <header class="view-header">
+      <h1>👋 Welcome!</h1>
+      <Breadcrumbs :entries="breadcrumbEntries" />
+      <p class="view-lede">Manage your account details and passkeys.</p>
+    </header>
 
-      <section class="section-block">
-        <UserBasicInfo
-          v-if="authStore.userInfo?.user"
-          :name="authStore.userInfo.user.user_name"
-          :visits="authStore.userInfo.user.visits || 0"
-          :created-at="authStore.userInfo.user.created_at"
-          :last-seen="authStore.userInfo.user.last_seen"
+    <section class="section-block">
+      <UserBasicInfo
+        v-if="authStore.userInfo?.user"
+        :name="authStore.userInfo.user.user_name"
+        :visits="authStore.userInfo.user.visits || 0"
+        :created-at="authStore.userInfo.user.created_at"
+        :last-seen="authStore.userInfo.user.last_seen"
+        :loading="authStore.isLoading"
+        update-endpoint="/auth/api/user/display-name"
+        @saved="authStore.loadUserInfo()"
+        @edit-name="openNameDialog"
+      />
+    </section>
+
+    <section class="section-block">
+      <div class="section-header">
+        <h2>Your Passkeys</h2>
+        <p class="section-description">Keep at least one trusted passkey so you can always sign in.</p>
+      </div>
+      <div class="section-body">
+        <CredentialList
+          :credentials="authStore.userInfo?.credentials || []"
+          :aaguid-info="authStore.userInfo?.aaguid_info || {}"
           :loading="authStore.isLoading"
-          update-endpoint="/auth/api/user/display-name"
-          @saved="authStore.loadUserInfo()"
-          @edit-name="openNameDialog"
+          allow-delete
+          @delete="handleDelete"
         />
-      </section>
-
-      <section class="section-block">
-        <div class="section-header">
-          <h2>Your Passkeys</h2>
-          <p class="section-description">Keep at least one trusted passkey so you can always sign in.</p>
+        <div class="button-row">
+          <button @click="addNewCredential" class="btn-primary">Add New Passkey</button>
+          <button @click="showRegLink = true" class="btn-secondary">Add Another Device</button>
         </div>
-        <div class="section-body">
-          <CredentialList
-            :credentials="authStore.userInfo?.credentials || []"
-            :aaguid-info="authStore.userInfo?.aaguid_info || {}"
-            :loading="authStore.isLoading"
-            allow-delete
-            @delete="handleDelete"
-          />
-          <div class="button-row">
-            <button @click="addNewCredential" class="btn-primary">Add New Passkey</button>
-            <button @click="showRegLink = true" class="btn-secondary">Add Another Device</button>
-          </div>
-        </div>
-      </section>
+      </div>
+    </section>
 
-      <SessionList
-        :sessions="sessions"
-        :terminating-sessions="terminatingSessions"
-        @terminate="terminateSession"
-        section-description="Review where you're signed in and end any sessions you no longer recognize."
-      />
+    <SessionList
+      :sessions="sessions"
+      :terminating-sessions="terminatingSessions"
+      @terminate="terminateSession"
+      section-description="Review where you're signed in and end any sessions you no longer recognize."
+    />
 
-      <Modal v-if="showNameDialog" @close="showNameDialog = false">
-        <h3>Edit Display Name</h3>
-        <form @submit.prevent="saveName" class="modal-form">
-          <NameEditForm
-            label="Display Name"
-            v-model="newName"
-            :busy="saving"
-            @cancel="showNameDialog = false"
-          />
-        </form>
-      </Modal>
+    <Modal v-if="showNameDialog" @close="showNameDialog = false">
+      <h3>Edit Display Name</h3>
+      <form @submit.prevent="saveName" class="modal-form">
+        <NameEditForm
+          label="Display Name"
+          v-model="newName"
+          :busy="saving"
+          @cancel="showNameDialog = false"
+        />
+      </form>
+    </Modal>
 
-      <section class="section-block">
-        <div class="button-row logout-row" :class="{ single: !hasMultipleSessions }">
-          <button
-            type="button"
-            class="btn-secondary"
-            @click="history.back()"
-          >
-            Back
-          </button>
-          <button v-if="!hasMultipleSessions" @click="logoutEverywhere" class="btn-danger logout-button" :disabled="authStore.isLoading">Logout</button>
-          <template v-else>
-            <button @click="logout" class="btn-danger logout-button" :disabled="authStore.isLoading">Logout</button>
-            <button @click="logoutEverywhere" class="btn-danger logout-button" :disabled="authStore.isLoading">All</button>
-          </template>
-        </div>
-        <p class="logout-note" v-if="!hasMultipleSessions"><strong>Logout</strong> from {{ currentSessionHost }}.</p>
-        <p class="logout-note" v-else><strong>Logout</strong> this session on {{ currentSessionHost }}, or <strong>All</strong> sessions across all sites and devices for {{ rpName }}. You'll need to log in again with your passkey afterwards.</p>
-      </section>
-      <RegistrationLinkModal
-        v-if="showRegLink"
-                :endpoint="'/auth/api/user/create-link'"
-        :auto-copy="false"
-        :prefix-copy-with-user-name="false"
-        @close="showRegLink = false"
-        @copied="showRegLink = false; authStore.showMessage('Link copied to clipboard!', 'success', 2500)"
-      />
-    </div>
+    <section class="section-block">
+      <div class="button-row logout-row" :class="{ single: !hasMultipleSessions }">
+        <button
+          type="button"
+          class="btn-secondary"
+          @click="history.back()"
+        >
+          Back
+        </button>
+        <button v-if="!hasMultipleSessions" @click="logoutEverywhere" class="btn-danger logout-button" :disabled="authStore.isLoading">Logout</button>
+        <template v-else>
+          <button @click="logout" class="btn-danger logout-button" :disabled="authStore.isLoading">Logout</button>
+          <button @click="logoutEverywhere" class="btn-danger logout-button" :disabled="authStore.isLoading">All</button>
+        </template>
+      </div>
+      <p class="logout-note" v-if="!hasMultipleSessions"><strong>Logout</strong> from {{ currentSessionHost }}.</p>
+      <p class="logout-note" v-else><strong>Logout</strong> this session on {{ currentSessionHost }}, or <strong>All</strong> sessions across all sites and devices for {{ rpName }}. You'll need to log in again with your passkey afterwards.</p>
+    </section>
+    <RegistrationLinkModal
+      v-if="showRegLink"
+              :endpoint="'/auth/api/user/create-link'"
+      :auto-copy="false"
+      :prefix-copy-with-user-name="false"
+      @close="showRegLink = false"
+      @copied="showRegLink = false; authStore.showMessage('Link copied to clipboard!', 'success', 2500)"
+    />
   </section>
 </template>
 
@@ -196,4 +194,3 @@ const saveName = async () => {
 .logout-note { margin: 0.75rem 0 0; color: var(--color-text-muted); font-size: 0.875rem; }
 @media (max-width: 720px) { .logout-button { width: 100%; } }
 </style>
-
