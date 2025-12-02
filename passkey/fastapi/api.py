@@ -10,7 +10,7 @@ from fastapi import (
     Request,
     Response,
 )
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.security import HTTPBearer
 
 from passkey.util import frontend
@@ -34,6 +34,12 @@ bearer_auth = HTTPBearer(auto_error=True)
 app = FastAPI()
 
 app.mount("/user", user.app)
+
+
+@app.get("/restricted")
+async def restricted_view():
+    """Serve the restricted/authentication UI for iframe embedding."""
+    return FileResponse(frontend.file("restricted-api", "index.html"))
 
 
 @app.exception_handler(HTTPException)

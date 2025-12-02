@@ -41,13 +41,14 @@ Notes:
 | GET | `/auth/` | `/` | Main authentication SPA (non-auth hosts show an account summary view) |
 | GET | `/auth/admin/` | `/admin/` | Admin SPA root |
 | GET | `/auth/{reset_token}` | `/{reset_token}` | Reset / device addition SPA (token validated) |
-| GET | `/auth/restricted` | `/restricted` | Restricted / permission denied SPA |
 
 ## Core API (Unrestricted – available on all hosts)
 
 Always under `/auth/api/` (even on auth host):
 
 | Method | Path | Description |
+|--------|------|-------------|
+| GET | `/auth/api/restricted` | Authentication UI for iframe embedding (supports `?mode=login` or `?mode=reauth`) |
 |--------|------|-------------|
 | POST | `/auth/api/validate` | Validate & (conditionally) renew session |
 | GET | `/auth/api/forward` | Auth proxy endpoint for reverse proxies (204 or 4xx) |

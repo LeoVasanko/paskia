@@ -89,16 +89,6 @@ async def admin_root(request: Request, auth=AUTH_COOKIE):
     return await admin.adminapp(request, auth)  # Delegated to admin app
 
 
-@app.get("/auth/restricted")
-async def restricted_view():
-    return FileResponse(frontend.file("restricted", "index.html"))
-
-
-@app.get("/auth/restricted-api")
-async def restricted_api_view():
-    return FileResponse(frontend.file("restricted-api", "index.html"))
-
-
 # Note: this catch-all handler must be the last route defined
 @app.get("/{reset}")
 @app.get("/auth/{reset}")
