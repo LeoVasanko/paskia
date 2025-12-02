@@ -85,7 +85,7 @@ const headerMessage = computed(() => {
   if (props.mode === 'reauth') {
     return 'Please verify your identity to continue with this action.'
   }
-  return currentView.value === 'forbidden' ? 'You lack the required permissions.' : 'Please sign in with your Passkey.'
+  return currentView.value === 'forbidden' ? 'You lack the required permissions.' : 'Please sign in with your passkey.'
 })
 
 const userDisplayName = computed(() => userInfo.value?.user?.user_name || 'User')

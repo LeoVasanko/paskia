@@ -10,7 +10,7 @@ from fastapi import (
     Request,
     Response,
 )
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import JSONResponse
 from fastapi.security import HTTPBearer
 
 from passkey.util import frontend
@@ -34,12 +34,6 @@ bearer_auth = HTTPBearer(auto_error=True)
 app = FastAPI()
 
 app.mount("/user", user.app)
-
-
-@app.get("/restricted")
-async def restricted_view():
-    """Serve the restricted/authentication UI for iframe embedding."""
-    return FileResponse(frontend.file("restricted/api", "index.html"))
 
 
 @app.exception_handler(HTTPException)
@@ -155,7 +149,7 @@ async def forward_authentication(
         return Response(status_code=204, headers=remote_headers)
     except HTTPException as e:
         # Let global handler clear cookie; still return HTML surface instead of JSON
-        html = frontend.file("restricted/forward", "index.html").read_bytes()
+        html = frontend.file("int", "restricted", "index.html").read_bytes()
         status = e.status_code
         # If 401 we still want cookie cleared; rely on handler by raising again not feasible (we need HTML)
         if status == 401:

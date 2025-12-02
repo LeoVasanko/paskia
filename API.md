@@ -48,7 +48,7 @@ Always under `/auth/api/` (even on auth host):
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/auth/api/restricted` | Authentication UI for iframe embedding (supports `?mode=login` or `?mode=reauth`) |
+| GET | `/auth/restricted` | Authentication UI for iframe embedding (supports `?mode=login` or `?mode=reauth`) |
 |--------|------|-------------|
 | POST | `/auth/api/validate` | Validate & (conditionally) renew session |
 | GET | `/auth/api/forward` | Auth proxy endpoint for reverse proxies (204 or 4xx) |

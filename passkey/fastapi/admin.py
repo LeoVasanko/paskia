@@ -36,7 +36,7 @@ async def general_exception_handler(_request, exc: Exception):
 
 @app.get("/")
 async def adminapp(request: Request, auth=AUTH_COOKIE):
-    return FileResponse(frontend.file("admin/index.html"))
+    return FileResponse(frontend.file("auth", "admin", "index.html"))
 
 
 # -------------------- Organizations --------------------

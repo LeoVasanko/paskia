@@ -55,8 +55,17 @@ app.mount("/auth/admin/", admin.app)
 app.mount("/auth/api/", api.app)
 app.mount("/auth/ws/", ws.app)
 app.mount(
-    "/auth/assets/", StaticFiles(directory=frontend.file("assets")), name="assets"
+    "/auth/assets/",
+    StaticFiles(directory=frontend.file("auth", "assets")),
+    name="assets",
 )
+
+
+@app.get("/auth/restricted")
+async def restricted_view():
+    """Serve the restricted/authentication UI for iframe embedding."""
+    return FileResponse(frontend.file("auth", "restricted", "index.html"))
+
 
 # Navigable URLs are defined here. We support both / and /auth/ as the base path
 # / is used on a dedicated auth site, /auth/ on app domains with auth
@@ -74,8 +83,8 @@ async def frontapp(request: Request, response: Response, auth=AUTH_COOKIE):
         cur_host = hostutil.normalize_host(request.headers.get("host"))
         cfg_normalized = hostutil.normalize_host(cfg_host)
         if cur_host and cfg_normalized and cur_host != cfg_normalized:
-            return FileResponse(frontend.file("host", "index.html"))
-    return FileResponse(frontend.file("index.html"))
+            return FileResponse(frontend.file("int", "host", "index.html"))
+    return FileResponse(frontend.file("auth", "index.html"))
 
 
 @app.get("/admin", include_in_schema=False)
@@ -96,4 +105,4 @@ async def reset_link(reset: str):
     """Serve the reset app directly with an injected reset token."""
     if not passphrase.is_well_formed(reset):
         raise HTTPException(status_code=404)
-    return FileResponse(frontend.file("reset", "index.html"))
+    return FileResponse(frontend.file("int", "reset", "index.html"))

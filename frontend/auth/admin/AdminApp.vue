@@ -7,10 +7,10 @@ import RegistrationLinkModal from '@/components/RegistrationLinkModal.vue'
 import StatusMessage from '@/components/StatusMessage.vue'
 import LoadingView from '@/components/LoadingView.vue'
 import AuthRequiredMessage from '@/components/AccessDenied.vue'
-import AdminOverview from './AdminOverview.vue'
-import AdminOrgDetail from './AdminOrgDetail.vue'
-import AdminUserDetail from './AdminUserDetail.vue'
-import AdminDialogs from './AdminDialogs.vue'
+import AdminOverview from '@/admin/AdminOverview.vue'
+import AdminOrgDetail from '@/admin/AdminOrgDetail.vue'
+import AdminUserDetail from '@/admin/AdminUserDetail.vue'
+import AdminDialogs from '@/admin/AdminDialogs.vue'
 import { useAuthStore } from '@/stores/auth'
 import { getSettings, adminUiPath, makeUiHref } from '@/utils/settings'
 
@@ -330,7 +330,7 @@ function showAuthIframe() {
   authIframe = document.createElement('iframe')
   authIframe.id = 'auth-iframe'
   authIframe.title = 'Authentication'
-  authIframe.src = '/auth/api/restricted?mode=login'
+  authIframe.src = '/auth/restricted?mode=login'
   document.body.appendChild(authIframe)
   loadingMessage.value = 'Authentication required...'
 }

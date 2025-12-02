@@ -7,8 +7,7 @@ from passkey.util import useragent
 from .. import aaguid
 from ..authsession import session_key
 from ..globals import db
-from ..util import hostutil, permutil
-from ..util.tokens import encode_session_key
+from . import hostutil, permutil, tokens
 
 
 def _format_datetime(dt):
@@ -108,7 +107,7 @@ async def format_user_info(
     for entry in session_records:
         sessions_payload.append(
             {
-                "id": encode_session_key(entry.key),
+                "id": tokens.encode_session_key(entry.key),
                 "host": entry.host,
                 "ip": entry.ip,
                 "user_agent": useragent.compact_user_agent(entry.user_agent),
