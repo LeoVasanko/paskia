@@ -30,7 +30,7 @@
                   {{ loading ? (mode === 'reauth' ? 'Verifying…' : 'Signing in…') : (mode === 'reauth' ? 'Verify' : 'Login') }}
                 </button>
                 <button v-if="isAuthenticated && mode !== 'reauth'" class="btn-danger" :disabled="loading" @click="logoutUser">Logout</button>
-                <button v-if="isAuthenticated && mode !== 'reauth'" class="btn-primary" :disabled="loading" @click="$emit('home')">Profile</button>
+                <button v-if="isAuthenticated && mode !== 'reauth'" class="btn-primary" :disabled="loading" @click="openProfile">Profile</button>
               </slot>
             </div>
           </div>
@@ -60,6 +60,7 @@ const initializing = ref(true)
 const loading = ref(false)
 const settings = ref(null)
 const userInfo = ref(null)
+const currentView = ref('initial') // 'initial', 'login', 'forbidden'
 let statusTimer = null
 
 const isAuthenticated = computed(() => !!userInfo.value?.authenticated)
@@ -68,24 +69,23 @@ const canAuthenticate = computed(() => {
   if (initializing.value) return false
   // In reauth mode, allow authentication even if already authenticated
   if (props.mode === 'reauth') return true
-  // In login mode, only allow if not authenticated
-  return !isAuthenticated.value
+  // In login view or initial state, allow if not authenticated
+  return currentView.value !== 'forbidden'
 })
 
 const headingTitle = computed(() => {
   if (props.mode === 'reauth') {
     return `🔐 Additional Verification Required`
   }
-  if (!isAuthenticated.value) return `🔐 ${settings.value?.rp_name || location.origin}`
-  return '🚫 Forbidden'
+  if (currentView.value === 'forbidden') return '🚫 Forbidden'
+  return `🔐 ${settings.value?.rp_name || location.origin}`
 })
 
 const headerMessage = computed(() => {
   if (props.mode === 'reauth') {
     return 'Please verify your identity to continue with this action.'
   }
-  if (!isAuthenticated.value) return 'Please sign in to access this page.'
-  return 'You lack the permissions required to access this page.'
+  return currentView.value === 'forbidden' ? 'You lack the required permissions.' : 'Please sign in with your Passkey.'
 })
 
 const userDisplayName = computed(() => userInfo.value?.user?.user_name || 'User')
@@ -116,13 +116,22 @@ async function fetchSettings() {
 async function fetchUserInfo() {
   try {
     const res = await fetch('/auth/api/user-info', { method: 'POST' })
-    if (!res.ok) return
+    if (!res.ok) {
+      userInfo.value = null
+      currentView.value = 'login'
+      return
+    }
     userInfo.value = await res.json()
-    // In login mode, if the user is authenticated but still here, they lack permissions.
-    // In reauth mode, being authenticated is expected - we just need re-verification.
-    if (isAuthenticated.value && props.mode !== 'reauth') emit('forbidden', userInfo.value)
+    // Determine view based on authentication status
+    if (isAuthenticated.value && props.mode !== 'reauth') {
+      currentView.value = 'forbidden'
+      emit('forbidden', userInfo.value)
+    } else {
+      currentView.value = 'login'
+    }
   } catch (error) {
     console.error('Failed to load user info', error)
+    currentView.value = 'login'
   }
 }
 
@@ -153,9 +162,21 @@ async function authenticateUser() {
 async function logoutUser() {
   if (loading.value) return
   loading.value = true
-  try { await fetch('/auth/api/logout', { method: 'POST' }) } catch (_) { /* ignore */ }
+  try {
+    await fetch('/auth/api/logout', { method: 'POST' })
+    userInfo.value = null
+    // Switch to login view after logout
+    currentView.value = 'login'
+    showMessage('Logged out. You can sign in with a different account.', 'info', 3000)
+  } catch (_) { /* ignore */ }
   finally { loading.value = false }
   emit('logout')
+}
+
+function openProfile() {
+  // Open profile in a new window with a specific name to reuse the same tab
+  const profileWindow = window.open('/auth/', 'passkey_auth_profile')
+  if (profileWindow) profileWindow.focus()
 }
 
 async function setSessionCookie(sessionToken) {

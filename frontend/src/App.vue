@@ -15,7 +15,7 @@ import { useAuthStore } from '@/stores/auth'
 import StatusMessage from '@/components/StatusMessage.vue'
 import ProfileView from '@/components/ProfileView.vue'
 import LoadingView from '@/components/LoadingView.vue'
-import AuthRequiredMessage from '@/components/AuthRequiredMessage.vue'
+import AuthRequiredMessage from '@/components/AccessDenied.vue'
 
 const store = useAuthStore()
 const loading = ref(true)
@@ -106,6 +106,7 @@ function handleAuthMessage(event) {
       hideAuthIframe()
       loading.value = false
       showBackMessage.value = true
+      store.showMessage('Authentication cancelled', 'info', 3000)
       break
 
     case 'auth-close-request':
