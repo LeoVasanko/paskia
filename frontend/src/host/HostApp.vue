@@ -31,7 +31,7 @@
             <button
               type="button"
               class="btn-secondary"
-              @click="history.back()"
+              @click="goBack"
             >
               Back
             </button>
@@ -65,6 +65,7 @@ import { computed, onMounted, ref } from 'vue'
 import StatusMessage from '@/components/StatusMessage.vue'
 import UserBasicInfo from '@/components/UserBasicInfo.vue'
 import { useAuthStore } from '@/stores/auth'
+import { goBack } from '@/utils/helpers'
 
 const authStore = useAuthStore()
 const initializing = ref(true)

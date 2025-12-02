@@ -3,6 +3,7 @@
     <div class="message-content">
       <h2>🔒 Access Denied</h2>
       <div class="button-row">
+        <button class="btn-secondary" @click="goBack">Back</button>
         <button class="btn-primary" @click="$emit('reload')">Reload Page</button>
       </div>
     </div>
@@ -10,6 +11,8 @@
 </template>
 
 <script setup>
+import { goBack } from '@/utils/helpers'
+
 defineEmits(['reload'])
 </script>
 

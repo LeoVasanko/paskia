@@ -3,7 +3,7 @@
     :mode="authMode"
     @authenticated="handleAuthenticated"
     @logout="handleLogout"
-    @back="backNav"
+    @back="goBack"
     @home="returnHome"
   />
 </template>
@@ -12,6 +12,7 @@
 import { computed, onMounted } from 'vue'
 import RestrictedAuth from '@/components/RestrictedAuth.vue'
 import { uiBasePath } from '@/utils/settings'
+import { goBack } from '@/utils/helpers'
 
 const basePath = computed(() => uiBasePath())
 
@@ -35,22 +36,10 @@ function returnHome() {
   window.location.href = target
 }
 
-function backNav() {
-  try {
-    if (history.length > 1) {
-      history.back()
-      return
-    }
-  } catch (_) { /* ignore */ }
-  returnHome()
-}
-
 onMounted(() => {
   // Handle Escape key to trigger back navigation
   window.addEventListener('keydown', (event) => {
-    if (event.key === 'Escape') {
-      backNav()
-    }
+    if (event.key === 'Escape') goBack()
   })
 })
 </script>
