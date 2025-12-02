@@ -4,7 +4,6 @@
     @authenticated="handleAuthenticated"
     @forbidden="handleForbidden"
     @logout="handleLogout"
-    @auth-error="handleAuthError"
     @back="handleBack"
   />
 </template>
@@ -48,15 +47,6 @@ function handleLogout() {
   // Notify parent that logout occurred
   postToParent({
     type: 'auth-logout'
-  })
-}
-
-function handleAuthError({ message, cancelled }) {
-  // Notify parent that authentication failed or was cancelled
-  postToParent({
-    type: 'auth-error',
-    message: message || 'Authentication failed',
-    cancelled
   })
 }
 

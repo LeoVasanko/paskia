@@ -69,36 +69,26 @@ async def create_session(
 async def get_reset(token: str) -> ResetToken:
     """Validate a credential reset token. Returns None if the token is not well formed (i.e. it is another type of token)."""
     record = await db.instance.get_reset_token(reset_key(token))
-    if not record:
-        raise ValueError("Invalid or expired session token")
-    if record.expiry < datetime.now(timezone.utc):
-        await db.instance.delete_reset_token(record.key)
-        raise ValueError("Invalid or expired session token")
-    return record
+    if record and record.expiry >= datetime.now(timezone.utc):
+        return record
+    raise ValueError("This reset link is invalid or has expired")
 
 
 async def get_session(token: str, host: str | None = None) -> Session:
     """Validate a session token and return session data if valid."""
+    host = hostutil.normalize_host(host)
+    if not host:
+        raise ValueError("Invalid host")
     session = await db.instance.get_session(session_key(token))
-    if not session:
-        raise ValueError("Invalid or expired session token")
-    if session_expiry(session) < datetime.now(timezone.utc):
-        await db.instance.delete_session(session.key)
-        raise ValueError("Invalid or expired session token")
-    if host is not None:
-        normalized_host = hostutil.normalize_host(host)
-        if not normalized_host:
-            raise ValueError("Invalid host")
-        current = session.host
-        if current is None:
+    if session and session_expiry(session) >= datetime.now(timezone.utc):
+        if session.host is None:
             # First time binding: store exact host:port (or IPv6 form) now.
-            await db.instance.set_session_host(session.key, normalized_host)
-            session.host = normalized_host
-        elif current == normalized_host:
-            pass  # exact match ok
-        else:
-            raise ValueError("Invalid or expired session token")
-    return session
+            await db.instance.set_session_host(session.key, host)
+            session.host = host
+        elif session.host != host:
+            raise ValueError("Session host mismatch")
+        return session
+    raise ValueError("Your session has expired. Please sign in again!")
 
 
 async def refresh_session_token(token: str, *, ip: str, user_agent: str):
