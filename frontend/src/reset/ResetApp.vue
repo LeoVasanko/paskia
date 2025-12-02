@@ -7,52 +7,50 @@
     </div>
 
     <main class="view-root">
-      <div class="view-content">
-        <div class="surface surface--tight" style="max-width: 560px; margin: 0 auto; width: 100%;">
-          <header class="view-header" style="text-align: center;">
-            <h1>🔑 Registration</h1>
-            <p class="view-lede">
-              {{ subtitleMessage }}
-            </p>
-          </header>
+      <div class="surface surface--tight" style="max-width: 560px; margin: 0 auto; width: 100%;">
+        <header class="view-header" style="text-align: center;">
+          <h1>🔑 Registration</h1>
+          <p class="view-lede">
+            {{ subtitleMessage }}
+          </p>
+        </header>
 
-          <section class="section-block" v-if="initializing">
-            <div class="section-body center">
-              <p>Loading reset details…</p>
+        <section class="section-block" v-if="initializing">
+          <div class="section-body center">
+            <p>Loading reset details…</p>
+          </div>
+        </section>
+
+        <section class="section-block" v-else-if="!canRegister">
+          <div class="section-body center">
+            <p>{{ errorMessage }}</p>
+            <div class="button-row center" style="justify-content: center;">
+              <button class="btn-secondary" @click="goHome">Return to sign-in</button>
             </div>
-          </section>
+          </div>
+        </section>
 
-          <section class="section-block" v-else-if="!canRegister">
-            <div class="section-body center">
-              <p>{{ errorMessage }}</p>
-              <div class="button-row center" style="justify-content: center;">
-                <button class="btn-secondary" @click="goHome">Return to sign-in</button>
-              </div>
-            </div>
-          </section>
-
-          <section class="section-block" v-else>
-            <div class="section-body">
-              <label class="name-edit">
-                <span>👤 Name</span>
-                <input
-                  type="text"
-                  v-model="displayName"
-                  :disabled="loading"
-                  maxlength="64"
-                  @keyup.enter="registerPasskey"
-                />
-              </label>
-              <button
-                class="btn-primary"
+        <section class="section-block" v-else>
+          <div class="section-body">
+            <label class="name-edit">
+              <span>👤 Name</span>
+              <input
+                type="text"
+                v-model="displayName"
                 :disabled="loading"
-                @click="registerPasskey"
-              >
-                {{ loading ? 'Registering…' : 'Register Passkey' }}
-              </button>
-            </div>
-          </section>
-        </div>
+                maxlength="64"
+                @keyup.enter="registerPasskey"
+              />
+            </label>
+            <button
+              class="btn-primary"
+              :disabled="loading"
+              @click="registerPasskey"
+            >
+              {{ loading ? 'Registering…' : 'Register Passkey' }}
+            </button>
+          </div>
+        </section>
       </div>
     </main>
   </div>

@@ -2,62 +2,60 @@
   <div class="app-shell">
     <StatusMessage />
     <main class="view-root host-view">
-      <div class="view-content">
-        <header class="view-header">
-          <h1>{{ headingTitle }}</h1>
-          <p class="view-lede">{{ subheading }}</p>
-        </header>
+      <header class="view-header">
+        <h1>{{ headingTitle }}</h1>
+        <p class="view-lede">{{ subheading }}</p>
+      </header>
 
-        <section class="section-block">
-          <div class="section-body">
-            <UserBasicInfo
-              v-if="user"
-              :name="user.user_name"
-              :visits="user.visits || 0"
-              :created-at="user.created_at"
-              :last-seen="user.last_seen"
-              :org-display-name="orgDisplayName"
-              :role-name="roleDisplayName"
-              :can-edit="false"
-            />
-            <p v-else class="empty-state">
-              {{ initializing ? 'Loading your account…' : 'No active session found.' }}
-            </p>
-          </div>
-        </section>
+      <section class="section-block">
+        <div class="section-body">
+          <UserBasicInfo
+            v-if="user"
+            :name="user.user_name"
+            :visits="user.visits || 0"
+            :created-at="user.created_at"
+            :last-seen="user.last_seen"
+            :org-display-name="orgDisplayName"
+            :role-name="roleDisplayName"
+            :can-edit="false"
+          />
+          <p v-else class="empty-state">
+            {{ initializing ? 'Loading your account…' : 'No active session found.' }}
+          </p>
+        </div>
+      </section>
 
-        <section class="section-block">
-          <div class="section-body host-actions">
-            <div class="button-row">
-              <button
-                type="button"
-                class="btn-secondary"
-                @click="history.back()"
-              >
-                Back
-              </button>
-              <button
-                type="button"
-                class="btn-danger"
-                :disabled="authStore.isLoading"
-                @click="logout"
-              >
-                {{ authStore.isLoading ? 'Signing out…' : 'Logout' }}
-              </button>
-              <button
-                v-if="authSiteUrl"
-                type="button"
-                class="btn-primary"
-                :disabled="authStore.isLoading"
-                @click="goToAuthSite"
-              >
-                Full Profile
-              </button>
-            </div>
-            <p class="note"><strong>Logout</strong> from {{ currentHost }}, or access your <strong>Full Profile</strong> at {{ authSiteHost }} (you may need to sign in again).</p>
+      <section class="section-block">
+        <div class="section-body host-actions">
+          <div class="button-row">
+            <button
+              type="button"
+              class="btn-secondary"
+              @click="history.back()"
+            >
+              Back
+            </button>
+            <button
+              type="button"
+              class="btn-danger"
+              :disabled="authStore.isLoading"
+              @click="logout"
+            >
+              {{ authStore.isLoading ? 'Signing out…' : 'Logout' }}
+            </button>
+            <button
+              v-if="authSiteUrl"
+              type="button"
+              class="btn-primary"
+              :disabled="authStore.isLoading"
+              @click="goToAuthSite"
+            >
+              Full Profile
+            </button>
           </div>
-        </section>
-      </div>
+          <p class="note"><strong>Logout</strong> from {{ currentHost }}, or access your <strong>Full Profile</strong> at {{ authSiteHost }} (you may need to sign in again).</p>
+        </div>
+      </section>
     </main>
   </div>
 </template>

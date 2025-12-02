@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Restricted API Demo</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🔐 Restricted API Demo</h1>
+            <p class="subtitle">Demonstrates iframe-based authentication using postMessage</p>
+        </header>
+
+        <div class="content">
+            <div class="section">
+                <h2>Authentication Modes</h2>
+                <button onclick="showLoginMode()">Show Login Mode</button>
+                <button onclick="showReauthMode()">Show Reauth Mode</button>
+                <button onclick="hideIframe()">Hide Iframe</button>
+            </div>
+
+            <div class="section">
+                <h2>API Tests</h2>
+                <button onclick="testUserInfo()">Get User Info</button>
+                <button onclick="testProtectedAPI()">Test Protected API</button>
+                <button onclick="logout()">Logout</button>
+            </div>
+
+            <div id="status" class="hidden"></div>
+
+            <div class="section">
+                <h2>Message Events</h2>
+                <pre id="message-log">Waiting for messages...</pre>
+            </div>
+        </div>
+    </div>
+    <script>
+        let currentApiCall = null;
+        let iframeInitialized = false;
+        const messageLog = document.getElementById('message-log');
+        let messages = [];
+
+        window.addEventListener('message', (event) => {
+            const data = event.data;
+            if (!data?.type) return;
+
+            // Log all messages
+            const timestamp = new Date().toLocaleTimeString();
+            messages.push(`[${timestamp}] ${JSON.stringify(data, null, 2)}`);
+            if (messages.length > 10) messages.shift();
+            messageLog.textContent = messages.join('\n\n');
+
+            switch (data.type) {
+                case 'auth-ready':
+                    iframeInitialized = true;
+                    showStatus('Authentication iframe is ready', 'info');
+                    break;
+
+                case 'auth-success':
+                    showStatus('✓ Authentication successful!', 'success');
+                    hideAuthIframe();
+                    if (currentApiCall) {
+                        setTimeout(() => {
+                            currentApiCall();
+                            currentApiCall = null;
+                        }, 500);
+                    }
+                    break;
+
+                case 'auth-forbidden':
+                    showStatus('⚠ You are authenticated but lack required permissions', 'error');
+                    hideAuthIframe();
+                    currentApiCall = null;
+                    break;
+
+                case 'auth-logout':
+                    showStatus('User logged out', 'info');
+                    currentApiCall = null;
+                    break;
+
+                case 'auth-error':
+                    showStatus(`⚠ ${data.message || 'Authentication failed'}`, data.cancelled ? 'info' : 'error');
+                    if (data.cancelled) {
+                        hideAuthIframe();
+                        currentApiCall = null;
+                    }
+                    break;
+
+                case 'auth-cancelled':
+                    showStatus(`Operation cancelled: ${data.message || ''}`, 'info');
+                    hideAuthIframe();
+                    currentApiCall = null;
+                    break;
+
+                case 'auth-close-request':
+                    // Iframe wants to be closed
+                    hideAuthIframe();
+                    break;
+            }
+        });
+
+        function showLoginMode() {
+            let iframe = document.getElementById('auth-iframe');
+            if (!iframe) {
+                iframe = document.createElement('iframe');
+                iframe.id = 'auth-iframe';
+                iframe.title = 'Authentication';
+                document.body.appendChild(iframe);
+            }
+            iframe.src = '/auth/restricted-api/?mode=login';
+            showStatus('Login mode loaded - for users who are not authenticated', 'info');
+        }
+
+        function showReauthMode() {
+            let iframe = document.getElementById('auth-iframe');
+            if (!iframe) {
+                iframe = document.createElement('iframe');
+                iframe.id = 'auth-iframe';
+                iframe.title = 'Authentication';
+                document.body.appendChild(iframe);
+            }
+            iframe.src = '/auth/restricted-api/?mode=reauth';
+            showStatus('Reauth mode loaded - for additional verification of authenticated users', 'info');
+        }
+
+        function showAuthIframe() {
+            let iframe = document.getElementById('auth-iframe');
+            if (!iframe) {
+                iframe = document.createElement('iframe');
+                iframe.id = 'auth-iframe';
+                iframe.title = 'Authentication';
+                iframe.src = '/auth/restricted-api';
+                document.body.appendChild(iframe);
+                iframeInitialized = true;
+            }
+        }
+
+        function hideIframe() {
+            hideAuthIframe();
+            showStatus('Iframe hidden', 'info');
+        }
+
+        function hideAuthIframe() {
+            const iframe = document.getElementById('auth-iframe');
+            if (iframe) iframe.remove();
+        }
+
+        async function testUserInfo() {
+            showStatus('Fetching user info...');
+
+            try {
+                const response = await fetch('/auth/api/user-info', {
+                    method: 'POST',
+                    credentials: 'include'
+                });
+
+                if (response.status === 401 || response.status === 403) {
+                    showStatus(`⚠ Authentication required (${response.status})`);
+                    currentApiCall = testUserInfo;
+                    showAuthIframe();
+                    return;
+                }
+
+                if (!response.ok) {
+                    showStatus(`Error: ${response.status} ${response.statusText}`);
+                    return;
+                }
+
+                const data = await response.json();
+                showStatus('✓ User info retrieved successfully!');
+                displayApiResponse('User Info', data);
+            } catch (error) {
+                showStatus(`Error: ${error.message}`);
+            }
+        }
+
+        async function testProtectedAPI() {
+            showStatus('Testing protected API...');
+
+            try {
+                const response = await fetch('/auth/api/user-info', {
+                    method: 'POST',
+                    credentials: 'include'
+                });
+
+                if (response.status === 401 || response.status === 403) {
+                    showStatus(`⚠ Authentication required (${response.status})`);
+                    currentApiCall = testProtectedAPI;
+                    showAuthIframe();
+                    return;
+                }
+
+                if (!response.ok) {
+                    showStatus(`Error: ${response.status} ${response.statusText}`);
+                    return;
+                }
+
+                const data = await response.json();
+                showStatus('✓ Protected API call successful!');
+                displayApiResponse('Protected Data', data);
+            } catch (error) {
+                showStatus(`Error: ${error.message}`);
+            }
+        }
+
+        async function logout() {
+            showStatus('Logging out...');
+
+            try {
+                const response = await fetch('/auth/api/logout', {
+                    method: 'POST',
+                    credentials: 'include'
+                });
+
+                if (response.ok || response.status === 401) {
+                    showStatus('✓ Logged out successfully!');
+                    hideAuthIframe();
+                    currentApiCall = null;
+                } else {
+                    showStatus(`Logout error: ${response.status}`);
+                }
+            } catch (error) {
+                showStatus(`Error: ${error.message}`);
+            }
+        }
+
+        function showStatus(message, type = 'info') {
+            const statusDiv = document.getElementById('status');
+            statusDiv.innerHTML = `<p>${message}</p>`;
+            statusDiv.className = `status ${type}`;
+            statusDiv.classList.remove('hidden');
+        }
+
+        function displayApiResponse(title, data) {
+            const statusDiv = document.getElementById('status');
+            statusDiv.innerHTML += `<h3>${title}</h3><pre>${JSON.stringify(data, null, 2)}</pre>`;
+        }
+    </script>
+</body>
+</html>

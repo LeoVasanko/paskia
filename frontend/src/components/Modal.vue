@@ -17,7 +17,7 @@ defineEmits(['close'])
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.5);
+  background: #334155;
   backdrop-filter: blur(.1rem);
   display: flex;
   align-items: center;
@@ -80,7 +80,7 @@ defineEmits(['close'])
 .modal :deep(.modal-form textarea:focus) {
   outline: none;
   border-color: var(--color-accent);
-  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.1);
+  box-shadow: 0 0 0 2px #c7d2fe;
 }
 
 .modal :deep(.modal-actions) {

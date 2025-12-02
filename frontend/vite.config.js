@@ -1,20 +1,35 @@
 import { fileURLToPath, URL } from 'node:url'
-
 import { defineConfig } from 'vite'
 import { resolve } from 'node:path'
 import vue from '@vitejs/plugin-vue'
+import { readFileSync, existsSync, statSync } from 'node:fs'
 
-// https://vite.dev/config/
-export default defineConfig(({ command, mode }) => ({
+export default defineConfig(({ command }) => ({
+  appType: 'mpa',
   plugins: [
     vue(),
+    {
+      name: 'serve-examples',
+      configureServer(server) {
+        server.middlewares.use((req, res, next) => {
+          const url = req.url?.split('?')[0]
+          if (url === '/examples') return res.writeHead(301, { Location: '/examples/' }).end()
+          if (url?.startsWith('/examples/')) {
+            const file = resolve(__dirname, '../examples', url === '/examples/' ? 'index.html' : url.slice(10))
+            if (existsSync(file) && statSync(file).isFile()) {
+              res.setHeader('Content-Type', { '.html': 'text/html', '.css': 'text/css', '.js': 'application/javascript' }[file.slice(file.lastIndexOf('.'))] || 'text/plain')
+              return res.end(readFileSync(file))
+            }
+            return res.writeHead(404).end()
+          }
+          next()
+        })
+      }
+    }
   ],
   resolve: {
-    alias: {
-      '@': fileURLToPath(new URL('./src', import.meta.url))
-    },
+    alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) }
   },
-  // Use absolute paths at dev, deploy under /auth/
   base: command === 'build' ? '/auth/' : '/',
   server: {
     port: 4403,
@@ -22,26 +37,16 @@ export default defineConfig(({ command, mode }) => ({
       '/auth/': {
         target: 'http://localhost:4402',
         ws: true,
-        changeOrigin: false,
-        // We proxy API + WS under /auth/, but want Vite to serve the SPA entrypoints
-        // and static assets so that HMR works. Bypass tells http-proxy to skip
-        // proxying when we return a (possibly rewritten) local path.
-        bypass(req) {
-          const rawUrl = req.url || ''
-          // Strip query/hash to match path-only for SPA entrypoints with query params (e.g. ?reset=token)
-          const url = rawUrl.split('?')[0].split('#')[0]
-          // Bypass only root SPA entrypoints + static assets so Vite serves them for HMR.
-          // Admin API endpoints (e.g., /auth/admin/orgs) must still hit backend.
-          if (url === '/auth/' || url === '/auth') return '/'
-          if (url === '/auth/host' || url === '/auth/host/') return '/host/index.html'
-          if (url === '/host' || url === '/host/') return '/host/index.html'
-          if (url === '/auth/admin' || url === '/auth/admin/') return '/admin/'
-          if (url.startsWith('/auth/assets/')) return url.replace(/^\/auth/, '')
-          if (/^\/auth\/([a-z]+\.){4}[a-z]+\/?$/.test(url)) return '/reset/index.html'
-          if (/^\/([a-z]+\.){4}[a-z]+\/?$/.test(url)) return '/reset/index.html'
-          if (url === '/auth/restricted' || url === '/auth/restricted/') return '/restricted/index.html'
-          if (url === '/restricted' || url === '/restricted/') return '/restricted/index.html'
-          // Everything else (including /auth/admin/* APIs) should proxy.
+        bypass: (req) => {
+          const url = req.url?.split('?')[0]
+          if (url?.startsWith('/auth/assets/')) return url.slice(5)
+
+          const routes = { '': '/', host: '/host/index.html', admin: '/admin/', restricted: '/restricted/index.html', 'restricted-api': '/restricted-api/index.html' }
+          for (const [path, target] of Object.entries(routes)) {
+            if ([`/auth/${path}`, `/auth/${path}/`, `/${path}`, `/${path}/`].includes(url)) return target
+          }
+
+          if (/^\/auth\/([a-z]+\.){4}[a-z]+\/?$|^\/([a-z]+\.){4}[a-z]+\/?$/.test(url)) return '/reset/index.html'
         }
       }
     }
@@ -49,16 +54,15 @@ export default defineConfig(({ command, mode }) => ({
   build: {
     outDir: '../passkey/frontend-build',
     emptyOutDir: true,
-    assetsDir: 'assets',
     rollupOptions: {
       input: {
         index: resolve(__dirname, 'index.html'),
         admin: resolve(__dirname, 'admin/index.html'),
         reset: resolve(__dirname, 'reset/index.html'),
         restricted: resolve(__dirname, 'restricted/index.html'),
+        'restricted-api': resolve(__dirname, 'restricted-api/index.html'),
         host: resolve(__dirname, 'host/index.html')
-      },
-      output: {}
+      }
     }
   }
 }))
