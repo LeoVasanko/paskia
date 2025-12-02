@@ -2,7 +2,6 @@
   <RestrictedAuth
     :mode="authMode"
     @authenticated="handleAuthenticated"
-    @logout="handleLogout"
     @back="goBack"
     @home="returnHome"
   />
@@ -16,18 +15,19 @@ import { goBack } from '@/utils/helpers'
 
 const basePath = computed(() => uiBasePath())
 
-// Detect mode from URL parameters
+// Detect mode from data attribute on html tag only
+// (RestrictedApi uses URL query, RestrictedForward uses data injected by server)
 const authMode = computed(() => {
-  const params = new URLSearchParams(window.location.search)
-  return params.get('mode') === 'reauth' ? 'reauth' : 'login'
+  const htmlElement = document.documentElement
+  const dataMode = htmlElement.getAttribute('data-mode')
+  if (dataMode === 'reauth') return 'reauth'
+  if (dataMode === 'forbidden') return 'forbidden'
+  return 'login'
 })
 
 function handleAuthenticated() {
+  // Reload page to re-trigger forward auth validation
   location.reload()
-}
-
-function handleLogout() {
-  window.location.reload()
 }
 
 function returnHome() {

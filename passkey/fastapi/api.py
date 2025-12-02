@@ -24,7 +24,7 @@ from ..authsession import (
 )
 from ..globals import db
 from ..globals import passkey as global_passkey
-from ..util import hostutil, passphrase, userinfo
+from ..util import hostutil, htmlutil, passphrase, userinfo
 from ..util.tokens import session_key
 from . import authz, session, user
 from .session import AUTH_COOKIE
@@ -109,18 +109,24 @@ async def forward_authentication(
     request: Request,
     response: Response,
     perm: list[str] = Query([]),
+    max_age: str | None = Query(None),
     auth=AUTH_COOKIE,
 ):
     """Forward auth validation for Caddy/Nginx.
 
     Query Params:
     - perm: repeated permission IDs the authenticated user must possess (ALL required).
+    - max_age: maximum age of authentication (e.g., "5m", "1h", "30s"). If the session
+               is older than this, user must re-authenticate.
 
     Success: 204 No Content with Remote-* headers describing the authenticated user.
-    Failure (unauthenticated / unauthorized): 4xx JSON body with detail.
+    Failure (unauthenticated / unauthorized): 4xx with HTML page for authentication.
+             The HTML includes data attributes for mode and other metadata.
     """
     try:
-        ctx = await authz.verify(auth, perm, host=request.headers.get("host"))
+        ctx = await authz.verify(
+            auth, perm, host=request.headers.get("host"), max_age=max_age
+        )
         role_permissions = set(ctx.role.permissions or [])
         if ctx.permissions:
             role_permissions.update(permission.id for permission in ctx.permissions)
@@ -147,14 +153,18 @@ async def forward_authentication(
             "Remote-Credential": str(ctx.session.credential_uuid),
         }
         return Response(status_code=204, headers=remote_headers)
-    except HTTPException as e:
-        # Let global handler clear cookie; still return HTML surface instead of JSON
-        html = frontend.file("int", "restricted", "index.html").read_bytes()
-        status = e.status_code
-        # If 401 we still want cookie cleared; rely on handler by raising again not feasible (we need HTML)
-        if status == 401:
+    except authz.AuthException as e:
+        # Authentication/authorization failed - return HTML with metadata
+        html = frontend.file("int", "forward", "index.html").read_bytes()
+        # Inject mode and any additional metadata
+        data_attrs = {"mode": e.mode, **e.metadata}
+        html = htmlutil.patch_html_data_attrs(html, **data_attrs)
+        # Clear cookie only if session is invalid (not for reauth)
+        if e.clear_session:
             session.clear_session_cookie(response)
-        return Response(html, status_code=status, media_type="text/html")
+        return Response(
+            html, status_code=e.status_code, media_type="text/html; charset=UTF-8"
+        )
 
 
 @app.get("/settings")
