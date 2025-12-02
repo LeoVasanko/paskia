@@ -135,7 +135,7 @@ async function authenticateUser() {
     loading.value = false
     const message = error?.message || 'Passkey authentication cancelled'
     const cancelled = message === 'Passkey authentication cancelled'
-    showMessage(cancelled ? message : `Authentication failed: ${message}`, cancelled ? 'info' : 'error', 4000)
+    showMessage(message, cancelled ? 'info' : 'error', 4000)
     emit('auth-error', { message, cancelled })
     return
   }

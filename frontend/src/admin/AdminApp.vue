@@ -574,10 +574,10 @@ async function submitDialog() {
     <StatusMessage />
     <main class="app-main">
       <LoadingView v-if="loading" :message="loadingMessage" />
-      <AuthRequiredMessage 
-        v-else-if="showBackMessage" 
+      <AuthRequiredMessage
+        v-else-if="showBackMessage"
         message="You need to authenticate to access the admin panel."
-        @reload="reloadPage" 
+        @reload="reloadPage"
       />
       <section v-else class="view-root view-root--wide view-admin">
         <header class="view-header">

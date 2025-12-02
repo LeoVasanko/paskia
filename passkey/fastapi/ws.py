@@ -71,11 +71,15 @@ async def websocket_register_add(
     host = origin.split("://", 1)[1]
     if reset is not None:
         if not passphrase.is_well_formed(reset):
-            raise ValueError("Invalid reset token")
+            raise ValueError(
+                f"The reset link for {passkey.instance.rp_name} is invalid or has expired"
+            )
         s = await get_reset(reset)
     else:
         if not auth:
-            raise ValueError("Authentication Required")
+            raise ValueError(
+                f"You must be signed in to {passkey.instance.rp_name} to add a new passkey"
+            )
         s = await get_session(auth, host=host)
     user_uuid = s.user_uuid
 
@@ -127,7 +131,12 @@ async def websocket_authenticate(ws: WebSocket):
     # Wait for the client to use his authenticator to authenticate
     credential = passkey.instance.auth_parse(await ws.receive_json())
     # Fetch from the database by credential ID
-    stored_cred = await db.instance.get_credential_by_id(credential.raw_id)
+    try:
+        stored_cred = await db.instance.get_credential_by_id(credential.raw_id)
+    except ValueError:
+        raise ValueError(
+            f"This passkey is no longer registered with {passkey.instance.rp_name}"
+        )
     # Verify the credential matches the stored data
     passkey.instance.auth_verify(credential, challenge, stored_cred, origin=origin)
     # Update both credential and user's last_seen timestamp

@@ -112,7 +112,7 @@ export const useAuthStore = defineStore('auth', {
         throw new Error('Authentication required')
       }
       const result = await response.json()
-      if (result.detail) throw new Error(`Server: ${result.detail}`)
+      if (result.detail) throw new Error(result.detail)
 
       await this.loadUserInfo()
     },
