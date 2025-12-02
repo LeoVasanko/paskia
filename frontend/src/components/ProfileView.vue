@@ -64,7 +64,7 @@
         <button
           type="button"
           class="btn-secondary"
-          @click="history.back()"
+          @click="goBack"
         >
           Back
         </button>
@@ -100,6 +100,7 @@ import RegistrationLinkModal from '@/components/RegistrationLinkModal.vue'
 import { useAuthStore } from '@/stores/auth'
 import { adminUiPath, makeUiHref } from '@/utils/settings'
 import passkey from '@/utils/passkey'
+import { goBack } from '@/utils/helpers'
 
 const authStore = useAuthStore()
 const updateInterval = ref(null)
