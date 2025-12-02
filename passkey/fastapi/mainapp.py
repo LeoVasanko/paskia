@@ -61,7 +61,7 @@ app.mount(
 )
 
 
-@app.get("/auth/restricted")
+@app.get("/auth/restricted/")
 async def restricted_view():
     """Serve the restricted/authentication UI for iframe embedding."""
     return FileResponse(frontend.file("auth", "restricted", "index.html"))
