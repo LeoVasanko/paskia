@@ -111,7 +111,7 @@
                 iframe.title = 'Authentication';
                 document.body.appendChild(iframe);
             }
-            iframe.src = '/auth/restricted?mode=login';
+            iframe.src = '/auth/restricted/?mode=login';
             showStatus('Login mode loaded - for users who are not authenticated', 'info');
         }
 
@@ -123,7 +123,7 @@
                 iframe.title = 'Authentication';
                 document.body.appendChild(iframe);
             }
-            iframe.src = '/auth/restricted?mode=reauth';
+            iframe.src = '/auth/restricted/?mode=reauth';
             showStatus('Reauth mode loaded - for additional verification of authenticated users', 'info');
         }
 
@@ -133,7 +133,7 @@
                 iframe = document.createElement('iframe');
                 iframe.id = 'auth-iframe';
                 iframe.title = 'Authentication';
-                iframe.src = '/auth/restricted';
+                iframe.src = '/auth/restricted/';
                 document.body.appendChild(iframe);
                 iframeInitialized = true;
             }
