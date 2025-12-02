@@ -5,15 +5,8 @@
     @forbidden="handleForbidden"
     @logout="handleLogout"
     @auth-error="handleAuthError"
-  >
-    <template #actions="{ loading, canAuthenticate, isAuthenticated, authenticate, logout, mode }">
-      <button v-if="canAuthenticate" class="btn-primary" :disabled="loading" @click="authenticate">
-        {{ loading ? (mode === 'reauth' ? 'Verifying…' : 'Signing in…') : (mode === 'reauth' ? 'Verify' : 'Login') }}
-      </button>
-      <button v-if="isAuthenticated && mode !== 'reauth'" class="btn-danger" :disabled="loading" @click="logout">Logout</button>
-      <button class="btn-secondary" :disabled="loading" @click="handleCancel">Cancel</button>
-    </template>
-  </RestrictedAuth>
+    @back="handleBack"
+  />
 </template>
 
 <script setup>
@@ -65,37 +58,14 @@ function handleAuthError({ message, cancelled }) {
     message: message || 'Authentication failed',
     cancelled
   })
-
-  // If it was a cancellation, attempt to close
-  if (cancelled) {
-    tryClose()
-  }
 }
 
-function handleCancel() {
-  console.log('[RestrictedApiApp] Cancel clicked')
-  // Notify parent that the operation was cancelled/incomplete
+function handleBack() {
+  console.log('[RestrictedApiApp] Back clicked')
+  // Notify parent that user wants to go back
   postToParent({
-    type: 'auth-cancelled',
-    message: 'Authentication cancelled'
+    type: 'auth-back'
   })
-
-  // Attempt to close the iframe
-  tryClose()
-}
-
-function tryClose() {
-  console.log('[RestrictedApiApp] tryClose called')
-  // Signal to parent that we'd like to be removed
-  // Parent can listen for this and remove the iframe element
-  postToParent({
-    type: 'auth-close-request'
-  })
-
-  // Try to close (doesn't work for iframes but harmless to try)
-  try {
-    window.close()
-  } catch (_) { /* ignore */ }
 }
 
 onMounted(() => {
@@ -113,10 +83,10 @@ onMounted(() => {
     }
   })
 
-  // Handle Escape key to cancel
+  // Handle Escape key to trigger back navigation
   window.addEventListener('keydown', (event) => {
     if (event.key === 'Escape') {
-      handleCancel()
+      handleBack()
     }
   })
 })

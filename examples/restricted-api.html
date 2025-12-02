@@ -82,20 +82,22 @@
 
                 case 'auth-error':
                     showStatus(`⚠ ${data.message || 'Authentication failed'}`, data.cancelled ? 'info' : 'error');
-                    if (data.cancelled) {
-                        hideAuthIframe();
-                        currentApiCall = null;
-                    }
+                    // Don't hide iframe on error - let user retry
                     break;
 
                 case 'auth-cancelled':
                     showStatus(`Operation cancelled: ${data.message || ''}`, 'info');
+                    // Don't hide iframe - deprecated message type
+                    break;
+
+                case 'auth-back':
+                    showStatus('User clicked Back', 'info');
                     hideAuthIframe();
                     currentApiCall = null;
                     break;
 
                 case 'auth-close-request':
-                    // Iframe wants to be closed
+                    // Iframe wants to be closed (legacy)
                     hideAuthIframe();
                     break;
             }

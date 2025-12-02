@@ -173,6 +173,11 @@ const saveName = async () => {
   try {
     saving.value = true
     const res = await fetch('/auth/api/user/display-name', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ display_name: name }) })
+    if (res.status === 401) {
+      authStore.authRequired = true
+      authStore.showMessage('Authentication required', 'error')
+      return
+    }
     const data = await res.json()
     if (!res.ok || data.detail) throw new Error(data.detail || 'Update failed')
     showNameDialog.value = false

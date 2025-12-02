@@ -715,3 +715,21 @@ th {
     padding: 1.5rem;
   }
 }
+
+/* Auth iframe overlay styles */
+body:has(#auth-iframe) {
+  overflow: hidden;
+}
+
+#auth-iframe {
+  border: none;
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 9999;
+  color-scheme: auto;
+  backdrop-filter: blur(4px) brightness(0.7);
+  -webkit-backdrop-filter: blur(4px) brightness(0.7);
+}
