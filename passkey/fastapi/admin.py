@@ -36,22 +36,7 @@ async def general_exception_handler(_request, exc: Exception):
 
 @app.get("/")
 async def adminapp(request: Request, auth=AUTH_COOKIE):
-    """Serve admin SPA only for authenticated users with admin/org permissions.
-
-    On missing/invalid session or insufficient permissions, serve restricted SPA.
-    """
-    try:
-        await authz.verify(
-            auth,
-            ["auth:admin", "auth:org:*"],
-            match=permutil.has_any,
-            host=request.headers.get("host"),
-        )
-        return FileResponse(frontend.file("admin/index.html"))
-    except HTTPException as e:
-        return FileResponse(
-            frontend.file("restricted", "index.html"), status_code=e.status_code
-        )
+    return FileResponse(frontend.file("admin/index.html"))
 
 
 # -------------------- Organizations --------------------

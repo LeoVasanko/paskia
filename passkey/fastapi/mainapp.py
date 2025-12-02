@@ -65,29 +65,17 @@ app.mount(
 @app.get("/")
 @app.get("/auth/")
 async def frontapp(request: Request, response: Response, auth=AUTH_COOKIE):
-    """Serve the user profile SPA only for authenticated sessions; otherwise restricted SPA.
+    """Serve the user profile app.
 
-    Login / authentication UX is centralized in the restricted app.
+    Access control is handled via APIs.
     """
-    if not auth:
-        return FileResponse(frontend.file("restricted", "index.html"), status_code=401)
-    from ..authsession import get_session  # local import
-
-    try:
-        await get_session(auth, host=request.headers.get("host"))
-        cfg_host = hostutil.configured_auth_host()
-        if cfg_host:
-            cur_host = hostutil.normalize_host(request.headers.get("host"))
-            cfg_normalized = hostutil.normalize_host(cfg_host)
-            if cur_host and cfg_normalized and cur_host != cfg_normalized:
-                return FileResponse(frontend.file("host", "index.html"))
-        return FileResponse(frontend.file("index.html"))
-    except Exception:
-        if auth:
-            from . import session as session_mod
-
-            session_mod.clear_session_cookie(response)
-        return FileResponse(frontend.file("restricted", "index.html"), status_code=401)
+    cfg_host = hostutil.configured_auth_host()
+    if cfg_host:
+        cur_host = hostutil.normalize_host(request.headers.get("host"))
+        cfg_normalized = hostutil.normalize_host(cfg_host)
+        if cur_host and cfg_normalized and cur_host != cfg_normalized:
+            return FileResponse(frontend.file("host", "index.html"))
+    return FileResponse(frontend.file("index.html"))
 
 
 @app.get("/admin", include_in_schema=False)
@@ -98,7 +86,7 @@ async def admin_root_redirect():
 
 @app.get("/admin/", include_in_schema=False)
 async def admin_root(request: Request, auth=AUTH_COOKIE):
-    return await admin.adminapp(request, auth)  # Delegated (enforces access control)
+    return await admin.adminapp(request, auth)  # Delegated to admin app
 
 
 @app.get("/auth/restricted")
@@ -115,7 +103,7 @@ async def restricted_api_view():
 @app.get("/{reset}")
 @app.get("/auth/{reset}")
 async def reset_link(reset: str):
-    """Serve the SPA directly with an injected reset token."""
+    """Serve the reset app directly with an injected reset token."""
     if not passphrase.is_well_formed(reset):
         raise HTTPException(status_code=404)
     return FileResponse(frontend.file("reset", "index.html"))
