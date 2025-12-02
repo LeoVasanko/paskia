@@ -13,9 +13,8 @@ from fastapi import (
 from fastapi.responses import JSONResponse
 from fastapi.security import HTTPBearer
 
-from passkey.util import frontend, useragent
+from passkey.util import frontend
 
-from .. import aaguid
 from ..authsession import (
     EXPIRES,
     get_reset,
@@ -25,8 +24,8 @@ from ..authsession import (
 )
 from ..globals import db
 from ..globals import passkey as global_passkey
-from ..util import hostutil, passphrase, permutil
-from ..util.tokens import encode_session_key, session_key
+from ..util import hostutil, passphrase, userinfo
+from ..util.tokens import session_key
 from . import authz, session, user
 from .session import AUTH_COOKIE
 
@@ -177,6 +176,12 @@ async def api_user_info(
     reset: str | None = None,
     auth=AUTH_COOKIE,
 ):
+    """Get user information including credentials, sessions, and permissions.
+
+    Can be called with either:
+    - A session cookie (auth) for authenticated users
+    - A reset token for users in password reset flow
+    """
     authenticated = False
     session_record = None
     reset_token = None
@@ -195,168 +200,20 @@ async def api_user_info(
     except ValueError as e:
         raise HTTPException(401, str(e))
 
-    u = await db.instance.get_user_by_uuid(target_user_uuid)
+    # Return minimal response for reset tokens
+    if not authenticated and reset_token:
+        return await userinfo.format_reset_user_info(target_user_uuid, reset_token)
 
-    if not authenticated and reset_token:  # minimal response for reset tokens
-        return {
-            "authenticated": False,
-            "session_type": reset_token.token_type,
-            "user": {"user_uuid": str(u.uuid), "user_name": u.display_name},
-        }
-
+    # Return full user info for authenticated users
     assert auth is not None
     assert session_record is not None
 
-    ctx = await permutil.session_context(auth, request.headers.get("host"))
-    credential_ids = await db.instance.get_credentials_by_user_uuid(
-        session_record.user_uuid
+    return await userinfo.format_user_info(
+        user_uuid=target_user_uuid,
+        auth=auth,
+        session_record=session_record,
+        request_host=request.headers.get("host"),
     )
-    credentials: list[dict] = []
-    user_aaguids: set[str] = set()
-    for cred_id in credential_ids:
-        try:
-            c = await db.instance.get_credential_by_id(cred_id)
-        except ValueError:
-            continue
-        aaguid_str = str(c.aaguid)
-        user_aaguids.add(aaguid_str)
-        credentials.append(
-            {
-                "credential_uuid": str(c.uuid),
-                "aaguid": aaguid_str,
-                "created_at": (
-                    c.created_at.astimezone(timezone.utc)
-                    .isoformat()
-                    .replace("+00:00", "Z")
-                    if c.created_at.tzinfo
-                    else c.created_at.replace(tzinfo=timezone.utc)
-                    .isoformat()
-                    .replace("+00:00", "Z")
-                ),
-                "last_used": (
-                    c.last_used.astimezone(timezone.utc)
-                    .isoformat()
-                    .replace("+00:00", "Z")
-                    if c.last_used and c.last_used.tzinfo
-                    else (
-                        c.last_used.replace(tzinfo=timezone.utc)
-                        .isoformat()
-                        .replace("+00:00", "Z")
-                        if c.last_used
-                        else None
-                    )
-                ),
-                "last_verified": (
-                    c.last_verified.astimezone(timezone.utc)
-                    .isoformat()
-                    .replace("+00:00", "Z")
-                    if c.last_verified and c.last_verified.tzinfo
-                    else (
-                        c.last_verified.replace(tzinfo=timezone.utc)
-                        .isoformat()
-                        .replace("+00:00", "Z")
-                        if c.last_verified
-                        else None
-                    )
-                )
-                if c.last_verified
-                else None,
-                "sign_count": c.sign_count,
-                "is_current_session": session_record.credential_uuid == c.uuid,
-            }
-        )
-    credentials.sort(key=lambda cred: cred["created_at"])
-    aaguid_info = aaguid.filter(user_aaguids)
-
-    role_info = None
-    org_info = None
-    effective_permissions: list[str] = []
-    is_global_admin = False
-    is_org_admin = False
-    if ctx:
-        role_info = {
-            "uuid": str(ctx.role.uuid),
-            "display_name": ctx.role.display_name,
-            "permissions": ctx.role.permissions,
-        }
-        org_info = {
-            "uuid": str(ctx.org.uuid),
-            "display_name": ctx.org.display_name,
-            "permissions": ctx.org.permissions,
-        }
-        effective_permissions = [p.id for p in (ctx.permissions or [])]
-        is_global_admin = "auth:admin" in (role_info["permissions"] or [])
-        is_org_admin = any(
-            p.startswith("auth:org:") for p in (role_info["permissions"] or [])
-        )
-
-    normalized_request_host = hostutil.normalize_host(request.headers.get("host"))
-    session_records = await db.instance.list_sessions_for_user(session_record.user_uuid)
-    current_session_key = session_key(auth)
-    sessions_payload: list[dict] = []
-    for entry in session_records:
-        sessions_payload.append(
-            {
-                "id": encode_session_key(entry.key),
-                "host": entry.host,
-                "ip": entry.ip,
-                "user_agent": useragent.compact_user_agent(entry.user_agent),
-                "last_renewed": (
-                    entry.renewed.astimezone(timezone.utc)
-                    .isoformat()
-                    .replace("+00:00", "Z")
-                    if entry.renewed.tzinfo
-                    else entry.renewed.replace(tzinfo=timezone.utc)
-                    .isoformat()
-                    .replace("+00:00", "Z")
-                ),
-                "is_current": entry.key == current_session_key,
-                "is_current_host": bool(
-                    normalized_request_host
-                    and entry.host
-                    and entry.host == normalized_request_host
-                ),
-            }
-        )
-
-    return {
-        "authenticated": True,
-        "user": {
-            "user_uuid": str(u.uuid),
-            "user_name": u.display_name,
-            "created_at": (
-                u.created_at.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
-                if u.created_at and u.created_at.tzinfo
-                else (
-                    u.created_at.replace(tzinfo=timezone.utc)
-                    .isoformat()
-                    .replace("+00:00", "Z")
-                    if u.created_at
-                    else None
-                )
-            ),
-            "last_seen": (
-                u.last_seen.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
-                if u.last_seen and u.last_seen.tzinfo
-                else (
-                    u.last_seen.replace(tzinfo=timezone.utc)
-                    .isoformat()
-                    .replace("+00:00", "Z")
-                    if u.last_seen
-                    else None
-                )
-            ),
-            "visits": u.visits,
-        },
-        "org": org_info,
-        "role": role_info,
-        "permissions": effective_permissions,
-        "is_global_admin": is_global_admin,
-        "is_org_admin": is_org_admin,
-        "credentials": credentials,
-        "aaguid_info": aaguid_info,
-        "sessions": sessions_payload,
-    }
 
 
 @app.post("/logout")
