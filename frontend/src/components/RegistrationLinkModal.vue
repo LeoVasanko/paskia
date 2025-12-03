@@ -1,5 +1,5 @@
 <template>
-  <div v-if="!inline" class="dialog-overlay" @keydown.esc.prevent="$emit('close')">
+  <div v-if="!inline && url" class="dialog-overlay" @keydown.esc.prevent="$emit('close')">
     <div class="device-dialog" role="dialog" aria-modal="true" aria-labelledby="regTitle">
       <div class="reg-header-row">
         <h2 id="regTitle" class="reg-title">
@@ -9,13 +9,10 @@
       </div>
       <div class="device-link-section">
         <div class="qr-container">
-          <a v-if="url" :href="url" @click.prevent="copy" class="qr-link">
+          <a :href="url" @click.prevent="copy" class="qr-link">
             <canvas ref="qrCanvas" class="qr-code"></canvas>
             <p>{{ displayUrl }}</p>
           </a>
-          <div v-else>
-            <em>Generating link...</em>
-          </div>
           <p class="reg-help">
             <span v-if="userName">The user should open this link on the device where they want to register.</span>
             <span v-else>Open or scan this link on the device you wish to register to your account.</span>
@@ -25,11 +22,11 @@
       </div>
       <div class="reg-actions">
         <button class="btn-secondary" @click="$emit('close')">Close</button>
-        <button class="btn-primary" :disabled="!url" @click="copy">Copy Link</button>
+        <button class="btn-primary" @click="copy">Copy Link</button>
       </div>
     </div>
   </div>
-  <div v-else class="registration-inline-wrapper">
+  <div v-else-if="inline && url" class="registration-inline-wrapper">
     <div class="registration-inline-block section-block">
       <div class="section-header">
         <h2 class="inline-heading">📱 <span v-if="userName">Registration for {{ userName }}</span><span v-else>Device Registration Link</span></h2>
@@ -37,13 +34,10 @@
       <div class="section-body">
         <div class="device-link-section">
           <div class="qr-container">
-            <a v-if="url" :href="url" @click.prevent="copy" class="qr-link">
+            <a :href="url" @click.prevent="copy" class="qr-link">
               <canvas ref="qrCanvas" class="qr-code"></canvas>
               <p>{{ displayUrl }}</p>
             </a>
-            <div v-else>
-              <em>Generating link...</em>
-            </div>
             <p class="reg-help">
               <span v-if="userName">The user should open this link on the device where they want to register.</span>
               <span v-else>Open this link on the device you wish to connect with.</span>
@@ -52,7 +46,7 @@
           </div>
         </div>
         <div class="button-row" style="margin-top:1rem;">
-          <button class="btn-primary" :disabled="!url" @click="copy">Copy Link</button>
+          <button class="btn-primary" @click="copy">Copy Link</button>
           <button v-if="showCloseInInline" class="btn-secondary" @click="$emit('close')">Close</button>
         </div>
       </div>
@@ -103,9 +97,9 @@ async function fetchLink() {
     drawQR()
     if (props.autoCopy) copy()
   } catch (e) {
-    url.value = null
-    expires.value = null
     console.error('Failed to create link', e)
+    // Close the dialog on any error (auth cancelled, network error, etc.)
+    emit('close')
   }
 }
 

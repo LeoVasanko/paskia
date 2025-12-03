@@ -9,6 +9,7 @@ from ..authsession import create_session, get_reset, get_session
 from ..globals import db, passkey
 from ..util import passphrase
 from ..util.tokens import create_token, session_key
+from . import authz
 from .session import AUTH_COOKIE, infodict
 
 
@@ -21,6 +22,18 @@ def websocket_error_handler(func):
             return await func(ws, *args, **kwargs)
         except WebSocketDisconnect:
             pass
+        except authz.AuthException as e:
+            await ws.send_json(
+                {
+                    "status": e.status_code,
+                    "detail": e.detail,
+                    "auth": {
+                        "mode": e.mode,
+                        "iframe": f"/auth/restricted/?mode={e.mode}",
+                        **e.metadata,
+                    },
+                }
+            )
         except (ValueError, InvalidAuthenticationResponse) as e:
             await ws.send_json({"detail": str(e)})
         except Exception:
@@ -64,7 +77,7 @@ async def websocket_register_add(
     """Register a new credential for an existing user.
 
     Supports either:
-    - Normal session via auth cookie
+    - Normal session via auth cookie (requires recent authentication)
     - Reset token supplied as ?reset=... (auth cookie ignored)
     """
     origin = ws.headers["origin"]
@@ -75,13 +88,12 @@ async def websocket_register_add(
                 f"The reset link for {passkey.instance.rp_name} is invalid or has expired"
             )
         s = await get_reset(reset)
+        user_uuid = s.user_uuid
     else:
-        if not auth:
-            raise ValueError(
-                f"You must be signed in to {passkey.instance.rp_name} to add a new passkey"
-            )
-        s = await get_session(auth, host=host)
-    user_uuid = s.user_uuid
+        # Require recent authentication for adding a new passkey
+        ctx = await authz.verify(auth, perm=[], host=host, max_age="5m")
+        user_uuid = ctx.session.user_uuid
+        s = ctx.session
 
     # Get user information and determine effective user_name for this registration
     user = await db.instance.get_user_by_uuid(user_uuid)

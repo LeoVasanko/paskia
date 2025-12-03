@@ -58,10 +58,14 @@ class AwaitableWebSocket extends WebSocket {
       console.error("Failed to parse JSON from WebSocket message", data, err)
       throw new Error("Failed to parse JSON from WebSocket message")
     }
-    if (parsed.detail) {
-      throw new Error(parsed.detail)
+    // Wrap in response-like object with ok based on status field
+    // Status 2xx = ok, 4xx/5xx = not ok, no status = ok (normal response)
+    const status = parsed.status || 200
+    return {
+      ok: status >= 200 && status < 300,
+      status,
+      data: parsed,
     }
-    return parsed
   }
 
   send_json(data) {

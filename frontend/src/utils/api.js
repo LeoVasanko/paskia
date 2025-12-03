@@ -36,13 +36,33 @@ let authResolve = null
 let authReject = null
 
 /**
+ * Check if an auth iframe is already open (from any source).
+ * @returns {boolean}
+ */
+export function isAuthIframeOpen() {
+  return !!document.getElementById('auth-iframe')
+}
+
+/**
  * Show the authentication iframe and return a promise that resolves on success.
+ * If an auth iframe is already open (from any source), hooks into its completion.
  * @param {string} iframeSrc - The URL for the iframe src
  * @returns {Promise<void>}
+ * @throws {AuthCancelledError} - If authentication is cancelled by user
  */
-function showAuthIframe(iframeSrc) {
-  // If already showing auth, return existing promise
+export function showAuthIframe(iframeSrc) {
+  // If we already have a promise (from us), return it
   if (authPromise) return authPromise
+
+  // If there's already an iframe in the DOM (from App.vue or elsewhere),
+  // create a promise that hooks into the message handler
+  if (document.getElementById('auth-iframe')) {
+    authPromise = new Promise((resolve, reject) => {
+      authResolve = resolve
+      authReject = reject
+    })
+    return authPromise
+  }
 
   authPromise = new Promise((resolve, reject) => {
     authResolve = resolve
@@ -144,6 +164,11 @@ export async function apiFetch(url, options = {}) {
       }
 
       if (authInfo?.iframe) {
+        // If an auth iframe is already open (from app or another request), don't open another
+        // Just return the response so the caller can handle it
+        if (isAuthIframeOpen()) {
+          return response
+        }
         // Show auth iframe and wait for success (throws AuthCancelledError on cancel)
         await showAuthIframe(authInfo.iframe)
         // Loop to retry the original request
