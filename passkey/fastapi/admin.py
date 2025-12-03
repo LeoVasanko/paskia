@@ -660,6 +660,50 @@ async def admin_delete_user_credential(
     return {"status": "ok"}
 
 
+@app.delete("/orgs/{org_uuid}/users/{user_uuid}/sessions/{session_id}")
+async def admin_delete_user_session(
+    org_uuid: UUID,
+    user_uuid: UUID,
+    session_id: str,
+    request: Request,
+    auth=AUTH_COOKIE,
+):
+    try:
+        user_org, _role_name = await db.instance.get_user_organization(user_uuid)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="User not found")
+    if user_org.uuid != org_uuid:
+        raise HTTPException(status_code=404, detail="User not found in organization")
+    ctx = await authz.verify(
+        auth,
+        ["auth:admin", f"auth:org:{org_uuid}"],
+        match=permutil.has_any,
+        host=request.headers.get("host"),
+    )
+    if (
+        "auth:admin" not in ctx.role.permissions
+        and f"auth:org:{org_uuid}" not in ctx.role.permissions
+    ):
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
+
+    try:
+        target_key = tokens.decode_session_key(session_id)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=400, detail="Invalid session identifier"
+        ) from exc
+
+    target_session = await db.instance.get_session(target_key)
+    if not target_session or target_session.user_uuid != user_uuid:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    await db.instance.delete_session(target_key)
+
+    # Check if admin terminated their own session
+    current_terminated = target_key == session_key(auth)
+    return {"status": "ok", "current_session_terminated": current_terminated}
+
+
 # -------------------- Permissions (global) --------------------
 
 

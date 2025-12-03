@@ -501,16 +501,20 @@ async function toggleOrgPermission(org, permId, checked) {
 function openDialog(type, data) { dialog.value = { type, data, busy: false, error: '' } }
 function closeDialog() { dialog.value = { type: null, data: null, busy: false, error: '' } }
 
-async function onUserNameSaved() {
+async function refreshUserDetail() {
   await loadOrgs()
   if (selectedUser.value) {
     try {
-  const r = await fetch(`/auth/api/admin/orgs/${selectedUser.value.org_uuid}/users/${selectedUser.value.uuid}`)
+      const r = await fetch(`/auth/api/admin/orgs/${selectedUser.value.org_uuid}/users/${selectedUser.value.uuid}`)
       const jd = await r.json()
       if (!r.ok || jd.detail) throw new Error(jd.detail || 'Reload failed')
       userDetail.value = jd
     } catch (e) { authStore.showMessage(e.message || 'Failed to reload user', 'error') }
   }
+}
+
+async function onUserNameSaved() {
+  await refreshUserDetail()
   authStore.showMessage('User renamed', 'success', 1500)
 }
 
@@ -625,6 +629,7 @@ async function submitDialog() {
                   @go-overview="goOverview"
                   @open-org="openOrg"
                   @on-user-name-saved="onUserNameSaved"
+                  @refresh-user-detail="refreshUserDetail"
                   @edit-user-name="editUserName"
                   @close-reg-modal="showRegModal = false"
                 />

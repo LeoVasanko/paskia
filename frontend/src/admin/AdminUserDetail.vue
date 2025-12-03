@@ -14,9 +14,10 @@ const props = defineProps({
   showRegModal: Boolean
 })
 
-const emit = defineEmits(['generateUserRegistrationLink', 'goOverview', 'openOrg', 'onUserNameSaved', 'closeRegModal', 'editUserName'])
+const emit = defineEmits(['generateUserRegistrationLink', 'goOverview', 'openOrg', 'onUserNameSaved', 'closeRegModal', 'editUserName', 'refreshUserDetail'])
 
 const authStore = useAuthStore()
+const terminatingSessions = ref({})
 
 function onLinkCopied() {
   authStore.showMessage('Link copied to clipboard!')
@@ -37,6 +38,34 @@ function handleDelete(credential) {
       }
     })
     .catch(err => console.error('Delete credential error', err))
+}
+
+async function handleTerminateSession(session) {
+  const sessionId = session?.id
+  if (!sessionId) return
+  terminatingSessions.value = { ...terminatingSessions.value, [sessionId]: true }
+  try {
+    const res = await fetch(`/auth/api/admin/orgs/${props.selectedUser.org_uuid}/users/${props.selectedUser.uuid}/sessions/${sessionId}`, { method: 'DELETE' })
+    const data = await res.json()
+    if (data.status === 'ok') {
+      if (data.current_session_terminated) {
+        sessionStorage.clear()
+        location.reload()
+        return
+      }
+      emit('refreshUserDetail') // Refresh without showing rename message
+      authStore.showMessage('Session terminated', 'success', 2500)
+    } else {
+      authStore.showMessage(data.detail || 'Failed to terminate session', 'error')
+    }
+  } catch (err) {
+    console.error('Terminate session error', err)
+    authStore.showMessage('Failed to terminate session', 'error')
+  } finally {
+    const next = { ...terminatingSessions.value }
+    delete next[sessionId]
+    terminatingSessions.value = next
+  }
 }
 
 </script>
@@ -84,9 +113,10 @@ function handleDelete(credential) {
       </section>
       <SessionList
         :sessions="userDetail.sessions || []"
-        :allow-terminate="false"
+        :terminating-sessions="terminatingSessions"
         :empty-message="'This user has no active sessions.'"
-        :section-description="'View the active sessions for this user.'"
+        :section-description="'View and manage the active sessions for this user.'"
+        @terminate="handleTerminateSession"
       />
     </template>
     <div class="actions ancillary-actions">
