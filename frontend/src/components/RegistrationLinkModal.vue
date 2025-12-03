@@ -59,7 +59,7 @@ import { ref, onMounted, watch, computed, nextTick } from 'vue'
 import QRCode from 'qrcode/lib/browser'
 import { formatDate } from '@/utils/helpers'
 import { useAuthStore } from '@/stores/auth'
-import { apiFetch } from '@/utils/api'
+import { apiJson, getUserFriendlyErrorMessage, shouldShowErrorToast } from '@/utils/api'
 
 const authStore = useAuthStore()
 
@@ -87,9 +87,7 @@ const expirationMessage = computed(() => {
 
 async function fetchLink() {
   try {
-    const res = await apiFetch(props.endpoint, { method: 'POST' })
-    const data = await res.json()
-    if (data.detail) throw new Error(data.detail)
+    const data = await apiJson(props.endpoint, { method: 'POST' })
     url.value = data.url
     expires.value = data.expires
     emit('generated', { url: data.url, expires: data.expires })
@@ -98,6 +96,9 @@ async function fetchLink() {
     if (props.autoCopy) copy()
   } catch (e) {
     console.error('Failed to create link', e)
+    if (shouldShowErrorToast(e)) {
+      authStore.showMessage(getUserFriendlyErrorMessage(e), 'error', 4000)
+    }
     // Close the dialog on any error (auth cancelled, network error, etc.)
     emit('close')
   }

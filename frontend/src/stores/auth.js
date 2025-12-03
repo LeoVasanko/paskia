@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { register, authenticate } from '@/utils/passkey'
 import { getSettings } from '@/utils/settings'
-import { apiFetch } from '@/utils/api'
+import { apiJson } from '@/utils/api'
 
 export const useAuthStore = defineStore('auth', {
   state: () => ({
@@ -39,14 +39,10 @@ export const useAuthStore = defineStore('auth', {
       }
     },
     async setSessionCookie(sessionToken) {
-      const response = await fetch('/auth/api/set-session', {
+      const result = await apiJson('/auth/api/set-session', {
         method: 'POST',
         headers: {'Authorization': `Bearer ${sessionToken}`},
       })
-      const result = await response.json()
-      if (result.detail) {
-        throw new Error(result.detail)
-      }
       return result
     },
     async register() {
@@ -83,42 +79,21 @@ export const useAuthStore = defineStore('auth', {
       this.settings = await getSettings()
     },
     async loadUserInfo() {
-      const response = await apiFetch('/auth/api/user-info', { method: 'POST' })
-      let result = null
       try {
-        result = await response.json()
-      } catch (_) {
-        // ignore JSON parse errors (unlikely)
+        this.userInfo = await apiJson('/auth/api/user-info', { method: 'POST' })
+        console.log('User info loaded:', this.userInfo)
+      } catch (error) {
+        this.showMessage(error.message || 'Failed to load user info', 'error', 5000)
+        throw error
       }
-      if (!response.ok || result?.detail) {
-        const message = result?.detail || 'Failed to load user info'
-        this.showMessage(message, 'error', 5000)
-        throw new Error(message)
-      }
-      this.userInfo = result
-      console.log('User info loaded:', result)
     },
     async deleteCredential(uuid) {
-      const response = await apiFetch(`/auth/api/user/credential/${uuid}`, { method: 'DELETE' })
-      const result = await response.json()
-      if (!response.ok || result.detail) {
-        throw new Error(result.detail || 'Failed to delete credential')
-      }
+      await apiJson(`/auth/api/user/credential/${uuid}`, { method: 'DELETE' })
       await this.loadUserInfo()
     },
     async terminateSession(sessionId) {
       try {
-        const res = await apiFetch(`/auth/api/user/session/${sessionId}`, { method: 'DELETE' })
-        let payload = null
-        try {
-          payload = await res.json()
-        } catch (_) {
-          // ignore JSON parse errors
-        }
-        if (!res.ok || payload?.detail) {
-          const message = payload?.detail || 'Failed to terminate session'
-          throw new Error(message)
-        }
+        const payload = await apiJson(`/auth/api/user/session/${sessionId}`, { method: 'DELETE' })
         if (payload?.current_session_terminated) {
           sessionStorage.clear()
           location.reload()
@@ -133,17 +108,7 @@ export const useAuthStore = defineStore('auth', {
     },
     async logout() {
       try {
-        const res = await fetch('/auth/api/logout', {method: 'POST'})
-        if (!res.ok) {
-          let message = 'Logout failed'
-          try {
-            const data = await res.json()
-            if (data?.detail) message = data.detail
-          } catch (_) {
-            // ignore JSON parse errors
-          }
-          throw new Error(message)
-        }
+        await apiJson('/auth/api/logout', {method: 'POST'})
         sessionStorage.clear()
         location.reload()
       } catch (error) {
@@ -153,17 +118,7 @@ export const useAuthStore = defineStore('auth', {
     },
     async logoutEverywhere() {
       try {
-        const res = await fetch('/auth/api/user/logout-all', {method: 'POST'})
-        if (!res.ok) {
-          let message = 'Logout failed'
-          try {
-            const data = await res.json()
-            if (data?.detail) message = data.detail
-          } catch (_) {
-            // ignore JSON parse errors
-          }
-          throw new Error(message)
-        }
+        await apiJson('/auth/api/user/logout-all', {method: 'POST'})
         sessionStorage.clear()
         location.reload()
       } catch (error) {

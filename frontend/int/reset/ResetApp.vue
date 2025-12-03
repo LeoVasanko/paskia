@@ -60,6 +60,7 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import passkey from '@/utils/passkey'
 import { getSettings, uiBasePath } from '@/utils/settings'
+import { apiJson, ApiError, getUserFriendlyErrorMessage } from '@/utils/api'
 
 const status = reactive({
   show: false,
@@ -112,21 +113,15 @@ async function fetchSettings() {
 async function fetchUserInfo() {
   if (!token.value) return
   try {
-    const res = await fetch(`/auth/api/user-info?reset=${encodeURIComponent(token.value)}`, {
+    userInfo.value = await apiJson(`/auth/api/user-info?reset=${encodeURIComponent(token.value)}`, {
       method: 'POST'
     })
-    if (!res.ok) {
-      const payload = await safeParseJson(res)
-      const detail = payload?.detail || 'Reset link is invalid or expired.'
-      errorMessage.value = detail
-      showMessage(detail, 'error', 0)
-      return
-    }
-    userInfo.value = await res.json()
     displayName.value = userInfo.value?.user?.user_name || ''
   } catch (error) {
     console.error('Failed to load user info', error)
-    const message = 'We could not load your reset details. Try refreshing the page.'
+    const message = error instanceof ApiError
+      ? (error.data?.detail || 'Reset link is invalid or expired.')
+      : getUserFriendlyErrorMessage(error)
     errorMessage.value = message
     showMessage(message, 'error', 0)
   }
@@ -166,18 +161,13 @@ async function registerPasskey() {
 }
 
 async function setSessionCookie(sessionToken) {
-  const response = await fetch('/auth/api/set-session', {
+  return await apiJson('/auth/api/set-session', {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${sessionToken}`
     }
   })
-  const payload = await safeParseJson(response)
-  if (!response.ok || payload?.detail) {
-    const detail = payload?.detail || 'Session could not be established.'
-    throw new Error(detail)
-  }
-  return payload
+}
 }
 
 function redirectHome() {
@@ -201,14 +191,6 @@ function extractTokenFromPath() {
   if (prefix.length === 1 && prefix[0] !== 'auth') return ''
   if (!candidate.includes('.')) return ''
   return candidate
-}
-
-async function safeParseJson(response) {
-  try {
-    return await response.json()
-  } catch (error) {
-    return null
-  }
 }
 
 onMounted(async () => {

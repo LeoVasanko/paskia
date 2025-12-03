@@ -5,7 +5,7 @@ import CredentialList from '@/components/CredentialList.vue'
 import RegistrationLinkModal from '@/components/RegistrationLinkModal.vue'
 import SessionList from '@/components/SessionList.vue'
 import { useAuthStore } from '@/stores/auth'
-import { apiFetch } from '@/utils/api'
+import { apiJson } from '@/utils/api'
 
 const props = defineProps({
   selectedUser: Object,
@@ -30,8 +30,7 @@ function handleEditName() {
 
 async function handleDelete(credential) {
   try {
-    const res = await apiFetch(`/auth/api/admin/orgs/${props.selectedUser.org_uuid}/users/${props.selectedUser.uuid}/credentials/${credential.credential_uuid}`, { method: 'DELETE' })
-    const data = await res.json()
+    const data = await apiJson(`/auth/api/admin/orgs/${props.selectedUser.org_uuid}/users/${props.selectedUser.uuid}/credentials/${credential.credential_uuid}`, { method: 'DELETE' })
     if (data.status === 'ok') {
       emit('onUserNameSaved') // Reuse to refresh user detail
     } else {
@@ -47,8 +46,7 @@ async function handleTerminateSession(session) {
   if (!sessionId) return
   terminatingSessions.value = { ...terminatingSessions.value, [sessionId]: true }
   try {
-    const res = await apiFetch(`/auth/api/admin/orgs/${props.selectedUser.org_uuid}/users/${props.selectedUser.uuid}/sessions/${sessionId}`, { method: 'DELETE' })
-    const data = await res.json()
+    const data = await apiJson(`/auth/api/admin/orgs/${props.selectedUser.org_uuid}/users/${props.selectedUser.uuid}/sessions/${sessionId}`, { method: 'DELETE' })
     if (data.status === 'ok') {
       if (data.current_session_terminated) {
         sessionStorage.clear()
@@ -62,7 +60,7 @@ async function handleTerminateSession(session) {
     }
   } catch (err) {
     console.error('Terminate session error', err)
-    authStore.showMessage('Failed to terminate session', 'error')
+    authStore.showMessage(err.message || 'Failed to terminate session', 'error')
   } finally {
     const next = { ...terminatingSessions.value }
     delete next[sessionId]

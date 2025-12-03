@@ -12,6 +12,7 @@
 <script setup>
 import { onMounted, onUnmounted, ref } from 'vue'
 import { useAuthStore } from '@/stores/auth'
+import { apiJson } from '@/utils/api'
 import StatusMessage from '@/components/StatusMessage.vue'
 import ProfileView from '@/components/ProfileView.vue'
 import LoadingView from '@/components/LoadingView.vue'
@@ -33,7 +34,7 @@ async function tryLoadUserInfo() {
     startSessionValidation()
     return true
   } catch (error) {
-    // User info load failed - apiFetch will show iframe if needed
+    // User info load failed - apiJson will show iframe if needed
     return false
   }
 }
@@ -106,23 +107,23 @@ function handleAuthMessage(event) {
 
 async function validateSession() {
   try {
-    const response = await fetch('/auth/api/validate', {
+    await apiJson('/auth/api/validate', {
       method: 'POST',
       credentials: 'include'
     })
-
-    if (response.status === 401) {
+    // If successful, session was renewed automatically
+  } catch (error) {
+    if (error.status === 401) {
       // Session expired - need to re-authenticate
       console.log('Session expired, requiring re-authentication')
       authenticated.value = false
       loading.value = true
       stopSessionValidation()
       showAuthIframe()
+    } else {
+      console.error('Session validation error:', error)
+      // Don't treat network errors as session expiry
     }
-    // If successful, session was renewed automatically
-  } catch (error) {
-    console.error('Session validation error:', error)
-    // Don't treat network errors as session expiry
   }
 }
 
