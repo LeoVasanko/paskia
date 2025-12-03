@@ -233,6 +233,7 @@ def main():
     if args.command in {"serve", "dev"}:
         run_kwargs: dict = {
             "reload": devmode,
+            "reload_dirs": ["passkey"] if devmode else None,
             "log_level": "info",
         }
         if uds:
