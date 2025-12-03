@@ -16,15 +16,22 @@
               <div
                 v-for="session in group.sessions"
                 :key="session.id"
-                :class="['session-item', { 'is-current': session.is_current }]"
-                @mouseenter="hoveredIp = session.ip"
-                @mouseleave="hoveredIp = null"
+                :class="['session-item', {
+                  'is-current': session.is_current && !hoveredIp && !hoveredCredentialUuid,
+                  'is-hovered': hoveredSession?.id === session.id,
+                  'is-linked-credential': hoveredCredentialUuid === session.credential_uuid
+                }]"
+                tabindex="0"
+                @focusin="handleSessionFocus(session)"
+                @focusout="handleSessionBlur($event)"
               >
                 <div class="item-top">
                   <h4 class="item-title">{{ session.user_agent }}</h4>
                   <div class="item-actions">
-                    <span v-if="session.is_current" class="badge badge-current">Current</span>
-                    <span v-else-if="isSameNetwork(session.ip)" class="badge">Same IP</span>
+                    <span v-if="session.is_current && !hoveredIp && !hoveredCredentialUuid" class="badge badge-current">Current</span>
+                    <span v-else-if="hoveredSession?.id === session.id" class="badge badge-current">Selected</span>
+                    <span v-else-if="hoveredCredentialUuid === session.credential_uuid" class="badge badge-current">Linked</span>
+                    <span v-else-if="!hoveredCredentialUuid && isSameNetwork(session.ip)" class="badge">Same IP</span>
                     <button
                       @click="$emit('terminate', session)"
                       class="btn-card-delete"
@@ -57,12 +64,29 @@ const props = defineProps({
   sessions: { type: Array, default: () => [] },
   emptyMessage: { type: String, default: 'You currently have no other active sessions.' },
   sectionDescription: { type: String, default: "Review where you're signed in and end any sessions you no longer recognize." },
-  terminatingSessions: { type: Object, default: () => ({}) }
+  terminatingSessions: { type: Object, default: () => ({}) },
+  hoveredCredentialUuid: { type: String, default: null },
 })
 
-const emit = defineEmits(['terminate'])
+const emit = defineEmits(['terminate', 'sessionHover'])
 
 const hoveredIp = ref(null)
+const hoveredSession = ref(null)
+
+const handleSessionFocus = (session) => {
+  hoveredSession.value = session
+  hoveredIp.value = session.ip || null
+  emit('sessionHover', session)
+}
+
+const handleSessionBlur = (event) => {
+  // Only clear if focus moved outside this element
+  if (!event.currentTarget.contains(event.relatedTarget)) {
+    hoveredSession.value = null
+    hoveredIp.value = null
+    emit('sessionHover', null)
+  }
+}
 
 const isTerminating = (sessionId) => !!props.terminatingSessions[sessionId]
 

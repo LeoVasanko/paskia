@@ -30,8 +30,11 @@
           :credentials="authStore.userInfo?.credentials || []"
           :aaguid-info="authStore.userInfo?.aaguid_info || {}"
           :loading="authStore.isLoading"
+          :hovered-credential-uuid="hoveredCredentialUuid"
+          :hovered-session-credential-uuid="hoveredSession?.credential_uuid"
           allow-delete
           @delete="handleDelete"
+          @credential-hover="hoveredCredentialUuid = $event"
         />
         <div class="button-row">
           <button @click="addNewCredential" class="btn-primary">Add New Passkey</button>
@@ -43,7 +46,9 @@
     <SessionList
       :sessions="sessions"
       :terminating-sessions="terminatingSessions"
+      :hovered-credential-uuid="hoveredCredentialUuid"
       @terminate="terminateSession"
+      @session-hover="hoveredSession = $event"
       section-description="Review where you're signed in and end any sessions you no longer recognize."
     />
 
@@ -109,6 +114,8 @@ const showNameDialog = ref(false)
 const showRegLink = ref(false)
 const newName = ref('')
 const saving = ref(false)
+const hoveredCredentialUuid = ref(null)
+const hoveredSession = ref(null)
 
 watch(showNameDialog, (newVal) => { if (newVal) newName.value = authStore.userInfo?.user?.user_name || '' })
 

@@ -469,6 +469,7 @@ th {
   height: 100%;
   transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
   position: relative;
+  cursor: pointer;
 }
 
 .record-item:hover,
@@ -481,7 +482,12 @@ th {
 
 .record-item.is-current,
 .credential-item.current-session,
-.session-item.is-current { border-color: var(--color-accent); }
+.credential-item.is-hovered,
+.session-item.is-current,
+.session-item.is-hovered { border-color: var(--color-accent); }
+
+.credential-item.is-linked-session,
+.session-item.is-linked-credential { border-color: var(--color-accent); background-color: var(--color-surface-subtle); }
 
 .item-top {
   display: flex;
