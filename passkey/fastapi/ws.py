@@ -26,7 +26,7 @@ def websocket_error_handler(func):
             await ws.send_json(
                 {
                     "status": e.status_code,
-                    **authz.auth_error_content(e),
+                    **(await authz.auth_error_content(e)),
                 }
             )
         except (ValueError, InvalidAuthenticationResponse) as e:

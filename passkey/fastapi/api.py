@@ -62,7 +62,7 @@ async def auth_exception_handler(_request: Request, exc: authz.AuthException):
     """Handle AuthException with auth info for UI."""
     return JSONResponse(
         status_code=exc.status_code,
-        content=authz.auth_error_content(exc),
+        content=await authz.auth_error_content(exc),
     )
 
 
@@ -179,7 +179,7 @@ async def forward_authentication(
         if wants_html:
             # Browser request - return full-page HTML with metadata
             data_attrs = {"mode": e.mode, **e.metadata}
-            html = frontend.file("int", "forward", "index.html").read_bytes()
+            html = (await frontend.read("/int/forward/index.html"))[0]
             html = htmlutil.patch_html_data_attrs(html, **data_attrs)
             return Response(
                 html, status_code=e.status_code, media_type="text/html; charset=UTF-8"
@@ -188,7 +188,7 @@ async def forward_authentication(
             # API request - return JSON with iframe srcdoc HTML
             return JSONResponse(
                 status_code=e.status_code,
-                content=authz.auth_error_content(e),
+                content=await authz.auth_error_content(e),
             )
 
 
