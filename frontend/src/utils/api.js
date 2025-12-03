@@ -6,6 +6,30 @@
  * successful authentication.
  */
 
+/**
+ * Custom error class for API errors with full response context.
+ */
+export class ApiError extends Error {
+  constructor(url, response, data) {
+    super(data?.detail || `Request failed: ${response.status}`)
+    this.name = 'ApiError'
+    this.url = url
+    this.status = response.status
+    this.statusText = response.statusText
+    this.data = data
+  }
+}
+
+/**
+ * Error thrown when user cancels authentication.
+ */
+export class AuthCancelledError extends Error {
+  constructor() {
+    super('Authentication cancelled')
+    this.name = 'AuthCancelledError'
+  }
+}
+
 let authIframe = null
 let authPromise = null
 let authResolve = null
@@ -64,7 +88,7 @@ function handleAuthMessage(event) {
     case 'auth-close-request':
       hideAuthIframe()
       if (authReject) {
-        authReject(new Error('Authentication cancelled'))
+        authReject(new AuthCancelledError())
         authPromise = null
         authResolve = null
         authReject = null
@@ -75,7 +99,7 @@ function handleAuthMessage(event) {
       // Keep iframe open for retry, but if cancelled, treat as back
       if (data.cancelled && authReject) {
         hideAuthIframe()
-        authReject(new Error('Authentication cancelled'))
+        authReject(new AuthCancelledError())
         authPromise = null
         authResolve = null
         authReject = null
@@ -91,11 +115,12 @@ if (typeof window !== 'undefined') {
 
 /**
  * Fetch wrapper that handles auth errors with iframe-based re-authentication.
+ * Loops until successful or user cancels authentication.
  *
  * @param {string|URL} url - The URL to fetch
  * @param {RequestInit} [options] - Fetch options
  * @returns {Promise<Response>} - The fetch response
- * @throws {Error} - If authentication is cancelled or fails
+ * @throws {AuthCancelledError} - If authentication is cancelled by user
  */
 export async function apiFetch(url, options = {}) {
   // Ensure credentials are included for cookie-based auth
@@ -104,29 +129,30 @@ export async function apiFetch(url, options = {}) {
     credentials: options.credentials || 'include',
   }
 
-  const response = await fetch(url, fetchOptions)
+  while (true) {
+    const response = await fetch(url, fetchOptions)
 
-  // Check for auth errors (401/403)
-  if (response.status === 401 || response.status === 403) {
-    // Try to parse the response to get the iframe URL
-    let authInfo = null
-    try {
-      const data = await response.clone().json()
-      authInfo = data.auth
-    } catch {
-      // If we can't parse JSON, fall back to default iframe URL
+    // Check for auth errors (401/403)
+    if (response.status === 401 || response.status === 403) {
+      // Try to parse the response to get the iframe URL
+      let authInfo = null
+      try {
+        const data = await response.clone().json()
+        authInfo = data.auth
+      } catch {
+        // If we can't parse JSON, no iframe available
+      }
+
+      if (authInfo?.iframe) {
+        // Show auth iframe and wait for success (throws AuthCancelledError on cancel)
+        await showAuthIframe(authInfo.iframe)
+        // Loop to retry the original request
+        continue
+      }
     }
 
-    if (authInfo?.iframe) {
-      // Show auth iframe and wait for success
-      await showAuthIframe(authInfo.iframe)
-
-      // Retry the original request
-      return fetch(url, fetchOptions)
-    }
+    return response
   }
-
-  return response
 }
 
 /**
@@ -136,7 +162,8 @@ export async function apiFetch(url, options = {}) {
  * @param {string|URL} url - The URL to fetch
  * @param {RequestInit} [options] - Fetch options
  * @returns {Promise<any>} - Parsed JSON response
- * @throws {Error} - If response has error detail or auth fails
+ * @throws {ApiError} - If response has error detail or request fails
+ * @throws {AuthCancelledError} - If authentication is cancelled by user
  */
 export async function apiJson(url, options = {}) {
   const fetchOptions = { ...options }
@@ -153,11 +180,41 @@ export async function apiJson(url, options = {}) {
   const response = await apiFetch(url, fetchOptions)
   const data = await response.json()
 
-  if (!response.ok || data.detail) {
-    throw new Error(data.detail || `Request failed: ${response.status}`)
+  if (!response.ok) {
+    throw new ApiError(url, response, data)
   }
 
   return data
+}
+
+/**
+ * Create an API caller with error handling (toast + console.error).
+ * Wraps apiJson calls with consistent error handling for apps.
+ *
+ * @param {Function} showMessage - Function to show toast messages: (message, type, duration) => void
+ * @returns {Function} - Wrapped apiJson that handles errors
+ */
+export function createApiCaller(showMessage) {
+  /**
+   * @param {string|URL} url - The URL to fetch
+   * @param {RequestInit} [options] - Fetch options
+   * @returns {Promise<any>} - Parsed JSON response, or undefined on error
+   */
+  return async function apiCall(url, options = {}) {
+    try {
+      return await apiJson(url, options)
+    } catch (error) {
+      if (error instanceof AuthCancelledError) {
+        // User cancelled - don't show error toast, just re-throw
+        throw error
+      }
+      // Log full error details
+      console.error(`API error for ${url}:`, error instanceof ApiError ? { status: error.status, statusText: error.statusText, data: error.data } : error)
+      // Show user-friendly toast
+      showMessage(error.message || 'An error occurred', 'error')
+      throw error
+    }
+  }
 }
 
 export default apiFetch
