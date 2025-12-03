@@ -17,6 +17,8 @@
                 v-for="session in group.sessions"
                 :key="session.id"
                 :class="['session-item', { 'is-current': session.is_current }]"
+                @mouseenter="hoveredIp = session.ip"
+                @mouseleave="hoveredIp = null"
               >
                 <div class="item-top">
                   <h4 class="item-title">{{ session.user_agent }}</h4>
@@ -48,7 +50,7 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { formatDate } from '@/utils/helpers'
 
 const props = defineProps({
@@ -60,6 +62,8 @@ const props = defineProps({
 
 const emit = defineEmits(['terminate'])
 
+const hoveredIp = ref(null)
+
 const isTerminating = (sessionId) => !!props.terminatingSessions[sessionId]
 
 const hostUrl = (host) => {
@@ -69,20 +73,24 @@ const hostUrl = (host) => {
 }
 
 // Extract /64 prefix for IPv6, or return full IP for IPv4
-const getNetworkPrefix = (ip) => {
+const getNetworkPrefix = ip => {
   if (!ip) return null
-  // Check if IPv6 (contains colon)
-  if (ip.includes(':')) {
-    // Expand and get first 4 groups (64 bits)
-    const parts = ip.split(':')
-    // Take first 4 parts for /64 prefix
-    return parts.slice(0, 4).join(':')
-  }
-  // IPv4 - return as-is
-  return ip
+
+  // IPv4?
+  if (!ip.includes(':')) return ip
+
+  // Normalize IPv6 using URL
+  // Wrap in brackets so URL accepts it
+  const norm = new URL(`http://[${ip}]/`).hostname
+
+  // norm is now fully expanded, e.g. "2001:0db8:0000:0000:0000:0000:0000:0001"
+  const parts = norm.split(':')
+  return parts.slice(0, 4).join(':')
 }
 
 const currentNetworkPrefix = computed(() => {
+  // Use hovered IP if available, otherwise fall back to current session
+  if (hoveredIp.value) return getNetworkPrefix(hoveredIp.value)
   const current = props.sessions.find(s => s.is_current)
   return current ? getNetworkPrefix(current.ip) : null
 })
