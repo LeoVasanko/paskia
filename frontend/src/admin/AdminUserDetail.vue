@@ -27,7 +27,7 @@ function handleEditName() {
 }
 
 function handleDelete(credential) {
-  fetch(`/auth/admin/orgs/${props.selectedUser.org_uuid}/users/${props.selectedUser.uuid}/credentials/${credential.credential_uuid}`, { method: 'DELETE' })
+  fetch(`/auth/api/admin/orgs/${props.selectedUser.org_uuid}/users/${props.selectedUser.uuid}/credentials/${credential.credential_uuid}`, { method: 'DELETE' })
     .then(res => res.json())
     .then(data => {
       if (data.status === 'ok') {
@@ -52,7 +52,7 @@ function handleDelete(credential) {
       :loading="loading"
       :org-display-name="userDetail.org.display_name"
       :role-name="userDetail.role"
-      :update-endpoint="`/auth/admin/orgs/${selectedUser.org_uuid}/users/${selectedUser.uuid}/display-name`"
+      :update-endpoint="`/auth/api/admin/orgs/${selectedUser.org_uuid}/users/${selectedUser.uuid}/display-name`"
       @saved="$emit('onUserNameSaved')"
       @edit-name="handleEditName"
     />
@@ -94,7 +94,7 @@ function handleDelete(credential) {
     </div>
     <RegistrationLinkModal
       v-if="showRegModal"
-      :endpoint="`/auth/admin/orgs/${selectedUser.org_uuid}/users/${selectedUser.uuid}/create-link`"
+      :endpoint="`/auth/api/admin/orgs/${selectedUser.org_uuid}/users/${selectedUser.uuid}/create-link`"
       :auto-copy="false"
       :user-name="userDetail?.display_name || selectedUser.display_name"
       @close="$emit('closeRegModal')"

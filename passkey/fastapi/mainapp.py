@@ -51,18 +51,13 @@ app = FastAPI(lifespan=lifespan)
 # Apply redirections to auth-host if configured (deny access to restricted endpoints, remove /auth/)
 app.middleware("http")(auth_host.redirect_middleware)
 
-app.mount("/auth/admin/", admin.app)
+app.mount("/auth/api/admin/", admin.app)
 app.mount("/auth/api/", api.app)
 app.mount("/auth/ws/", ws.app)
 app.mount(
     "/auth/assets/",
     StaticFiles(directory=frontend.file("auth", "assets")),
     name="assets",
-)
-app.mount(
-    "/int/",
-    StaticFiles(directory=frontend.file("int"), html=True),
-    name="int",
 )
 
 
