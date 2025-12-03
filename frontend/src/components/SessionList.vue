@@ -24,7 +24,6 @@
                     <span v-if="session.is_current" class="badge badge-current">Current</span>
                     <span v-else-if="isSameNetwork(session.ip)" class="badge">Same IP</span>
                     <button
-                      v-if="allowTerminate"
                       @click="$emit('terminate', session)"
                       class="btn-card-delete"
                       :disabled="isTerminating(session.id)"
@@ -54,7 +53,6 @@ import { formatDate } from '@/utils/helpers'
 
 const props = defineProps({
   sessions: { type: Array, default: () => [] },
-  allowTerminate: { type: Boolean, default: true },
   emptyMessage: { type: String, default: 'You currently have no other active sessions.' },
   sectionDescription: { type: String, default: "Review where you're signed in and end any sessions you no longer recognize." },
   terminatingSessions: { type: Object, default: () => ({}) }
