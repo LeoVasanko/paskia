@@ -1,13 +1,13 @@
 import { defineStore } from 'pinia'
 import { register, authenticate } from '@/utils/passkey'
 import { getSettings } from '@/utils/settings'
+import { apiFetch } from '@/utils/api'
 
 export const useAuthStore = defineStore('auth', {
   state: () => ({
     // Auth State
     userInfo: null, // Contains the full user info response: {user, credentials, aaguid_info}
     isLoading: false,
-    authRequired: false, // Flag to trigger auth iframe
 
     // Settings
     settings: null,
@@ -25,9 +25,6 @@ export const useAuthStore = defineStore('auth', {
   actions: {
     setLoading(flag) {
       this.isLoading = !!flag
-    },
-    clearAuthRequired() {
-      this.authRequired = false
     },
     showMessage(message, type = 'info', duration = 3000) {
       this.status = {
@@ -86,43 +83,32 @@ export const useAuthStore = defineStore('auth', {
       this.settings = await getSettings()
     },
     async loadUserInfo() {
-      const response = await fetch('/auth/api/user-info', { method: 'POST' })
+      const response = await apiFetch('/auth/api/user-info', { method: 'POST' })
       let result = null
       try {
         result = await response.json()
       } catch (_) {
         // ignore JSON parse errors (unlikely)
       }
-      if (response.status === 401) {
-        this.authRequired = true
-        throw new Error(result?.detail || 'Authentication required')
-      }
-      if (result?.detail) {
-        // Other error style
-        this.showMessage(result.detail, 'error', 5000)
-        throw new Error(result.detail)
+      if (!response.ok || result?.detail) {
+        const message = result?.detail || 'Failed to load user info'
+        this.showMessage(message, 'error', 5000)
+        throw new Error(message)
       }
       this.userInfo = result
       console.log('User info loaded:', result)
     },
     async deleteCredential(uuid) {
-      const response = await fetch(`/auth/api/user/credential/${uuid}`, {method: 'Delete'})
-      if (response.status === 401) {
-        this.authRequired = true
-        throw new Error('Authentication required')
-      }
+      const response = await apiFetch(`/auth/api/user/credential/${uuid}`, { method: 'DELETE' })
       const result = await response.json()
-      if (result.detail) throw new Error(result.detail)
-
+      if (!response.ok || result.detail) {
+        throw new Error(result.detail || 'Failed to delete credential')
+      }
       await this.loadUserInfo()
     },
     async terminateSession(sessionId) {
       try {
-        const res = await fetch(`/auth/api/user/session/${sessionId}`, { method: 'DELETE' })
-        if (res.status === 401) {
-          this.authRequired = true
-          throw new Error('Authentication required')
-        }
+        const res = await apiFetch(`/auth/api/user/session/${sessionId}`, { method: 'DELETE' })
         let payload = null
         try {
           payload = await res.json()

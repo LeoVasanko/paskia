@@ -123,10 +123,26 @@ async def websocket_register_add(
 
 @app.websocket("/authenticate")
 @websocket_error_handler
-async def websocket_authenticate(ws: WebSocket):
+async def websocket_authenticate(ws: WebSocket, auth=AUTH_COOKIE):
     origin = ws.headers["origin"]
     host = origin.split("://", 1)[1]
-    options, challenge = passkey.instance.auth_generate_options()
+
+    # If there's an existing session, restrict to that user's credentials (reauth)
+    session_user_uuid = None
+    credential_ids = None
+    if auth:
+        try:
+            session = await get_session(auth, host=host)
+            session_user_uuid = session.user_uuid
+            credential_ids = await db.instance.get_credentials_by_user_uuid(
+                session_user_uuid
+            )
+        except ValueError:
+            pass  # Invalid/expired session - allow normal authentication
+
+    options, challenge = passkey.instance.auth_generate_options(
+        credential_ids=credential_ids
+    )
     await ws.send_json(options)
     # Wait for the client to use his authenticator to authenticate
     credential = passkey.instance.auth_parse(await ws.receive_json())
@@ -137,6 +153,11 @@ async def websocket_authenticate(ws: WebSocket):
         raise ValueError(
             f"This passkey is no longer registered with {passkey.instance.rp_name}"
         )
+
+    # If reauth mode, verify the credential belongs to the session's user
+    if session_user_uuid and stored_cred.user_uuid != session_user_uuid:
+        raise ValueError("This passkey belongs to a different account")
+
     # Verify the credential matches the stored data
     passkey.instance.auth_verify(credential, challenge, stored_cred, origin=origin)
     # Update both credential and user's last_seen timestamp

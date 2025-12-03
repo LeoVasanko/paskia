@@ -65,6 +65,7 @@ import { ref, onMounted, watch, computed, nextTick } from 'vue'
 import QRCode from 'qrcode/lib/browser'
 import { formatDate } from '@/utils/helpers'
 import { useAuthStore } from '@/stores/auth'
+import { apiFetch } from '@/utils/api'
 
 const authStore = useAuthStore()
 
@@ -92,12 +93,7 @@ const expirationMessage = computed(() => {
 
 async function fetchLink() {
   try {
-    const res = await fetch(props.endpoint, { method: 'POST' })
-    if (res.status === 401) {
-      authStore.authRequired = true
-      emit('close')
-      return
-    }
+    const res = await apiFetch(props.endpoint, { method: 'POST' })
     const data = await res.json()
     if (data.detail) throw new Error(data.detail)
     url.value = data.url

@@ -92,6 +92,7 @@ class SessionContext:
     user: User
     org: Org
     role: Role
+    credential: Credential | None = None
     permissions: list[Permission] | None = None
 
 

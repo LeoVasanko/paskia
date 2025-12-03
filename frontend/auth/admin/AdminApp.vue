@@ -13,6 +13,7 @@ import AdminUserDetail from '@/admin/AdminUserDetail.vue'
 import AdminDialogs from '@/admin/AdminDialogs.vue'
 import { useAuthStore } from '@/stores/auth'
 import { getSettings, adminUiPath, makeUiHref } from '@/utils/settings'
+import { apiFetch } from '@/utils/api'
 
 const info = ref(null)
 const loading = ref(true)
@@ -37,15 +38,6 @@ const renameDisplayValue = ref('')
 const dialog = ref({ type: null, data: null, busy: false, error: '' })
 const safeIdRegex = /[^A-Za-z0-9:._~-]/g
 let authIframe = null
-
-watch(() => authStore.authRequired, (required) => {
-  if (required) {
-    authenticated.value = false
-    loading.value = true
-    showAuthIframe()
-    authStore.clearAuthRequired()
-  }
-})
 
 function sanitizeRenameId() { if (renameIdValue.value) renameIdValue.value = renameIdValue.value.replace(safeIdRegex, '') }
 
@@ -114,7 +106,7 @@ async function attachPermissionToOrg(pid, orgUuid) {
   if (!orgUuid) return
   try {
     const params = new URLSearchParams({ permission_id: pid })
-    const res = await fetch(`/auth/api/admin/orgs/${orgUuid}/permission?${params.toString()}`, { method: 'POST' })
+    const res = await apiFetch(`/auth/api/admin/orgs/${orgUuid}/permission?${params.toString()}`, { method: 'POST' })
     const data = await res.json()
     if (data.detail) throw new Error(data.detail)
     await loadOrgs()
@@ -127,7 +119,7 @@ async function detachPermissionFromOrg(pid, orgUuid) {
   openDialog('confirm', { message: 'Remove permission from this org?', action: async () => {
     try {
       const params = new URLSearchParams({ permission_id: pid })
-      const res = await fetch(`/auth/api/admin/orgs/${orgUuid}/permission?${params.toString()}`, { method: 'DELETE' })
+      const res = await apiFetch(`/auth/api/admin/orgs/${orgUuid}/permission?${params.toString()}`, { method: 'DELETE' })
       const data = await res.json()
       if (data.detail) throw new Error(data.detail)
       await loadOrgs()
@@ -149,11 +141,7 @@ function parseHash() {
 }
 
 async function loadOrgs() {
-  const res = await fetch('/auth/api/admin/orgs')
-  if (res.status === 401) {
-    authStore.authRequired = true
-    throw new Error('Authentication required')
-  }
+  const res = await apiFetch('/auth/api/admin/orgs')
   const data = await res.json()
   if (data.detail) throw new Error(data.detail)
   orgs.value = data.map(o => {
@@ -167,11 +155,7 @@ async function loadOrgs() {
 }
 
 async function loadPermissions() {
-  const res = await fetch('/auth/api/admin/permissions')
-  if (res.status === 401) {
-    authStore.authRequired = true
-    throw new Error('Authentication required')
-  }
+  const res = await apiFetch('/auth/api/admin/permissions')
   const data = await res.json()
   if (data.detail) throw new Error(data.detail)
   permissions.value = data
@@ -182,12 +166,7 @@ async function load() {
   loadingMessage.value = 'Loading...'
   error.value = null
   try {
-    const res = await fetch('/auth/api/user-info', { method: 'POST' })
-    if (res.status === 401) {
-      authStore.authRequired = true
-      loading.value = true
-      return
-    }
+    const res = await apiFetch('/auth/api/user-info', { method: 'POST' })
     const data = await res.json()
     if (data.detail) throw new Error(data.detail)
     info.value = data
@@ -195,9 +174,9 @@ async function load() {
 
     // Check if user has required permissions
     if (data.authenticated && !(data.is_global_admin || data.is_org_admin)) {
-      // User is authenticated but lacks required permissions - show auth iframe
-      authStore.authRequired = true
-      loading.value = true
+      // User is authenticated but lacks required permissions - show forbidden view
+      error.value = 'You do not have permission to access this area.'
+      loading.value = false
       return
     }
 
@@ -230,7 +209,7 @@ function editUserName(user) { openDialog('user-update-name', { user, name: user.
 function deleteOrg(org) {
   if (!info.value?.is_global_admin) { authStore.showMessage('Global admin only'); return }
   openDialog('confirm', { message: `Delete organization ${org.display_name}?`, action: async () => {
-    const res = await fetch(`/auth/api/admin/orgs/${org.uuid}`, { method: 'DELETE' })
+    const res = await apiFetch(`/auth/api/admin/orgs/${org.uuid}`, { method: 'DELETE' })
     const data = await res.json(); if (data.detail) throw new Error(data.detail)
     await Promise.all([loadOrgs(), loadPermissions()])
   } })
@@ -240,7 +219,7 @@ function createUserInRole(org, role) { openDialog('user-create', { org, role }) 
 
 async function moveUserToRole(org, user, targetRoleDisplayName) {
   if (user.role === targetRoleDisplayName) return
-  const res = await fetch(`/auth/api/admin/orgs/${org.uuid}/users/${user.uuid}/role`, {
+  const res = await apiFetch(`/auth/api/admin/orgs/${org.uuid}/users/${user.uuid}/role`, {
     method: 'PUT',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ role: targetRoleDisplayName })
@@ -282,7 +261,7 @@ function updateRole(role) { openDialog('role-update', { role, name: role.display
 
 function deleteRole(role) {
   openDialog('confirm', { message: `Delete role ${role.display_name}?`, action: async () => {
-    const res = await fetch(`/auth/api/admin/orgs/${role.org_uuid}/roles/${role.uuid}`, { method: 'DELETE' })
+    const res = await apiFetch(`/auth/api/admin/orgs/${role.org_uuid}/roles/${role.uuid}`, { method: 'DELETE' })
     const data = await res.json(); if (data.detail) throw new Error(data.detail)
     await loadOrgs()
   } })
@@ -299,7 +278,7 @@ async function toggleRolePermission(role, pid, checked) {
   role.permissions = newPermissions
 
   try {
-    const res = await fetch(`/auth/api/admin/orgs/${role.org_uuid}/roles/${role.uuid}`, {
+    const res = await apiFetch(`/auth/api/admin/orgs/${role.org_uuid}/roles/${role.uuid}`, {
       method: 'PUT',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ display_name: role.display_name, permissions: newPermissions })
@@ -319,7 +298,7 @@ function updatePermission(p) { openDialog('perm-display', { permission: p }) }
 function deletePermission(p) {
   openDialog('confirm', { message: `Delete permission ${p.id}?`, action: async () => {
     const params = new URLSearchParams({ permission_id: p.id })
-    const res = await fetch(`/auth/api/admin/permission?${params.toString()}`, { method: 'DELETE' })
+    const res = await apiFetch(`/auth/api/admin/permission?${params.toString()}`, { method: 'DELETE' })
     const data = await res.json(); if (data.detail) throw new Error(data.detail)
     await loadPermissions()
   } })
@@ -449,7 +428,7 @@ const breadcrumbEntries = computed(() => {
 watch(selectedUser, async (u) => {
   if (!u) { userDetail.value = null; return }
   try {
-  const res = await fetch(`/auth/api/admin/orgs/${u.org_uuid}/users/${u.uuid}`)
+  const res = await apiFetch(`/auth/api/admin/orgs/${u.org_uuid}/users/${u.uuid}`)
     const data = await res.json()
     if (data.detail) throw new Error(data.detail)
     userDetail.value = data
@@ -488,7 +467,7 @@ async function toggleOrgPermission(org, permId, checked) {
   org.permissions = next
   try {
     const params = new URLSearchParams({ permission_id: permId })
-    const res = await fetch(`/auth/api/admin/orgs/${org.uuid}/permission?${params.toString()}`, { method: checked ? 'POST' : 'DELETE' })
+    const res = await apiFetch(`/auth/api/admin/orgs/${org.uuid}/permission?${params.toString()}`, { method: checked ? 'POST' : 'DELETE' })
     const data = await res.json()
     if (data.detail) throw new Error(data.detail)
     await loadOrgs()
@@ -505,7 +484,7 @@ async function refreshUserDetail() {
   await loadOrgs()
   if (selectedUser.value) {
     try {
-      const r = await fetch(`/auth/api/admin/orgs/${selectedUser.value.org_uuid}/users/${selectedUser.value.uuid}`)
+      const r = await apiFetch(`/auth/api/admin/orgs/${selectedUser.value.org_uuid}/users/${selectedUser.value.uuid}`)
       const jd = await r.json()
       if (!r.ok || jd.detail) throw new Error(jd.detail || 'Reload failed')
       userDetail.value = jd
@@ -525,27 +504,27 @@ async function submitDialog() {
     const t = dialog.value.type
     if (t === 'org-create') {
       const name = dialog.value.data.name?.trim(); if (!name) throw new Error('Name required')
-      const res = await fetch('/auth/api/admin/orgs', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ display_name: name, permissions: [] }) })
+      const res = await apiFetch('/auth/api/admin/orgs', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ display_name: name, permissions: [] }) })
       const d = await res.json(); if (d.detail) throw new Error(d.detail); await Promise.all([loadOrgs(), loadPermissions()])
     } else if (t === 'org-update') {
       const { org } = dialog.value.data; const name = dialog.value.data.name?.trim(); if (!name) throw new Error('Name required')
-      const res = await fetch(`/auth/api/admin/orgs/${org.uuid}`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ display_name: name, permissions: org.permissions }) })
+      const res = await apiFetch(`/auth/api/admin/orgs/${org.uuid}`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ display_name: name, permissions: org.permissions }) })
       const d = await res.json(); if (d.detail) throw new Error(d.detail); await loadOrgs()
     } else if (t === 'role-create') {
       const { org } = dialog.value.data; const name = dialog.value.data.name?.trim(); if (!name) throw new Error('Name required')
-      const res = await fetch(`/auth/api/admin/orgs/${org.uuid}/roles`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ display_name: name, permissions: [] }) })
+      const res = await apiFetch(`/auth/api/admin/orgs/${org.uuid}/roles`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ display_name: name, permissions: [] }) })
       const d = await res.json(); if (d.detail) throw new Error(d.detail); await loadOrgs()
     } else if (t === 'role-update') {
       const { role } = dialog.value.data; const name = dialog.value.data.name?.trim(); if (!name) throw new Error('Name required')
-      const res = await fetch(`/auth/api/admin/orgs/${role.org_uuid}/roles/${role.uuid}`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ display_name: name, permissions: role.permissions }) })
+      const res = await apiFetch(`/auth/api/admin/orgs/${role.org_uuid}/roles/${role.uuid}`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ display_name: name, permissions: role.permissions }) })
       const d = await res.json(); if (d.detail) throw new Error(d.detail); await loadOrgs()
     } else if (t === 'user-create') {
       const { org, role } = dialog.value.data; const name = dialog.value.data.name?.trim(); if (!name) throw new Error('Name required')
-      const res = await fetch(`/auth/api/admin/orgs/${org.uuid}/users`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ display_name: name, role: role.display_name }) })
+      const res = await apiFetch(`/auth/api/admin/orgs/${org.uuid}/users`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ display_name: name, role: role.display_name }) })
       const d = await res.json(); if (d.detail) throw new Error(d.detail); await loadOrgs()
     } else if (t === 'user-update-name') {
       const { user } = dialog.value.data; const name = dialog.value.data.name?.trim(); if (!name) throw new Error('Name required')
-      const res = await fetch(`/auth/api/admin/orgs/${user.org_uuid}/users/${user.uuid}/display-name`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ display_name: name }) })
+      const res = await apiFetch(`/auth/api/admin/orgs/${user.org_uuid}/users/${user.uuid}/display-name`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ display_name: name }) })
       const d = await res.json(); if (d.detail) throw new Error(d.detail); await onUserNameSaved()
     } else if (t === 'perm-display') {
       const { permission } = dialog.value.data
@@ -557,20 +536,20 @@ async function submitDialog() {
       if (newId !== permission.id) {
         // ID changed, use rename endpoint
         const body = { old_id: permission.id, new_id: newId, display_name: newDisplay }
-        const res = await fetch('/auth/api/admin/permission/rename', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+        const res = await apiFetch('/auth/api/admin/permission/rename', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
         let data; try { data = await res.json() } catch(_) { data = {} }
         if (!res.ok || data.detail) throw new Error(data.detail || data.error || `Failed (${res.status})`)
       } else if (newDisplay !== permission.display_name) {
         // Only display name changed
         const params = new URLSearchParams({ permission_id: permission.id, display_name: newDisplay })
-        const res = await fetch(`/auth/api/admin/permission?${params.toString()}`, { method: 'PUT' })
+        const res = await apiFetch(`/auth/api/admin/permission?${params.toString()}`, { method: 'PUT' })
         const d = await res.json(); if (d.detail) throw new Error(d.detail)
       }
       await loadPermissions()
     } else if (t === 'perm-create') {
       const id = dialog.value.data.id?.trim(); if (!id) throw new Error('ID required')
       const display_name = dialog.value.data.display_name?.trim(); if (!display_name) throw new Error('Display name required')
-      const res = await fetch('/auth/api/admin/permissions', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id, display_name }) })
+      const res = await apiFetch('/auth/api/admin/permissions', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id, display_name }) })
       const data = await res.json(); if (data.detail) throw new Error(data.detail)
       await loadPermissions(); dialog.value.data.display_name = ''; dialog.value.data.id = ''
     } else if (t === 'confirm') {

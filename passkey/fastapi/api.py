@@ -57,6 +57,22 @@ async def value_error_handler(_request: Request, exc: ValueError):
     return JSONResponse(status_code=400, content={"detail": str(exc)})
 
 
+@app.exception_handler(authz.AuthException)
+async def auth_exception_handler(_request: Request, exc: authz.AuthException):
+    """Handle AuthException with auth info for UI."""
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={
+            "detail": exc.detail,
+            "auth": {
+                "mode": exc.mode,
+                "iframe": f"/auth/restricted/?mode={exc.mode}",
+                **exc.metadata,
+            },
+        },
+    )
+
+
 @app.exception_handler(Exception)
 async def general_exception_handler(_request: Request, exc: Exception):
     logging.exception("Unhandled exception in API app")
@@ -96,7 +112,9 @@ async def validate_token(
                 renewed = True
             except ValueError:
                 # Session disappeared, e.g. due to concurrent logout; global handler will clear
-                raise HTTPException(status_code=401, detail="Session expired")
+                raise authz.AuthException(
+                    status_code=401, detail="Session expired", mode="login"
+                )
     return {
         "valid": True,
         "user_uuid": str(ctx.session.user_uuid),
@@ -120,8 +138,11 @@ async def forward_authentication(
                is older than this, user must re-authenticate.
 
     Success: 204 No Content with Remote-* headers describing the authenticated user.
-    Failure (unauthenticated / unauthorized): 4xx with HTML page for authentication.
-             The HTML includes data attributes for mode and other metadata.
+    Failure (unauthenticated / unauthorized): 4xx response.
+        - If Accept header contains "text/html": HTML page for authentication
+          with data attributes for mode and other metadata.
+        - Otherwise: JSON response with error details and an `iframe` field
+          pointing to /auth/restricted/?mode=... for iframe-based authentication.
     """
     try:
         ctx = await authz.verify(
@@ -154,17 +175,37 @@ async def forward_authentication(
         }
         return Response(status_code=204, headers=remote_headers)
     except authz.AuthException as e:
-        # Authentication/authorization failed - return HTML with metadata
-        html = frontend.file("int", "forward", "index.html").read_bytes()
-        # Inject mode and any additional metadata
-        data_attrs = {"mode": e.mode, **e.metadata}
-        html = htmlutil.patch_html_data_attrs(html, **data_attrs)
         # Clear cookie only if session is invalid (not for reauth)
         if e.clear_session:
             session.clear_session_cookie(response)
-        return Response(
-            html, status_code=e.status_code, media_type="text/html; charset=UTF-8"
-        )
+
+        # Check Accept header to decide response format
+        accept = request.headers.get("accept", "")
+        wants_html = "text/html" in accept
+
+        if wants_html:
+            # Browser request - return HTML with metadata
+            html = frontend.file("int", "forward", "index.html").read_bytes()
+            # Inject mode and any additional metadata
+            data_attrs = {"mode": e.mode, **e.metadata}
+            html = htmlutil.patch_html_data_attrs(html, **data_attrs)
+            return Response(
+                html, status_code=e.status_code, media_type="text/html; charset=UTF-8"
+            )
+        else:
+            # API request - return JSON with iframe src link
+            iframe_url = f"/auth/restricted/?mode={e.mode}"
+            return JSONResponse(
+                status_code=e.status_code,
+                content={
+                    "detail": e.detail,
+                    "auth": {
+                        "mode": e.mode,
+                        "iframe": iframe_url,
+                        **e.metadata,
+                    },
+                },
+            )
 
 
 @app.get("/settings")
