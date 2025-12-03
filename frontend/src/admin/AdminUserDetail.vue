@@ -5,6 +5,7 @@ import CredentialList from '@/components/CredentialList.vue'
 import RegistrationLinkModal from '@/components/RegistrationLinkModal.vue'
 import SessionList from '@/components/SessionList.vue'
 import { useAuthStore } from '@/stores/auth'
+import { apiFetch } from '@/utils/api'
 
 const props = defineProps({
   selectedUser: Object,
@@ -27,17 +28,18 @@ function handleEditName() {
   emit('editUserName', props.selectedUser)
 }
 
-function handleDelete(credential) {
-  fetch(`/auth/api/admin/orgs/${props.selectedUser.org_uuid}/users/${props.selectedUser.uuid}/credentials/${credential.credential_uuid}`, { method: 'DELETE' })
-    .then(res => res.json())
-    .then(data => {
-      if (data.status === 'ok') {
-        emit('onUserNameSaved') // Reuse to refresh user detail
-      } else {
-        console.error('Failed to delete credential', data)
-      }
-    })
-    .catch(err => console.error('Delete credential error', err))
+async function handleDelete(credential) {
+  try {
+    const res = await apiFetch(`/auth/api/admin/orgs/${props.selectedUser.org_uuid}/users/${props.selectedUser.uuid}/credentials/${credential.credential_uuid}`, { method: 'DELETE' })
+    const data = await res.json()
+    if (data.status === 'ok') {
+      emit('onUserNameSaved') // Reuse to refresh user detail
+    } else {
+      console.error('Failed to delete credential', data)
+    }
+  } catch (err) {
+    console.error('Delete credential error', err)
+  }
 }
 
 async function handleTerminateSession(session) {
@@ -45,7 +47,7 @@ async function handleTerminateSession(session) {
   if (!sessionId) return
   terminatingSessions.value = { ...terminatingSessions.value, [sessionId]: true }
   try {
-    const res = await fetch(`/auth/api/admin/orgs/${props.selectedUser.org_uuid}/users/${props.selectedUser.uuid}/sessions/${sessionId}`, { method: 'DELETE' })
+    const res = await apiFetch(`/auth/api/admin/orgs/${props.selectedUser.org_uuid}/users/${props.selectedUser.uuid}/sessions/${sessionId}`, { method: 'DELETE' })
     const data = await res.json()
     if (data.status === 'ok') {
       if (data.current_session_terminated) {

@@ -63,7 +63,7 @@ async def verify(
     # Check max_age requirement if specified
     if max_age:
         try:
-            if not sessionutil.check_session_age(ctx.session, max_age):
+            if not sessionutil.check_session_age(ctx, max_age):
                 raise AuthException(
                     status_code=401,
                     detail="Additional authentication required",

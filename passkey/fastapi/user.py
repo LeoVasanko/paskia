@@ -8,6 +8,7 @@ from fastapi import (
     Request,
     Response,
 )
+from fastapi.responses import JSONResponse
 
 from ..authsession import (
     delete_credential,
@@ -17,10 +18,26 @@ from ..authsession import (
 from ..globals import db
 from ..util import hostutil, passphrase, tokens
 from ..util.tokens import decode_session_key, session_key
-from . import session
+from . import authz, session
 from .session import AUTH_COOKIE
 
 app = FastAPI()
+
+
+@app.exception_handler(authz.AuthException)
+async def auth_exception_handler(_request, exc: authz.AuthException):
+    """Handle AuthException with auth info for UI."""
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={
+            "detail": exc.detail,
+            "auth": {
+                "mode": exc.mode,
+                "iframe": f"/auth/restricted/?mode={exc.mode}",
+                **exc.metadata,
+            },
+        },
+    )
 
 
 @app.put("/display-name")
@@ -31,11 +48,15 @@ async def user_update_display_name(
     auth=AUTH_COOKIE,
 ):
     if not auth:
-        raise HTTPException(status_code=401, detail="Authentication Required")
+        raise authz.AuthException(
+            status_code=401, detail="Authentication Required", mode="login"
+        )
     try:
         s = await get_session(auth, host=request.headers.get("host"))
     except ValueError as e:
-        raise HTTPException(status_code=401, detail="Session expired") from e
+        raise authz.AuthException(
+            status_code=401, detail="Session expired", mode="login"
+        ) from e
     new_name = (payload.get("display_name") or "").strip()
     if not new_name:
         raise HTTPException(status_code=400, detail="display_name required")
@@ -52,7 +73,9 @@ async def api_logout_all(request: Request, response: Response, auth=AUTH_COOKIE)
     try:
         s = await get_session(auth, host=request.headers.get("host"))
     except ValueError:
-        raise HTTPException(status_code=401, detail="Session expired")
+        raise authz.AuthException(
+            status_code=401, detail="Session expired", mode="login"
+        )
     await db.instance.delete_sessions_for_user(s.user_uuid)
     session.clear_session_cookie(response)
     return {"message": "Logged out from all hosts"}
@@ -66,11 +89,15 @@ async def api_delete_session(
     auth=AUTH_COOKIE,
 ):
     if not auth:
-        raise HTTPException(status_code=401, detail="Authentication Required")
+        raise authz.AuthException(
+            status_code=401, detail="Authentication Required", mode="login"
+        )
     try:
         current_session = await get_session(auth, host=request.headers.get("host"))
     except ValueError as exc:
-        raise HTTPException(status_code=401, detail="Session expired") from exc
+        raise authz.AuthException(
+            status_code=401, detail="Session expired", mode="login"
+        ) from exc
 
     try:
         target_key = decode_session_key(session_id)
@@ -97,10 +124,14 @@ async def api_delete_credential(
     uuid: UUID,
     auth: str = AUTH_COOKIE,
 ):
+    # Require recent authentication for sensitive operation
+    await authz.verify(auth, [], host=request.headers.get("host"), max_age="5m")
     try:
         await delete_credential(uuid, auth, host=request.headers.get("host"))
     except ValueError as e:
-        raise HTTPException(status_code=401, detail="Session expired") from e
+        raise authz.AuthException(
+            status_code=401, detail="Session expired", mode="login"
+        ) from e
     return {"message": "Credential deleted successfully"}
 
 
@@ -110,10 +141,14 @@ async def api_create_link(
     response: Response,
     auth=AUTH_COOKIE,
 ):
+    # Require recent authentication for sensitive operation
+    await authz.verify(auth, [], host=request.headers.get("host"), max_age="5m")
     try:
         s = await get_session(auth, host=request.headers.get("host"))
     except ValueError as e:
-        raise HTTPException(status_code=401, detail="Session expired") from e
+        raise authz.AuthException(
+            status_code=401, detail="Session expired", mode="login"
+        ) from e
     token = passphrase.generate()
     expiry = expires()
     await db.instance.create_reset_token(

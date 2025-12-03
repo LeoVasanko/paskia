@@ -28,6 +28,22 @@ async def value_error_handler(_request, exc: ValueError):  # pragma: no cover - 
     return JSONResponse(status_code=400, content={"detail": str(exc)})
 
 
+@app.exception_handler(authz.AuthException)
+async def auth_exception_handler(_request, exc: authz.AuthException):
+    """Handle AuthException with auth info for UI."""
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={
+            "detail": exc.detail,
+            "auth": {
+                "mode": exc.mode,
+                "iframe": f"/auth/restricted/?mode={exc.mode}",
+                **exc.metadata,
+            },
+        },
+    )
+
+
 @app.exception_handler(Exception)
 async def general_exception_handler(_request, exc: Exception):
     logging.exception("Unhandled exception in admin app")
@@ -157,6 +173,7 @@ async def admin_delete_org(org_uuid: UUID, request: Request, auth=AUTH_COOKIE):
         ["auth:admin", f"auth:org:{org_uuid}"],
         match=permutil.has_any,
         host=request.headers.get("host"),
+        max_age="5m",
     )
     if ctx.org.uuid == org_uuid:
         raise ValueError("Cannot delete the organization you belong to")
@@ -306,6 +323,7 @@ async def admin_delete_role(
         ["auth:admin", f"auth:org:{org_uuid}"],
         match=permutil.has_any,
         host=request.headers.get("host"),
+        max_age="5m",
     )
     role = await db.instance.get_role(role_uuid)
     if role.org_uuid != org_uuid:
@@ -419,12 +437,15 @@ async def admin_create_user_registration_link(
         ["auth:admin", f"auth:org:{org_uuid}"],
         match=permutil.has_any,
         host=request.headers.get("host"),
+        max_age="5m",
     )
     if (
         "auth:admin" not in ctx.role.permissions
         and f"auth:org:{org_uuid}" not in ctx.role.permissions
     ):
-        raise HTTPException(status_code=403, detail="Insufficient permissions")
+        raise authz.AuthException(
+            status_code=403, detail="Insufficient permissions", mode="forbidden"
+        )
 
     # Check if user has existing credentials
     credentials = await db.instance.get_credentials_by_user_uuid(user_uuid)
@@ -474,7 +495,9 @@ async def admin_get_user_detail(
         "auth:admin" not in ctx.role.permissions
         and f"auth:org:{org_uuid}" not in ctx.role.permissions
     ):
-        raise HTTPException(status_code=403, detail="Insufficient permissions")
+        raise authz.AuthException(
+            status_code=403, detail="Insufficient permissions", mode="forbidden"
+        )
     user = await db.instance.get_user_by_uuid(user_uuid)
     cred_ids = await db.instance.get_credentials_by_user_uuid(user_uuid)
     creds: list[dict] = []
@@ -621,7 +644,9 @@ async def admin_update_user_display_name(
         "auth:admin" not in ctx.role.permissions
         and f"auth:org:{org_uuid}" not in ctx.role.permissions
     ):
-        raise HTTPException(status_code=403, detail="Insufficient permissions")
+        raise authz.AuthException(
+            status_code=403, detail="Insufficient permissions", mode="forbidden"
+        )
     new_name = (payload.get("display_name") or "").strip()
     if not new_name:
         raise HTTPException(status_code=400, detail="display_name required")
@@ -650,12 +675,15 @@ async def admin_delete_user_credential(
         ["auth:admin", f"auth:org:{org_uuid}"],
         match=permutil.has_any,
         host=request.headers.get("host"),
+        max_age="5m",
     )
     if (
         "auth:admin" not in ctx.role.permissions
         and f"auth:org:{org_uuid}" not in ctx.role.permissions
     ):
-        raise HTTPException(status_code=403, detail="Insufficient permissions")
+        raise authz.AuthException(
+            status_code=403, detail="Insufficient permissions", mode="forbidden"
+        )
     await db.instance.delete_credential(credential_uuid, user_uuid)
     return {"status": "ok"}
 
@@ -684,7 +712,9 @@ async def admin_delete_user_session(
         "auth:admin" not in ctx.role.permissions
         and f"auth:org:{org_uuid}" not in ctx.role.permissions
     ):
-        raise HTTPException(status_code=403, detail="Insufficient permissions")
+        raise authz.AuthException(
+            status_code=403, detail="Insufficient permissions", mode="forbidden"
+        )
 
     try:
         target_key = tokens.decode_session_key(session_id)
@@ -734,7 +764,11 @@ async def admin_create_permission(
     auth=AUTH_COOKIE,
 ):
     await authz.verify(
-        auth, ["auth:admin"], host=request.headers.get("host"), match=permutil.has_all
+        auth,
+        ["auth:admin"],
+        host=request.headers.get("host"),
+        match=permutil.has_all,
+        max_age="5m",
     )
     from ..db import Permission as PermDC
 
@@ -806,7 +840,11 @@ async def admin_delete_permission(
     auth=AUTH_COOKIE,
 ):
     await authz.verify(
-        auth, ["auth:admin"], host=request.headers.get("host"), match=permutil.has_all
+        auth,
+        ["auth:admin"],
+        host=request.headers.get("host"),
+        match=permutil.has_all,
+        max_age="5m",
     )
     querysafe.assert_safe(permission_id, field="permission_id")
 

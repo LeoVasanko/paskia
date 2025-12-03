@@ -1314,19 +1314,23 @@ class DB(DatabaseInterface):
         Uses efficient JOINs to retrieve all related data in a single database query.
         """
         async with self.session() as session:
-            # Build a query that joins sessions, users, roles, organizations, and role_permissions
+            # Build a query that joins sessions, users, roles, organizations, credentials and role_permissions
             stmt = (
                 select(
                     SessionModel,
                     UserModel,
                     RoleModel,
                     OrgModel,
+                    CredentialModel,
                     PermissionModel,
                 )
                 .select_from(SessionModel)
                 .join(UserModel, SessionModel.user_uuid == UserModel.uuid)
                 .join(RoleModel, UserModel.role_uuid == RoleModel.uuid)
                 .join(OrgModel, RoleModel.org_uuid == OrgModel.uuid)
+                .outerjoin(
+                    CredentialModel, SessionModel.credential_uuid == CredentialModel.uuid
+                )
                 .outerjoin(RolePermission, RoleModel.uuid == RolePermission.role_uuid)
                 .outerjoin(
                     PermissionModel, RolePermission.permission_id == PermissionModel.id
@@ -1342,7 +1346,7 @@ class DB(DatabaseInterface):
 
             # Extract the first row to get session and user data
             first_row = rows[0]
-            session_model, user_model, role_model, org_model, _ = first_row
+            session_model, user_model, role_model, org_model, credential_model, _ = first_row
 
             # Create the session object
             if host is not None:
@@ -1371,11 +1375,14 @@ class DB(DatabaseInterface):
                 display_name=role_model.display_name,
             )
 
+            # Create credential object if available
+            credential_obj = credential_model.as_dataclass() if credential_model else None
+
             # Collect all unique permissions for the role
             permissions = []
             seen_permission_ids = set()
             for row in rows:
-                _, _, _, _, permission_model = row
+                _, _, _, _, _, permission_model = row
                 if permission_model and permission_model.id not in seen_permission_ids:
                     permissions.append(
                         Permission(
@@ -1405,5 +1412,6 @@ class DB(DatabaseInterface):
                 user=user_obj,
                 org=organization,
                 role=role,
+                credential=credential_obj,
                 permissions=effective_permissions if effective_permissions else None,
             )

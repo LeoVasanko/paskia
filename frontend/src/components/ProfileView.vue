@@ -101,6 +101,7 @@ import { useAuthStore } from '@/stores/auth'
 import { adminUiPath, makeUiHref } from '@/utils/settings'
 import passkey from '@/utils/passkey'
 import { goBack } from '@/utils/helpers'
+import { apiFetch } from '@/utils/api'
 
 const authStore = useAuthStore()
 const updateInterval = ref(null)
@@ -173,12 +174,7 @@ const saveName = async () => {
   if (!name) { authStore.showMessage('Name cannot be empty', 'error'); return }
   try {
     saving.value = true
-    const res = await fetch('/auth/api/user/display-name', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ display_name: name }) })
-    if (res.status === 401) {
-      authStore.authRequired = true
-      authStore.showMessage('Authentication required', 'error')
-      return
-    }
+    const res = await apiFetch('/auth/api/user/display-name', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ display_name: name }) })
     const data = await res.json()
     if (!res.ok || data.detail) throw new Error(data.detail || 'Update failed')
     showNameDialog.value = false

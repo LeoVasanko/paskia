@@ -10,7 +10,7 @@
 </template>
 
 <script setup>
-import { onMounted, onUnmounted, ref, watch } from 'vue'
+import { onMounted, onUnmounted, ref } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import StatusMessage from '@/components/StatusMessage.vue'
 import ProfileView from '@/components/ProfileView.vue'
@@ -25,17 +25,6 @@ const showBackMessage = ref(false)
 let validationTimer = null
 let authIframe = null
 
-// Watch for auth required flag from store
-watch(() => store.authRequired, (required) => {
-  if (required) {
-    authenticated.value = false
-    loading.value = true
-    stopSessionValidation()
-    showAuthIframe()
-    store.clearAuthRequired()
-  }
-})
-
 async function tryLoadUserInfo() {
   try {
     await store.loadUserInfo()
@@ -44,7 +33,7 @@ async function tryLoadUserInfo() {
     startSessionValidation()
     return true
   } catch (error) {
-    // User info load failed - likely 401
+    // User info load failed - apiFetch will show iframe if needed
     return false
   }
 }
@@ -83,7 +72,6 @@ function handleAuthMessage(event) {
       hideAuthIframe()
       loading.value = true
       loadingMessage.value = 'Loading user profile...'
-      store.clearAuthRequired()
       tryLoadUserInfo()
       break
 
