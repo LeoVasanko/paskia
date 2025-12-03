@@ -153,7 +153,7 @@ async function authenticateUser() {
     emit('auth-error', { message, cancelled })
     return
   }
-  try { await setSessionCookie(result.session_token) } catch (error) {
+  try { await setSessionCookie(result) } catch (error) {
     loading.value = false
     const message = error?.message || 'Failed to establish session'
     showMessage(message, 'error', 4000)
@@ -186,9 +186,13 @@ function openProfile() {
   if (profileWindow) profileWindow.focus()
 }
 
-async function setSessionCookie(sessionToken) {
+async function setSessionCookie(result) {
+  if (!result?.session_token) {
+    console.error('setSessionCookie called with missing session_token:', result)
+    throw new Error('Authentication response missing session_token')
+  }
   return await apiJson('/auth/api/set-session', {
-    method: 'POST', headers: { Authorization: `Bearer ${sessionToken}` }
+    method: 'POST', headers: { Authorization: `Bearer ${result.session_token}` }
   })
 }
 

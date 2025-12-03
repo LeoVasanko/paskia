@@ -30,10 +30,10 @@ def websocket_error_handler(func):
                 }
             )
         except (ValueError, InvalidAuthenticationResponse) as e:
-            await ws.send_json({"detail": str(e)})
+            await ws.send_json({"status": 401, "detail": str(e)})
         except Exception:
             logging.exception("Internal Server Error")
-            await ws.send_json({"detail": "Internal Server Error"})
+            await ws.send_json({"status": 500, "detail": "Internal Server Error"})
 
     return wrapper
 

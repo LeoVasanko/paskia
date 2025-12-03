@@ -152,27 +152,36 @@ async function loadPermissions() {
   permissions.value = await apiJson('/auth/api/admin/permissions')
 }
 
+async function loadUserInfo() {
+  try {
+    info.value = await apiJson('/auth/api/user-info', { method: 'POST' })
+    authenticated.value = true
+    return true
+  } catch (e) {
+    error.value = e.message
+    return false
+  }
+}
+
 async function load() {
   loading.value = true
   loadingMessage.value = 'Loading...'
   error.value = null
   try {
-    const data = await apiJson('/auth/api/user-info', { method: 'POST' })
-    info.value = data
-    authenticated.value = true
+    if (!await loadUserInfo()) return
 
     // Check if user has required permissions
-    if (data.authenticated && !(data.is_global_admin || data.is_org_admin)) {
+    if (info.value.authenticated && !(info.value.is_global_admin || info.value.is_org_admin)) {
       // User is authenticated but lacks required permissions - show forbidden view
       error.value = 'You do not have permission to access this area.'
       loading.value = false
       return
     }
 
-    if (data.authenticated && (data.is_global_admin || data.is_org_admin)) {
+    if (info.value.authenticated && (info.value.is_global_admin || info.value.is_org_admin)) {
       await Promise.all([loadOrgs(), loadPermissions()])
     }
-    if (!data.is_global_admin && data.is_org_admin && orgs.value.length === 1) {
+    if (!info.value.is_global_admin && info.value.is_org_admin && orgs.value.length === 1) {
       if (!window.location.hash || window.location.hash === '#overview') {
         currentOrgId.value = orgs.value[0].uuid
         window.location.hash = `#org/${currentOrgId.value}`

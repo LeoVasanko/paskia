@@ -315,6 +315,8 @@ export function shouldShowErrorToast(error) {
   // Don't show toast for user cancellations
   if (error instanceof AuthCancelledError) return false
   if (error.name === 'AbortError') return false
+  // Don't show toast for 401/403 errors - the auth iframe will handle these
+  if (error instanceof ApiError && (error.status === 401 || error.status === 403)) return false
   return true
 }
 
