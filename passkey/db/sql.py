@@ -1329,7 +1329,8 @@ class DB(DatabaseInterface):
                 .join(RoleModel, UserModel.role_uuid == RoleModel.uuid)
                 .join(OrgModel, RoleModel.org_uuid == OrgModel.uuid)
                 .outerjoin(
-                    CredentialModel, SessionModel.credential_uuid == CredentialModel.uuid
+                    CredentialModel,
+                    SessionModel.credential_uuid == CredentialModel.uuid,
                 )
                 .outerjoin(RolePermission, RoleModel.uuid == RolePermission.role_uuid)
                 .outerjoin(
@@ -1346,7 +1347,9 @@ class DB(DatabaseInterface):
 
             # Extract the first row to get session and user data
             first_row = rows[0]
-            session_model, user_model, role_model, org_model, credential_model, _ = first_row
+            session_model, user_model, role_model, org_model, credential_model, _ = (
+                first_row
+            )
 
             # Create the session object
             if host is not None:
@@ -1376,7 +1379,9 @@ class DB(DatabaseInterface):
             )
 
             # Create credential object if available
-            credential_obj = credential_model.as_dataclass() if credential_model else None
+            credential_obj = (
+                credential_model.as_dataclass() if credential_model else None
+            )
 
             # Collect all unique permissions for the role
             permissions = []

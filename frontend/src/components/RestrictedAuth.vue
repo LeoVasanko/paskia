@@ -77,7 +77,7 @@ const canAuthenticate = computed(() => {
 
 const headingTitle = computed(() => {
   if (props.mode === 'reauth') {
-    return `🔐 Additional Verification Required`
+    return `🔐 Additional Authentication`
   }
   if (props.mode === 'forbidden' || currentView.value === 'forbidden') return '🚫 Forbidden'
   return `🔐 ${settings.value?.rp_name || location.origin}`
