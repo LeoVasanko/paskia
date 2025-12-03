@@ -84,7 +84,7 @@ async def validate_token(
     renewed = False
     if auth:
         current_expiry = session_expiry(ctx.session)
-        consumed = EXPIRES - (current_expiry - datetime.now())
+        consumed = EXPIRES - (current_expiry - datetime.now(timezone.utc))
         if not timedelta(0) < consumed < _REFRESH_INTERVAL:
             try:
                 await refresh_session_token(
