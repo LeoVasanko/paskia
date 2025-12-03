@@ -12,6 +12,7 @@
     "@simplewebauthn/browser": "^13.1.2",
     "pinia": "^3.0.3",
     "qrcode": "^1.5.4",
+    "sirv": "^3.0.2",
     "vue": "^3.5.17"
   },
   "devDependencies": {
