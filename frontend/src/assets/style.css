@@ -34,7 +34,7 @@
   --space-lg: 1.5rem;
   --space-xl: 2.25rem;
   --space-xxl: 3.5rem;
-  --layout-max-width: 1080px;
+  --layout-max-width: 1400px;
   --layout-padding: clamp(1.5rem, 3vw + 1rem, 3.25rem);
   --transition-base: 160ms ease;
 }
@@ -444,18 +444,11 @@ th {
   width: 100%;
   display: grid;
   grid-auto-flow: row;
-  grid-template-columns: repeat(auto-fit, var(--card-width));
+  grid-template-columns: repeat(auto-fill, minmax(var(--card-width), 1fr));
   justify-content: start;
   gap: 1rem 1.25rem;
   align-items: stretch;
   margin: 0 auto;
-  max-width: calc(var(--card-width) * 4 + 3 * 1.25rem);
-}
-
-@media (max-width: 1100px) {
-  .record-list,
-  .credential-list,
-  .session-list { max-width: calc(var(--card-width) * 3 + 2 * 1.25rem); }
 }
 
 @media (max-width: 720px) {

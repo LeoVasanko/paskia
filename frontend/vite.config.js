@@ -60,7 +60,8 @@ export default defineConfig(({ command }) => ({
     proxy: {
       // Only proxy these two specific backend API paths
       '/auth/api': {
-        target: 'http://localhost:4402'
+        target: 'http://localhost:4402',
+        headers: { connection: 'close' }
       },
       '/auth/ws': {
         target: 'http://localhost:4402',
