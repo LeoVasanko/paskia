@@ -3,12 +3,25 @@ import { defineConfig } from 'vite'
 import { resolve } from 'node:path'
 import vue from '@vitejs/plugin-vue'
 import { existsSync, renameSync, mkdirSync } from 'node:fs'
+import sirv from 'sirv'
 
 export default defineConfig(({ command }) => ({
   appType: 'mpa',
   publicDir: 'public',
   plugins: [
     vue(),
+    {
+      name: 'serve-examples',
+      configureServer(server) {
+        const examplesDir = resolve(__dirname, '../examples')
+        const serve = sirv(examplesDir, { dev: true })
+        server.middlewares.use((req, _res, next) => {
+          if (req.url === '/' || req.url === '/index.html') req.url = '/examples/'
+          next()
+        })
+        server.middlewares.use('/examples', serve)
+      }
+    },
     {
       name: 'move-html-files',
       closeBundle() {
@@ -55,9 +68,6 @@ export default defineConfig(({ command }) => ({
       }
     }
   },
-  preview: {
-    port: 4403
-  },
   build: {
     outDir: '../passkey/frontend-build',
     emptyOutDir: true,
@@ -68,7 +78,7 @@ export default defineConfig(({ command }) => ({
         restricted: resolve(__dirname, 'auth/restricted/index.html'),
         host: resolve(__dirname, 'int/host/index.html'),
         reset: resolve(__dirname, 'int/reset/index.html'),
-        forward: resolve(__dirname, 'int/forward/index.html')
+        forward: resolve(__dirname, 'int/forward/index.html'),
       },
       output: {
         entryFileNames: (chunkInfo) => {
