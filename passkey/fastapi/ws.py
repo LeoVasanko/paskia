@@ -26,12 +26,7 @@ def websocket_error_handler(func):
             await ws.send_json(
                 {
                     "status": e.status_code,
-                    "detail": e.detail,
-                    "auth": {
-                        "mode": e.mode,
-                        "iframe": f"/auth/restricted/?mode={e.mode}",
-                        **e.metadata,
-                    },
+                    **authz.auth_error_content(e),
                 }
             )
         except (ValueError, InvalidAuthenticationResponse) as e:

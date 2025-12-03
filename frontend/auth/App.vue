@@ -12,7 +12,7 @@
 <script setup>
 import { onMounted, onUnmounted, ref } from 'vue'
 import { useAuthStore } from '@/stores/auth'
-import { apiJson } from '@/utils/api'
+import { apiJson, getAuthIframeHtml } from '@/utils/api'
 import StatusMessage from '@/components/StatusMessage.vue'
 import ProfileView from '@/components/ProfileView.vue'
 import LoadingView from '@/components/LoadingView.vue'
@@ -39,15 +39,16 @@ async function tryLoadUserInfo() {
   }
 }
 
-function showAuthIframe() {
+async function showAuthIframe() {
   // Remove existing iframe if any
   hideAuthIframe()
 
-  // Create new iframe for authentication
+  // Create new iframe for authentication using srcdoc
+  const html = await getAuthIframeHtml('login')
   authIframe = document.createElement('iframe')
   authIframe.id = 'auth-iframe'
   authIframe.title = 'Authentication'
-  authIframe.src = '/auth/restricted/?mode=login'
+  authIframe.srcdoc = html
   document.body.appendChild(authIframe)
   loadingMessage.value = 'Authentication required...'
 }

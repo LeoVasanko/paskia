@@ -13,7 +13,7 @@ import AdminUserDetail from '@/admin/AdminUserDetail.vue'
 import AdminDialogs from '@/admin/AdminDialogs.vue'
 import { useAuthStore } from '@/stores/auth'
 import { getSettings, adminUiPath, makeUiHref } from '@/utils/settings'
-import { apiJson } from '@/utils/api'
+import { apiJson, getAuthIframeHtml } from '@/utils/api'
 
 const info = ref(null)
 const loading = ref(true)
@@ -288,12 +288,13 @@ function deletePermission(p) {
   } })
 }
 
-function showAuthIframe() {
+async function showAuthIframe() {
   hideAuthIframe()
+  const html = await getAuthIframeHtml('login')
   authIframe = document.createElement('iframe')
   authIframe.id = 'auth-iframe'
   authIframe.title = 'Authentication'
-  authIframe.src = '/auth/restricted/?mode=login'
+  authIframe.srcdoc = html
   document.body.appendChild(authIframe)
   loadingMessage.value = 'Authentication required...'
 }

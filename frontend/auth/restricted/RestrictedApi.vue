@@ -10,9 +10,13 @@
 import { computed, onMounted } from 'vue'
 import RestrictedAuth from '@/components/RestrictedAuth.vue'
 
+// Detect mode from data attribute on html tag (injected by server)
 const authMode = computed(() => {
-  const params = new URLSearchParams(window.location.search)
-  return params.get('mode') === 'reauth' ? 'reauth' : 'login'
+  const htmlElement = document.documentElement
+  const dataMode = htmlElement.getAttribute('data-mode')
+  if (dataMode === 'reauth') return 'reauth'
+  if (dataMode === 'forbidden') return 'forbidden'
+  return 'login'
 })
 
 function postToParent(message) {
