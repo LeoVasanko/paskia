@@ -120,15 +120,15 @@ onUnmounted(() => { if (updateInterval.value) clearInterval(updateInterval.value
 
 const addNewCredential = async () => {
   try {
-    authStore.isLoading = true
-    authStore.showMessage('Adding new passkey...', 'info')
-    await passkey.register()
+    await passkey.register(null, null, () => {
+      authStore.showMessage('Adding new passkey...', 'info')
+    })
     await authStore.loadUserInfo()
     authStore.showMessage('New passkey added successfully!', 'success', 3000)
   } catch (error) {
     console.error('Failed to add new passkey:', error)
     authStore.showMessage(error.message, 'error')
-  } finally { authStore.isLoading = false }
+  }
 }
 
 const handleDelete = async (credential) => {

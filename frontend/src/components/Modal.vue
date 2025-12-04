@@ -17,8 +17,9 @@ defineEmits(['close'])
   left: 0;
   right: 0;
   bottom: 0;
-  background: #334155;
-  backdrop-filter: blur(.1rem);
+  background: transparent;
+  backdrop-filter: blur(.1rem) brightness(0.7);
+  -webkit-backdrop-filter: blur(.1rem) brightness(0.7);
   display: flex;
   align-items: center;
   justify-content: center;
