@@ -23,28 +23,28 @@ export async function register(resetToken = null, displayName = null, onstartreg
       const res = await ws.receive_json()
 
       // Handle auth errors (401/403) with iframe
-      if ((res.status === 401 || res.status === 403) && res.data.auth?.iframe) {
+      if ((res.status === 401 || res.status === 403) && res.auth?.iframe) {
         ws.close()
-        await showAuthIframe(res.data.auth.iframe)
+        await showAuthIframe(res.auth.iframe)
         continue
       }
 
-      // Handle other errors
-      if (!res.ok) {
-        throw new Error(res.data.detail || `Registration failed: ${res.status}`)
+      // Handle other errors (status field present means error)
+      if (res.status) {
+        throw new Error(res.detail || `Registration failed: ${res.status}`)
       }
 
       // Notify caller that we're about to show the browser prompt
       if (onstartreg) onstartreg()
 
-      const registrationResponse = await startRegistration({ optionsJSON: res.data })
+      const registrationResponse = await startRegistration({ optionsJSON: res })
       ws.send_json(registrationResponse)
 
       const result = await ws.receive_json()
-      if (!result.ok) {
-        throw new Error(result.data.detail || `Registration failed: ${result.status}`)
+      if (result.status) {
+        throw new Error(result.detail || `Registration failed: ${result.status}`)
       }
-      return result.data
+      return result
     } catch (error) {
       ws.close()
       console.error('Registration error:', error)
@@ -58,18 +58,19 @@ export async function authenticate() {
   const ws = await aWebSocket(await makeUrl('/auth/ws/authenticate'))
   try {
     const res = await ws.receive_json()
-    if (!res.ok) {
-      throw new Error(res.data.detail || `Authentication failed: ${res.status}`)
+    // status field present means error
+    if (res.status) {
+      throw new Error(res.detail || `Authentication failed: ${res.status}`)
     }
 
-    const authResponse = await startAuthentication({ optionsJSON: res.data })
+    const authResponse = await startAuthentication({ optionsJSON: res })
     ws.send_json(authResponse)
 
     const result = await ws.receive_json()
-    if (!result.ok) {
-      throw new Error(result.data.detail || `Authentication failed: ${result.status}`)
+    if (result.status) {
+      throw new Error(result.detail || `Authentication failed: ${result.status}`)
     }
-    return result.data
+    return result
   } catch (error) {
     console.error('Authentication error:', error)
     throw Error(error.name === "NotAllowedError" ? 'Passkey authentication cancelled' : error.message)

@@ -26,15 +26,14 @@ const showBackMessage = ref(false)
 let validationTimer = null
 let authIframe = null
 
-async function tryLoadUserInfo() {
+async function loadUserInfo() {
   try {
-    await store.loadUserInfo()
+    store.userInfo = await apiJson('/auth/api/user-info', { method: 'POST' })
     authenticated.value = true
     loading.value = false
     startSessionValidation()
     return true
-  } catch (error) {
-    // User info load failed - apiJson will show iframe if needed
+  } catch (e) {
     return false
   }
 }
@@ -74,7 +73,7 @@ function handleAuthMessage(event) {
       hideAuthIframe()
       loading.value = true
       loadingMessage.value = 'Loading user profile...'
-      tryLoadUserInfo()
+      loadUserInfo()
       break
 
     case 'auth-error':
@@ -150,7 +149,7 @@ onMounted(async () => {
   if (store.settings?.rp_name) document.title = store.settings.rp_name
 
   // Try to load user info
-  const success = await tryLoadUserInfo()
+  const success = await loadUserInfo()
 
   if (!success) {
     // Need authentication - show login iframe

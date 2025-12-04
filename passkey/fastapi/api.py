@@ -228,7 +228,11 @@ async def api_user_info(
             target_user_uuid = reset_token.user_uuid
         else:
             if auth is None:
-                raise ValueError("Authentication Required")
+                raise authz.AuthException(
+                    status_code=401,
+                    detail="Authentication required",
+                    mode="login",
+                )
             session_record = await get_session(auth, host=request.headers.get("host"))
             authenticated = True
             target_user_uuid = session_record.user_uuid

@@ -5,8 +5,8 @@ class AwaitableWebSocket extends WebSocket {
   #opened = false
 
   constructor(resolve, reject, url, protocols, binaryType) {
-    // Support relative URLs even on old browsers that don't
-    super(new URL(url, location.href.replace(/^http/, 'ws')), protocols)
+    // Support relative URLs even on old browsers that don't natively support them
+    super(new URL(url, document.baseURI.replace(/^http/, 'ws')), protocols)
     this.binaryType = binaryType || 'blob'
     this.onopen = () => {
       this.#opened = true
@@ -51,20 +51,11 @@ class AwaitableWebSocket extends WebSocket {
       console.error("WebSocket received binary data, expected JSON string", data)
       throw new Error("WebSocket received binary data, expected JSON string")
     }
-    let parsed
     try {
-      parsed = JSON.parse(data)
+      return JSON.parse(data)
     } catch (err) {
       console.error("Failed to parse JSON from WebSocket message", data, err)
       throw new Error("Failed to parse JSON from WebSocket message")
-    }
-    // Wrap in response-like object with ok based on status field
-    // Status 2xx = ok, 4xx/5xx = not ok, no status = ok (normal response)
-    const status = parsed.status || 200
-    return {
-      ok: status >= 200 && status < 300,
-      status,
-      data: parsed,
     }
   }
 

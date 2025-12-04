@@ -38,18 +38,21 @@ export const useAuthStore = defineStore('auth', {
         }, duration)
       }
     },
-    async setSessionCookie(sessionToken) {
-      const result = await apiJson('/auth/api/set-session', {
+    async setSessionCookie(result) {
+      if (!result?.session_token) {
+        console.error('setSessionCookie called with missing session_token:', result)
+        throw new Error('Authentication response missing session_token')
+      }
+      return await apiJson('/auth/api/set-session', {
         method: 'POST',
-        headers: {'Authorization': `Bearer ${sessionToken}`},
+        headers: {'Authorization': `Bearer ${result.session_token}`},
       })
-      return result
     },
     async register() {
       this.isLoading = true
       try {
         const result = await register()
-        await this.setSessionCookie(result.session_token)
+        await this.setSessionCookie(result)
         await this.loadUserInfo()
         this.selectView()
         return result
@@ -62,7 +65,7 @@ export const useAuthStore = defineStore('auth', {
       try {
         const result = await authenticate()
 
-        await this.setSessionCookie(result.session_token)
+        await this.setSessionCookie(result)
         await this.loadUserInfo()
         this.selectView()
 
@@ -83,7 +86,12 @@ export const useAuthStore = defineStore('auth', {
         this.userInfo = await apiJson('/auth/api/user-info', { method: 'POST' })
         console.log('User info loaded:', this.userInfo)
       } catch (error) {
-        this.showMessage(error.message || 'Failed to load user info', 'error', 5000)
+        // Suppress toast for 401/403 errors - the auth iframe will handle these
+        if (error.status === 401 || error.status === 403) {
+          console.log('Authentication required:', error.message)
+        } else {
+          this.showMessage(error.message || 'Failed to load user info', 'error', 5000)
+        }
         throw error
       }
     },
@@ -113,7 +121,10 @@ export const useAuthStore = defineStore('auth', {
         location.reload()
       } catch (error) {
         console.error('Logout error:', error)
-        this.showMessage(error.message, 'error')
+        // Suppress toast for 401/403 errors - the auth iframe will handle these
+        if (error.status !== 401 && error.status !== 403) {
+          this.showMessage(error.message, 'error')
+        }
       }
     },
     async logoutEverywhere() {
@@ -123,7 +134,10 @@ export const useAuthStore = defineStore('auth', {
         location.reload()
       } catch (error) {
         console.error('Logout-all error:', error)
-        this.showMessage(error.message, 'error')
+        // Suppress toast for 401/403 errors - the auth iframe will handle these
+        if (error.status !== 401 && error.status !== 403) {
+          this.showMessage(error.message, 'error')
+        }
       }
     },
   }

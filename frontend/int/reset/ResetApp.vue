@@ -145,7 +145,7 @@ async function registerPasskey() {
   }
 
   try {
-    await setSessionCookie(result.session_token)
+    await setSessionCookie(result)
   } catch (error) {
     loading.value = false
     const message = error?.message || 'Failed to establish session'
@@ -153,32 +153,28 @@ async function registerPasskey() {
     return
   }
 
-  showMessage('Passkey registered successfully!', 'success', 2000)
-  setTimeout(() => {
-    loading.value = false
-    redirectHome()
-  }, 800)
+  showMessage('Passkey registered successfully!', 'success', 800)
+  setTimeout(() => { loading.value = false; goHome() }, 800)
 }
 
-async function setSessionCookie(sessionToken) {
+async function setSessionCookie(result) {
+  if (!result?.session_token) {
+    throw new Error('Registration response missing session_token')
+  }
   return await apiJson('/auth/api/set-session', {
     method: 'POST',
     headers: {
-      Authorization: `Bearer ${sessionToken}`
+      Authorization: `Bearer ${result.session_token}`
     }
   })
 }
 
-function redirectHome() {
+function goHome() {
   const target = uiBasePath.value || '/auth/'
   if (window.location.pathname !== target) {
     history.replaceState(null, '', target)
   }
   window.location.reload()
-}
-
-function goHome() {
-  redirectHome()
 }
 
 function extractTokenFromPath() {
