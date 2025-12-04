@@ -44,7 +44,7 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import passkey from '@/utils/passkey'
 import { getSettings } from '@/utils/settings'
-import { apiJson, getUserFriendlyErrorMessage } from '@/utils/api'
+import { fetchJson, getUserFriendlyErrorMessage } from '@/utils/api'
 
 const props = defineProps({
   mode: {
@@ -121,7 +121,7 @@ async function fetchSettings() {
 
 async function fetchUserInfo() {
   try {
-    userInfo.value = await apiJson('/auth/api/user-info', { method: 'POST' })
+    userInfo.value = await fetchJson('/auth/api/user-info', { method: 'POST' })
     // Determine view based on authentication status
     if (isAuthenticated.value && props.mode !== 'reauth') {
       currentView.value = 'forbidden'
@@ -168,7 +168,7 @@ async function logoutUser() {
   if (loading.value) return
   loading.value = true
   try {
-    await apiJson('/auth/api/logout', { method: 'POST' })
+    await fetchJson('/auth/api/logout', { method: 'POST' })
     userInfo.value = null
     // Switch to login view after logout
     currentView.value = 'login'
@@ -191,7 +191,7 @@ async function setSessionCookie(result) {
     console.error('setSessionCookie called with missing session_token:', result)
     throw new Error('Authentication response missing session_token')
   }
-  return await apiJson('/auth/api/set-session', {
+  return await fetchJson('/auth/api/set-session', {
     method: 'POST', headers: { Authorization: `Bearer ${result.session_token}` }
   })
 }
