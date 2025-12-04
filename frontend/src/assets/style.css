@@ -658,16 +658,19 @@ th {
     grid-template-columns: auto auto;
   }
 
+  .global-status {
+    top: 1rem;
+  }
+}
+
+/* Mobile portrait (touch) or very narrow screens: stack buttons */
+@media (max-width: 500px) and (orientation: portrait) and (pointer: coarse), (max-width: 350px) {
   button {
     width: 100%;
   }
 
   .button-row {
     flex-direction: column;
-  }
-
-  .global-status {
-    top: 1rem;
   }
 }
 
