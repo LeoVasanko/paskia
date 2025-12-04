@@ -184,7 +184,7 @@ class Passkey:
             authopts: Additional arguments to generate_authentication_options.
 
         Returns:
-            Tuple of (JSON to be sent to client, challenge bytes to store)
+            Tuple of (JSON dict to be sent to client, challenge bytes to store)
         """
         options = generate_authentication_options(
             rp_id=self.rp_id,

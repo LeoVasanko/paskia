@@ -10,12 +10,12 @@
 import { computed, onMounted } from 'vue'
 import RestrictedAuth from '@/components/RestrictedAuth.vue'
 
-// Detect mode from data attribute on html tag (injected by server)
+// Detect mode from URL hash fragment
 const authMode = computed(() => {
-  const htmlElement = document.documentElement
-  const dataMode = htmlElement.getAttribute('data-mode')
-  if (dataMode === 'reauth') return 'reauth'
-  if (dataMode === 'forbidden') return 'forbidden'
+  const params = new URLSearchParams(window.location.hash.slice(1))
+  const mode = params.get('mode')
+  if (mode === 'reauth') return 'reauth'
+  if (mode === 'forbidden') return 'forbidden'
   return 'login'
 })
 

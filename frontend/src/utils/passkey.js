@@ -37,7 +37,7 @@ export async function register(resetToken = null, displayName = null, onstartreg
       // Notify caller that we're about to show the browser prompt
       if (onstartreg) onstartreg()
 
-      const registrationResponse = await startRegistration({ optionsJSON: res })
+      const registrationResponse = await startRegistration(res)
       ws.send_json(registrationResponse)
 
       const result = await ws.receive_json()
@@ -64,7 +64,7 @@ export async function authenticate() {
       throw new Error(res.detail || `Authentication failed: ${res.status}`)
     }
 
-    const authResponse = await startAuthentication({ optionsJSON: res })
+    const authResponse = await startAuthentication(res)
     ws.send_json(authResponse)
 
     const result = await ws.receive_json()

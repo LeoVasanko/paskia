@@ -2,7 +2,7 @@ import logging
 
 from fastapi import HTTPException
 
-from ..util import frontend, htmlutil, permutil, sessionutil
+from ..util import permutil, sessionutil
 
 logger = logging.getLogger(__name__)
 
@@ -35,16 +35,17 @@ class AuthException(HTTPException):
 async def auth_error_content(exc: AuthException) -> dict:
     """Generate JSON response content for an AuthException.
 
-    Returns a dict with detail, mode, and iframe HTML for srcdoc embedding.
+    Returns a dict with detail, mode, and iframe URL for src embedding.
     """
-    data_attrs = {"mode": exc.mode, **exc.metadata}
-    iframe_html = (await frontend.read("/auth/restricted/index.html"))[0]
-    iframe_html = htmlutil.patch_html_data_attrs(iframe_html, **data_attrs)
+    # Build hash fragment from mode and metadata
+    params = {"mode": exc.mode, **exc.metadata}
+    fragment = "&".join(f"{k}={v}" for k, v in params.items() if v is not None)
+    iframe_url = f"/auth/restricted/#{fragment}"
     return {
         "detail": exc.detail,
         "auth": {
             "mode": exc.mode,
-            "iframe": iframe_html.decode("utf-8"),
+            "iframe": iframe_url,
             **exc.metadata,
         },
     }
