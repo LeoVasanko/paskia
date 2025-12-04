@@ -13,17 +13,17 @@ interface TestState {
 
 /**
  * Global teardown for E2E tests.
- * 
+ *
  * This cleans up the test server and optionally removes the test database.
  */
 export default async function globalTeardown() {
   console.log('\n🧹 Cleaning up E2E test environment...\n')
-  
+
   // Read state file to get server PID
   if (existsSync(stateFile)) {
     try {
       const state: TestState = JSON.parse(readFileSync(stateFile, 'utf-8'))
-      
+
       if (state.serverPid) {
         console.log(`  Stopping server (PID: ${state.serverPid})...`)
         try {
@@ -40,11 +40,11 @@ export default async function globalTeardown() {
     } catch (err) {
       console.warn('  Warning: Could not read state file')
     }
-    
+
     // Clean up state file
     rmSync(stateFile, { force: true })
   }
-  
+
   // Optionally clean up test database (keep it for debugging by default)
   if (process.env.CLEANUP_TEST_DB === 'true') {
     const dbPath = join(testDataDir, 'test.sqlite')
@@ -58,6 +58,6 @@ export default async function globalTeardown() {
       if (existsSync(file)) rmSync(file)
     }
   }
-  
+
   console.log('  ✅ Cleanup complete\n')
 }
