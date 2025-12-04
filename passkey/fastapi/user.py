@@ -29,7 +29,7 @@ async def auth_exception_handler(_request, exc: authz.AuthException):
     """Handle AuthException with auth info for UI."""
     return JSONResponse(
         status_code=exc.status_code,
-        content=authz.auth_error_content(exc),
+        content=await authz.auth_error_content(exc),
     )
 
 

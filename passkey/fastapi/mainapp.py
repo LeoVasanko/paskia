@@ -3,7 +3,7 @@ import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Request, Response
-from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from passkey.util import frontend, hostutil, passphrase
@@ -64,7 +64,7 @@ app.mount(
 @app.get("/auth/restricted/")
 async def restricted_view():
     """Serve the restricted/authentication UI for iframe embedding."""
-    return FileResponse(frontend.file("auth", "restricted", "index.html"))
+    return Response(*await frontend.read("/auth/restricted/index.html"))
 
 
 # Navigable URLs are defined here. We support both / and /auth/ as the base path
@@ -83,8 +83,8 @@ async def frontapp(request: Request, response: Response, auth=AUTH_COOKIE):
         cur_host = hostutil.normalize_host(request.headers.get("host"))
         cfg_normalized = hostutil.normalize_host(cfg_host)
         if cur_host and cfg_normalized and cur_host != cfg_normalized:
-            return FileResponse(frontend.file("int", "host", "index.html"))
-    return FileResponse(frontend.file("auth", "index.html"))
+            return Response(*await frontend.read("/int/host/index.html"))
+    return Response(*await frontend.read("/auth/index.html"))
 
 
 @app.get("/admin", include_in_schema=False)
@@ -105,4 +105,4 @@ async def reset_link(reset: str):
     """Serve the reset app directly with an injected reset token."""
     if not passphrase.is_well_formed(reset):
         raise HTTPException(status_code=404)
-    return FileResponse(frontend.file("int", "reset", "index.html"))
+    return Response(*await frontend.read("/int/reset/index.html"))

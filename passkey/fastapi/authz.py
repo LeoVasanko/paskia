@@ -32,13 +32,13 @@ class AuthException(HTTPException):
         self.metadata = metadata
 
 
-def auth_error_content(exc: AuthException) -> dict:
+async def auth_error_content(exc: AuthException) -> dict:
     """Generate JSON response content for an AuthException.
 
     Returns a dict with detail, mode, and iframe HTML for srcdoc embedding.
     """
     data_attrs = {"mode": exc.mode, **exc.metadata}
-    iframe_html = frontend.file("auth", "restricted", "index.html").read_bytes()
+    iframe_html = (await frontend.read("/auth/restricted/index.html"))[0]
     iframe_html = htmlutil.patch_html_data_attrs(iframe_html, **data_attrs)
     return {
         "detail": exc.detail,

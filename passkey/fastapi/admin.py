@@ -2,8 +2,8 @@ import logging
 from datetime import timezone
 from uuid import UUID, uuid4
 
-from fastapi import Body, FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi import Body, FastAPI, HTTPException, Request, Response
+from fastapi.responses import JSONResponse
 
 from ..authsession import reset_expires
 from ..globals import db
@@ -33,7 +33,7 @@ async def auth_exception_handler(_request, exc: authz.AuthException):
     """Handle AuthException with auth info for UI."""
     return JSONResponse(
         status_code=exc.status_code,
-        content=authz.auth_error_content(exc),
+        content=await authz.auth_error_content(exc),
     )
 
 
@@ -45,7 +45,7 @@ async def general_exception_handler(_request, exc: Exception):
 
 @app.get("/")
 async def adminapp(request: Request, auth=AUTH_COOKIE):
-    return FileResponse(frontend.file("auth", "admin", "index.html"))
+    return Response(*await frontend.read("/auth/admin/index.html"))
 
 
 # -------------------- Organizations --------------------

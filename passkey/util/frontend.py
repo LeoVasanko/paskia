@@ -1,4 +1,7 @@
+import asyncio
 import atexit
+import mimetypes
+import os
 import shutil
 import signal
 import subprocess
@@ -7,7 +10,11 @@ from pathlib import Path
 from sys import stderr
 from threading import Thread
 
-__all__ = ["path", "file", "run_dev"]
+import httpx
+
+__all__ = ["path", "file", "read", "run_dev"]
+
+DEV_SERVER = "http://localhost:4403"
 
 NO_FRONTEND_TOOL = """\
 ┃ ⚠️  deno, npm or bunx needed to run the frontend server.
@@ -51,6 +58,45 @@ path: Path = _resolve_static_dir()
 def file(*parts: str) -> Path:
     """Return a child path under the static root."""
     return path.joinpath(*parts)
+
+
+def _is_dev_mode() -> bool:
+    """Check if we're running in dev mode (Vite frontend server)."""
+    return os.environ.get("PASSKEY_DEVMODE") == "1"
+
+
+async def read(filepath: str) -> tuple[bytes, int, dict[str, str]]:
+    """Read file content and return response tuple.
+
+    In dev mode, fetches from the Vite dev server.
+    In production, reads from the static build directory.
+
+    Args:
+        filepath: Path relative to frontend root, e.g. "/auth/index.html"
+
+    Returns:
+        Tuple of (content, status_code, headers) suitable for
+        FastAPI Response(*args) or Sanic raw response.
+    """
+    if _is_dev_mode():
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(f"{DEV_SERVER}{filepath}")
+            resp.raise_for_status()
+            mime = resp.headers.get("content-type", "application/octet-stream")
+            # Strip charset suffix if present
+            mime = mime.split(";")[0].strip()
+            return resp.content, resp.status_code, {"content-type": mime}
+    else:
+        # Production: read from static build
+        file_path = path / filepath.lstrip("/")
+        content = await _read_file_async(file_path)
+        mime, _ = mimetypes.guess_type(str(file_path))
+        return content, 200, {"content-type": mime or "application/octet-stream"}
+
+
+async def _read_file_async(file_path: Path) -> bytes:
+    """Read file asynchronously using asyncio.to_thread."""
+    return await asyncio.to_thread(file_path.read_bytes)
 
 
 def run_dev():

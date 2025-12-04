@@ -244,9 +244,8 @@ def main():
                 run_kwargs["port"] = port
 
         if devmode:
-            if os.environ.get("PASSKEY_BUN_PARENT") != "1":
-                os.environ["PASSKEY_BUN_PARENT"] = "1"
-                frontend.run_dev()
+            os.environ["PASSKEY_DEVMODE"] = "1"
+            frontend.run_dev()
 
         if all_ifaces and not uds:
             if devmode:
