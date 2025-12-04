@@ -164,15 +164,10 @@ export async function apiFetch(url, options = {}) {
   // Ensure credentials are included for cookie-based auth
   fetchOptions.credentials = fetchOptions.credentials || 'include'
 
-  // Add timeout signal if specified and not already present
-  if (timeout > 0 && !fetchOptions.signal) {
-    fetchOptions.signal = AbortSignal.timeout(timeout)
-  }
-
   while (true) {
     let response
     try {
-      response = await fetch(url, fetchOptions)
+      response = await fetch(url, {...fetchOptions, signal: timeout && AbortSignal.timeout(timeout)})
     } catch (error) {
       // Handle network errors and timeouts
       if (error.name === 'TimeoutError') {
