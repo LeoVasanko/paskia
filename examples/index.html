@@ -4,122 +4,163 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>PassKey Auth - Dev Mode</title>
-    <link rel="stylesheet" href="style.css">
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
+        :root {
+            color-scheme: light dark;  /* Automatic themes by browser */
         }
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-            line-height: 1.6;
-            color: #333;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            padding: 20px;
-        }
-        .container {
-            background: white;
-            border-radius: 12px;
-            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-            padding: 40px;
-            max-width: 600px;
+        /* Login/reauth/forbidden dialog will appear in this iframe */
+        #auth-iframe {
+            /* Full viewport overlay */
+            border: none;
+            position: fixed;
+            top: 0;
+            left: 0;
             width: 100%;
+            height: 100%;
+            z-index: 9999;
+            /* Optional transparent background with optional blur backdrop */
+            color-scheme: auto;
+            background: transparent;
+            backdrop-filter: blur(.1rem) brightness(0.7);
+            -webkit-backdrop-filter: blur(.1rem) brightness(0.7);
         }
-        h1 {
-            color: #667eea;
-            margin-bottom: 10px;
-            font-size: 2em;
-        }
-        .subtitle {
-            color: #666;
-            margin-bottom: 30px;
-            font-size: 1.1em;
-        }
-        h2 {
-            color: #667eea;
-            margin-top: 30px;
-            margin-bottom: 15px;
-            font-size: 1.3em;
-        }
-        .section:first-of-type h2 {
-            margin-top: 0;
-        }
-        .links {
-            display: flex;
-            flex-direction: column;
-            gap: 12px;
-        }
-        .links.side-by-side {
-            flex-direction: row;
-            flex-wrap: wrap;
-        }
-        .links.side-by-side a {
-            flex: 1;
-            min-width: 200px;
-        }
-        a {
-            display: block;
-            padding: 15px 20px;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            text-decoration: none;
-            border-radius: 8px;
-            transition: transform 0.2s, box-shadow 0.2s;
-            font-weight: 500;
-        }
-        a:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
-        }
-        .example-description {
-            font-size: 0.9em;
-            opacity: 0.9;
-            margin-top: 5px;
-        }
-        .info {
-            margin-top: 30px;
-            padding-top: 20px;
-            border-top: 1px solid #eee;
-            font-size: 0.9em;
-            color: #666;
-        }
-        .info p {
-            margin-bottom: 8px;
+        /* Prevent background scroll when auth-iframe is shown */
+        body:has(#auth-iframe) {
+            overflow: hidden;
         }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>🔐 PassKey Auth</h1>
-        <p class="subtitle">Dev server running this example application.</p>
+        <header>
+            <h1>🔐 PassKey Auth</h1>
+            <p class="subtitle">Development server demonstration page.</p>
+        </header>
 
-        <div class="section">
-            <h2>Main Application</h2>
-            <div class="links side-by-side">
-                <a href="/auth/">👤 User Profile</a>
-                <a href="/auth/admin/">⚙️ Admin Panel</a>
+        <div class="content">
+            <div class="section">
+                <h2>Management Site</h2>
+                <button onclick="window.open('/auth/', '_blank')">👤 User Profile</button>
+                <button onclick="window.open('/auth/admin/', '_blank')">⚙️ Admin Panel</button>
             </div>
-        </div>
 
-        <div class="section">
-            <h2>Examples & Demos</h2>
-            <div class="links">
-                <a href="/examples/restricted-api.html">
-                    📡 API Demo
-                    <div class="example-description">Login and re-authentication via JS</div>
-                </a>
+            <div class="section">
+                <h2>API Mode (not leaving the page)</h2>
+                <p>For SPAs and fetch() calls - shows auth in an iframe overlay:</p>
+                <button onclick="apiCall('/auth/api/user-info', 'POST')">📋 Get User Info</button>
+                <button onclick="apiCall('/auth/api/forward?max_age=10s')">🔄 Reauth (max_age=10s)</button>
+                <button onclick="apiCall('/auth/api/forward?perm=auth:admin')">🛡️ Admin Only</button>
+                <button onclick="logout()">🚪 Logout</button>
             </div>
-        </div>
 
-        <div class="info">
-            <p><strong>Dev Server:</strong> Vite on port 4403</p>
-            <p><strong>Backend:</strong> localhost:4402</p>
+            <div class="section">
+                <h2>Browser Mode (full page)</h2>
+                <p>Block access to otherwise open site - intended for forward-auth mechanism (Caddy, Nxinx):</p>
+                <button onclick="browserNav('/auth/api/forward')">🔐 Basic Auth</button>
+                <button onclick="browserNav('/auth/api/forward?max_age=10s')">🔄 Reauth (max_age=10s)</button>
+                <button onclick="browserNav('/auth/api/forward?perm=auth:admin')">🛡️ Admin Only</button>
+            </div>
+
+            <pre id="output">Click a button to test...</pre>
         </div>
     </div>
+
+    <script>
+        const output = document.getElementById('output');
+        let pendingCall = null;  // Stores the API call to retry after auth
+
+        // The auth iframe posts messages when authentication completes or is cancelled.
+        // Message types: 'auth-success' (proceed), 'auth-back' (user cancelled)
+        // Errors during auth stay in the dialog allowing retry, no message is sent.
+        window.addEventListener('message', (event) => {
+            const { type, message } = event.data || {};
+
+            if (type === 'auth-success') {
+                log('✓ Authentication successful, retrying...');
+                hideAuthIframe();
+                // Retry the original API call that triggered authentication
+                if (pendingCall) {
+                    const { url, method } = pendingCall;
+                    pendingCall = null;
+                    apiCall(url, method);
+                }
+            } else if (type === 'auth-back') {
+                log(message || 'Authentication cancelled');
+                hideAuthIframe();
+                pendingCall = null;
+            }
+        });
+
+        // Make an API call, handling 401/403 by showing the auth iframe.
+        // The server returns JSON with auth.iframe URL when authentication is needed.
+        async function apiCall(url, method = 'GET') {
+            log(`${method} ${url}...`);
+
+            const response = await fetch(url, { method, credentials: 'include' });
+
+            // Server returns 401 (login/reauth) or 403 (missing permissions)
+            // with a JSON body containing the iframe URL for authentication
+            if (response.status === 401 || response.status === 403) {
+                const data = await response.json();
+                if (data.auth?.iframe) {
+                    const mode = data.auth.mode;  // 'login' or 'reauth'
+                    log(`${mode === 'reauth' ? 'Re-authentication' : 'Authentication'} required...`);
+                    pendingCall = { url, method };
+                    showAuthIframe(data.auth.iframe);
+                    return;
+                }
+                log(`Error: ${response.status} - ${data.detail}`);
+                return;
+            }
+
+            // Forward endpoint returns 204 on success (Caddy then adds Remote-* headers)
+            if (response.status === 204) {
+                log('✓ Success (204 No Content)\nHeaders:\n' +
+                    [...response.headers].filter(([k]) => k.startsWith('remote-'))
+                        .map(([k, v]) => `  ${k}: ${v}`).join('\n'));
+                return;
+            }
+
+            if (!response.ok) {
+                log(`Error: ${response.status} ${response.statusText}`);
+                return;
+            }
+
+            const data = await response.json();
+            log('✓ Response:\n' + JSON.stringify(data, null, 2));
+        }
+
+        async function logout() {
+            await fetch('/auth/api/logout', { method: 'POST', credentials: 'include' });
+            log('Logged out');
+        }
+
+        // Create fullscreen iframe for authentication.
+        // The 'allow' attribute enables WebAuthn (passkey) API inside the iframe.
+        function showAuthIframe(url) {
+            hideAuthIframe();
+            const iframe = document.createElement('iframe');
+            iframe.id = 'auth-iframe';
+            iframe.src = url;
+            document.body.appendChild(iframe);
+            log("Authentication dialog open...")
+        }
+
+        function hideAuthIframe() {
+            document.getElementById('auth-iframe')?.remove();
+        }
+
+        function log(msg) {
+            output.textContent = msg;
+        }
+
+        // Browser mode: open the forward endpoint directly in a new window.
+        // When Accept: text/html, the server redirects to the login page if needed,
+        // then back to the original URL after authentication.
+        function browserNav(url) {
+            log('Opening in new window...\nIf not authenticated, you\'ll see the login page.\nAfter auth, you\'ll see a 204 response (blank page = success).');
+            window.open(url, '_blank');
+        }
+    </script>
 </body>
 </html>
