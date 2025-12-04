@@ -281,6 +281,36 @@ export async function apiJson(url, options = {}) {
 }
 
 /**
+ * Simple JSON fetch without auto-auth iframe handling.
+ * Use this in contexts where showing an auth iframe would be inappropriate
+ * (e.g., inside the auth iframe itself).
+ *
+ * @param {string|URL} url - The URL to fetch
+ * @param {RequestInit} [options] - Fetch options
+ * @returns {Promise<any>} - Parsed JSON response
+ * @throws {ApiError} - If response is not ok
+ */
+export async function fetchJson(url, options = {}) {
+  const fetchOptions = {
+    credentials: 'include',
+    ...options,
+    headers: {
+      'Accept': 'application/json',
+      ...options.headers,
+    },
+  }
+
+  const response = await fetch(url, fetchOptions)
+  const data = await response.json()
+
+  if (!response.ok) {
+    throw new ApiError(url, response, data)
+  }
+
+  return data
+}
+
+/**
  * Convert an error to a user-friendly message.
  * @param {Error} error - The error to convert
  * @returns {string} - User-friendly error message
