@@ -32,7 +32,6 @@ export default defineConfig(({ command }) => ({
           { from: 'auth.html', to: 'auth/index.html' },
           { from: 'admin.html', to: 'admin/index.html' },
           { from: 'restricted.html', to: 'restricted/index.html' },
-          { from: 'host.html', to: 'host/index.html' },
           { from: 'reset.html', to: 'reset/index.html' },
           { from: 'forward.html', to: 'forward/index.html' }
         ]
@@ -77,7 +76,6 @@ export default defineConfig(({ command }) => ({
         auth: resolve(__dirname, 'auth/index.html'),
         admin: resolve(__dirname, 'auth/admin/index.html'),
         restricted: resolve(__dirname, 'auth/restricted/index.html'),
-        host: resolve(__dirname, 'int/host/index.html'),
         reset: resolve(__dirname, 'int/reset/index.html'),
         forward: resolve(__dirname, 'int/forward/index.html'),
       },
