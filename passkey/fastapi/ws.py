@@ -56,7 +56,7 @@ async def register_chat(
         credential_ids=credential_ids,
         origin=origin,
     )
-    await ws.send_json(options)
+    await ws.send_json({"optionsJSON": options})
     response = await ws.receive_json()
     return passkey.instance.reg_verify(response, challenge, user_uuid, origin=origin)
 
@@ -150,7 +150,7 @@ async def websocket_authenticate(ws: WebSocket, auth=AUTH_COOKIE):
     options, challenge = passkey.instance.auth_generate_options(
         credential_ids=credential_ids
     )
-    await ws.send_json(options)
+    await ws.send_json({"optionsJSON": options})
     # Wait for the client to use his authenticator to authenticate
     credential = passkey.instance.auth_parse(await ws.receive_json())
     # Fetch from the database by credential ID
