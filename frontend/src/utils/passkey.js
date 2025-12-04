@@ -58,6 +58,7 @@ export async function authenticate() {
   const ws = await aWebSocket(await makeUrl('/auth/ws/authenticate'))
   try {
     const res = await ws.receive_json()
+    console.log('Authentication options:', res)
     // status field present means error
     if (res.status) {
       throw new Error(res.detail || `Authentication failed: ${res.status}`)
