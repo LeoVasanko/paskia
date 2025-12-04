@@ -10,259 +10,116 @@
     <div class="container">
         <header>
             <h1>🔐 Restricted API Demo</h1>
-            <p class="subtitle">Demonstrates iframe-based authentication using postMessage</p>
+            <p class="subtitle">Demonstrates authentication for protected resources</p>
         </header>
 
         <div class="content">
             <div class="section">
-                <h2>Authentication Modes</h2>
-                <button onclick="showLoginMode()">Show Login Mode</button>
-                <button onclick="showReauthMode()">Show Reauth Mode</button>
-                <button onclick="hideIframe()">Hide Iframe</button>
-            </div>
-
-            <div class="section">
-                <h2>API Tests</h2>
-                <button onclick="testUserInfo()">Get User Info</button>
-                <button onclick="testProtectedAPI()">Test Protected API</button>
+                <h2>API Mode (iframe)</h2>
+                <p>For SPAs and fetch() calls - shows auth in an iframe overlay:</p>
+                <button onclick="apiCall('/auth/api/user-info', 'POST')">Get User Info</button>
+                <button onclick="apiCall('/auth/api/forward?max_age=10s')">Reauth (max_age=10s)</button>
+                <button onclick="apiCall('/auth/api/forward?perm=auth:admin')">Admin Only</button>
                 <button onclick="logout()">Logout</button>
             </div>
 
-            <div id="status" class="hidden"></div>
-
             <div class="section">
-                <h2>Message Events</h2>
-                <pre id="message-log">Waiting for messages...</pre>
+                <h2>Browser Mode (full page)</h2>
+                <p>For traditional apps - redirects to auth page, then back:</p>
+                <button onclick="browserNav('/auth/api/forward')">Basic Auth</button>
+                <button onclick="browserNav('/auth/api/forward?max_age=10s')">Reauth (max_age=10s)</button>
+                <button onclick="browserNav('/auth/api/forward?perm=auth:admin')">Admin Only</button>
             </div>
+
+            <pre id="output">Click a button to test...</pre>
         </div>
     </div>
+
     <script>
-        let currentApiCall = null;
-        let iframeInitialized = false;
-        const messageLog = document.getElementById('message-log');
-        let messages = [];
+        const output = document.getElementById('output');
+        let pendingCall = null;
 
+        // Listen for auth iframe messages
         window.addEventListener('message', (event) => {
-            const data = event.data;
-            if (!data?.type) return;
+            const { type, message } = event.data || {};
 
-            // Log all messages
-            const timestamp = new Date().toLocaleTimeString();
-            messages.push(`[${timestamp}] ${JSON.stringify(data, null, 2)}`);
-            if (messages.length > 10) messages.shift();
-            messageLog.textContent = messages.join('\n\n');
-
-            switch (data.type) {
-                case 'auth-ready':
-                    iframeInitialized = true;
-                    showStatus('Authentication iframe is ready', 'info');
-                    break;
-
-                case 'auth-success':
-                    showStatus('✓ Authentication successful!', 'success');
-                    hideAuthIframe();
-                    if (currentApiCall) {
-                        setTimeout(() => {
-                            currentApiCall();
-                            currentApiCall = null;
-                        }, 500);
-                    }
-                    break;
-
-                case 'auth-forbidden':
-                    showStatus('⚠ You are authenticated but lack required permissions', 'error');
-                    hideAuthIframe();
-                    currentApiCall = null;
-                    break;
-
-                case 'auth-logout':
-                    showStatus('User logged out', 'info');
-                    currentApiCall = null;
-                    break;
-
-                case 'auth-error':
-                    showStatus(`⚠ ${data.message || 'Authentication failed'}`, data.cancelled ? 'info' : 'error');
-                    // Don't hide iframe on error - let user retry
-                    break;
-
-                case 'auth-cancelled':
-                    showStatus(`Operation cancelled: ${data.message || ''}`, 'info');
-                    // Don't hide iframe - deprecated message type
-                    break;
-
-                case 'auth-back':
-                    showStatus('User clicked Back', 'info');
-                    hideAuthIframe();
-                    currentApiCall = null;
-                    break;
-
-                case 'auth-close-request':
-                    // Iframe wants to be closed (legacy)
-                    hideAuthIframe();
-                    break;
+            if (type === 'auth-success') {
+                log('✓ Authentication successful, retrying...');
+                hideAuthIframe();
+                if (pendingCall) {
+                    const { url, method } = pendingCall;
+                    pendingCall = null;
+                    apiCall(url, method);
+                }
+            } else if (type === 'auth-back' || type === 'auth-error') {
+                log(message || 'Authentication cancelled');
+                hideAuthIframe();
+                pendingCall = null;
             }
         });
 
-        // Cache for auth iframe HTML by mode
-        const authIframeHtmlCache = {};
+        async function apiCall(url, method = 'GET') {
+            log(`${method} ${url}...`);
 
-        async function getAuthIframeHtml(mode = 'login') {
-            if (authIframeHtmlCache[mode]) {
-                return authIframeHtmlCache[mode];
-            }
+            const response = await fetch(url, { method, credentials: 'include' });
 
-            // Fetch from forward endpoint - it returns HTML in auth.iframe on 401/403
-            const response = await fetch('/auth/api/forward', { credentials: 'include' });
+            // If auth required, show the auth iframe
             if (response.status === 401 || response.status === 403) {
                 const data = await response.json();
                 if (data.auth?.iframe) {
-                    let html = data.auth.iframe;
-                    if (mode !== data.auth.mode) {
-                        // Replace data-mode attribute value
-                        html = html.replace(/data-mode="[^"]*"/, `data-mode="${mode}"`);
-                    }
-                    authIframeHtmlCache[mode] = html;
-                    return html;
-                }
-            }
-            throw new Error('Unable to fetch auth iframe HTML');
-        }
-
-        async function showLoginMode() {
-            let iframe = document.getElementById('auth-iframe');
-            if (!iframe) {
-                iframe = document.createElement('iframe');
-                iframe.id = 'auth-iframe';
-                iframe.title = 'Authentication';
-                document.body.appendChild(iframe);
-            }
-            iframe.srcdoc = await getAuthIframeHtml('login');
-            showStatus('Login mode loaded - for users who are not authenticated', 'info');
-        }
-
-        async function showReauthMode() {
-            let iframe = document.getElementById('auth-iframe');
-            if (!iframe) {
-                iframe = document.createElement('iframe');
-                iframe.id = 'auth-iframe';
-                iframe.title = 'Authentication';
-                document.body.appendChild(iframe);
-            }
-            iframe.srcdoc = await getAuthIframeHtml('reauth');
-            showStatus('Reauth mode loaded - for additional verification of authenticated users', 'info');
-        }
-
-        async function showAuthIframe() {
-            let iframe = document.getElementById('auth-iframe');
-            if (!iframe) {
-                iframe = document.createElement('iframe');
-                iframe.id = 'auth-iframe';
-                iframe.title = 'Authentication';
-                iframe.srcdoc = await getAuthIframeHtml('login');
-                document.body.appendChild(iframe);
-                iframeInitialized = true;
-            }
-        }
-
-        function hideIframe() {
-            hideAuthIframe();
-            showStatus('Iframe hidden', 'info');
-        }
-
-        function hideAuthIframe() {
-            const iframe = document.getElementById('auth-iframe');
-            if (iframe) iframe.remove();
-        }
-
-        async function testUserInfo() {
-            showStatus('Fetching user info...');
-
-            try {
-                const response = await fetch('/auth/api/user-info', {
-                    method: 'POST',
-                    credentials: 'include'
-                });
-
-                if (response.status === 401 || response.status === 403) {
-                    showStatus(`⚠ Authentication required (${response.status})`);
-                    currentApiCall = testUserInfo;
-                    showAuthIframe();
+                    const mode = data.auth.mode;
+                    log(`${mode === 'reauth' ? 'Re-authentication' : 'Authentication'} required...`);
+                    pendingCall = { url, method };
+                    showAuthIframe(data.auth.iframe);
                     return;
                 }
-
-                if (!response.ok) {
-                    showStatus(`Error: ${response.status} ${response.statusText}`);
-                    return;
-                }
-
-                const data = await response.json();
-                showStatus('✓ User info retrieved successfully!');
-                displayApiResponse('User Info', data);
-            } catch (error) {
-                showStatus(`Error: ${error.message}`);
+                log(`Error: ${response.status} - ${data.detail}`);
+                return;
             }
-        }
 
-        async function testProtectedAPI() {
-            showStatus('Testing protected API...');
-
-            try {
-                const response = await fetch('/auth/api/user-info', {
-                    method: 'POST',
-                    credentials: 'include'
-                });
-
-                if (response.status === 401 || response.status === 403) {
-                    showStatus(`⚠ Authentication required (${response.status})`);
-                    currentApiCall = testProtectedAPI;
-                    showAuthIframe();
-                    return;
-                }
-
-                if (!response.ok) {
-                    showStatus(`Error: ${response.status} ${response.statusText}`);
-                    return;
-                }
-
-                const data = await response.json();
-                showStatus('✓ Protected API call successful!');
-                displayApiResponse('Protected Data', data);
-            } catch (error) {
-                showStatus(`Error: ${error.message}`);
+            if (response.status === 204) {
+                log('✓ Success (204 No Content)\nHeaders:\n' +
+                    [...response.headers].filter(([k]) => k.startsWith('remote-'))
+                        .map(([k, v]) => `  ${k}: ${v}`).join('\n'));
+                return;
             }
+
+            if (!response.ok) {
+                log(`Error: ${response.status} ${response.statusText}`);
+                return;
+            }
+
+            const data = await response.json();
+            log('✓ Response:\n' + JSON.stringify(data, null, 2));
         }
 
         async function logout() {
-            showStatus('Logging out...');
-
-            try {
-                const response = await fetch('/auth/api/logout', {
-                    method: 'POST',
-                    credentials: 'include'
-                });
-
-                if (response.ok || response.status === 401) {
-                    showStatus('✓ Logged out successfully!');
-                    hideAuthIframe();
-                    currentApiCall = null;
-                } else {
-                    showStatus(`Logout error: ${response.status}`);
-                }
-            } catch (error) {
-                showStatus(`Error: ${error.message}`);
-            }
+            await fetch('/auth/api/logout', { method: 'POST', credentials: 'include' });
+            log('Logged out');
         }
 
-        function showStatus(message, type = 'info') {
-            const statusDiv = document.getElementById('status');
-            statusDiv.innerHTML = `<p>${message}</p>`;
-            statusDiv.className = `status ${type}`;
-            statusDiv.classList.remove('hidden');
+        function showAuthIframe(url) {
+            hideAuthIframe();
+            const iframe = document.createElement('iframe');
+            iframe.id = 'auth-iframe';
+            iframe.src = url;
+            iframe.allow = 'publickey-credentials-get; publickey-credentials-create';
+            document.body.appendChild(iframe);
         }
 
-        function displayApiResponse(title, data) {
-            const statusDiv = document.getElementById('status');
-            statusDiv.innerHTML += `<h3>${title}</h3><pre>${JSON.stringify(data, null, 2)}</pre>`;
+        function hideAuthIframe() {
+            document.getElementById('auth-iframe')?.remove();
+        }
+
+        function log(msg) {
+            output.textContent = msg;
+        }
+
+        // Browser mode: navigate directly to the forward endpoint
+        // Browser sends Accept: text/html, so it gets a full page instead of JSON
+        function browserNav(url) {
+            log('Opening in new window...\nIf not authenticated, you\'ll see the login page.\nAfter auth, you\'ll see a 204 response (blank page = success).');
+            window.open(url, '_blank');
         }
     </script>
 </body>
