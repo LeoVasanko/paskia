@@ -2,7 +2,8 @@
   <div class="app-shell">
     <StatusMessage />
     <main class="app-main">
-      <ProfileView v-if="authenticated" />
+      <HostProfileView v-if="authenticated && isHostMode" :initializing="loading" />
+      <ProfileView v-else-if="authenticated" />
       <LoadingView v-else-if="loading" :message="loadingMessage" />
       <AuthRequiredMessage v-else-if="showBackMessage" @reload="reloadPage" />
     </main>
@@ -10,11 +11,12 @@
 </template>
 
 <script setup>
-import { onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import { apiJson, getAuthIframeUrl } from '@/utils/api'
 import StatusMessage from '@/components/StatusMessage.vue'
 import ProfileView from '@/components/ProfileView.vue'
+import HostProfileView from '@/components/HostProfileView.vue'
 import LoadingView from '@/components/LoadingView.vue'
 import AuthRequiredMessage from '@/components/AccessDenied.vue'
 
@@ -23,6 +25,29 @@ const loading = ref(true)
 const loadingMessage = ref('Loading...')
 const authenticated = ref(false)
 const showBackMessage = ref(false)
+
+/**
+ * Normalize a host string for comparison (lowercase, strip default ports).
+ */
+function normalizeHost(raw) {
+  if (!raw) return null
+  const trimmed = raw.trim().toLowerCase()
+  if (!trimmed) return null
+  // Remove default ports
+  return trimmed.replace(/:80$/, '').replace(/:443$/, '')
+}
+
+/**
+ * Host mode is active when an auth_host is configured AND the current host differs from it.
+ * In host mode, we show a limited profile view with logout and link to full profile.
+ */
+const isHostMode = computed(() => {
+  const authHost = store.settings?.auth_host
+  if (!authHost) return false
+  const currentHost = normalizeHost(window.location.host)
+  const configuredHost = normalizeHost(authHost)
+  return currentHost !== configuredHost
+})
 let validationTimer = null
 let authIframe = null
 
@@ -147,7 +172,16 @@ onMounted(async () => {
 
   // Load settings
   await store.loadSettings()
-  if (store.settings?.rp_name) document.title = store.settings.rp_name
+
+  // Set appropriate page title based on mode
+  const rpName = store.settings?.rp_name
+  if (rpName) {
+    // In host mode, show "account summary" style title
+    // Settings are loaded but isHostMode depends on them, so check here
+    const authHost = store.settings?.auth_host
+    const inHostMode = authHost && normalizeHost(window.location.host) !== normalizeHost(authHost)
+    document.title = inHostMode ? `${rpName} · Account summary` : rpName
+  }
 
   // Try to load user info
   const success = await loadUserInfo()
