@@ -76,14 +76,9 @@ async def restricted_view():
 async def frontapp(request: Request, response: Response, auth=AUTH_COOKIE):
     """Serve the user profile app.
 
+    The frontend handles mode detection (host mode vs full profile) based on settings.
     Access control is handled via APIs.
     """
-    cfg_host = hostutil.configured_auth_host()
-    if cfg_host:
-        cur_host = hostutil.normalize_host(request.headers.get("host"))
-        cfg_normalized = hostutil.normalize_host(cfg_host)
-        if cur_host and cfg_normalized and cur_host != cfg_normalized:
-            return Response(*await frontend.read("/int/host/index.html"))
     return Response(*await frontend.read("/auth/index.html"))
 
 
