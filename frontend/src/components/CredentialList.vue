@@ -6,7 +6,14 @@
       <div
         v-for="credential in credentials"
         :key="credential.credential_uuid"
-        :class="['credential-item', { 'current-session': credential.is_current_session } ]"
+        :class="['credential-item', {
+          'current-session': credential.is_current_session && !hoveredCredentialUuid && !hoveredSessionCredentialUuid,
+          'is-hovered': hoveredCredentialUuid === credential.credential_uuid,
+          'is-linked-session': hoveredSessionCredentialUuid === credential.credential_uuid
+        }]"
+        tabindex="0"
+        @focusin="handleCredentialFocus(credential.credential_uuid)"
+        @focusout="handleCredentialBlur($event)"
       >
         <div class="item-top">
           <div class="item-icon">
@@ -22,7 +29,9 @@
           </div>
           <h4 class="item-title">{{ getCredentialAuthName(credential) }}</h4>
           <div class="item-actions">
-            <span v-if="credential.is_current_session" class="badge badge-current">Current</span>
+            <span v-if="credential.is_current_session && !hoveredCredentialUuid && !hoveredSessionCredentialUuid" class="badge badge-current">Current</span>
+            <span v-else-if="hoveredCredentialUuid === credential.credential_uuid" class="badge badge-current">Selected</span>
+            <span v-else-if="hoveredSessionCredentialUuid === credential.credential_uuid" class="badge badge-current">Linked</span>
             <button
               v-if="allowDelete"
               @click="$emit('delete', credential)"
@@ -48,7 +57,7 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { formatDate } from '@/utils/helpers'
 
 const props = defineProps({
@@ -56,7 +65,22 @@ const props = defineProps({
   aaguidInfo: { type: Object, default: () => ({}) },
   loading: { type: Boolean, default: false },
   allowDelete: { type: Boolean, default: false },
+  hoveredCredentialUuid: { type: String, default: null },
+  hoveredSessionCredentialUuid: { type: String, default: null },
 })
+
+const emit = defineEmits(['delete', 'credentialHover'])
+
+const handleCredentialFocus = (uuid) => {
+  emit('credentialHover', uuid)
+}
+
+const handleCredentialBlur = (event) => {
+  // Only clear if focus moved outside this element
+  if (!event.currentTarget.contains(event.relatedTarget)) {
+    emit('credentialHover', null)
+  }
+}
 
 const getCredentialAuthName = (credential) => {
   const info = props.aaguidInfo?.[credential.aaguid]

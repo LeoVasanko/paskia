@@ -19,6 +19,8 @@ const emit = defineEmits(['generateUserRegistrationLink', 'goOverview', 'openOrg
 
 const authStore = useAuthStore()
 const terminatingSessions = ref({})
+const hoveredCredentialUuid = ref(null)
+const hoveredSession = ref(null)
 
 function onLinkCopied() {
   authStore.showMessage('Link copied to clipboard!')
@@ -107,16 +109,21 @@ async function handleTerminateSession(session) {
             :credentials="userDetail.credentials"
             :aaguid-info="userDetail.aaguid_info"
             :allow-delete="true"
+            :hovered-credential-uuid="hoveredCredentialUuid"
+            :hovered-session-credential-uuid="hoveredSession?.credential_uuid"
             @delete="handleDelete"
+            @credential-hover="hoveredCredentialUuid = $event"
           />
         </div>
       </section>
       <SessionList
         :sessions="userDetail.sessions || []"
         :terminating-sessions="terminatingSessions"
+        :hovered-credential-uuid="hoveredCredentialUuid"
         :empty-message="'This user has no active sessions.'"
         :section-description="'View and manage the active sessions for this user.'"
         @terminate="handleTerminateSession"
+        @session-hover="hoveredSession = $event"
       />
     </template>
     <div class="actions ancillary-actions">
