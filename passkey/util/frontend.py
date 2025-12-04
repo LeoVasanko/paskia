@@ -12,7 +12,7 @@ from threading import Thread
 
 import httpx
 
-__all__ = ["path", "file", "read", "run_dev"]
+__all__ = ["path", "file", "read", "run_dev", "is_dev_mode"]
 
 DEV_SERVER = "http://localhost:4403"
 
@@ -60,7 +60,7 @@ def file(*parts: str) -> Path:
     return path.joinpath(*parts)
 
 
-def _is_dev_mode() -> bool:
+def is_dev_mode() -> bool:
     """Check if we're running in dev mode (Vite frontend server)."""
     return os.environ.get("PASSKEY_DEVMODE") == "1"
 
@@ -78,7 +78,7 @@ async def read(filepath: str) -> tuple[bytes, int, dict[str, str]]:
         Tuple of (content, status_code, headers) suitable for
         FastAPI Response(*args) or Sanic raw response.
     """
-    if _is_dev_mode():
+    if is_dev_mode():
         async with httpx.AsyncClient() as client:
             resp = await client.get(f"{DEV_SERVER}{filepath}")
             resp.raise_for_status()

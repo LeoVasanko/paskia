@@ -42,6 +42,16 @@ async def lifespan(app: FastAPI):  # pragma: no cover - startup path
         logging.error(f"⚠️ {e}")
         # Re-raise to fail fast
         raise
+
+    # In dev mode, Vite serves assets directly; in production, mount static files
+    # This is deferred to lifespan because PASSKEY_DEVMODE is set after module import
+    if not frontend.is_dev_mode():
+        app.mount(
+            "/auth/assets/",
+            StaticFiles(directory=frontend.file("auth", "assets")),
+            name="assets",
+        )
+
     yield
     # (Optional) add shutdown cleanup here later
 
@@ -54,11 +64,6 @@ app.middleware("http")(auth_host.redirect_middleware)
 app.mount("/auth/api/admin/", admin.app)
 app.mount("/auth/api/", api.app)
 app.mount("/auth/ws/", ws.app)
-app.mount(
-    "/auth/assets/",
-    StaticFiles(directory=frontend.file("auth", "assets")),
-    name="assets",
-)
 
 
 @app.get("/auth/restricted/")
