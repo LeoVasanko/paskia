@@ -6,6 +6,9 @@
  * successful authentication.
  */
 
+/** Default timeout for API requests in milliseconds */
+const DEFAULT_TIMEOUT_MS = 1000
+
 /**
  * Custom error class for API errors with full response context.
  */
@@ -17,6 +20,17 @@ export class ApiError extends Error {
     this.status = response.status
     this.statusText = response.statusText
     this.data = data
+  }
+}
+
+/**
+ * Custom error class for network/timeout errors.
+ */
+export class NetworkError extends Error {
+  constructor(message, originalError = null) {
+    super(message)
+    this.name = 'NetworkError'
+    this.originalError = originalError
   }
 }
 
@@ -139,18 +153,40 @@ if (typeof window !== 'undefined') {
  *
  * @param {string|URL} url - The URL to fetch
  * @param {RequestInit} [options] - Fetch options
+ * @param {number} [options.timeout] - Timeout in ms (default: 10000, use 0 to disable)
  * @returns {Promise<Response>} - The fetch response
  * @throws {AuthCancelledError} - If authentication is cancelled by user
+ * @throws {NetworkError} - If network error or timeout occurs
  */
 export async function apiFetch(url, options = {}) {
+  const { timeout = DEFAULT_TIMEOUT_MS, ...fetchOptions } = options
+
   // Ensure credentials are included for cookie-based auth
-  const fetchOptions = {
-    ...options,
-    credentials: options.credentials || 'include',
+  fetchOptions.credentials = fetchOptions.credentials || 'include'
+
+  // Add timeout signal if specified and not already present
+  if (timeout > 0 && !fetchOptions.signal) {
+    fetchOptions.signal = AbortSignal.timeout(timeout)
   }
 
   while (true) {
-    const response = await fetch(url, fetchOptions)
+    let response
+    try {
+      response = await fetch(url, fetchOptions)
+    } catch (error) {
+      // Handle network errors and timeouts
+      if (error.name === 'TimeoutError') {
+        throw new NetworkError('Request timed out', error)
+      }
+      if (error.name === 'AbortError') {
+        // Re-throw abort errors as-is (user-initiated cancellation)
+        throw error
+      }
+      if (error.name === 'TypeError' && error.message === 'Failed to fetch') {
+        throw new NetworkError('Unable to connect to server', error)
+      }
+      throw new NetworkError(error.message || 'Network error', error)
+    }
 
     // Check for auth errors (401/403)
     if (response.status === 401 || response.status === 403) {
@@ -182,16 +218,24 @@ export async function apiFetch(url, options = {}) {
 
 /**
  * Convenience method for JSON API calls.
- * Automatically sets Content-Type for POST/PUT/PATCH with body.
+ * Automatically sets Accept and Content-Type headers.
+ * Returns parsed JSON directly if response is ok, throws ApiError otherwise.
  *
  * @param {string|URL} url - The URL to fetch
  * @param {RequestInit} [options] - Fetch options
  * @returns {Promise<any>} - Parsed JSON response
- * @throws {ApiError} - If response has error detail or request fails
+ * @throws {ApiError} - If response is not ok
+ * @throws {NetworkError} - If network error or timeout occurs
  * @throws {AuthCancelledError} - If authentication is cancelled by user
  */
 export async function apiJson(url, options = {}) {
   const fetchOptions = { ...options }
+
+  // Set default headers, allowing caller overrides
+  fetchOptions.headers = {
+    'Accept': 'application/json',
+    ...fetchOptions.headers,
+  }
 
   // Set Content-Type for requests with JSON body
   if (fetchOptions.body && typeof fetchOptions.body === 'object' && !(fetchOptions.body instanceof FormData)) {
@@ -213,6 +257,39 @@ export async function apiJson(url, options = {}) {
 }
 
 /**
+ * Convert an error to a user-friendly message.
+ * @param {Error} error - The error to convert
+ * @returns {string} - User-friendly error message
+ */
+export function getUserFriendlyErrorMessage(error) {
+  if (error instanceof NetworkError) {
+    return error.message
+  }
+  if (error instanceof ApiError) {
+    return error.message
+  }
+  if (error.name === 'TimeoutError') {
+    return 'Request timed out'
+  }
+  if (error.name === 'TypeError' && error.message === 'Failed to fetch') {
+    return 'Unable to connect to server'
+  }
+  return error.message || 'An error occurred'
+}
+
+/**
+ * Check if an error should show a toast to the user.
+ * @param {Error} error - The error to check
+ * @returns {boolean} - Whether to show a toast
+ */
+export function shouldShowErrorToast(error) {
+  // Don't show toast for user cancellations
+  if (error instanceof AuthCancelledError) return false
+  if (error.name === 'AbortError') return false
+  return true
+}
+
+/**
  * Create an API caller with error handling (toast + console.error).
  * Wraps apiJson calls with consistent error handling for apps.
  *
@@ -229,14 +306,13 @@ export function createApiCaller(showMessage) {
     try {
       return await apiJson(url, options)
     } catch (error) {
-      if (error instanceof AuthCancelledError) {
-        // User cancelled - don't show error toast, just re-throw
+      if (!shouldShowErrorToast(error)) {
         throw error
       }
       // Log full error details
       console.error(`API error for ${url}:`, error instanceof ApiError ? { status: error.status, statusText: error.statusText, data: error.data } : error)
       // Show user-friendly toast
-      showMessage(error.message || 'An error occurred', 'error')
+      showMessage(getUserFriendlyErrorMessage(error), 'error', 4000)
       throw error
     }
   }

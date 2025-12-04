@@ -44,6 +44,7 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import passkey from '@/utils/passkey'
 import { getSettings } from '@/utils/settings'
+import { apiJson, getUserFriendlyErrorMessage } from '@/utils/api'
 
 const props = defineProps({
   mode: {
@@ -120,13 +121,7 @@ async function fetchSettings() {
 
 async function fetchUserInfo() {
   try {
-    const res = await fetch('/auth/api/user-info', { method: 'POST' })
-    if (!res.ok) {
-      userInfo.value = null
-      currentView.value = 'login'
-      return
-    }
-    userInfo.value = await res.json()
+    userInfo.value = await apiJson('/auth/api/user-info', { method: 'POST' })
     // Determine view based on authentication status
     if (isAuthenticated.value && props.mode !== 'reauth') {
       currentView.value = 'forbidden'
@@ -136,6 +131,11 @@ async function fetchUserInfo() {
     }
   } catch (error) {
     console.error('Failed to load user info', error)
+    // For 401/403 just go to login, for other errors show message
+    if (error.status !== 401 && error.status !== 403) {
+      showMessage(getUserFriendlyErrorMessage(error), 'error', 4000)
+    }
+    userInfo.value = null
     currentView.value = 'login'
   }
 }
@@ -168,12 +168,14 @@ async function logoutUser() {
   if (loading.value) return
   loading.value = true
   try {
-    await fetch('/auth/api/logout', { method: 'POST' })
+    await apiJson('/auth/api/logout', { method: 'POST' })
     userInfo.value = null
     // Switch to login view after logout
     currentView.value = 'login'
     showMessage('Logged out. You can sign in with a different account.', 'info', 3000)
-  } catch (_) { /* ignore */ }
+  } catch (error) {
+    showMessage(getUserFriendlyErrorMessage(error), 'error', 4000)
+  }
   finally { loading.value = false }
   emit('logout')
 }
@@ -185,15 +187,10 @@ function openProfile() {
 }
 
 async function setSessionCookie(sessionToken) {
-  const response = await fetch('/auth/api/set-session', {
+  return await apiJson('/auth/api/set-session', {
     method: 'POST', headers: { Authorization: `Bearer ${sessionToken}` }
   })
-  const payload = await safeParseJson(response)
-  if (!response.ok || payload?.detail) throw new Error(payload?.detail || 'Session could not be established.')
-  return payload
 }
-
-async function safeParseJson(response) { try { return await response.json() } catch (_) { return null } }
 
 onMounted(async () => {
   await fetchSettings()
