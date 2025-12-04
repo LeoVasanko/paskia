@@ -62,14 +62,7 @@ async def auth_exception_handler(_request: Request, exc: authz.AuthException):
     """Handle AuthException with auth info for UI."""
     return JSONResponse(
         status_code=exc.status_code,
-        content={
-            "detail": exc.detail,
-            "auth": {
-                "mode": exc.mode,
-                "iframe": f"/auth/restricted/?mode={exc.mode}",
-                **exc.metadata,
-            },
-        },
+        content=authz.auth_error_content(exc),
     )
 
 
@@ -184,27 +177,18 @@ async def forward_authentication(
         wants_html = "text/html" in accept
 
         if wants_html:
-            # Browser request - return HTML with metadata
-            html = frontend.file("int", "forward", "index.html").read_bytes()
-            # Inject mode and any additional metadata
+            # Browser request - return full-page HTML with metadata
             data_attrs = {"mode": e.mode, **e.metadata}
+            html = frontend.file("int", "forward", "index.html").read_bytes()
             html = htmlutil.patch_html_data_attrs(html, **data_attrs)
             return Response(
                 html, status_code=e.status_code, media_type="text/html; charset=UTF-8"
             )
         else:
-            # API request - return JSON with iframe src link
-            iframe_url = f"/auth/restricted/?mode={e.mode}"
+            # API request - return JSON with iframe srcdoc HTML
             return JSONResponse(
                 status_code=e.status_code,
-                content={
-                    "detail": e.detail,
-                    "auth": {
-                        "mode": e.mode,
-                        "iframe": iframe_url,
-                        **e.metadata,
-                    },
-                },
+                content=authz.auth_error_content(e),
             )
 
 

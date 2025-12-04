@@ -49,6 +49,40 @@ let authPromise = null
 let authResolve = null
 let authReject = null
 
+// Cache for auth iframe HTML by mode
+const authIframeHtmlCache = {}
+
+/**
+ * Get the auth iframe HTML for a given mode.
+ * Fetches from /auth/api/forward which returns HTML in the auth.iframe field.
+ * Results are cached per mode.
+ * @param {string} mode - The auth mode ('login', 'reauth', 'forbidden')
+ * @returns {Promise<string>} - The HTML content for the iframe
+ */
+export async function getAuthIframeHtml(mode = 'login') {
+  if (authIframeHtmlCache[mode]) {
+    return authIframeHtmlCache[mode]
+  }
+
+  // Fetch from forward endpoint - it returns HTML in auth.iframe on 401/403
+  const response = await fetch('/auth/api/forward', { credentials: 'include' })
+  if (response.status === 401 || response.status === 403) {
+    const data = await response.json()
+    if (data.auth?.iframe) {
+      // Cache the HTML - it's the same regardless of mode (mode is in data attrs)
+      // But we need to patch the mode in the HTML if different from returned
+      let html = data.auth.iframe
+      if (mode !== data.auth.mode) {
+        // Replace data-mode attribute value
+        html = html.replace(/data-mode="[^"]*"/, `data-mode="${mode}"`)
+      }
+      authIframeHtmlCache[mode] = html
+      return html
+    }
+  }
+  throw new Error('Unable to fetch auth iframe HTML')
+}
+
 /**
  * Check if an auth iframe is already open (from any source).
  * @returns {boolean}
@@ -60,11 +94,11 @@ export function isAuthIframeOpen() {
 /**
  * Show the authentication iframe and return a promise that resolves on success.
  * If an auth iframe is already open (from any source), hooks into its completion.
- * @param {string} iframeSrc - The URL for the iframe src
+ * @param {string} iframeHtml - The HTML content for the iframe srcdoc
  * @returns {Promise<void>}
  * @throws {AuthCancelledError} - If authentication is cancelled by user
  */
-export function showAuthIframe(iframeSrc) {
+export function showAuthIframe(iframeHtml) {
   // If we already have a promise (from us), return it
   if (authPromise) return authPromise
 
@@ -86,11 +120,11 @@ export function showAuthIframe(iframeSrc) {
   // Remove existing iframe if any
   hideAuthIframe()
 
-  // Create new iframe for authentication
+  // Create new iframe for authentication using srcdoc
   authIframe = document.createElement('iframe')
   authIframe.id = 'auth-iframe'
   authIframe.title = 'Authentication'
-  authIframe.src = iframeSrc
+  authIframe.srcdoc = iframeHtml
   document.body.appendChild(authIframe)
 
   return authPromise

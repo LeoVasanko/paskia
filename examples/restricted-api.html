@@ -103,7 +103,32 @@
             }
         });
 
-        function showLoginMode() {
+        // Cache for auth iframe HTML by mode
+        const authIframeHtmlCache = {};
+
+        async function getAuthIframeHtml(mode = 'login') {
+            if (authIframeHtmlCache[mode]) {
+                return authIframeHtmlCache[mode];
+            }
+
+            // Fetch from forward endpoint - it returns HTML in auth.iframe on 401/403
+            const response = await fetch('/auth/api/forward', { credentials: 'include' });
+            if (response.status === 401 || response.status === 403) {
+                const data = await response.json();
+                if (data.auth?.iframe) {
+                    let html = data.auth.iframe;
+                    if (mode !== data.auth.mode) {
+                        // Replace data-mode attribute value
+                        html = html.replace(/data-mode="[^"]*"/, `data-mode="${mode}"`);
+                    }
+                    authIframeHtmlCache[mode] = html;
+                    return html;
+                }
+            }
+            throw new Error('Unable to fetch auth iframe HTML');
+        }
+
+        async function showLoginMode() {
             let iframe = document.getElementById('auth-iframe');
             if (!iframe) {
                 iframe = document.createElement('iframe');
@@ -111,11 +136,11 @@
                 iframe.title = 'Authentication';
                 document.body.appendChild(iframe);
             }
-            iframe.src = '/auth/restricted/?mode=login';
+            iframe.srcdoc = await getAuthIframeHtml('login');
             showStatus('Login mode loaded - for users who are not authenticated', 'info');
         }
 
-        function showReauthMode() {
+        async function showReauthMode() {
             let iframe = document.getElementById('auth-iframe');
             if (!iframe) {
                 iframe = document.createElement('iframe');
@@ -123,17 +148,17 @@
                 iframe.title = 'Authentication';
                 document.body.appendChild(iframe);
             }
-            iframe.src = '/auth/restricted/?mode=reauth';
+            iframe.srcdoc = await getAuthIframeHtml('reauth');
             showStatus('Reauth mode loaded - for additional verification of authenticated users', 'info');
         }
 
-        function showAuthIframe() {
+        async function showAuthIframe() {
             let iframe = document.getElementById('auth-iframe');
             if (!iframe) {
                 iframe = document.createElement('iframe');
                 iframe.id = 'auth-iframe';
                 iframe.title = 'Authentication';
-                iframe.src = '/auth/restricted/';
+                iframe.srcdoc = await getAuthIframeHtml('login');
                 document.body.appendChild(iframe);
                 iframeInitialized = true;
             }
