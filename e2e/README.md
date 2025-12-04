@@ -86,7 +86,7 @@ e2e/
 - WebSocket challenge-response with virtual authenticator
 - Session token creation and validation
 
-### Authentication Flow  
+### Authentication Flow
 - Passkey authentication via WebSocket
 - Credential verification
 - Session management

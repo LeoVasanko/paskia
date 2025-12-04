@@ -27,7 +27,7 @@ export async function createVirtualAuthenticator(
   options: VirtualAuthenticatorOptions = {}
 ): Promise<VirtualAuthenticator> {
   const cdpSession = await page.context().newCDPSession(page)
-  
+
   // Enable WebAuthn in CDP
   await cdpSession.send('WebAuthn.enable', {
     enableUI: false, // Suppress any UI prompts
@@ -81,10 +81,10 @@ export const test = base.extend<{
   virtualAuthenticator: async ({ page }, use) => {
     // Create virtual authenticator before test
     const authenticator = await createVirtualAuthenticator(page)
-    
+
     // Run the test
     await use(authenticator)
-    
+
     // Cleanup after test
     await removeVirtualAuthenticator(authenticator)
   },

@@ -57,34 +57,34 @@ export async function registerPasskey(
 
     return new Promise<any>((resolve, reject) => {
       const ws = new WebSocket(wsUrl)
-      
+
       ws.onopen = () => {
         console.log('WebSocket connected for registration')
       }
-      
+
       ws.onmessage = async (event) => {
         const data = JSON.parse(event.data)
-        
+
         // Check for error response
         if (data.detail) {
           ws.close()
           reject(new Error(data.detail))
           return
         }
-        
+
         // Check if this is the final success response
         if (data.session_token) {
           ws.close()
           resolve(data)
           return
         }
-        
+
         // This should be the registration options from server
         // Use the native WebAuthn API with the virtual authenticator
         try {
           // Convert base64url challenge to ArrayBuffer
           const challenge = Uint8Array.from(atob(data.challenge.replace(/-/g, '+').replace(/_/g, '/')), c => c.charCodeAt(0))
-          
+
           // Build the credential creation options
           const publicKeyCredentialCreationOptions: CredentialCreationOptions = {
             publicKey: {
@@ -108,16 +108,16 @@ export async function registerPasskey(
               })) || [],
             }
           }
-          
+
           // Create the credential using native WebAuthn API (virtual authenticator handles it)
           const credential = await navigator.credentials.create(publicKeyCredentialCreationOptions) as PublicKeyCredential
-          
+
           if (!credential) {
             throw new Error('Failed to create credential')
           }
-          
+
           const response = credential.response as AuthenticatorAttestationResponse
-          
+
           // Convert response to JSON format expected by server
           const registrationResponse = {
             id: credential.id,
@@ -131,18 +131,18 @@ export async function registerPasskey(
             clientExtensionResults: credential.getClientExtensionResults(),
             authenticatorAttachment: (credential as any).authenticatorAttachment,
           }
-          
+
           ws.send(JSON.stringify(registrationResponse))
         } catch (error: any) {
           ws.close()
           reject(new Error(error.message || 'Registration failed'))
         }
       }
-      
+
       ws.onerror = () => {
         reject(new Error('WebSocket error during registration'))
       }
-      
+
       ws.onclose = (event) => {
         if (!event.wasClean && event.code !== 1000) {
           reject(new Error(`WebSocket closed unexpectedly: ${event.code}`))
@@ -165,33 +165,33 @@ export async function authenticatePasskey(
 
     return new Promise<any>((resolve, reject) => {
       const ws = new WebSocket(wsUrl)
-      
+
       ws.onopen = () => {
         console.log('WebSocket connected for authentication')
       }
-      
+
       ws.onmessage = async (event) => {
         const data = JSON.parse(event.data)
-        
+
         // Check for error response
         if (data.detail) {
           ws.close()
           reject(new Error(data.detail))
           return
         }
-        
+
         // Check if this is the final success response
         if (data.session_token) {
           ws.close()
           resolve(data)
           return
         }
-        
+
         // This should be the authentication options from server
         try {
           // Convert base64url challenge to ArrayBuffer
           const challenge = Uint8Array.from(atob(data.challenge.replace(/-/g, '+').replace(/_/g, '/')), c => c.charCodeAt(0))
-          
+
           // Build the credential request options
           const publicKeyCredentialRequestOptions: CredentialRequestOptions = {
             publicKey: {
@@ -206,16 +206,16 @@ export async function authenticatePasskey(
               })) || [],
             }
           }
-          
+
           // Get the credential using native WebAuthn API (virtual authenticator handles it)
           const credential = await navigator.credentials.get(publicKeyCredentialRequestOptions) as PublicKeyCredential
-          
+
           if (!credential) {
             throw new Error('Failed to get credential')
           }
-          
+
           const response = credential.response as AuthenticatorAssertionResponse
-          
+
           // Convert response to JSON format expected by server
           const authenticationResponse = {
             id: credential.id,
@@ -230,18 +230,18 @@ export async function authenticatePasskey(
             clientExtensionResults: credential.getClientExtensionResults(),
             authenticatorAttachment: (credential as any).authenticatorAttachment,
           }
-          
+
           ws.send(JSON.stringify(authenticationResponse))
         } catch (error: any) {
           ws.close()
           reject(new Error(error.message || 'Authentication failed'))
         }
       }
-      
+
       ws.onerror = () => {
         reject(new Error('WebSocket error during authentication'))
       }
-      
+
       ws.onclose = (event) => {
         if (!event.wasClean && event.code !== 1000) {
           reject(new Error(`WebSocket closed unexpectedly: ${event.code}`))
