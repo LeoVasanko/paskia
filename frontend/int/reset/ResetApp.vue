@@ -168,7 +168,6 @@ async function setSessionCookie(sessionToken) {
     }
   })
 }
-}
 
 function redirectHome() {
   const target = uiBasePath.value || '/auth/'
