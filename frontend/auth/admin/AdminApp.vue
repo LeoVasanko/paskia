@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted, onBeforeUnmount, onUnmounted, computed, watch } from 'vue'
+import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
 import Breadcrumbs from '@/components/Breadcrumbs.vue'
 import CredentialList from '@/components/CredentialList.vue'
 import UserBasicInfo from '@/components/UserBasicInfo.vue'
@@ -13,7 +13,7 @@ import AdminUserDetail from '@/admin/AdminUserDetail.vue'
 import AdminDialogs from '@/admin/AdminDialogs.vue'
 import { useAuthStore } from '@/stores/auth'
 import { getSettings, adminUiPath, makeUiHref } from '@/utils/settings'
-import { apiJson, getAuthIframeUrl } from '@/utils/api'
+import { apiJson } from '@/utils/api'
 
 const info = ref(null)
 const loading = ref(true)
@@ -37,7 +37,6 @@ const editingPermDisplay = ref(null)
 const renameDisplayValue = ref('')
 const dialog = ref({ type: null, data: null, busy: false, error: '' })
 const safeIdRegex = /[^A-Za-z0-9:._~-]/g
-let authIframe = null
 
 function sanitizeRenameId() { if (renameIdValue.value) renameIdValue.value = renameIdValue.value.replace(safeIdRegex, '') }
 
@@ -50,11 +49,17 @@ function handleGlobalClick(e) {
   }
 }
 
-onMounted(() => {
+onMounted(async () => {
   document.addEventListener('click', handleGlobalClick)
+  window.addEventListener('hashchange', parseHash)
+  const settings = await getSettings()
+  if (settings?.rp_name) document.title = settings.rp_name + ' Admin'
+  await load()
 })
-onBeforeUnmount(() => {
+
+onUnmounted(() => {
   document.removeEventListener('click', handleGlobalClick)
+  window.removeEventListener('hashchange', parseHash)
 })
 
 // Build a summary: for each permission id -> { orgs: Set(org_display_name), userCount }
@@ -153,14 +158,8 @@ async function loadPermissions() {
 }
 
 async function loadUserInfo() {
-  try {
-    info.value = await apiJson('/auth/api/user-info', { method: 'POST' })
-    authenticated.value = true
-    return true
-  } catch (e) {
-    error.value = e.message
-    return false
-  }
+  info.value = await apiJson('/auth/api/user-info', { method: 'POST' })
+  authenticated.value = true
 }
 
 async function load() {
@@ -168,19 +167,11 @@ async function load() {
   loadingMessage.value = 'Loading...'
   error.value = null
   try {
-    if (!await loadUserInfo()) return
+    // Load admin data first - apiJson will handle 401/403 with iframe authentication
+    await Promise.all([loadOrgs(), loadPermissions()])
+    // If we get here, user has admin access - now fetch user info for display
+    await loadUserInfo()
 
-    // Check if user has required permissions
-    if (info.value.authenticated && !(info.value.is_global_admin || info.value.is_org_admin)) {
-      // User is authenticated but lacks required permissions - show forbidden view
-      error.value = 'You do not have permission to access this area.'
-      loading.value = false
-      return
-    }
-
-    if (info.value.authenticated && (info.value.is_global_admin || info.value.is_org_admin)) {
-      await Promise.all([loadOrgs(), loadPermissions()])
-    }
     if (!info.value.is_global_admin && info.value.is_org_admin && orgs.value.length === 1) {
       if (!window.location.hash || window.location.hash === '#overview') {
         currentOrgId.value = orgs.value[0].uuid
@@ -191,7 +182,11 @@ async function load() {
       }
     } else parseHash()
   } catch (e) {
-    error.value = e.message
+    if (e.name === 'AuthCancelledError') {
+      showBackMessage.value = true
+    } else {
+      error.value = e.message
+    }
   } finally {
     loading.value = false
   }
@@ -297,76 +292,9 @@ function deletePermission(p) {
   } })
 }
 
-async function showAuthIframe() {
-  hideAuthIframe()
-  const url = await getAuthIframeUrl('login')
-  authIframe = document.createElement('iframe')
-  authIframe.id = 'auth-iframe'
-  authIframe.title = 'Authentication'
-  authIframe.allow = 'publickey-credentials-get; publickey-credentials-create'
-  authIframe.src = url
-  document.body.appendChild(authIframe)
-  loadingMessage.value = 'Authentication required...'
-}
-
-function hideAuthIframe() {
-  if (authIframe) {
-    authIframe.remove()
-    authIframe = null
-  }
-}
-
 function reloadPage() {
   window.location.reload()
 }
-
-function handleAuthMessage(event) {
-  const data = event.data
-  if (!data?.type) return
-
-  switch (data.type) {
-    case 'auth-success':
-      hideAuthIframe()
-      loading.value = true
-      loadingMessage.value = 'Loading admin panel...'
-      authStore.clearAuthRequired()
-      load()
-      break
-
-    case 'auth-error':
-      if (!data.cancelled) {
-        authStore.showMessage(data.message || 'Authentication failed', 'error', 5000)
-      }
-      break
-
-    case 'auth-back':
-      hideAuthIframe()
-      loading.value = false
-      showBackMessage.value = true
-      authStore.showMessage('Authentication cancelled', 'info', 3000)
-      break
-
-    case 'auth-close-request':
-      hideAuthIframe()
-      break
-  }
-}
-
-onMounted(async () => {
-  window.addEventListener('message', handleAuthMessage)
-  window.addEventListener('hashchange', parseHash)
-  const settings = await getSettings()
-  if (settings?.rp_name) document.title = settings.rp_name + ' Admin'
-  await load()
-  if (authStore.authRequired) {
-    showAuthIframe()
-  }
-})
-
-onUnmounted(() => {
-  window.removeEventListener('message', handleAuthMessage)
-  hideAuthIframe()
-})
 
 const selectedOrg = computed(() => orgs.value.find(o => o.uuid === currentOrgId.value) || null)
 

@@ -228,9 +228,10 @@ export async function apiFetch(url, options = {}) {
         // If we can't parse JSON, no iframe available
       }
 
-      // Authenticate via iframe (if not already in a frame, and no existing #auth-iframe)
-      if (authInfo?.iframe && window === window.top && !isAuthIframeOpen()) {
-        // Show auth iframe and wait for success (throws AuthCancelledError on cancel)
+      // Authenticate via iframe (only in top-level window)
+      if (authInfo?.iframe && window === window.top) {
+        // Show auth iframe (or wait for existing one) and retry on success
+        // showAuthIframe returns existing promise if iframe is already open
         await showAuthIframe(authInfo.iframe)
         continue  // Retry the original request
       }
