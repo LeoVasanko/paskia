@@ -5,7 +5,8 @@ build-backend = "hatchling.build"
 [project]
 name = "paskia"
 dynamic = ["version"]
-description = "Passkey Authentication for Web Services"
+description = "Passkey Auth made easy: all sites and APIs can be guarded even without any changes on the protected site."
+keywords = [ "forward_auth", "auth_request", "FastAPI" ]
 authors = [
     {name = "Leo Vasanko"},
 ]
