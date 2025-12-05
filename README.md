@@ -1,128 +1,61 @@
 # Paskia
 
-A minimal FastAPI WebAuthn server with WebSocket support for passkey registration. This project demonstrates WebAuthn registration flow with Resident Keys (discoverable credentials) using modern Python tooling.
+An easy to install passkey-based authentication service that protects any web application with strong passwordless login.
 
-## Features
+## What is Paskia?
 
-- 🔐 WebAuthn registration with Resident Keys support
-- 🔌 WebSocket-based communication for real-time interaction
-- 🚀 Modern Python packaging with `pyproject.toml`
-- 🎨 Clean, responsive HTML interface using @simplewebauthn/browser
-- 📦 No database required - challenges stored locally per connection
-- 🛠️ Development tools: `ruff` for linting and formatting
-- 🧹 Clean architecture with local challenge management
+- Easy to use fully featured auth&auth system (login and permissions)
+- Organization and role-based access control (optional)
+   * Org admins control their users and roles
+   * Master admin can create multiple independent orgs
+   * Master admin makes permissions available for orgs to assign
+- User Profile and Administration by API and web interface.
+under `/auth/` or `auth.example.com`
+- Reset tokens and additional device linking via QR code or codewords.
+- Pure Python, FastAPI, packaged with prebuilt Vue frontend
 
-## Docs
+Two interfaces:
+- API fetch: auth checks and login without leaving your app
+- Forward-auth proxy: protect any unprotected site or service (Caddy, Nginx)
 
-- Caddy integration: see `CADDY.md` for short, copy-paste snippets to secure your site with Caddy.
+The API mode is useful for applications that can be customized to run with Paskia. Forward auth can also protect your javascript and other assets. Each provides fine-grained permission control and reauthentication requests where needed, and both can be mixed where needed.
 
-## Requirements
-
-- Python 3.9+
-- A WebAuthn-compatible authenticator (security key, biometric device, etc.)
+Single Sign-On (SSO): Users register once and authenticate across all applications under your domain name (configured rp-id).
 
 ## Quick Start
 
-### Install (editable dev mode)
+Install [UV](https://docs.astral.sh/uv/getting-started/installation/) and run:
 
 ```fish
-uv pip install -e .[dev]
+uvx paskia serve --rp-id example.com
 ```
 
-### Run (new CLI)
+On the first run it downloads the software and prints a registration link for the Admin. Consider `uv tool install paskia` for a permanent install of `paskia` CLI.
 
-`paskia` now provides subcommands:
+The server will start up on [localhost:4401](http://localhost:4401) "for authentication required", serving for `*.example.com`.
+
+If you are going to be connecting `localhost` directly, for testing, leave out the rp-id. Otherwise you will need a web server such as [Caddy](https://caddyserver.com/) to serve HTTPS on your actual domain names and proxy requests to Paskia and your backend apps.
+
+## Configuration
+
+There is no config file. Pass only the options on CLI:
 
 ```text
-paskia serve [host:port] [--options]
+paskia serve [options]
 ```
 
-Examples (fish shell shown):
+Options (all optional):
 
-```fish
-# Production style (no reload)
-paskia serve
-paskia serve 0.0.0.0:8080 --rp-id example.com --origin https://example.com
+- Listen address (one of):
+    * `[host]:port`: Address and port (default: `localhost:4401`)
+    * `unix:/path.sock`: Unix socket
+- `--rp-id <domain>`: Domain name for authentication (required for production)
+- `--rp-name "<text>"`: Name of your company or site (default: same as rp-id)
+- `--origin <url>`: Explicit single site (default: `https://<rp-id>`)
+- `--auth-host <domain>`: Dedicated authentication site (e.g., `auth.example.com`)
 
-# Development (auto-reload via scripts/dev.py)
-python scripts/dev.py            # localhost:4401
-python scripts/dev.py :5500      # localhost on port 5500
-python scripts/dev.py 127.0.0.1  # host only, default port 4401
-```
+## Documentation
 
-Available options (both subcommands):
-
-```text
---rp-id <id>        Relying Party ID (default: localhost)
---rp-name <name>    Relying Party name (default: same as rp-id)
---origin <url>      Explicit origin (default: https://<rp-id>)
-```
-
-### Legacy Invocation
-
-If you previously used `python -m paskia.fastapi --dev --host ...`, switch to the new form above. The old flags `--host`, `--port`, and `--dev` are replaced by using `scripts/dev.py` for development mode.
-
-## Usage (Web)
-
-1. Start the server with one of the commands above
-2. Open your browser to `http://localhost:4401/auth/` (or your chosen host/port)
-3. Enter a username (or use the default)
-4. Click "Register Passkey"
-5. Follow your authenticator's prompts
-
-Real-time status updates stream over WebSocket.
-
-## Development
-
-### Code Quality
-
-```fish
-# Run linting and formatting with ruff
-uv run ruff check .
-uv run ruff format .
-
-# Or with hatch
-hatch run ruff check .
-hatch run ruff format .
-```
-
-### Project Structure
-
-```
-paskia/
-├── paskia/
-│   ├── __init__.py
-│   └── main.py          # FastAPI server with WebSocket support
-├── static/
-│   └── index.html       # Frontend interface
-├── pyproject.toml       # Modern Python packaging configuration
-└── README.md
-```
-
-## Technical Details
-
-### WebAuthn Configuration
-
-- **Relying Party ID**: `localhost` (for development)
-- **Resident Keys**: Required (enables discoverable credentials)
-- **User Verification**: Preferred
-- **Supported Algorithms**: ECDSA-SHA256, RSASSA-PKCS1-v1_5-SHA256
-
-### WebSocket Message Flow
-
-1. Client connects to `/ws/{client_id}`
-2. Client sends `registration_challenge` message
-3. Server responds with `registration_challenge_response`
-4. Client completes WebAuthn ceremony and sends `registration_response`
-5. Server verifies and responds with `registration_success` or `error`
-
-### Security Notes
-
-- This is a minimal demo - challenges are stored locally per WebSocket connection
-- For production use, implement proper user storage and session management
-- Consider using Redis or similar for challenge storage in production with multiple server instances
-- Ensure HTTPS in production environments
-
-## License
-
-MIT License - feel free to use this as a starting point for your own WebAuthn implementations!
+- `API.md`: Complete HTTP and WebSocket API reference
+- `Caddy.md`: Caddy configuration examples
+- `Headers.md`: HTTP headers passed to protected applications
