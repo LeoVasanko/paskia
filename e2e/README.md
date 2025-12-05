@@ -1,6 +1,6 @@
-# PasskeyAuth E2E Tests
+# Paskia E2E Tests
 
-End-to-end tests for PasskeyAuth using [Playwright](https://playwright.dev/) with Chrome's **Virtual Authenticator**.
+End-to-end tests for Paskia using [Playwright](https://playwright.dev/) with Chrome's **Virtual Authenticator**.
 
 ## Overview
 
@@ -33,7 +33,7 @@ npm test
 ```
 
 This will:
-1. Start a fresh PasskeyAuth server with a test database
+1. Start a fresh Paskia server with a test database
 2. Run all E2E tests against it
 3. Clean up the server when done
 

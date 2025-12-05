@@ -1,6 +1,6 @@
-# PassKey Auth API Documentation
+# Paskia API Documentation
 
-This document lists the HTTP and WebSocket endpoints exposed by the PassKey Auth
+This document lists the HTTP and WebSocket endpoints exposed by the Paskia
 service and how they behave depending on whether a dedicated authentication host
 (`--auth-host` / environment `PASSKEY_AUTH_HOST`) is configured.
 

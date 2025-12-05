@@ -45,7 +45,7 @@ export default async function globalSetup() {
 
   // Start the server using Node's spawn
   const serverProcess = spawn('uv', [
-    'run', 'passkey-auth', 'serve', ':4401',
+    'run', 'paskia', 'serve', ':4401',
     '--rp-id', 'localhost',
     '--origin', 'http://localhost:4401'
   ], {

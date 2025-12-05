@@ -10,7 +10,7 @@ import {
 } from './fixtures/passkey-helpers'
 
 /**
- * E2E tests for PasskeyAuth using Chrome's Virtual Authenticator.
+ * E2E tests for Paskia using Chrome's Virtual Authenticator.
  *
  * These tests exercise the complete WebAuthn flow:
  * 1. Registration via WebSocket using bootstrap reset token
