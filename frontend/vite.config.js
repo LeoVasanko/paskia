@@ -27,7 +27,7 @@ export default defineConfig(({ command }) => ({
       closeBundle() {
         if (command !== 'build') return
 
-        const outDir = resolve(__dirname, '../passkey/frontend-build')
+        const outDir = resolve(__dirname, '../paskia/frontend-build')
         const moves = [
           { from: 'auth.html', to: 'auth/index.html' },
           { from: 'admin.html', to: 'admin/index.html' },
@@ -69,7 +69,7 @@ export default defineConfig(({ command }) => ({
     }
   },
   build: {
-    outDir: '../passkey/frontend-build',
+    outDir: '../paskia/frontend-build',
     emptyOutDir: true,
     rollupOptions: {
       input: {

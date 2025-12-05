@@ -1,7 +1,7 @@
 import { defineConfig, devices } from '@playwright/test'
 
 /**
- * Playwright configuration for PasskeyAuth E2E tests.
+ * Playwright configuration for Paskia E2E tests.
  * Uses Chrome's Virtual Authenticator for automated passkey testing.
  *
  * Run with: bun run test
@@ -23,7 +23,7 @@ export default defineConfig({
   globalTeardown: './tests/global-teardown.ts',
 
   use: {
-    // Base URL for the passkey-auth server
+    // Base URL for the Paskia server
     baseURL: process.env.BASE_URL || 'http://localhost:4401',
 
     // Collect trace on failure for debugging

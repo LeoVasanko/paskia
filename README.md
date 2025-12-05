@@ -1,4 +1,4 @@
-# PasskeyAuth
+# Paskia
 
 A minimal FastAPI WebAuthn server with WebSocket support for passkey registration. This project demonstrates WebAuthn registration flow with Resident Keys (discoverable credentials) using modern Python tooling.
 
@@ -31,24 +31,23 @@ uv pip install -e .[dev]
 
 ### Run (new CLI)
 
-`passkey-auth` now provides subcommands:
+`paskia` now provides subcommands:
 
 ```text
-passkey-auth serve [host:port] [--options]
-passkey-auth dev   [--options]
+paskia serve [host:port] [--options]
 ```
 
 Examples (fish shell shown):
 
 ```fish
 # Production style (no reload)
-passkey-auth serve
-passkey-auth serve 0.0.0.0:8080 --rp-id example.com --origin https://example.com
+paskia serve
+paskia serve 0.0.0.0:8080 --rp-id example.com --origin https://example.com
 
-# Development (auto-reload)
-passkey-auth dev            # localhost:4401
-passkey-auth dev :5500      # localhost on port 5500
-passkey-auth dev 127.0.0.1  # host only, default port 4401
+# Development (auto-reload via scripts/dev.py)
+python scripts/dev.py            # localhost:4401
+python scripts/dev.py :5500      # localhost on port 5500
+python scripts/dev.py 127.0.0.1  # host only, default port 4401
 ```
 
 Available options (both subcommands):
@@ -61,7 +60,7 @@ Available options (both subcommands):
 
 ### Legacy Invocation
 
-If you previously used `python -m passkey.fastapi --dev --host ...`, switch to the new form above. The old flags `--host`, `--port`, and `--dev` are replaced by the `[host:port]` positional and the `dev` subcommand.
+If you previously used `python -m paskia.fastapi --dev --host ...`, switch to the new form above. The old flags `--host`, `--port`, and `--dev` are replaced by using `scripts/dev.py` for development mode.
 
 ## Usage (Web)
 
@@ -90,8 +89,8 @@ hatch run ruff format .
 ### Project Structure
 
 ```
-passkeyauth/
-├── passkeyauth/
+paskia/
+├── paskia/
 │   ├── __init__.py
 │   └── main.py          # FastAPI server with WebSocket support
 ├── static/

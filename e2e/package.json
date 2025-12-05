@@ -1,8 +1,8 @@
 {
-  "name": "passkey-auth-e2e",
+  "name": "paskia-e2e",
   "version": "1.0.0",
   "private": true,
-  "description": "E2E tests for PasskeyAuth using Playwright with Virtual Authenticator",
+  "description": "E2E tests for Paskia using Playwright with Virtual Authenticator",
   "type": "module",
   "scripts": {
     "test": "bunx playwright test",

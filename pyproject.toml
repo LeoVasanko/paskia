@@ -3,7 +3,7 @@ requires = ["hatchling", "hatch-vcs"]
 build-backend = "hatchling.build"
 
 [project]
-name = "passkey"
+name = "paskia"
 dynamic = ["version"]
 description = "Passkey Authentication for Web Services"
 authors = [
@@ -26,7 +26,7 @@ requires-python = ">=3.10"
 source = "vcs"
 
 [tool.hatch.build.hooks.vcs]
-version-file = "passkey/_version.py"
+version-file = "paskia/_version.py"
 
 [project.optional-dependencies]
 dev = [
@@ -40,11 +40,11 @@ line-length = 88
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "W", "UP"]
 ignore = ["E501"]  # Line too long
-isort.known-first-party = ["passkey"]
+isort.known-first-party = ["paskia"]
 
 [project.scripts]
-passkey-auth = "passkey.fastapi.__main__:main"
+paskia = "paskia.fastapi.__main__:main"
 
 [tool.hatch.build]
-artifacts = ["passkey/frontend-build"]
+artifacts = ["paskia/frontend-build"]
 targets.sdist.hooks.custom.path = "scripts/build-frontend.py"
