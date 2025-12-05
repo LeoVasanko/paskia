@@ -7,11 +7,8 @@ from urllib.parse import urlparse
 
 import uvicorn
 
-from passkey.util import frontend
-
 DEFAULT_HOST = "localhost"
 DEFAULT_SERVE_PORT = 4401
-DEFAULT_DEV_PORT = 4402
 
 
 def is_subdomain(sub: str, domain: str) -> bool:
@@ -147,18 +144,6 @@ def main():
     )
     add_common_options(serve)
 
-    # dev subcommand
-    dev = sub.add_parser("dev", help="Run the server in development (auto-reload)")
-    dev.add_argument(
-        "hostport",
-        nargs="?",
-        help=(
-            "Endpoint (default: localhost:4402). Forms: host[:port] | :port | "
-            "[ipv6][:port] | ipv6 | unix:/path.sock"
-        ),
-    )
-    add_common_options(dev)
-
     # reset subcommand
     reset = sub.add_parser(
         "reset",
@@ -176,26 +161,17 @@ def main():
 
     args = parser.parse_args()
 
-    if args.command in {"serve", "dev"}:
-        default_port = DEFAULT_DEV_PORT if args.command == "dev" else DEFAULT_SERVE_PORT
-        host, port, uds, all_ifaces = parse_endpoint(args.hostport, default_port)
-        devmode = args.command == "dev"
+    if args.command == "serve":
+        host, port, uds, all_ifaces = parse_endpoint(args.hostport, DEFAULT_SERVE_PORT)
     else:
         host = port = uds = all_ifaces = None  # type: ignore
-        devmode = False
-
-    # Determine origin (dev mode default override)
-    origin = args.origin
-    if devmode and not args.origin and not args.rp_id:
-        # Dev mode: Vite runs on another port, override:
-        origin = "http://localhost:4403"
 
     # Export configuration via environment for lifespan initialization in each process
     os.environ.setdefault("PASSKEY_RP_ID", args.rp_id)
     if args.rp_name:
         os.environ["PASSKEY_RP_NAME"] = args.rp_name
-    if origin:
-        os.environ["PASSKEY_ORIGIN"] = origin
+    if args.origin:
+        os.environ["PASSKEY_ORIGIN"] = args.origin
     if getattr(args, "auth_host", None):
         os.environ["PASSKEY_AUTH_HOST"] = args.auth_host
     else:
@@ -216,7 +192,7 @@ def main():
         _globals.init(
             rp_id=args.rp_id,
             rp_name=args.rp_name,
-            origin=origin,
+            origin=args.origin,
             default_admin=os.getenv("PASSKEY_DEFAULT_ADMIN") or None,
             default_org=os.getenv("PASSKEY_DEFAULT_ORG") or None,
             bootstrap=True,
@@ -230,12 +206,21 @@ def main():
         exit_code = reset_cmd.run(getattr(args, "query", None))
         raise SystemExit(exit_code)
 
-    if args.command in {"serve", "dev"}:
+    if args.command == "serve":
         run_kwargs: dict = {
-            "reload": devmode,
-            "reload_dirs": ["passkey"] if devmode else None,
             "log_level": "info",
         }
+
+        # Dev mode: enable reload when PASSKEY_DEVMODE is set
+        devmode = os.environ.get("PASSKEY_DEVMODE") == "1"
+        if devmode:
+            # Security: dev mode must run on localhost:4402 to prevent
+            # accidental public exposure of the Vite dev server
+            if host != "localhost" or port != 4402:
+                raise SystemExit(f"Dev mode requires localhost:4402, got {host}:{port}")
+            run_kwargs["reload"] = True
+            run_kwargs["reload_dirs"] = ["passkey"]
+
         if uds:
             run_kwargs["uds"] = uds
         else:
@@ -243,16 +228,14 @@ def main():
                 run_kwargs["host"] = host
                 run_kwargs["port"] = port
 
-        if devmode:
-            os.environ["PASSKEY_DEVMODE"] = "1"
-            frontend.run_dev()
-
         if all_ifaces and not uds:
+            # Dev mode with all interfaces: use simple single-server approach
             if devmode:
                 run_kwargs["host"] = "::"
                 run_kwargs["port"] = port
                 uvicorn.run("passkey.fastapi:app", **run_kwargs)
             else:
+                # Production: run separate servers for IPv4 and IPv6
                 from uvicorn import Config, Server  # noqa: E402 local import
 
                 from passkey.fastapi import (
