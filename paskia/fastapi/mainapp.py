@@ -15,26 +15,24 @@ from paskia.util import frontend, hostutil, passphrase
 async def lifespan(app: FastAPI):  # pragma: no cover - startup path
     """Application lifespan to ensure globals (DB, passkey) are initialized in each process.
 
-    We populate configuration from environment variables (set by the CLI entrypoint)
+    Configuration is passed via PASKIA_CONFIG JSON env variable (set by the CLI entrypoint)
     so that uvicorn reload / multiprocess workers inherit the settings.
+    All keys are guaranteed to exist; values are already normalized by __main__.py.
     """
+    import json
+
     from paskia import globals
 
-    rp_id = os.getenv("PASKIA_RP_ID", "localhost")
-    rp_name = os.getenv("PASKIA_RP_NAME") or None
-    origin = os.getenv("PASKIA_ORIGIN") or None
-    default_admin = (
-        os.getenv("PASKIA_DEFAULT_ADMIN") or None
-    )  # still passed for context
-    default_org = os.getenv("PASKIA_DEFAULT_ORG") or None
+    config = json.loads(os.environ["PASKIA_CONFIG"])
+
     try:
         # CLI (__main__) performs bootstrap once; here we skip to avoid duplicate work
         await globals.init(
-            rp_id=rp_id,
-            rp_name=rp_name,
-            origin=origin,
-            default_admin=default_admin,
-            default_org=default_org,
+            rp_id=config["rp_id"],
+            rp_name=config["rp_name"],
+            origins=config["origins"],
+            default_admin=config["default_admin"],
+            default_org=config["default_org"],
             bootstrap=False,
         )
     except ValueError as e:

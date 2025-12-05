@@ -42,19 +42,30 @@ def websocket_error_handler(func):
 app = FastAPI()
 
 
+def _validate_origin(ws: WebSocket) -> str:
+    """Extract and validate origin from WebSocket request headers.
+
+    Raises:
+        ValueError: If origin header is missing or not in allowed list
+    """
+    origin = ws.headers.get("origin")
+    if not origin:
+        raise ValueError("Origin header is required for WebSocket connections")
+    return passkey.instance.validate_origin(origin)
+
+
 async def register_chat(
     ws: WebSocket,
     user_uuid: UUID,
     user_name: str,
+    origin: str,
     credential_ids: list[bytes] | None = None,
-    origin: str | None = None,
 ):
     """Generate registration options and send them to the client."""
     options, challenge = passkey.instance.reg_generate_options(
         user_id=user_uuid,
         user_name=user_name,
         credential_ids=credential_ids,
-        origin=origin,
     )
     await ws.send_json({"optionsJSON": options})
     response = await ws.receive_json()
@@ -75,7 +86,7 @@ async def websocket_register_add(
     - Normal session via auth cookie (requires recent authentication)
     - Reset token supplied as ?reset=... (auth cookie ignored)
     """
-    origin = ws.headers["origin"]
+    origin = _validate_origin(ws)
     host = origin.split("://", 1)[1]
     if reset is not None:
         if not passphrase.is_well_formed(reset):
@@ -100,7 +111,7 @@ async def websocket_register_add(
     challenge_ids = await db.instance.get_credentials_by_user_uuid(user_uuid)
 
     # WebAuthn registration
-    credential = await register_chat(ws, user_uuid, user_name, challenge_ids, origin)
+    credential = await register_chat(ws, user_uuid, user_name, origin, challenge_ids)
 
     # Create a new session and store everything in database
     token = create_token()
@@ -131,7 +142,7 @@ async def websocket_register_add(
 @app.websocket("/authenticate")
 @websocket_error_handler
 async def websocket_authenticate(ws: WebSocket, auth=AUTH_COOKIE):
-    origin = ws.headers["origin"]
+    origin = _validate_origin(ws)
     host = origin.split("://", 1)[1]
 
     # If there's an existing session, restrict to that user's credentials (reauth)
@@ -166,7 +177,7 @@ async def websocket_authenticate(ws: WebSocket, auth=AUTH_COOKIE):
         raise ValueError("This passkey belongs to a different account")
 
     # Verify the credential matches the stored data
-    passkey.instance.auth_verify(credential, challenge, stored_cred, origin=origin)
+    passkey.instance.auth_verify(credential, challenge, stored_cred, origin)
     # Update both credential and user's last_seen timestamp
     await db.instance.login(stored_cred.user_uuid, stored_cred)
 

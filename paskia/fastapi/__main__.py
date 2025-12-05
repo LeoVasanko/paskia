@@ -111,7 +111,13 @@ def add_common_options(p: argparse.ArgumentParser) -> None:
         "--rp-id", default="localhost", help="Relying Party ID (default: localhost)"
     )
     p.add_argument("--rp-name", help="Relying Party name (default: same as rp-id)")
-    p.add_argument("--origin", help="Origin URL (default: https://<rp-id>)")
+    p.add_argument(
+        "--origin",
+        action="append",
+        dest="origins",
+        metavar="URL",
+        help="Allowed origin URL(s). May be specified multiple times. If any are specified, only those origins are permitted for WebSocket authentication.",
+    )
     p.add_argument(
         "--auth-host",
         help=(
@@ -166,23 +172,41 @@ def main():
     else:
         host = port = uds = all_ifaces = None  # type: ignore
 
-    # Export configuration via environment for lifespan initialization in each process
-    os.environ.setdefault("PASKIA_RP_ID", args.rp_id)
-    if args.rp_name:
-        os.environ["PASKIA_RP_NAME"] = args.rp_name
-    if args.origin:
-        os.environ["PASKIA_ORIGIN"] = args.origin
-    if getattr(args, "auth_host", None):
-        os.environ["PASKIA_AUTH_HOST"] = args.auth_host
-    else:
+    # Collect origins and handle auth_host
+    origins = getattr(args, "origins", None) or []
+    if not getattr(args, "auth_host", None):
         # Preserve pre-set env variable if CLI option omitted
         args.auth_host = os.environ.get("PASKIA_AUTH_HOST")
 
     if args.auth_host:
+        # Normalize auth_host with scheme
+        if "://" not in args.auth_host:
+            args.auth_host = f"https://{args.auth_host}"
+
         validate_auth_host(args.auth_host, args.rp_id)
         from paskia.util import hostutil as _hostutil  # local import
 
         _hostutil.reload_config()
+
+        # If origins are configured, ensure auth_host is included at top
+        if origins:
+            # Insert auth_host at the beginning (Passkey.__init__ will normalize/dedupe)
+            origins.insert(0, args.auth_host)
+
+    # Export configuration via single JSON env variable for worker processes
+    # (PASKIA_DEVMODE is kept separate as it's externally defined)
+    # All keys are always present; None is used where no value is configured
+    import json
+
+    config = {
+        "rp_id": args.rp_id,
+        "rp_name": args.rp_name or None,
+        "origins": origins or None,
+        "auth_host": args.auth_host or None,
+        "default_admin": os.getenv("PASKIA_DEFAULT_ADMIN") or None,
+        "default_org": os.getenv("PASKIA_DEFAULT_ORG") or None,
+    }
+    os.environ["PASKIA_CONFIG"] = json.dumps(config)
 
     # One-time initialization + bootstrap before starting any server processes.
     # Lifespan in worker processes will call globals.init with bootstrap disabled.
@@ -190,14 +214,19 @@ def main():
 
     asyncio.run(
         _globals.init(
-            rp_id=args.rp_id,
-            rp_name=args.rp_name,
-            origin=args.origin,
-            default_admin=os.getenv("PASKIA_DEFAULT_ADMIN") or None,
-            default_org=os.getenv("PASKIA_DEFAULT_ORG") or None,
+            rp_id=config["rp_id"],
+            rp_name=config["rp_name"],
+            origins=config["origins"],
+            default_admin=config["default_admin"],
+            default_org=config["default_org"],
             bootstrap=True,
         )
     )
+
+    # Print startup configuration
+    from paskia.util import startupbox
+
+    startupbox.print_startup_config(_globals.passkey.instance, args, host, port, uds)
 
     # Handle recover-admin command (no server start)
     if args.command == "reset":
