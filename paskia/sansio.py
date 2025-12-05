@@ -47,7 +47,7 @@ class Passkey:
         self,
         rp_id: str,
         rp_name: str | None = None,
-        origin: str | None = None,
+        origins: list[str] | None = None,
         supported_pub_key_algs: list[COSEAlgorithmIdentifier] | None = None,
     ):
         """
@@ -56,27 +56,30 @@ class Passkey:
         Args:
             rp_id: Your security domain (e.g. "example.com")
             rp_name: The relying party display name (e.g. "Example App"). May be shown in authenticators.
-            origin: The origin URL of the application (e.g. "https://app.example.com").
-                   If no scheme is provided, "https://" will be prepended.
-                   Must be a subdomain or same as rp_id, with port and scheme but no path included.
+            origins: List of allowed origin URLs (e.g. ["https://app.example.com", "https://auth.example.com"]).
+                    Each must be a subdomain or same as rp_id. If not provided, any subdomain of rp_id is allowed.
             supported_pub_key_algs: List of supported COSE algorithms (default is EDDSA, ECDSA_SHA_256, RSASSA_PKCS1_v1_5_SHA_256).
 
         Raises:
-            ValueError: If the origin domain doesn't match or isn't a subdomain of rp_id.
+            ValueError: If any origin domain doesn't match or isn't a subdomain of rp_id.
         """
         self.rp_id = rp_id
         self.rp_name = rp_name or rp_id
-        self.origin = self._normalize_and_validate_origin(origin, rp_id)
+        self.allowed_origins: set[str] | None = None
+        if origins:
+            # Normalize and deduplicate origins into a set for O(1) lookups
+            self.allowed_origins = {
+                self._normalize_and_validate_origin(o, rp_id) for o in origins
+            }
         self.supported_pub_key_algs = supported_pub_key_algs or [
             COSEAlgorithmIdentifier.EDDSA,
             COSEAlgorithmIdentifier.ECDSA_SHA_256,
             COSEAlgorithmIdentifier.RSASSA_PKCS1_v1_5_SHA_256,
         ]
 
-    def _normalize_and_validate_origin(self, origin: str | None, rp_id: str) -> str:
-        if origin is None:
-            origin = f"https://{rp_id}"
-        elif "://" not in origin:
+    def _normalize_and_validate_origin(self, origin: str, rp_id: str) -> str:
+        """Normalize and validate an origin URL against the rp_id."""
+        if "://" not in origin:
             origin = f"https://{origin}"
 
         hostname = urlparse(origin).hostname
@@ -89,6 +92,24 @@ class Passkey:
         raise ValueError(
             f"Origin domain '{hostname}' must be the same as or a subdomain of rp_id '{rp_id}'"
         )
+
+    def validate_origin(self, origin: str) -> str:
+        """Validate that origin is allowed and return the normalized form.
+
+        Args:
+            origin: The origin URL to validate (from WebSocket request header)
+
+        Returns:
+            The validated origin URL
+
+        Raises:
+            ValueError: If origin is not in the allowed list (when origins are configured)
+                       or if origin is not a valid subdomain of rp_id
+        """
+        normalized = self._normalize_and_validate_origin(origin, self.rp_id)
+        if self.allowed_origins is not None and normalized not in self.allowed_origins:
+            raise ValueError(f"Origin '{origin}' is not in the allowed origins list")
+        return normalized
 
     ### Registration Methods ###
 
@@ -137,14 +158,16 @@ class Passkey:
         response_json: dict | str,
         expected_challenge: bytes,
         user_uuid: UUID,
-        origin: str | None = None,
+        origin: str,
     ) -> Credential:
         """
         Verify registration response.
 
         Args:
-            credential: The credential response from the client
+            response_json: The credential response from the client
             expected_challenge: The expected challenge bytes
+            user_uuid: The user's UUID
+            origin: The origin URL (required, must be pre-validated)
 
         Returns:
             Registration verification result
@@ -153,7 +176,7 @@ class Passkey:
         registration = verify_registration_response(
             credential=credential,
             expected_challenge=expected_challenge,
-            expected_origin=origin or self.origin,
+            expected_origin=origin,
             expected_rp_id=self.rp_id,
         )
         return Credential(
@@ -206,7 +229,7 @@ class Passkey:
         credential: AuthenticationCredential,
         expected_challenge: bytes,
         stored_cred: Credential,
-        origin: str | None = None,
+        origin: str,
     ) -> VerifiedAuthentication:
         """
         Verify authentication response against locally stored credential data.
@@ -215,13 +238,13 @@ class Passkey:
             credential: The authentication credential response from the client
             expected_challenge: The earlier generated challenge bytes
             stored_cred: The server stored credential record (modified by this function)
+            origin: The origin URL (required, must be pre-validated)
         """
-        expected_origin = origin or self.origin
         # Verify the authentication response
         verification = verify_authentication_response(
             credential=credential,
             expected_challenge=expected_challenge,
-            expected_origin=expected_origin,
+            expected_origin=origin,
             expected_rp_id=self.rp_id,
             credential_public_key=stored_cred.public_key,
             credential_current_sign_count=stored_cred.sign_count,

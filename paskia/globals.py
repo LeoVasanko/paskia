@@ -29,7 +29,7 @@ class Manager(Generic[T]):
 async def init(
     rp_id: str = "localhost",
     rp_name: str | None = None,
-    origin: str | None = None,
+    origins: list[str] | None = None,
     default_admin: str | None = None,
     default_org: str | None = None,
     *,
@@ -45,7 +45,7 @@ async def init(
     passkey.instance = Passkey(
         rp_id=rp_id,
         rp_name=rp_name or rp_id,
-        origin=origin,
+        origins=origins,
     )
 
     # Test if we have a database already initialized, otherwise use SQL

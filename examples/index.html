@@ -55,7 +55,7 @@
 
             <div class="section">
                 <h2>Browser Mode (full page)</h2>
-                <p>Block access to otherwise open site - intended for forward-auth mechanism (Caddy, Nxinx):</p>
+                <p>Block access to otherwise open site - intended for forward-auth mechanism (Caddy, Nginx):</p>
                 <button onclick="browserNav('/auth/api/forward')">🔐 Basic Auth</button>
                 <button onclick="browserNav('/auth/api/forward?max_age=10s')">🔄 Reauth (max_age=10s)</button>
                 <button onclick="browserNav('/auth/api/forward?perm=auth:admin')">🛡️ Admin Only</button>

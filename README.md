@@ -30,11 +30,22 @@ Install [UV](https://docs.astral.sh/uv/getting-started/installation/) and run:
 uvx paskia serve --rp-id example.com
 ```
 
-On the first run it downloads the software and prints a registration link for the Admin. Consider `uv tool install paskia` for a permanent install of `paskia` CLI.
+On the first run it downloads the software and prints a registration link for the Admin. If you are going to be connecting `localhost` directly, for testing, leave out the rp-id.
 
 The server will start up on [localhost:4401](http://localhost:4401) "for authentication required", serving for `*.example.com`.
 
-If you are going to be connecting `localhost` directly, for testing, leave out the rp-id. Otherwise you will need a web server such as [Caddy](https://caddyserver.com/) to serve HTTPS on your actual domain names and proxy requests to Paskia and your backend apps.
+Otherwise you will need a web server such as [Caddy](https://caddyserver.com/) to serve HTTPS on your actual domain names and proxy requests to Paskia and your backend apps.
+
+A quick example without any config file:
+```fish
+sudo caddy reverse-proxy --from example.com --to :4401
+```
+
+For a permanent install of `paskia` CLI command, not needing `uvx`:
+
+```fish
+uv tool install paskia
+```
 
 ## Configuration
 
@@ -44,12 +55,12 @@ There is no config file. Pass only the options on CLI:
 paskia serve [options]
 ```
 
-Options (all optional):
+Optional options:
 
 - Listen address (one of):
     * `[host]:port`: Address and port (default: `localhost:4401`)
     * `unix:/path.sock`: Unix socket
-- `--rp-id <domain>`: Domain name for authentication (required for production)
+- `--rp-id <domain>`: Main domain (required for production)
 - `--rp-name "<text>"`: Name of your company or site (default: same as rp-id)
 - `--origin <url>`: Explicit single site (default: `https://<rp-id>`)
 - `--auth-host <domain>`: Dedicated authentication site (e.g., `auth.example.com`)

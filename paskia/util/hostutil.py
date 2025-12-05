@@ -1,28 +1,38 @@
 """Utilities for determining the auth UI host and base URLs."""
 
+import json
 import os
 from functools import lru_cache
 from urllib.parse import urlparse, urlsplit
 
 from paskia.globals import passkey as global_passkey
 
-_AUTH_HOST_ENV = "PASKIA_AUTH_HOST"
-
 
 def _default_origin_scheme() -> str:
-    origin_url = urlparse(global_passkey.instance.origin)
-    return origin_url.scheme or "https"
+    """Get the default scheme from configured origins, or fallback to https."""
+    allowed = global_passkey.instance.allowed_origins
+    if allowed:
+        # Pick any origin from the set
+        origin_url = urlparse(next(iter(allowed)))
+        return origin_url.scheme or "https"
+    return "https"
 
 
 @lru_cache(maxsize=1)
 def _load_config() -> tuple[str | None, str] | None:
-    raw = os.getenv(_AUTH_HOST_ENV)
+    """Load auth_host from PASKIA_CONFIG JSON, falling back to PASKIA_AUTH_HOST."""
+    # Try PASKIA_CONFIG first (set by CLI)
+    config_json = os.getenv("PASKIA_CONFIG")
+    if config_json:
+        config = json.loads(config_json)
+        raw = config["auth_host"]  # Always present, may be None
+    else:
+        # Fallback for external usage (e.g., PASKIA_AUTH_HOST set directly)
+        raw = os.getenv("PASKIA_AUTH_HOST")
+
     if not raw:
         return None
-    candidate = raw.strip()
-    if not candidate:
-        return None
-    parsed = urlparse(candidate if "://" in candidate else f"//{candidate}")
+    parsed = urlparse(raw if "://" in raw else f"//{raw}")
     netloc = parsed.netloc or parsed.path
     if not netloc:
         return None
@@ -53,8 +63,14 @@ def auth_site_base_url(scheme: str | None = None, host: str | None = None) -> st
             scheme_to_use = scheme or _default_origin_scheme()
             netloc = host.strip("/")
         else:
-            origin = global_passkey.instance.origin.rstrip("/")
-            return f"{origin}{ui_base_path()}"
+            # Use the first allowed origin, or fallback to rp_id
+            allowed = global_passkey.instance.allowed_origins
+            if allowed:
+                origin = allowed[0].rstrip("/")
+                return f"{origin}{ui_base_path()}"
+            # Fallback: construct from rp_id
+            rp_id = global_passkey.instance.rp_id
+            return f"https://{rp_id}{ui_base_path()}"
 
     base = f"{scheme_to_use}://{netloc}".rstrip("/")
     path = ui_base_path().lstrip("/")
