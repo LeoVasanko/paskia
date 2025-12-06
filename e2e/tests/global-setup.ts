@@ -42,14 +42,12 @@ export default async function globalSetup() {
   const serverArgs = COLLECT_COVERAGE
     ? [
         'run', 'coverage', 'run', '--parallel-mode',
-        '-m', 'paskia.fastapi', 'serve', ':4401',
-        '--rp-id', 'localhost',
-        '--origin', 'http://localhost:4401'
+        '-m', 'paskia.fastapi', 'serve', 'localhost:4404',
+        '--rp-id', 'localhost'
       ]
     : [
-        'run', 'paskia', 'serve', ':4401',
-        '--rp-id', 'localhost',
-        '--origin', 'http://localhost:4401'
+        'run', 'paskia', 'serve', 'localhost:4404',
+        '--rp-id', 'localhost'
       ]
 
   // Start the server using Node's spawn
@@ -80,7 +78,7 @@ export default async function globalSetup() {
       process.stdout.write(text) // Echo to console
 
       // Look for the reset token URL in the output
-      // Format: https://localhost/auth/{token} or http://localhost:4401/auth/{token}
+      // Format: https://localhost/auth/{token} or http://localhost:4404/auth/{token}
       // where token is word.word.word.word.word (dot separated)
       const match = output.match(/https?:\/\/localhost(?::\d+)?\/auth\/([a-z]+(?:\.[a-z]+)+)/)
       if (match) {
@@ -117,7 +115,7 @@ export default async function globalSetup() {
 
   // Fetch session cookie name from server settings
   try {
-    const response = await fetch('http://localhost:4401/auth/api/settings')
+    const response = await fetch('http://localhost:4404/auth/api/settings')
     const settings = await response.json()
     state.sessionCookie = settings.session_cookie
     console.log(`  ✅ Session cookie name: ${state.sessionCookie}\n`)

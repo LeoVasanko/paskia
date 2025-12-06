@@ -69,6 +69,22 @@ export function saveSessionToken(sessionToken: string): void {
 }
 
 /**
+ * Clear the saved session token from the test state file.
+ * Call this after logout to prevent accidental reuse of invalidated sessions.
+ */
+export function clearSavedSessionToken(): void {
+  if (existsSync(stateFile)) {
+    try {
+      const state = JSON.parse(readFileSync(stateFile, 'utf-8'))
+      delete state.savedSessionToken
+      writeFileSync(stateFile, JSON.stringify(state, null, 2))
+    } catch {
+      // Ignore errors
+    }
+  }
+}
+
+/**
  * Get a saved session token from the test state file.
  */
 export function getSavedSessionToken(): string | undefined {
@@ -81,6 +97,57 @@ export function getSavedSessionToken(): string | undefined {
     }
   }
   return undefined
+}
+
+/**
+ * Save device tokens to the test state file for use by other tests.
+ * These tokens allow tests to register their own passkeys.
+ */
+export function saveDeviceTokens(tokens: string[]): void {
+  if (existsSync(stateFile)) {
+    try {
+      const state = JSON.parse(readFileSync(stateFile, 'utf-8'))
+      state.deviceTokens = tokens
+      writeFileSync(stateFile, JSON.stringify(state, null, 2))
+    } catch {
+      // Ignore errors
+    }
+  }
+}
+
+/**
+ * Get and consume a device token from the pool.
+ * Returns undefined if no tokens are available.
+ */
+export function popDeviceToken(): string | undefined {
+  if (existsSync(stateFile)) {
+    try {
+      const state = JSON.parse(readFileSync(stateFile, 'utf-8'))
+      if (state.deviceTokens && state.deviceTokens.length > 0) {
+        const token = state.deviceTokens.pop()
+        writeFileSync(stateFile, JSON.stringify(state, null, 2))
+        return token
+      }
+    } catch {
+      return undefined
+    }
+  }
+  return undefined
+}
+
+/**
+ * Get the count of remaining device tokens.
+ */
+export function getDeviceTokenCount(): number {
+  if (existsSync(stateFile)) {
+    try {
+      const state = JSON.parse(readFileSync(stateFile, 'utf-8'))
+      return state.deviceTokens?.length || 0
+    } catch {
+      return 0
+    }
+  }
+  return 0
 }
 
 /**
@@ -338,6 +405,7 @@ export async function getUserInfo(
 
 /**
  * Logout via the API.
+ * If the session being logged out matches the saved session token, clears it.
  */
 export async function logout(
   page: Page,
@@ -350,6 +418,11 @@ export async function logout(
       'Cookie': `${cookieName}=${sessionToken}`,
     },
   })
+  // Clear saved session token if it matches the one being logged out
+  const savedToken = getSavedSessionToken()
+  if (savedToken === sessionToken) {
+    clearSavedSessionToken()
+  }
 }
 
 /**
@@ -366,7 +439,13 @@ export async function createDeviceLink(
       'Cookie': `${cookieName}=${sessionToken}`,
     },
   })
+  if (!response.ok()) {
+    throw new Error(`Failed to create device link: ${response.status()} - ${await response.text()}`)
+  }
   const data = await response.json()
+  if (!data.url) {
+    throw new Error(`No URL in response: ${JSON.stringify(data)}`)
+  }
   // Extract token from URL (last path segment)
   const url = new URL(data.url)
   const token = url.pathname.split('/').pop() || ''
