@@ -21,7 +21,7 @@ from paskia.authsession import (
     session_expiry,
 )
 from paskia.fastapi import authz, session, user
-from paskia.fastapi.session import AUTH_COOKIE
+from paskia.fastapi.session import AUTH_COOKIE, AUTH_COOKIE_NAME
 from paskia.globals import db
 from paskia.globals import passkey as global_passkey
 from paskia.util import frontend, hostutil, htmlutil, passphrase, userinfo
@@ -199,6 +199,7 @@ async def get_settings():
         "rp_name": pk.rp_name,
         "ui_base_path": base_path,
         "auth_host": hostutil.configured_auth_host(),
+        "session_cookie": AUTH_COOKIE_NAME,
     }
 
 

@@ -53,15 +53,9 @@ async def _create_and_log_admin_reset_link(user_uuid, message, session_type) -> 
     return reset_link
 
 
-async def bootstrap_system(
-    user_name: str | None = None, org_name: str | None = None
-) -> dict:
+async def bootstrap_system() -> dict:
     """
     Bootstrap the entire system with default data.
-
-    Args:
-        user_name: Display name for the admin user (default: "Admin")
-        org_name: Display name for the organization (default: "Organization")
 
     Returns:
         dict: Contains information about created entities and reset link
@@ -70,7 +64,7 @@ async def bootstrap_system(
     perm0 = Permission(id="auth:admin", display_name="Master Admin")
     await globals.db.instance.create_permission(perm0)
 
-    org = Org(uuid7.create(), org_name or "Organization")
+    org = Org(uuid7.create(), "Organization")
     await globals.db.instance.create_organization(org)
 
     # After creation, org.permissions now includes the auto-created org admin permission
@@ -89,7 +83,7 @@ async def bootstrap_system(
 
     user = User(
         uuid=uuid7.create(),
-        display_name=user_name or "Admin",
+        display_name="Admin",
         role_uuid=role.uuid,
         created_at=datetime.now(timezone.utc),
         visits=0,
@@ -159,15 +153,9 @@ async def check_admin_credentials() -> bool:
         return False
 
 
-async def bootstrap_if_needed(
-    default_admin: str | None = None, default_org: str | None = None
-) -> bool:
+async def bootstrap_if_needed() -> bool:
     """
     Check if system needs bootstrapping and perform it if necessary.
-
-    Args:
-        default_admin: Display name for the admin user
-        default_org: Display name for the organization
 
     Returns:
         bool: True if bootstrapping was performed, False if system was already set up
@@ -185,35 +173,17 @@ async def bootstrap_if_needed(
 
     # No admin permission found, need to bootstrap
     # Bootstrap creates the admin user AND the reset link, so no need to check credentials after
-    await bootstrap_system(default_admin, default_org)
+    await bootstrap_system()
     return True
 
 
 # CLI interface
 async def main():
     """Main CLI entry point for bootstrapping."""
-    import argparse
-
     # Configure logging for CLI usage
     logging.basicConfig(level=logging.INFO, format="%(message)s", force=True)
 
-    parser = argparse.ArgumentParser(
-        description="Bootstrap passkey authentication system"
-    )
-    parser.add_argument(
-        "--user-name",
-        default=None,
-        help="Name for the admin user (default: Admin)",
-    )
-    parser.add_argument(
-        "--org-name",
-        default=None,
-        help="Name for the organization (default: Organization)",
-    )
-
-    args = parser.parse_args()
-
-    await globals.init(default_admin=args.user_name, default_org=args.org_name)
+    await globals.init()
 
 
 if __name__ == "__main__":

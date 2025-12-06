@@ -452,9 +452,7 @@ async def admin_create_user_registration_link(
         expiry=expiry,
         token_type=token_type,
     )
-    url = hostutil.reset_link_url(
-        token, request.url.scheme, request.headers.get("host")
-    )
+    url = hostutil.reset_link_url(token)
     return {
         "url": url,
         "expires": (

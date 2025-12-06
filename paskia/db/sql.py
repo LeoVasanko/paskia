@@ -5,6 +5,7 @@ This module provides an async database layer using SQLAlchemy async mode
 for managing users and credentials in a WebAuthn authentication system.
 """
 
+import os
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from uuid import UUID
@@ -40,7 +41,7 @@ from paskia.db import (
 )
 from paskia.globals import db
 
-DB_PATH = "sqlite+aiosqlite:///paskia.sqlite"
+DB_PATH_DEFAULT = "sqlite+aiosqlite:///paskia.sqlite"
 
 
 def _normalize_dt(value: datetime | None) -> datetime | None:
@@ -52,7 +53,8 @@ def _normalize_dt(value: datetime | None) -> datetime | None:
 
 
 async def init(*args, **kwargs):
-    db.instance = DB()
+    db_path = os.environ.get("PASKIA_DB", DB_PATH_DEFAULT)
+    db.instance = DB(db_path)
     await db.instance.init_db()
 
 
@@ -289,7 +291,7 @@ class RolePermission(Base):
 class DB(DatabaseInterface):
     """Database class that handles its own connections."""
 
-    def __init__(self, db_path: str = DB_PATH):
+    def __init__(self, db_path: str = DB_PATH_DEFAULT):
         """Initialize with database path."""
         self.engine = create_async_engine(db_path, echo=False)
         # Ensure SQLite foreign key enforcement is ON for every new connection

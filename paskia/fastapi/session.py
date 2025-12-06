@@ -12,7 +12,7 @@ from fastapi import Cookie, Request, Response, WebSocket
 
 from paskia.authsession import EXPIRES
 
-AUTH_COOKIE_NAME = "__Host-auth"
+AUTH_COOKIE_NAME = "__Host-paskia"
 AUTH_COOKIE = Cookie(None, alias=AUTH_COOKIE_NAME)
 
 

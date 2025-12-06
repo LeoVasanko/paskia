@@ -31,8 +31,6 @@ async def lifespan(app: FastAPI):  # pragma: no cover - startup path
             rp_id=config["rp_id"],
             rp_name=config["rp_name"],
             origins=config["origins"],
-            default_admin=config["default_admin"],
-            default_org=config["default_org"],
             bootstrap=False,
         )
     except ValueError as e:

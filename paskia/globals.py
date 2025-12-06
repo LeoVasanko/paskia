@@ -30,8 +30,6 @@ async def init(
     rp_id: str = "localhost",
     rp_name: str | None = None,
     origins: list[str] | None = None,
-    default_admin: str | None = None,
-    default_org: str | None = None,
     *,
     bootstrap: bool = True,
 ) -> None:
@@ -60,7 +58,7 @@ async def init(
         # Bootstrap system if needed
         from .bootstrap import bootstrap_if_needed
 
-        await bootstrap_if_needed(default_admin, default_org)
+        await bootstrap_if_needed()
 
 
 # Global instances
