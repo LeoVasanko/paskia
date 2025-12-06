@@ -24,7 +24,7 @@ export default defineConfig({
 
   use: {
     // Base URL for the Paskia server
-    baseURL: process.env.BASE_URL || 'http://localhost:4401',
+    baseURL: process.env.BASE_URL || 'http://localhost:4404',
 
     // Collect trace on failure for debugging
     trace: 'on-first-retry',

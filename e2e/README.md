@@ -135,7 +135,7 @@ This creates an in-browser authenticator that:
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `BASE_URL` | Server URL | `http://localhost:4401` |
+| `BASE_URL` | Server URL | `http://localhost:4404` |
 | `CI` | CI environment flag | - |
 | `CLEANUP_TEST_DB` | Remove test DB after run | `false` |
 

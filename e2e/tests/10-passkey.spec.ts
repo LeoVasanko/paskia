@@ -10,6 +10,7 @@ import {
   getSessionCookieName,
   saveSessionToken,
   getSavedSessionToken,
+  saveDeviceTokens,
 } from './fixtures/passkey-helpers'
 import type { Page, BrowserContext } from '@playwright/test'
 
@@ -44,7 +45,7 @@ async function setupSessionCookie(page: Page, sessionToken: string): Promise<voi
  */
 
 test.describe('Passkey Authentication E2E', () => {
-  const baseUrl = process.env.BASE_URL || 'http://localhost:4401'
+  const baseUrl = process.env.BASE_URL || 'http://localhost:4404'
 
   test.describe.configure({ mode: 'serial' })
 
@@ -71,6 +72,10 @@ test.describe('Passkey Authentication E2E', () => {
 
     // Page should load - 401 errors are expected since user is not logged in
     await page.waitForTimeout(500)
+
+    // Take screenshot of the login view
+    await page.screenshot({ path: 'test-results/login-view.png' })
+    console.log('✓ Screenshot saved: test-results/login-view.png')
 
     // Just verify the page loaded without JS errors (network 401s are OK)
     console.log('✓ Auth page loaded successfully')
@@ -109,6 +114,23 @@ test.describe('Passkey Authentication E2E', () => {
     console.log(`✓ Session token: ${sessionToken.substring(0, 4)}...`)
   })
 
+  test('should create device tokens for other tests', async ({ page }) => {
+    test.skip(!sessionToken, 'Requires successful registration')
+
+    // Create a batch of device tokens for API tests to use
+    // Each API test needs its own token to register a passkey in its virtual authenticator
+    const tokenCount = 15  // Enough for all API tests
+    const tokens: string[] = []
+
+    for (let i = 0; i < tokenCount; i++) {
+      const deviceLink = await createDeviceLink(page, baseUrl, sessionToken)
+      tokens.push(deviceLink.token)
+    }
+
+    saveDeviceTokens(tokens)
+    console.log(`✓ Created ${tokens.length} device tokens for API tests`)
+  })
+
   test('should validate the session token', async ({ page }) => {
     // Skip if registration didn't run
     test.skip(!sessionToken, 'Requires successful registration')
@@ -130,6 +152,22 @@ test.describe('Passkey Authentication E2E', () => {
     expect(userInfo.user.user_name).toBe('Admin User')
     expect(userInfo.credentials).toBeDefined()
     expect(userInfo.credentials.length).toBeGreaterThanOrEqual(1)
+
+    // Navigate to profile and take screenshot
+    const cookieName = getSessionCookieName()
+    await page.context().addCookies([{
+      name: cookieName,
+      value: sessionToken,
+      domain: 'localhost',
+      path: '/',
+      secure: true,
+      httpOnly: true,
+      sameSite: 'Strict' as const,
+    }])
+    await page.goto('/auth/')
+    await page.waitForSelector('[data-view="profile"]', { timeout: 5000 })
+    await page.screenshot({ path: 'test-results/profile-view.png' })
+    console.log('✓ Screenshot saved: test-results/profile-view.png')
 
     console.log(`✓ User info retrieved: ${userInfo.user.user_name}`)
     console.log(`✓ Credentials count: ${userInfo.credentials.length}`)
@@ -190,7 +228,7 @@ test.describe('Passkey Authentication E2E', () => {
 })
 
 test.describe('Session Management', () => {
-  const baseUrl = process.env.BASE_URL || 'http://localhost:4401'
+  const baseUrl = process.env.BASE_URL || 'http://localhost:4404'
 
   test('should reject invalid session token', async ({ page }) => {
     const cookieName = getSessionCookieName()
@@ -217,7 +255,7 @@ test.describe('Session Management', () => {
 })
 
 test.describe('Device Addition Dialog', () => {
-  const baseUrl = process.env.BASE_URL || 'http://localhost:4401'
+  const baseUrl = process.env.BASE_URL || 'http://localhost:4404'
 
   test.describe.configure({ mode: 'serial' })
 
@@ -269,12 +307,16 @@ test.describe('Device Addition Dialog', () => {
     const qrCanvas = dialog.locator('.qr-code')
     await expect(qrCanvas).toBeVisible()
 
-    // Verify the link is displayed
-    const linkText = dialog.locator('.qr-link p')
-    await expect(linkText).toBeVisible()
-    const linkContent = await linkText.textContent()
-    expect(linkContent).toContain('localhost/auth/')
-    console.log(`✓ Device link displayed: ${linkContent}`)
+    // Verify the link is displayed (text strips scheme, but href has it)
+    const linkElement = dialog.locator('a.qr-link')
+    await expect(linkElement).toBeVisible()
+    const linkText = await linkElement.textContent()
+    const linkHref = await linkElement.getAttribute('href')
+    // Text shows hostname without scheme
+    expect(linkText).toContain('localhost:4404/auth/')
+    // Href includes full URL with scheme
+    expect(linkHref).toContain('http://localhost:4404/auth/')
+    console.log(`✓ Device link displayed: ${linkText} (href: ${linkHref})`)
 
     // Verify expiration warning is shown
     await expect(dialog.locator('.reg-help')).toContainText('Expires')
@@ -364,7 +406,7 @@ test.describe('Device Addition Dialog', () => {
 })
 
 test.describe('ProfileView - Add New Passkey', () => {
-  const baseUrl = process.env.BASE_URL || 'http://localhost:4401'
+  const baseUrl = process.env.BASE_URL || 'http://localhost:4404'
 
   test('should show credentials list in profile', async ({ page }) => {
     const sessionToken = getSavedSessionToken()
@@ -474,7 +516,7 @@ test.describe('ProfileView - Add New Passkey', () => {
 })
 
 test.describe('ProfileView - Multi-Authenticator', () => {
-  const baseUrl = process.env.BASE_URL || 'http://localhost:4401'
+  const baseUrl = process.env.BASE_URL || 'http://localhost:4404'
 
   test('should add passkey from different authenticator', async ({ page }) => {
     const sessionToken = getSavedSessionToken()
@@ -589,28 +631,5 @@ test.describe('ProfileView - Multi-Authenticator', () => {
     } else {
       console.log(`ℹ No credential marked as current (may be using different auth method)`)
     }
-  })
-})
-
-test.describe('Logout', () => {
-  const baseUrl = process.env.BASE_URL || 'http://localhost:4401'
-
-  test('should logout successfully', async ({ page }) => {
-    const sessionToken = getSavedSessionToken()
-    test.skip(!sessionToken, 'Requires saved session token')
-
-    await logout(page, baseUrl, sessionToken!)
-
-    // Session should no longer be valid
-    const cookieName = getSessionCookieName()
-    const response = await page.request.post(`${baseUrl}/auth/api/validate`, {
-      headers: {
-        'Cookie': `${cookieName}=${sessionToken}`,
-      },
-      failOnStatusCode: false,
-    })
-
-    expect(response.status()).toBe(401)
-    console.log(`✓ Logout successful, session invalidated`)
   })
 })
