@@ -1,14 +1,18 @@
 import logging
 import os
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request, Response
-from fastapi.responses import RedirectResponse
+from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from paskia.fastapi import admin, api, auth_host, ws
 from paskia.fastapi.session import AUTH_COOKIE
 from paskia.util import frontend, hostutil, passphrase
+
+# Path to examples/index.html when running from source tree
+_EXAMPLES_DIR = Path(__file__).parent.parent.parent / "examples"
 
 
 @asynccontextmanager
@@ -90,6 +94,22 @@ async def admin_root_redirect():
 @app.get("/admin/", include_in_schema=False)
 async def admin_root(request: Request, auth=AUTH_COOKIE):
     return await admin.adminapp(request, auth)  # Delegated to admin app
+
+
+@app.get("/auth/examples/", include_in_schema=False)
+async def examples_page():
+    """Serve examples/index.html when running from source tree.
+
+    This provides a simple test page for API mode authentication flows
+    without depending on the Vue frontend build.
+    """
+    index_file = _EXAMPLES_DIR / "index.html"
+    if not index_file.is_file():
+        raise HTTPException(
+            status_code=404,
+            detail="Examples not available (not running from source tree)",
+        )
+    return FileResponse(index_file, media_type="text/html")
 
 
 # Note: this catch-all handler must be the last route defined

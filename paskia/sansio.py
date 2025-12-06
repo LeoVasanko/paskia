@@ -67,34 +67,31 @@ class Passkey:
         self.rp_name = rp_name or rp_id
         self.allowed_origins: set[str] | None = None
         if origins:
-            # Normalize and deduplicate origins into a set for O(1) lookups
-            self.allowed_origins = {
-                self._normalize_and_validate_origin(o, rp_id) for o in origins
-            }
+            # Validate and deduplicate origins into a set for O(1) lookups
+            for o in origins:
+                self._validate_origin(o, rp_id)
+            self.allowed_origins = set(origins)
         self.supported_pub_key_algs = supported_pub_key_algs or [
             COSEAlgorithmIdentifier.EDDSA,
             COSEAlgorithmIdentifier.ECDSA_SHA_256,
             COSEAlgorithmIdentifier.RSASSA_PKCS1_v1_5_SHA_256,
         ]
 
-    def _normalize_and_validate_origin(self, origin: str, rp_id: str) -> str:
-        """Normalize and validate an origin URL against the rp_id."""
-        if "://" not in origin:
-            origin = f"https://{origin}"
-
+    def _validate_origin(self, origin: str, rp_id: str) -> None:
+        """Validate an origin URL against the rp_id."""
         hostname = urlparse(origin).hostname
         if not hostname:
             raise ValueError(f"Invalid origin URL: no hostname found in '{origin}'")
 
         if hostname == rp_id or hostname.endswith(f".{rp_id}"):
-            return origin
+            return
 
         raise ValueError(
             f"Origin domain '{hostname}' must be the same as or a subdomain of rp_id '{rp_id}'"
         )
 
     def validate_origin(self, origin: str) -> str:
-        """Validate that origin is allowed and return the normalized form.
+        """Validate that origin is allowed and return it.
 
         Args:
             origin: The origin URL to validate (from WebSocket request header)
@@ -106,10 +103,10 @@ class Passkey:
             ValueError: If origin is not in the allowed list (when origins are configured)
                        or if origin is not a valid subdomain of rp_id
         """
-        normalized = self._normalize_and_validate_origin(origin, self.rp_id)
-        if self.allowed_origins is not None and normalized not in self.allowed_origins:
+        self._validate_origin(origin, self.rp_id)
+        if self.allowed_origins is not None and origin not in self.allowed_origins:
             raise ValueError(f"Origin '{origin}' is not in the allowed origins list")
-        return normalized
+        return origin
 
     ### Registration Methods ###
 

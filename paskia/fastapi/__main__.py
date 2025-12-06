@@ -7,6 +7,8 @@ from urllib.parse import urlparse
 
 import uvicorn
 
+from paskia.util.hostutil import normalize_origin
+
 DEFAULT_HOST = "localhost"
 DEFAULT_SERVE_PORT = 4401
 
@@ -172,53 +174,91 @@ def main():
     else:
         host = port = uds = all_ifaces = None  # type: ignore
 
-    # Collect origins and handle auth_host
-    origins = getattr(args, "origins", None) or []
+    # Collect and normalize origins, handle auth_host
+    origins = [normalize_origin(o) for o in (getattr(args, "origins", None) or [])]
     if args.auth_host:
         # Normalize auth_host with scheme
         if "://" not in args.auth_host:
             args.auth_host = f"https://{args.auth_host}"
 
         validate_auth_host(args.auth_host, args.rp_id)
-        from paskia.util import hostutil as _hostutil  # local import
-
-        _hostutil.reload_config()
 
         # If origins are configured, ensure auth_host is included at top
         if origins:
-            # Insert auth_host at the beginning (Passkey.__init__ will normalize/dedupe)
+            # Insert auth_host at the beginning (Passkey.__init__ will dedupe)
             origins.insert(0, args.auth_host)
 
+    # Compute site_url and site_path for reset links
+    # Priority: auth_host > first origin with localhost > http://localhost:port
+    if args.auth_host:
+        site_url = args.auth_host.rstrip("/")
+        site_path = "/"
+    elif origins:
+        # Find localhost origin if rp_id is localhost, else use first origin
+        localhost_origin = (
+            next((o for o in origins if "://localhost" in o), None)
+            if args.rp_id == "localhost"
+            else None
+        )
+        site_url = (localhost_origin or origins[0]).rstrip("/")
+        site_path = "/auth/"
+    elif args.rp_id == "localhost" and port:
+        # Dev mode: use http with port
+        site_url = f"http://localhost:{port}"
+        site_path = "/auth/"
+    else:
+        site_url = f"https://{args.rp_id}"
+        site_path = "/auth/"
+
+    # Build runtime configuration
+    from paskia.config import PaskiaConfig
+
+    config = PaskiaConfig(
+        rp_id=args.rp_id,
+        rp_name=args.rp_name or None,
+        origins=origins or None,
+        auth_host=args.auth_host or None,
+        site_url=site_url,
+        site_path=site_path,
+        host=host,
+        port=port,
+        uds=uds,
+    )
+
     # Export configuration via single JSON env variable for worker processes
-    # (PASKIA_DEVMODE is kept separate as it's externally defined)
-    # All keys are always present; None is used where no value is configured
     import json
 
-    config = {
-        "rp_id": args.rp_id,
-        "rp_name": args.rp_name or None,
-        "origins": origins or None,
-        "auth_host": args.auth_host or None,
+    config_json = {
+        "rp_id": config.rp_id,
+        "rp_name": config.rp_name,
+        "origins": config.origins,
+        "auth_host": config.auth_host,
+        "site_url": config.site_url,
+        "site_path": config.site_path,
     }
-    os.environ["PASKIA_CONFIG"] = json.dumps(config)
+    os.environ["PASKIA_CONFIG"] = json.dumps(config_json)
 
-    # One-time initialization + bootstrap before starting any server processes.
-    # Lifespan in worker processes will call globals.init with bootstrap disabled.
+    # Initialize globals (without bootstrap yet)
     from paskia import globals as _globals  # local import
 
     asyncio.run(
         _globals.init(
-            rp_id=config["rp_id"],
-            rp_name=config["rp_name"],
-            origins=config["origins"],
-            bootstrap=True,
+            rp_id=config.rp_id,
+            rp_name=config.rp_name,
+            origins=config.origins,
+            bootstrap=False,
         )
     )
 
     # Print startup configuration
     from paskia.util import startupbox
 
-    startupbox.print_startup_config(_globals.passkey.instance, args, host, port, uds)
+    startupbox.print_startup_config(config)
+
+    # Bootstrap after startup box is printed
+    from paskia.bootstrap import bootstrap_if_needed
+
+    asyncio.run(bootstrap_if_needed())
 
     # Handle recover-admin command (no server start)
     if args.command == "reset":
