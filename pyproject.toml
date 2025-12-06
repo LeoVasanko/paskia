@@ -32,7 +32,25 @@ version-file = "paskia/_version.py"
 [project.optional-dependencies]
 dev = [
     "ruff>=0.1.0",
+    "coverage[toml]>=7.0.0",
 ]
+
+[tool.coverage.run]
+source = ["paskia"]
+branch = true
+parallel = true
+sigterm = true
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "if __name__ == .__main__.:",
+]
+show_missing = true
+
+[tool.coverage.html]
+directory = "coverage-html"
 
 [tool.ruff]
 target-version = "py39"

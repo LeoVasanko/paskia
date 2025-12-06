@@ -9,12 +9,14 @@
     "test:headed": "bunx playwright test --headed",
     "test:debug": "bunx playwright test --debug",
     "test:ui": "bunx playwright test --ui",
+    "test:coverage": "COVERAGE=1 bunx playwright test",
     "report": "bunx playwright show-report",
     "install:browsers": "bunx playwright install chromium"
   },
   "devDependencies": {
     "@playwright/test": "^1.49.0",
     "@simplewebauthn/browser": "^13.1.2",
-    "@types/bun": "^1.3.3"
+    "@types/bun": "^1.3.3",
+    "c8": "^10.1.3"
   }
 }

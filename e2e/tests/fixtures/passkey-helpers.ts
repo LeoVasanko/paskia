@@ -1,9 +1,10 @@
 import { type Page } from '@playwright/test'
-import { existsSync, readFileSync } from 'fs'
+import { existsSync, readFileSync, writeFileSync } from 'fs'
 import { join, dirname } from 'path'
 import { fileURLToPath } from 'url'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
+const stateFile = join(__dirname, '..', '..', 'test-data', 'test-state.json')
 
 /**
  * WebSocket helpers for passkey registration and authentication.
@@ -26,11 +27,55 @@ export interface AuthenticationResult {
  * Get the bootstrap reset token from the test state file.
  */
 export function getBootstrapResetToken(): string | undefined {
-  const stateFile = join(__dirname, '..', '..', 'test-data', 'test-state.json')
   if (existsSync(stateFile)) {
     try {
       const state = JSON.parse(readFileSync(stateFile, 'utf-8'))
       return state.resetToken
+    } catch {
+      return undefined
+    }
+  }
+  return undefined
+}
+
+/**
+ * Get the session cookie name from the test state file.
+ */
+export function getSessionCookieName(): string {
+  if (existsSync(stateFile)) {
+    try {
+      const state = JSON.parse(readFileSync(stateFile, 'utf-8'))
+      return state.sessionCookie || '__Host-auth'
+    } catch {
+      return '__Host-auth'
+    }
+  }
+  return '__Host-auth'
+}
+
+/**
+ * Save a session token to the test state file for sharing across test groups.
+ */
+export function saveSessionToken(sessionToken: string): void {
+  if (existsSync(stateFile)) {
+    try {
+      const state = JSON.parse(readFileSync(stateFile, 'utf-8'))
+      state.savedSessionToken = sessionToken
+      writeFileSync(stateFile, JSON.stringify(state, null, 2))
+    } catch {
+      // Ignore errors
+    }
+  }
+}
+
+/**
+ * Get a saved session token from the test state file.
+ */
+export function getSavedSessionToken(): string | undefined {
+  if (existsSync(stateFile)) {
+    try {
+      const state = JSON.parse(readFileSync(stateFile, 'utf-8'))
+      return state.savedSessionToken
     } catch {
       return undefined
     }
@@ -79,30 +124,33 @@ export async function registerPasskey(
           return
         }
 
-        // This should be the registration options from server
+        // This should be the registration options from server (wrapped in optionsJSON)
         // Use the native WebAuthn API with the virtual authenticator
         try {
+          // Extract options from the optionsJSON wrapper
+          const opts = data.optionsJSON
+
           // Convert base64url challenge to ArrayBuffer
-          const challenge = Uint8Array.from(atob(data.challenge.replace(/-/g, '+').replace(/_/g, '/')), c => c.charCodeAt(0))
+          const challenge = Uint8Array.from(atob(opts.challenge.replace(/-/g, '+').replace(/_/g, '/')), c => c.charCodeAt(0))
 
           // Build the credential creation options
           const publicKeyCredentialCreationOptions: CredentialCreationOptions = {
             publicKey: {
               challenge: challenge,
               rp: {
-                name: data.rp.name,
-                id: data.rp.id,
+                name: opts.rp.name,
+                id: opts.rp.id,
               },
               user: {
-                id: Uint8Array.from(atob(data.user.id.replace(/-/g, '+').replace(/_/g, '/')), c => c.charCodeAt(0)),
-                name: data.user.name,
-                displayName: data.user.displayName,
+                id: Uint8Array.from(atob(opts.user.id.replace(/-/g, '+').replace(/_/g, '/')), c => c.charCodeAt(0)),
+                name: opts.user.name,
+                displayName: opts.user.displayName,
               },
-              pubKeyCredParams: data.pubKeyCredParams,
-              authenticatorSelection: data.authenticatorSelection,
-              timeout: data.timeout,
-              attestation: data.attestation,
-              excludeCredentials: data.excludeCredentials?.map((cred: any) => ({
+              pubKeyCredParams: opts.pubKeyCredParams,
+              authenticatorSelection: opts.authenticatorSelection,
+              timeout: opts.timeout,
+              attestation: opts.attestation,
+              excludeCredentials: opts.excludeCredentials?.map((cred: any) => ({
                 ...cred,
                 id: Uint8Array.from(atob(cred.id.replace(/-/g, '+').replace(/_/g, '/')), c => c.charCodeAt(0)),
               })) || [],
@@ -187,19 +235,22 @@ export async function authenticatePasskey(
           return
         }
 
-        // This should be the authentication options from server
+        // This should be the authentication options from server (wrapped in optionsJSON)
         try {
+          // Extract options from the optionsJSON wrapper
+          const opts = data.optionsJSON
+
           // Convert base64url challenge to ArrayBuffer
-          const challenge = Uint8Array.from(atob(data.challenge.replace(/-/g, '+').replace(/_/g, '/')), c => c.charCodeAt(0))
+          const challenge = Uint8Array.from(atob(opts.challenge.replace(/-/g, '+').replace(/_/g, '/')), c => c.charCodeAt(0))
 
           // Build the credential request options
           const publicKeyCredentialRequestOptions: CredentialRequestOptions = {
             publicKey: {
               challenge: challenge,
-              rpId: data.rpId,
-              timeout: data.timeout,
-              userVerification: data.userVerification,
-              allowCredentials: data.allowCredentials?.map((cred: any) => ({
+              rpId: opts.rpId,
+              timeout: opts.timeout,
+              userVerification: opts.userVerification,
+              allowCredentials: opts.allowCredentials?.map((cred: any) => ({
                 type: cred.type,
                 id: Uint8Array.from(atob(cred.id.replace(/-/g, '+').replace(/_/g, '/')), c => c.charCodeAt(0)),
                 transports: cred.transports,
@@ -259,9 +310,10 @@ export async function validateSession(
   baseUrl: string,
   sessionToken: string
 ): Promise<{ valid: boolean; user_uuid: string; renewed: boolean }> {
+  const cookieName = getSessionCookieName()
   const response = await page.request.post(`${baseUrl}/auth/api/validate`, {
     headers: {
-      'Cookie': `__Host-auth=${sessionToken}`,
+      'Cookie': `${cookieName}=${sessionToken}`,
     },
   })
   return await response.json()
@@ -275,9 +327,10 @@ export async function getUserInfo(
   baseUrl: string,
   sessionToken: string
 ): Promise<any> {
+  const cookieName = getSessionCookieName()
   const response = await page.request.post(`${baseUrl}/auth/api/user-info`, {
     headers: {
-      'Cookie': `__Host-auth=${sessionToken}`,
+      'Cookie': `${cookieName}=${sessionToken}`,
     },
   })
   return await response.json()
@@ -291,9 +344,10 @@ export async function logout(
   baseUrl: string,
   sessionToken: string
 ): Promise<void> {
+  const cookieName = getSessionCookieName()
   await page.request.post(`${baseUrl}/auth/api/logout`, {
     headers: {
-      'Cookie': `__Host-auth=${sessionToken}`,
+      'Cookie': `${cookieName}=${sessionToken}`,
     },
   })
 }
@@ -306,9 +360,10 @@ export async function createDeviceLink(
   baseUrl: string,
   sessionToken: string
 ): Promise<{ url: string; token: string }> {
+  const cookieName = getSessionCookieName()
   const response = await page.request.post(`${baseUrl}/auth/api/user/create-link`, {
     headers: {
-      'Cookie': `__Host-auth=${sessionToken}`,
+      'Cookie': `${cookieName}=${sessionToken}`,
     },
   })
   const data = await response.json()

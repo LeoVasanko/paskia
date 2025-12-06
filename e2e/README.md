@@ -37,6 +37,16 @@ This will:
 2. Run all E2E tests against it
 3. Clean up the server when done
 
+### With Coverage
+
+```bash
+npm run test:coverage
+```
+
+Runs tests and collects coverage for both:
+- **Python backend** (via `coverage.py`) - HTML report in `coverage-html/`
+- **Frontend JavaScript** (via Chrome V8 coverage) - JSON data in `e2e/coverage-frontend/`
+
 ### Interactive Mode
 
 ```bash
