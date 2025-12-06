@@ -1,6 +1,13 @@
 """Startup configuration box formatting utilities."""
 
 import os
+from sys import stderr
+from typing import TYPE_CHECKING
+
+from paskia._version import __version__
+
+if TYPE_CHECKING:
+    from paskia.config import PaskiaConfig
 
 BOX_WIDTH = 60  # Inner width (excluding box chars)
 
@@ -20,23 +27,18 @@ def bottom() -> str:
     return "┗" + "━" * (BOX_WIDTH + 2) + "┛\n"
 
 
-def print_startup_config(passkey_instance, args, host, port, uds) -> None:
+def print_startup_config(config: "PaskiaConfig") -> None:
     """Print server configuration on startup."""
-    from sys import stderr
-
-    from paskia._version import __version__
-
     lines = [top()]
     lines.append(line(" ▄▄▄▄▄"))
     lines.append(line("█     █ Paskia " + __version__))
     lines.append(line("█     █▄▄▄▄▄▄▄▄▄▄▄▄"))
-    lines.append(line("█     █▀▀▀▀█▀▀█▀▀█"))
+    lines.append(line("█     █▀▀▀▀█▀▀█▀▀█    " + config.site_url + config.site_path))
     lines.append(line(" ▀▀▀▀▀"))
 
     # Format auth host section
-    auth_host = getattr(args, "auth_host", None)
-    if auth_host:
-        lines.append(line(f"Auth Host:      {auth_host}"))
+    if config.auth_host:
+        lines.append(line(f"Auth Host:      {config.auth_host}"))
 
     # Show frontend URL if in dev mode
     devmode = os.environ.get("PASKIA_DEVMODE")
@@ -44,24 +46,24 @@ def print_startup_config(passkey_instance, args, host, port, uds) -> None:
         lines.append(line(f"Dev Frontend:   {devmode}"))
 
     # Format listen address with scheme
-    if uds:
-        listen = f"unix:{uds}"
-    elif host:
-        listen = f"http://{host}:{port}"
+    if config.uds:
+        listen = f"unix:{config.uds}"
+    elif config.host:
+        listen = f"http://{config.host}:{config.port}"
     else:
-        listen = f"http://0.0.0.0:{port} + [::]:{port}"
+        listen = f"http://0.0.0.0:{config.port} + [::]:{config.port}"
     lines.append(line(f"Backend:        {listen}"))
 
     # Relying Party line (omit name if same as id)
-    rp_id = passkey_instance.rp_id
-    rp_name = passkey_instance.rp_name
+    rp_id = config.rp_id
+    rp_name = config.rp_name
     if rp_name and rp_name != rp_id:
         lines.append(line(f"Relying Party:  {rp_id}  ({rp_name})"))
     else:
         lines.append(line(f"Relying Party:  {rp_id}"))
 
     # Format origins section
-    allowed = passkey_instance.allowed_origins
+    allowed = config.origins
     if allowed:
         lines.append(line("Permitted Origins:"))
         for origin in sorted(allowed):
