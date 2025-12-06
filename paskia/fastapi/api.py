@@ -65,7 +65,9 @@ async def auth_exception_handler(_request: Request, exc: authz.AuthException):
 
 
 @app.exception_handler(Exception)
-async def general_exception_handler(_request: Request, exc: Exception):
+async def general_exception_handler(
+    _request: Request, exc: Exception
+):  # pragma: no cover
     logging.exception("Unhandled exception in API app")
     return JSONResponse(status_code=500, content={"detail": "Internal server error"})
 

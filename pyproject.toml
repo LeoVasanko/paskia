@@ -33,6 +33,9 @@ version-file = "paskia/_version.py"
 dev = [
     "ruff>=0.1.0",
     "coverage[toml]>=7.0.0",
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.24.0",
+    "httpx>=0.27.0",
 ]
 
 [tool.coverage.run]
@@ -52,6 +55,14 @@ show_missing = true
 [tool.coverage.html]
 directory = "coverage-html"
 
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+testpaths = ["tests"]
+filterwarnings = [
+    "ignore::DeprecationWarning",
+]
+
 [tool.ruff]
 target-version = "py39"
 line-length = 88
@@ -60,6 +71,15 @@ line-length = 88
 select = ["E", "F", "I", "N", "W", "UP"]
 ignore = ["E501"]  # Line too long
 isort.known-first-party = ["paskia"]
+
+[dependency-groups]
+dev = [
+    "coverage>=7.12.0",
+    "httpx>=0.28.1",
+    "pytest>=9.0.1",
+    "pytest-asyncio>=1.3.0",
+    "pytest-cov>=7.0.0",
+]
 
 [project.scripts]
 paskia = "paskia.fastapi.__main__:main"

@@ -38,7 +38,7 @@ async def auth_exception_handler(_request, exc: authz.AuthException):
 
 
 @app.exception_handler(Exception)
-async def general_exception_handler(_request, exc: Exception):
+async def general_exception_handler(_request, exc: Exception):  # pragma: no cover
     logging.exception("Unhandled exception in admin app")
     return JSONResponse(status_code=500, content={"detail": "Internal server error"})
 
@@ -139,7 +139,9 @@ async def admin_update_org(
 
     current = await db.instance.get_organization(str(org_uuid))
     display_name = payload.get("display_name") or current.display_name
-    permissions = payload.get("permissions") or current.permissions or []
+    permissions = payload.get("permissions")
+    if permissions is None:
+        permissions = current.permissions or []
 
     # Sanity check: prevent removing permissions that would break current user's admin access
     org_admin_perm = f"auth:org:{org_uuid}"
@@ -398,7 +400,7 @@ async def admin_update_user_role(
     # Sanity check: prevent admin from removing their own access
     if ctx.user.uuid == user_uuid:
         new_role_obj = next((r for r in roles if r.display_name == new_role), None)
-        if new_role_obj:
+        if new_role_obj:  # pragma: no branch - always true, role validated above
             has_admin_access = (
                 "auth:admin" in new_role_obj.permissions
                 or f"auth:org:{org_uuid}" in new_role_obj.permissions
@@ -432,7 +434,7 @@ async def admin_create_user_registration_link(
         host=request.headers.get("host"),
         max_age="5m",
     )
-    if (
+    if (  # pragma: no cover - defense in depth, authz.verify already checked
         "auth:admin" not in ctx.role.permissions
         and f"auth:org:{org_uuid}" not in ctx.role.permissions
     ):
@@ -482,7 +484,7 @@ async def admin_get_user_detail(
         match=permutil.has_any,
         host=request.headers.get("host"),
     )
-    if (
+    if (  # pragma: no cover - defense in depth, authz.verify already checked
         "auth:admin" not in ctx.role.permissions
         and f"auth:org:{org_uuid}" not in ctx.role.permissions
     ):
@@ -496,7 +498,7 @@ async def admin_get_user_detail(
     for cid in cred_ids:
         try:
             c = await db.instance.get_credential_by_id(cid)
-        except ValueError:
+        except ValueError:  # pragma: no cover - race condition handling
             continue
         aaguid_str = str(c.aaguid)
         aaguids.add(aaguid_str)
@@ -631,7 +633,7 @@ async def admin_update_user_display_name(
         match=permutil.has_any,
         host=request.headers.get("host"),
     )
-    if (
+    if (  # pragma: no cover - defense in depth, authz.verify already checked
         "auth:admin" not in ctx.role.permissions
         and f"auth:org:{org_uuid}" not in ctx.role.permissions
     ):
@@ -668,7 +670,7 @@ async def admin_delete_user_credential(
         host=request.headers.get("host"),
         max_age="5m",
     )
-    if (
+    if (  # pragma: no cover - defense in depth, authz.verify already checked
         "auth:admin" not in ctx.role.permissions
         and f"auth:org:{org_uuid}" not in ctx.role.permissions
     ):
@@ -699,7 +701,7 @@ async def admin_delete_user_session(
         match=permutil.has_any,
         host=request.headers.get("host"),
     )
-    if (
+    if (  # pragma: no cover - defense in depth, authz.verify already checked
         "auth:admin" not in ctx.role.permissions
         and f"auth:org:{org_uuid}" not in ctx.role.permissions
     ):
@@ -818,7 +820,7 @@ async def admin_rename_permission(
         perm = await db.instance.get_permission(old_id)
         display_name = perm.display_name
     rename_fn = getattr(db.instance, "rename_permission", None)
-    if not rename_fn:
+    if not rename_fn:  # pragma: no cover - all current backends support rename
         raise ValueError("Permission renaming not supported by this backend")
     await rename_fn(old_id, new_id, display_name)
     return {"status": "ok"}
