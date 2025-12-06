@@ -1,4 +1,13 @@
 import { test as base, expect, type CDPSession, type Page } from '@playwright/test'
+import { existsSync, mkdirSync, writeFileSync } from 'fs'
+import { join, dirname } from 'path'
+import { fileURLToPath } from 'url'
+
+const __dirname = dirname(fileURLToPath(import.meta.url))
+const coverageDir = join(__dirname, '..', '..', 'coverage-frontend')
+
+// Check if frontend coverage is enabled
+const COLLECT_COVERAGE = process.env.COVERAGE === '1' || process.env.COVERAGE === 'true'
 
 /**
  * Virtual Authenticator configuration for WebAuthn testing.
@@ -73,12 +82,27 @@ export async function getCredentials(
 }
 
 /**
- * Extended test fixture with virtual authenticator support.
+ * Extended test fixture with virtual authenticator support and optional coverage.
  */
 export const test = base.extend<{
   virtualAuthenticator: VirtualAuthenticator
 }>({
-  virtualAuthenticator: async ({ page }, use) => {
+  virtualAuthenticator: async ({ page }, use, testInfo) => {
+    // Start coverage collection if enabled
+    let coverageCdp: CDPSession | null = null
+    if (COLLECT_COVERAGE) {
+      try {
+        coverageCdp = await page.context().newCDPSession(page)
+        await coverageCdp.send('Profiler.enable')
+        await coverageCdp.send('Profiler.startPreciseCoverage', {
+          callCount: true,
+          detailed: true,
+        })
+      } catch {
+        coverageCdp = null
+      }
+    }
+
     // Create virtual authenticator before test
     const authenticator = await createVirtualAuthenticator(page)
 
@@ -87,6 +111,33 @@ export const test = base.extend<{
 
     // Cleanup after test
     await removeVirtualAuthenticator(authenticator)
+
+    // Stop and save coverage
+    if (coverageCdp) {
+      try {
+        const { result } = await coverageCdp.send('Profiler.takePreciseCoverage')
+        await coverageCdp.send('Profiler.stopPreciseCoverage')
+        await coverageCdp.send('Profiler.disable')
+
+        // Filter to only include our app's JavaScript files
+        const appCoverage = result.filter((entry: any) =>
+          entry.url.includes('/auth/') &&
+          entry.url.endsWith('.js') &&
+          !entry.url.includes('node_modules')
+        )
+
+        if (appCoverage.length > 0) {
+          if (!existsSync(coverageDir)) {
+            mkdirSync(coverageDir, { recursive: true })
+          }
+          const safeName = testInfo.title.replace(/[^a-z0-9]/gi, '_').substring(0, 50)
+          const coverageFile = join(coverageDir, `coverage-${safeName}-${Date.now()}.json`)
+          writeFileSync(coverageFile, JSON.stringify(appCoverage, null, 2))
+        }
+      } catch {
+        // Silently ignore coverage collection errors
+      }
+    }
   },
 })
 

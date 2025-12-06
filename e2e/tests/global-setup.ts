@@ -1,57 +1,65 @@
 import { spawn } from 'child_process'
 import { join, dirname } from 'path'
-import { existsSync, mkdirSync, rmSync, writeFileSync } from 'fs'
+import { existsSync, mkdirSync, writeFileSync } from 'fs'
 import { fileURLToPath } from 'url'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const testDataDir = join(__dirname, '..', 'test-data')
 const stateFile = join(testDataDir, 'test-state.json')
-const dbPath = join(testDataDir, 'test.sqlite')
+const projectRoot = join(__dirname, '..', '..')
+
+// Check if coverage is enabled
+const COLLECT_COVERAGE = process.env.COVERAGE === '1' || process.env.COVERAGE === 'true'
 
 interface TestState {
   resetToken?: string
   serverPid?: number
+  sessionCookie?: string
 }
 
 /**
  * Global setup for E2E tests.
  *
- * This creates a fresh test database and starts the server,
- * capturing the bootstrap reset token for initial user registration.
+ * Uses in-memory SQLite database for fast, isolated tests.
+ * Captures the bootstrap reset token for initial user registration.
  */
 export default async function globalSetup() {
   console.log('\n🔧 Setting up E2E test environment...\n')
 
-  // Create test data directory
+  // Create test data directory for state file
   if (!existsSync(testDataDir)) {
     mkdirSync(testDataDir, { recursive: true })
   }
 
-  // Remove old database for clean state
-  if (existsSync(dbPath)) {
-    console.log('  Removing old test database...')
-    rmSync(dbPath)
+  console.log('  Starting server with in-memory database...')
+  if (COLLECT_COVERAGE) {
+    console.log('  📊 Coverage collection enabled for Python backend')
   }
-
-  // Remove any wal/shm files too
-  for (const ext of ['-wal', '-shm']) {
-    const file = dbPath + ext
-    if (existsSync(file)) rmSync(file)
-  }
-
-  console.log('  Starting server with fresh database...')
 
   const state: TestState = {}
 
+  // Build server command - with or without coverage
+  const serverArgs = COLLECT_COVERAGE
+    ? [
+        'run', 'coverage', 'run', '--parallel-mode',
+        '-m', 'paskia.fastapi', 'serve', ':4401',
+        '--rp-id', 'localhost',
+        '--origin', 'http://localhost:4401'
+      ]
+    : [
+        'run', 'paskia', 'serve', ':4401',
+        '--rp-id', 'localhost',
+        '--origin', 'http://localhost:4401'
+      ]
+
   // Start the server using Node's spawn
-  const serverProcess = spawn('uv', [
-    'run', 'paskia', 'serve', ':4401',
-    '--rp-id', 'localhost',
-    '--origin', 'http://localhost:4401'
-  ], {
-    cwd: testDataDir, // Run from test-data so DB is created there
+  // Use in-memory SQLite for faster tests
+  const serverProcess = spawn('uv', serverArgs, {
+    cwd: projectRoot,
     env: {
       ...process.env,
+      PASKIA_DB: 'sqlite+aiosqlite:///:memory:',
+      COVERAGE_FILE: join(projectRoot, '.coverage'),
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   })
@@ -72,8 +80,9 @@ export default async function globalSetup() {
       process.stdout.write(text) // Echo to console
 
       // Look for the reset token URL in the output
-      // Format: http://localhost:4401/auth/{token} where token is word.word.word.word.word (dot separated)
-      const match = output.match(/http:\/\/localhost:\d+\/auth\/([a-z]+(?:\.[a-z]+)+)/)
+      // Format: https://localhost/auth/{token} or http://localhost:4401/auth/{token}
+      // where token is word.word.word.word.word (dot separated)
+      const match = output.match(/https?:\/\/localhost(?::\d+)?\/auth\/([a-z]+(?:\.[a-z]+)+)/)
       if (match) {
         clearTimeout(timeout)
         // Wait a bit for server to fully start
@@ -102,6 +111,18 @@ export default async function globalSetup() {
     console.log(`\n  ✅ Captured reset token: ${state.resetToken}\n`)
   } catch (err) {
     console.error('Failed to capture reset token:', err)
+    serverProcess.kill()
+    throw err
+  }
+
+  // Fetch session cookie name from server settings
+  try {
+    const response = await fetch('http://localhost:4401/auth/api/settings')
+    const settings = await response.json()
+    state.sessionCookie = settings.session_cookie
+    console.log(`  ✅ Session cookie name: ${state.sessionCookie}\n`)
+  } catch (err) {
+    console.error('Failed to fetch settings:', err)
     serverProcess.kill()
     throw err
   }

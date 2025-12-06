@@ -6,3 +6,5 @@ dist/
 paskia.sqlite
 /paskia/frontend-build
 /paskia/_version.py
+coverage-html/
+e2e/coverage-frontend/
