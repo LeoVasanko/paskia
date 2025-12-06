@@ -150,9 +150,7 @@ async def api_create_link(
         expiry=expiry,
         token_type="device addition",
     )
-    url = hostutil.reset_link_url(
-        token, request.url.scheme, request.headers.get("host")
-    )
+    url = hostutil.reset_link_url(token)
     return {
         "message": "Registration link generated successfully",
         "url": url,

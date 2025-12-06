@@ -8,35 +8,24 @@ from urllib.parse import urlparse, urlsplit
 from paskia.globals import passkey as global_passkey
 
 
-def _default_origin_scheme() -> str:
-    """Get the default scheme from configured origins, or fallback to https."""
-    allowed = global_passkey.instance.allowed_origins
-    if allowed:
-        # Pick any origin from the set
-        origin_url = urlparse(next(iter(allowed)))
-        return origin_url.scheme or "https"
-    return "https"
-
-
 @lru_cache(maxsize=1)
-def _load_config() -> tuple[str | None, str] | None:
-    """Load auth_host from PASKIA_CONFIG JSON, falling back to PASKIA_AUTH_HOST."""
-    # Try PASKIA_CONFIG first (set by CLI)
-    config_json = os.getenv("PASKIA_CONFIG")
-    if config_json:
-        config = json.loads(config_json)
-        raw = config["auth_host"]  # Always present, may be None
-    else:
-        # Fallback for external usage (e.g., PASKIA_AUTH_HOST set directly)
-        raw = os.getenv("PASKIA_AUTH_HOST")
+def _load_config() -> tuple[str, str] | None:
+    """Load auth_host from PASKIA_CONFIG JSON.
 
+    Returns (scheme, netloc) tuple if configured, None otherwise.
+    """
+    config_json = os.getenv("PASKIA_CONFIG")
+    if not config_json:
+        return None
+    config = json.loads(config_json)
+    raw = config["auth_host"]  # Always present, may be None
     if not raw:
         return None
     parsed = urlparse(raw if "://" in raw else f"//{raw}")
     netloc = parsed.netloc or parsed.path
     if not netloc:
         return None
-    return (parsed.scheme or None, netloc.strip("/"))
+    return (parsed.scheme or "https", netloc.strip("/"))
 
 
 def configured_auth_host() -> str | None:
@@ -52,36 +41,24 @@ def ui_base_path() -> str:
     return "/" if is_root_mode() else "/auth/"
 
 
-def auth_site_base_url(scheme: str | None = None, host: str | None = None) -> str:
+def auth_site_base_url() -> str:
+    """Return the base URL for the auth site UI.
+
+    If auth_host is configured (root mode), returns its URL.
+    Otherwise, constructs URL from rp_id with /auth/ path.
+    """
     cfg = _load_config()
     if cfg:
-        cfg_scheme, cfg_host = cfg
-        scheme_to_use = cfg_scheme or scheme or _default_origin_scheme()
-        netloc = cfg_host
-    else:
-        if host:
-            scheme_to_use = scheme or _default_origin_scheme()
-            netloc = host.strip("/")
-        else:
-            # Use the first allowed origin, or fallback to rp_id
-            allowed = global_passkey.instance.allowed_origins
-            if allowed:
-                origin = allowed[0].rstrip("/")
-                return f"{origin}{ui_base_path()}"
-            # Fallback: construct from rp_id
-            rp_id = global_passkey.instance.rp_id
-            return f"https://{rp_id}{ui_base_path()}"
+        scheme, netloc = cfg
+        return f"{scheme}://{netloc}/"
 
-    base = f"{scheme_to_use}://{netloc}".rstrip("/")
-    path = ui_base_path().lstrip("/")
-    return f"{base}/{path}" if path else f"{base}/"
+    # Not in root mode: use rp_id with /auth/ path
+    rp_id = global_passkey.instance.rp_id
+    return f"https://{rp_id}/auth/"
 
 
-def reset_link_url(
-    token: str, scheme: str | None = None, host: str | None = None
-) -> str:
-    base = auth_site_base_url(scheme, host)
-    return f"{base}{token}"
+def reset_link_url(token: str) -> str:
+    return f"{auth_site_base_url()}{token}"
 
 
 def reload_config() -> None:

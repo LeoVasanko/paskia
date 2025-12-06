@@ -174,10 +174,6 @@ def main():
 
     # Collect origins and handle auth_host
     origins = getattr(args, "origins", None) or []
-    if not getattr(args, "auth_host", None):
-        # Preserve pre-set env variable if CLI option omitted
-        args.auth_host = os.environ.get("PASKIA_AUTH_HOST")
-
     if args.auth_host:
         # Normalize auth_host with scheme
         if "://" not in args.auth_host:
@@ -203,8 +199,6 @@ def main():
         "rp_name": args.rp_name or None,
         "origins": origins or None,
         "auth_host": args.auth_host or None,
-        "default_admin": os.getenv("PASKIA_DEFAULT_ADMIN") or None,
-        "default_org": os.getenv("PASKIA_DEFAULT_ORG") or None,
     }
     os.environ["PASKIA_CONFIG"] = json.dumps(config)
 
@@ -217,8 +211,6 @@ def main():
             rp_id=config["rp_id"],
             rp_name=config["rp_name"],
             origins=config["origins"],
-            default_admin=config["default_admin"],
-            default_org=config["default_org"],
             bootstrap=True,
         )
     )
