@@ -4,18 +4,17 @@
       <h1>📱 Add Another Device</h1>
       <p class="view-lede">Generate a one-time link to set up passkeys on a new device.</p>
     </header>
-    <RegistrationLinkModal
-      inline
-              :endpoint="'/auth/api/user/create-link'"
-      :user-name="userName"
-      :auto-copy="false"
-      :prefix-copy-with-user-name="!!userName"
-      show-close-in-inline
-      @copied="onCopied"
-    />
     <div class="button-row" style="margin-top:1rem;">
+      <button @click="showModal = true" class="btn-primary">Generate Registration Link</button>
       <button @click="authStore.currentView = 'profile'" class="btn-secondary">Back to Profile</button>
     </div>
+    <RegistrationLinkModal
+      v-if="showModal"
+      endpoint="/auth/api/user/create-link"
+      :user-name="userName"
+      @close="showModal = false"
+      @copied="onCopied"
+    />
   </section>
 </template>
 
@@ -26,9 +25,10 @@ import RegistrationLinkModal from '@/components/RegistrationLinkModal.vue'
 
 const authStore = useAuthStore()
 const userName = ref(null)
+const showModal = ref(false)
+
 const onCopied = () => {
   authStore.showMessage('Link copied to clipboard!', 'success', 2500)
-  authStore.currentView = 'profile'
 }
 
 onMounted(async () => {

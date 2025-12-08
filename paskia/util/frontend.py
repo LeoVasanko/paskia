@@ -8,7 +8,10 @@ import httpx
 
 __all__ = ["path", "file", "read", "is_dev_mode"]
 
-DEV_SERVER = "http://localhost:4403"
+
+def _get_dev_server() -> str | None:
+    """Get the dev server URL from environment, or None if not in dev mode."""
+    return os.environ.get("PASKIA_DEVMODE") or None
 
 
 def _resolve_static_dir() -> Path:
@@ -34,7 +37,7 @@ def file(*parts: str) -> Path:
 
 def is_dev_mode() -> bool:
     """Check if we're running in dev mode (Vite frontend server)."""
-    return os.environ.get("PASKIA_DEVMODE") == "1"
+    return bool(_get_dev_server())
 
 
 async def read(filepath: str) -> tuple[bytes, int, dict[str, str]]:
@@ -51,8 +54,9 @@ async def read(filepath: str) -> tuple[bytes, int, dict[str, str]]:
         FastAPI Response(*args) or Sanic raw response.
     """
     if is_dev_mode():
+        dev_server = _get_dev_server()
         async with httpx.AsyncClient() as client:
-            resp = await client.get(f"{DEV_SERVER}{filepath}")
+            resp = await client.get(f"{dev_server}{filepath}")
             resp.raise_for_status()
             mime = resp.headers.get("content-type", "application/octet-stream")
             # Strip charset suffix if present

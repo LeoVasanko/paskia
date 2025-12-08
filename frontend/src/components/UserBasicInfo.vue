@@ -1,5 +1,5 @@
 <template>
-  <div v-if="userLoaded" class="user-info">
+  <div v-if="userLoaded" class="user-info" :class="{ 'has-extra': $slots.default }">
     <h3 class="user-name-heading">
       <span class="icon">👤</span>
       <span class="user-name-row">
@@ -11,12 +11,15 @@
       <div class="org-line" v-if="orgDisplayName">{{ orgDisplayName }}</div>
       <div class="role-line" v-if="roleName">{{ roleName }}</div>
     </div>
-    <span><strong>Visits:</strong></span>
-    <span>{{ visits || 0 }}</span>
-    <span><strong>Registered:</strong></span>
-    <span>{{ formatDate(createdAt) }}</span>
-    <span><strong>Last seen:</strong></span>
-    <span>{{ formatDate(lastSeen) }}</span>
+    <span class="info-label"><strong>Visits:</strong></span>
+    <span class="info-value">{{ visits || 0 }}</span>
+    <span class="info-label"><strong>Registered:</strong></span>
+    <span class="info-value">{{ formatDate(createdAt) }}</span>
+    <span class="info-label"><strong>Last seen:</strong></span>
+    <span class="info-value">{{ formatDate(lastSeen) }}</span>
+    <div v-if="$slots.default" class="user-info-extra">
+      <slot></slot>
+    </div>
   </div>
 </template>
 
@@ -44,13 +47,50 @@ const userLoaded = computed(() => !!props.name)
 </script>
 
 <style scoped>
-.user-info { display: grid; grid-template-columns: auto 1fr; gap: 10px; }
-.user-info h3 { grid-column: span 2; }
-.org-role-sub { grid-column: span 2; display:flex; flex-direction:column; margin: -0.15rem 0 0.25rem; }
+.user-info.has-extra {
+  grid-template-columns: auto 1fr;
+  grid-template-areas:
+    "heading heading"
+    "org org"
+    "label1 value1"
+    "label2 value2"
+    "label3 value3"
+    "extra extra";
+}
+
+.user-info:not(.has-extra) {
+  grid-template-columns: auto 1fr;
+  grid-template-areas:
+    "heading heading"
+    "org org"
+    "label1 value1"
+    "label2 value2"
+    "label3 value3";
+}
+
+@media (min-width: 769px) {
+  .user-info.has-extra {
+    grid-template-columns: auto 1fr 2fr;
+    grid-template-areas:
+      "heading heading extra"
+      "org org extra"
+      "label1 value1 extra"
+      "label2 value2 extra"
+      "label3 value3 extra";
+  }
+}
+
+.user-name-heading { grid-area: heading; display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; margin: 0 0 0.25rem 0; }
+.org-role-sub { grid-area: org; display:flex; flex-direction:column; margin: -0.15rem 0 0.25rem; }
 .org-line { font-size: .7rem; font-weight:600; line-height:1.1; color: var(--color-text-muted); text-transform: uppercase; letter-spacing: 0.05em; }
 .role-line { font-size:.65rem; color: var(--color-text-muted); line-height:1.1; }
-.user-info span { text-align: left; }
-.user-name-heading { display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; margin: 0 0 0.25rem 0; }
+.info-label:nth-of-type(1) { grid-area: label1; }
+.info-value:nth-of-type(2) { grid-area: value1; }
+.info-label:nth-of-type(3) { grid-area: label2; }
+.info-value:nth-of-type(4) { grid-area: value2; }
+.info-label:nth-of-type(5) { grid-area: label3; }
+.info-value:nth-of-type(6) { grid-area: value3; }
+.user-info-extra { grid-area: extra; padding-left: 2rem; border-left: 1px solid var(--color-border); }
 .user-name-row { display: inline-flex; align-items: center; gap: 0.35rem; max-width: 100%; }
 .user-name-row.editing { flex: 1 1 auto; }
 .icon { flex: 0 0 auto; }
@@ -62,5 +102,6 @@ const userLoaded = computed(() => !!props.name)
 .mini-btn:hover:not(:disabled) { background: var(--color-accent-soft); color: var(--color-accent); }
 .mini-btn:active:not(:disabled) { transform: translateY(1px); }
 .mini-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+@media (max-width: 768px) { .user-info-extra { padding-left: 0; padding-top: 1rem; border-left: none; border-top: 1px solid var(--color-border); } }
 @media (max-width: 480px) { .user-name-heading { flex-direction: column; align-items: flex-start; } .user-name-row.editing { width: 100%; } .display-name { max-width: 100%; } }
 </style>

@@ -18,12 +18,36 @@ class AwaitableWebSocket extends WebSocket {
     }
     this.onclose = e => {
       if (!this.#opened) {
-        reject(new Error(`WebSocket ${this.url} failed to connect, code ${e.code}`))
+        reject(new Error(`Failed to connect to server (code ${e.code})`))
         return
       }
-      this.#err = e.wasClean
-        ? new Error(`Websocket ${this.url} closed ${e.code}`)
-        : new Error(`WebSocket ${this.url} closed with error ${e.code}`)
+      // Create user-friendly close messages
+      let message
+      if (e.wasClean) {
+        // Standard close codes
+        switch (e.code) {
+          case 1000: message = 'Connection closed normally'; break
+          case 1001: message = 'Server is going away'; break
+          case 1002: message = 'Protocol error'; break
+          case 1003: message = 'Unsupported data received'; break
+          case 1006: message = 'Connection lost unexpectedly'; break
+          case 1007: message = 'Invalid data received'; break
+          case 1008: message = 'Policy violation'; break
+          case 1009: message = 'Message too large'; break
+          case 1010: message = 'Extension negotiation failed'; break
+          case 1011: message = 'Server encountered an error'; break
+          case 1012: message = 'Server is restarting'; break
+          case 1013: message = 'Server is overloaded, try again later'; break
+          case 1014: message = 'Bad gateway'; break
+          case 1015: message = 'TLS handshake failed'; break
+          default: message = `Connection closed (code ${e.code})`
+        }
+      } else {
+        message = e.code === 1006
+          ? 'Connection lost unexpectedly'
+          : `Connection closed with error (code ${e.code})`
+      }
+      this.#err = new Error(message)
       this.#waiting.splice(0).forEach(p => p.reject(this.#err))
     }
   }

@@ -1,14 +1,34 @@
 <template>
   <RestrictedAuth
     :mode="authMode"
+    :remote-auth-token="remoteAuthToken"
     @authenticated="handleAuthenticated"
     @back="handleBack"
   />
 </template>
 
 <script setup>
-import { computed, onMounted } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import RestrictedAuth from '@/components/RestrictedAuth.vue'
+
+// Check if this is a remote auth URL: /auth/{token}
+// The token is a 5-word passphrase like "word1.word2.word3.word4.word5"
+const remoteAuthToken = ref(null)
+
+function extractRemoteToken() {
+  const path = window.location.pathname
+  // Match /auth/{token} where token is a passphrase with dots
+  const match = path.match(/\/auth\/([^/]+)$/)
+  if (match) {
+    const token = match[1]
+    // Validate it looks like a 5-word passphrase
+    const parts = token.split('.')
+    if (parts.length === 5 && parts.every(p => p.length > 0)) {
+      return token
+    }
+  }
+  return null
+}
 
 // Detect mode from URL hash fragment
 const authMode = computed(() => {
@@ -40,6 +60,9 @@ function handleBack() {
 }
 
 onMounted(() => {
+  // Check for remote auth token in URL
+  remoteAuthToken.value = extractRemoteToken()
+
   postToParent({
     type: 'auth-ready'
   })

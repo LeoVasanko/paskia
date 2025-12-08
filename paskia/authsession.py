@@ -71,7 +71,7 @@ async def get_reset(token: str) -> ResetToken:
     record = await db.instance.get_reset_token(reset_key(token))
     if record and record.expiry >= datetime.now(timezone.utc):
         return record
-    raise ValueError("This reset link is invalid or has expired")
+    raise ValueError("This authentication link is no longer valid.")
 
 
 async def get_session(token: str, host: str | None = None) -> Session:

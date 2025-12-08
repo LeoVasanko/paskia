@@ -42,8 +42,12 @@ async def lifespan(app: FastAPI):  # pragma: no cover - startup path
         # Re-raise to fail fast
         raise
 
+    # Restore info level logging after startup (suppressed during uvicorn init in dev mode)
+    if frontend.is_dev_mode():
+        logging.getLogger("uvicorn").setLevel(logging.INFO)
+        logging.getLogger("uvicorn.access").setLevel(logging.INFO)
+
     yield
-    # (Optional) add shutdown cleanup here later
 
 
 app = FastAPI(lifespan=lifespan)
@@ -113,10 +117,14 @@ async def examples_page():
 
 
 # Note: this catch-all handler must be the last route defined
-@app.get("/{reset}")
-@app.get("/auth/{reset}")
-async def reset_link(reset: str):
-    """Serve the reset app directly with an injected reset token."""
-    if not passphrase.is_well_formed(reset):
+@app.get("/{token}")
+@app.get("/auth/{token}")
+async def token_link(token: str):
+    """Serve the reset app for reset tokens (password reset / device addition).
+
+    The frontend will validate the token via /auth/api/token-info.
+    """
+    if not passphrase.is_well_formed(token):
         raise HTTPException(status_code=404)
+
     return Response(*await frontend.read("/int/reset/index.html"))

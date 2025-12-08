@@ -132,7 +132,6 @@ async function handleTerminateSession(session) {
     <RegistrationLinkModal
       v-if="showRegModal"
       :endpoint="`/auth/api/admin/orgs/${selectedUser.org_uuid}/users/${selectedUser.uuid}/create-link`"
-      :auto-copy="false"
       :user-name="userDetail?.display_name || selectedUser.display_name"
       @close="$emit('closeRegModal')"
       @copied="onLinkCopied"
