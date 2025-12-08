@@ -11,27 +11,41 @@
         <header class="view-header center">
           <h1>{{ headingTitle }}</h1>
           <p v-if="isAuthenticated" class="user-line">👤 {{ userDisplayName }}</p>
-          <p class="view-lede">{{ headerMessage }}</p>
+          <p class="view-lede" v-html="headerMessage"></p>
         </header>
 
         <section class="section-block">
           <div class="section-body center">
-            <div class="button-row center">
-              <slot name="actions"
-                :loading="loading"
-                :can-authenticate="canAuthenticate"
-                :is-authenticated="isAuthenticated"
-                :authenticate="authenticateUser"
-                :logout="logoutUser"
-                :mode="mode">
-                <!-- Default actions -->
-                <button class="btn-secondary" :disabled="loading" @click="$emit('back')">Back</button>
-                <button v-if="canAuthenticate" class="btn-primary" :disabled="loading" @click="authenticateUser">
-                  {{ loading ? (mode === 'reauth' ? 'Verifying…' : 'Signing in…') : (mode === 'reauth' ? 'Verify' : 'Login') }}
-                </button>
-                <button v-if="isAuthenticated && mode !== 'reauth'" class="btn-danger" :disabled="loading" @click="logoutUser">Logout</button>
-                <button v-if="isAuthenticated && mode !== 'reauth'" class="btn-primary" :disabled="loading" @click="openProfile">Profile</button>
-              </slot>
+            <!-- Local passkey authentication view -->
+            <div v-if="authView === 'local'" class="auth-view">
+              <div class="button-row center">
+                <slot name="actions"
+                  :loading="loading"
+                  :can-authenticate="canAuthenticate"
+                  :is-authenticated="isAuthenticated"
+                  :authenticate="authenticateUser"
+                  :logout="logoutUser"
+                  :mode="mode">
+                  <!-- Default actions -->
+                  <button class="btn-secondary" :disabled="loading" @click="$emit('back')">Back</button>
+                  <button v-if="canAuthenticate" class="btn-primary" :disabled="loading" @click="authenticateUser">
+                    {{ loading ? (mode === 'reauth' ? 'Verifying…' : 'Signing in…') : (mode === 'reauth' ? 'Verify' : 'Login') }}
+                  </button>
+                  <button v-if="isAuthenticated && mode !== 'reauth'" class="btn-danger" :disabled="loading" @click="logoutUser">Logout</button>
+                  <button v-if="isAuthenticated && mode !== 'reauth'" class="btn-primary" :disabled="loading" @click="openProfile">Profile</button>
+                </slot>
+              </div>
+            </div>
+
+            <!-- Remote authentication view (request new remote auth) -->
+            <div v-else-if="authView === 'remote'" class="auth-view">
+              <RemoteAuthInline
+                :active="authView === 'remote'"
+                @authenticated="handleRemoteAuthenticated"
+                @register="handleRemoteRegistration"
+                @cancelled="switchToLocal"
+                @error="handleRemoteAuthError"
+              />
             </div>
           </div>
         </section>
@@ -41,10 +55,11 @@
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import passkey from '@/utils/passkey'
-import { getSettings } from '@/utils/settings'
+import { getSettings, uiBasePath } from '@/utils/settings'
 import { fetchJson, getUserFriendlyErrorMessage } from '@/utils/api'
+import RemoteAuthInline from '@/components/RemoteAuthRequest.vue'
 
 const props = defineProps({
   mode: {
@@ -62,17 +77,15 @@ const loading = ref(false)
 const settings = ref(null)
 const userInfo = ref(null)
 const currentView = ref('initial') // 'initial', 'login', 'forbidden'
+const authView = ref('local') // 'local' or 'remote'
 let statusTimer = null
 
 const isAuthenticated = computed(() => !!userInfo.value?.authenticated)
 
 const canAuthenticate = computed(() => {
   if (initializing.value) return false
-  // In reauth mode, allow authentication even if already authenticated
   if (props.mode === 'reauth') return true
-  // In forbidden view (authenticated but lacking permissions), don't allow authentication
   if (currentView.value === 'forbidden') return false
-  // In login view or initial state, allow authentication
   return true
 })
 
@@ -90,6 +103,12 @@ const headerMessage = computed(() => {
   }
   if (currentView.value === 'forbidden') {
     return 'You lack the required permissions.'
+  }
+  if (authView.value === 'remote') {
+    return 'Confirm from your other device. Or <a href="#" class="inline-link" data-action="local">this device</a>.'
+  }
+  if (canAuthenticate.value && props.mode !== 'reauth') {
+    return 'Please sign in with your passkey. Or use <a href="#" class="inline-link" data-action="remote">another device</a>.'
   }
   return 'Please sign in with your passkey.'
 })
@@ -122,7 +141,6 @@ async function fetchSettings() {
 async function fetchUserInfo() {
   try {
     userInfo.value = await fetchJson('/auth/api/user-info', { method: 'POST' })
-    // Determine view based on authentication status
     if (isAuthenticated.value && props.mode !== 'reauth') {
       currentView.value = 'forbidden'
       emit('forbidden', userInfo.value)
@@ -131,7 +149,6 @@ async function fetchUserInfo() {
     }
   } catch (error) {
     console.error('Failed to load user info', error)
-    // For 401/403 just go to login, for other errors show message
     if (error.status !== 401 && error.status !== 403) {
       showMessage(getUserFriendlyErrorMessage(error), 'error', 4000)
     }
@@ -170,7 +187,6 @@ async function logoutUser() {
   try {
     await fetchJson('/auth/api/logout', { method: 'POST' })
     userInfo.value = null
-    // Switch to login view after logout
     currentView.value = 'login'
     showMessage('Logged out. You can sign in with a different account.', 'info', 3000)
   } catch (error) {
@@ -181,7 +197,6 @@ async function logoutUser() {
 }
 
 function openProfile() {
-  // Open profile in a new window with a specific name to reuse the same tab
   const profileWindow = window.open('/auth/', 'passkey_auth_profile')
   if (profileWindow) profileWindow.focus()
 }
@@ -196,10 +211,61 @@ async function setSessionCookie(result) {
   })
 }
 
+function switchToRemote() {
+  authView.value = 'remote'
+}
+
+function switchToLocal() {
+  authView.value = 'local'
+}
+
+async function handleRemoteAuthenticated(result) {
+  showMessage('Authenticated from another device!', 'success', 2000)
+  try {
+    await setSessionCookie(result)
+  } catch (error) {
+    const message = error?.message || 'Failed to establish session'
+    showMessage(message, 'error', 4000)
+    emit('auth-error', { message, cancelled: false })
+    return
+  }
+  emit('authenticated', result)
+}
+
+function handleRemoteRegistration(token) {
+  showMessage('Registration approved! Redirecting...', 'success', 2000)
+  const basePath = uiBasePath() || '/auth/'
+  window.location.href = `${basePath}${token}`
+}
+
+function handleRemoteAuthError(errorMsg) {
+  // Error is already shown in the RemoteAuth component, don't show toast
+}
+
+function handleHeaderLinkClick(event) {
+  const target = event.target
+  if (target.tagName === 'A' && target.classList.contains('inline-link')) {
+    event.preventDefault()
+    const action = target.dataset.action
+    if (action === 'remote') {
+      switchToRemote()
+    } else if (action === 'local') {
+      switchToLocal()
+    }
+  }
+}
+
 onMounted(async () => {
   await fetchSettings()
   await fetchUserInfo()
   initializing.value = false
+
+  // Add click handler for inline links
+  document.addEventListener('click', handleHeaderLinkClick)
+})
+
+onUnmounted(() => {
+  document.removeEventListener('click', handleHeaderLinkClick)
 })
 
 defineExpose({
@@ -210,9 +276,8 @@ defineExpose({
 </script>
 
 <style scoped>
-.button-row.center { display: flex; justify-content: center; gap: 0.75rem; }
+.button-row.center { display: flex; justify-content: center; gap: 0.75rem; flex-wrap: wrap; }
 .user-line { margin: 0.5rem 0 0; font-weight: 500; color: var(--color-text); }
-/* Vertically center the restricted "dialog" surface in the viewport */
 main.view-root { min-height: 100vh; align-items: center; justify-content: center; padding: 2rem 1rem; }
 .surface.surface--tight {
   max-width: 520px;
@@ -221,5 +286,25 @@ main.view-root { min-height: 100vh; align-items: center; justify-content: center
   display: flex;
   flex-direction: column;
   gap: 1.75rem;
+}
+
+.auth-view {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+  width: 100%;
+}
+
+.view-lede :deep(.inline-link) {
+  color: var(--color-primary);
+  text-decoration: none;
+  transition: opacity 0.15s;
+  font-weight: 400;
+}
+
+.view-lede :deep(.inline-link:hover) {
+  opacity: 0.8;
+  text-decoration: underline;
 }
 </style>

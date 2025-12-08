@@ -23,7 +23,6 @@
 
         <section class="section-block" v-else-if="!canRegister">
           <div class="section-body center">
-            <p>{{ errorMessage }}</p>
             <div class="button-row center" style="justify-content: center;">
               <button class="btn-secondary" @click="goHome">Return to sign-in</button>
             </div>
@@ -80,7 +79,7 @@ let statusTimer = null
 const sessionDescriptor = computed(() => userInfo.value?.session_type || 'your enrollment')
 const subtitleMessage = computed(() => {
   if (initializing.value) return 'Preparing your secure enrollment…'
-  if (!canRegister.value) return 'This reset link is no longer valid.'
+  if (!canRegister.value) return 'This authentication link is no longer valid.'
   return `Finish up ${sessionDescriptor.value}. You may edit the name below if needed, and it will be saved to your passkey.`
 })
 
@@ -120,10 +119,9 @@ async function fetchUserInfo() {
   } catch (error) {
     console.error('Failed to load user info', error)
     const message = error instanceof ApiError
-      ? (error.data?.detail || 'Reset link is invalid or expired.')
+      ? (error.data?.detail || 'The authentication link is invalid or expired.')
       : getUserFriendlyErrorMessage(error)
     errorMessage.value = message
-    showMessage(message, 'error', 0)
   }
 }
 

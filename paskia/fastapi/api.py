@@ -200,9 +200,35 @@ async def get_settings():
         "rp_id": pk.rp_id,
         "rp_name": pk.rp_name,
         "ui_base_path": base_path,
-        "auth_host": hostutil.configured_auth_host(),
+        "auth_host": hostutil.dedicated_auth_host(),
+        "auth_site_url": hostutil.auth_site_url(),
         "session_cookie": AUTH_COOKIE_NAME,
     }
+
+
+@app.get("/token-info")
+async def api_token_info(token: str):
+    """Get information about a reset token.
+
+    Returns:
+        - type: "reset"
+        - user_name: display name of the user
+        - token_type: type of reset token
+    """
+    if not passphrase.is_well_formed(token):
+        raise HTTPException(status_code=404, detail="Invalid token")
+
+    # Check if this is a reset token
+    try:
+        reset_token = await get_reset(token)
+        user = await db.instance.get_user_by_uuid(reset_token.user_uuid)
+        return {
+            "type": "reset",
+            "user_name": user.display_name,
+            "token_type": reset_token.token_type,
+        }
+    except (ValueError, Exception):
+        raise HTTPException(status_code=404, detail="Token not found or expired")
 
 
 @app.post("/user-info")

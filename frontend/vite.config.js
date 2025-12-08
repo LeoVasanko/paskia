@@ -53,18 +53,26 @@ export default defineConfig(({ command }) => ({
   base: '/',
   server: {
     port: 4403,
+    allowedHosts: true,
     fs: {
       allow: ['..']
     },
     proxy: {
       // Only proxy these two specific backend API paths
       '/auth/api': {
-        target: 'http://localhost:4402',
-        headers: { connection: 'close' }
+        target: 'http://localhost:4402'
       },
       '/auth/ws': {
         target: 'http://localhost:4402',
         ws: true
+      },
+      // Passphrase links: /auth/word1.word2.word3.word4.word5
+      '^/auth/[a-z]+\\.[a-z]+\\.[a-z]+\\.[a-z]+\\.[a-z]+$': {
+        target: 'http://localhost:4402'
+      },
+      // Passphrase links: /word1.word2.word3.word4.word5
+      '^/[a-z]+\\.[a-z]+\\.[a-z]+\\.[a-z]+\\.[a-z]+$': {
+        target: 'http://localhost:4402'
       }
     }
   },

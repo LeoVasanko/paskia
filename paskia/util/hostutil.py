@@ -19,7 +19,7 @@ def is_root_mode() -> bool:
     return _load_config().get("auth_host") is not None
 
 
-def configured_auth_host() -> str | None:
+def dedicated_auth_host() -> str | None:
     """Return configured auth_host netloc, or None."""
     auth_host = _load_config().get("auth_host")
     if not auth_host:
@@ -34,7 +34,7 @@ def ui_base_path() -> str:
     return "/" if is_root_mode() else "/auth/"
 
 
-def auth_site_base_url() -> str:
+def auth_site_url() -> str:
     """Return the base URL for the auth site UI (computed at startup)."""
     cfg = _load_config()
     return cfg.get("site_url", "https://localhost") + cfg.get("site_path", "/auth/")
@@ -42,7 +42,7 @@ def auth_site_base_url() -> str:
 
 def reset_link_url(token: str) -> str:
     """Generate a reset link URL for the given token."""
-    return f"{auth_site_base_url()}{token}"
+    return f"{auth_site_url()}{token}"
 
 
 def normalize_origin(origin: str) -> str:

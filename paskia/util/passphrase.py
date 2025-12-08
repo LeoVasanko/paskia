@@ -3,6 +3,7 @@ import secrets
 from paskia.util.wordlist import words
 
 N_WORDS = 5
+N_WORDS_SHORT = 3
 
 wset = set(words)
 

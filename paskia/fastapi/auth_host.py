@@ -73,7 +73,7 @@ def redirect_to_root_on_auth_host(request: Request, cur: str, path: str) -> Resp
 
 async def redirect_middleware(request: Request, call_next):
     """Middleware to handle auth host redirects."""
-    cfg = hostutil.configured_auth_host()
+    cfg = hostutil.dedicated_auth_host()
     if not cfg:
         return await call_next(request)
 

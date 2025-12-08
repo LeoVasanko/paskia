@@ -1,6 +1,7 @@
-import base64
 import hashlib
 import secrets
+
+import base64url
 
 from paskia.util.passphrase import is_well_formed
 
@@ -12,21 +13,20 @@ def create_token() -> str:
 def session_key(token: str) -> bytes:
     if len(token) != 16:
         raise ValueError("Session token must be exactly 16 characters long")
-    return b"sess" + base64.urlsafe_b64decode(token)
+    return b"sess" + base64url.dec(token)
 
 
 def encode_session_key(key: bytes) -> str:
     """Encode an opaque session key for external representation."""
-    return base64.urlsafe_b64encode(key).decode().rstrip("=")
+    return base64url.enc(key)
 
 
 def decode_session_key(encoded: str) -> bytes:
     """Decode an opaque session key from its public representation."""
     if not encoded:
         raise ValueError("Invalid session identifier")
-    padding = "=" * (-len(encoded) % 4)
     try:
-        raw = base64.urlsafe_b64decode(encoded + padding)
+        raw = base64url.dec(encoded)
     except Exception as exc:  # pragma: no cover - defensive
         raise ValueError("Invalid session identifier") from exc
     if not raw.startswith(b"sess"):

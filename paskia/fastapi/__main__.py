@@ -273,7 +273,7 @@ def main():
         }
 
         # Dev mode: enable reload when PASKIA_DEVMODE is set
-        devmode = os.environ.get("PASKIA_DEVMODE") == "1"
+        devmode = bool(os.environ.get("PASKIA_DEVMODE"))
         if devmode:
             # Security: dev mode must run on localhost:4402 to prevent
             # accidental public exposure of the Vite dev server
@@ -281,6 +281,8 @@ def main():
                 raise SystemExit(f"Dev mode requires localhost:4402, got {host}:{port}")
             run_kwargs["reload"] = True
             run_kwargs["reload_dirs"] = ["paskia"]
+            # Suppress uvicorn startup messages in dev mode
+            run_kwargs["log_level"] = "warning"
 
         if uds:
             run_kwargs["uds"] = uds

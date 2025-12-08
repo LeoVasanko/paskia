@@ -1,57 +1,17 @@
-import logging
-from functools import wraps
 from uuid import UUID
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from webauthn.helpers.exceptions import InvalidAuthenticationResponse
+from fastapi import FastAPI, WebSocket
 
 from paskia.authsession import create_session, get_reset, get_session
 from paskia.fastapi import authz
 from paskia.fastapi.session import AUTH_COOKIE, infodict
+from paskia.fastapi.wsutil import validate_origin, websocket_error_handler
 from paskia.globals import db, passkey
 from paskia.util import passphrase
 from paskia.util.tokens import create_token, session_key
 
-
-# WebSocket error handling decorator
-def websocket_error_handler(func):
-    @wraps(func)
-    async def wrapper(ws: WebSocket, *args, **kwargs):
-        try:
-            await ws.accept()
-            return await func(ws, *args, **kwargs)
-        except WebSocketDisconnect:
-            pass
-        except authz.AuthException as e:
-            await ws.send_json(
-                {
-                    "status": e.status_code,
-                    **(await authz.auth_error_content(e)),
-                }
-            )
-        except (ValueError, InvalidAuthenticationResponse) as e:
-            await ws.send_json({"status": 401, "detail": str(e)})
-        except Exception:
-            logging.exception("Internal Server Error")
-            await ws.send_json({"status": 500, "detail": "Internal Server Error"})
-
-    return wrapper
-
-
 # Create a FastAPI subapp for WebSocket endpoints
 app = FastAPI()
-
-
-def _validate_origin(ws: WebSocket) -> str:
-    """Extract and validate origin from WebSocket request headers.
-
-    Raises:
-        ValueError: If origin header is missing or not in allowed list
-    """
-    origin = ws.headers.get("origin")
-    if not origin:
-        raise ValueError("Origin header is required for WebSocket connections")
-    return passkey.instance.validate_origin(origin)
 
 
 async def register_chat(
@@ -86,7 +46,7 @@ async def websocket_register_add(
     - Normal session via auth cookie (requires recent authentication)
     - Reset token supplied as ?reset=... (auth cookie ignored)
     """
-    origin = _validate_origin(ws)
+    origin = validate_origin(ws)
     host = origin.split("://", 1)[1]
     if reset is not None:
         if not passphrase.is_well_formed(reset):
@@ -142,7 +102,7 @@ async def websocket_register_add(
 @app.websocket("/authenticate")
 @websocket_error_handler
 async def websocket_authenticate(ws: WebSocket, auth=AUTH_COOKIE):
-    origin = _validate_origin(ws)
+    origin = validate_origin(ws)
     host = origin.split("://", 1)[1]
 
     # If there's an existing session, restrict to that user's credentials (reauth)

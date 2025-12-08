@@ -1,9 +1,9 @@
 <template>
   <section class="view-root" data-view="profile">
     <header class="view-header">
-      <h1>👋 Welcome!</h1>
+      <h1>User Profile</h1>
       <Breadcrumbs :entries="breadcrumbEntries" />
-      <p class="view-lede">Manage your account details and passkeys.</p>
+      <p class="view-lede">Account dashboard for managing credentials and authenticating with other devices.</p>
     </header>
 
     <section class="section-block">
@@ -17,7 +17,20 @@
         update-endpoint="/auth/api/user/display-name"
         @saved="authStore.loadUserInfo()"
         @edit-name="openNameDialog"
-      />
+      >
+        <div class="remote-auth-inline">
+          <label v-if="!showDeviceInfo" class="remote-auth-label">Code words from remote device:</label>
+          <RemoteAuth
+            ref="pairingEntry"
+            title=""
+            description=""
+            placeholder="word word word"
+            @completed="handlePairingCompleted"
+            @error="handlePairingError"
+            @device-info-visible="showDeviceInfo = $event"
+          />
+        </div>
+      </UserBasicInfo>
     </section>
 
     <section class="section-block">
@@ -84,11 +97,8 @@
     </section>
     <RegistrationLinkModal
       v-if="showRegLink"
-              :endpoint="'/auth/api/user/create-link'"
-      :auto-copy="false"
-      :prefix-copy-with-user-name="false"
+      endpoint="/auth/api/user/create-link"
       @close="showRegLink = false"
-      @copied="showRegLink = false; authStore.showMessage('Link copied to clipboard!', 'success', 2500)"
     />
   </section>
 </template>
@@ -102,6 +112,7 @@ import Modal from '@/components/Modal.vue'
 import NameEditForm from '@/components/NameEditForm.vue'
 import SessionList from '@/components/SessionList.vue'
 import RegistrationLinkModal from '@/components/RegistrationLinkModal.vue'
+import RemoteAuth from '@/components/RemoteAuthPermit.vue'
 import { useAuthStore } from '@/stores/auth'
 import { adminUiPath, makeUiHref } from '@/utils/settings'
 import passkey from '@/utils/passkey'
@@ -116,6 +127,8 @@ const newName = ref('')
 const saving = ref(false)
 const hoveredCredentialUuid = ref(null)
 const hoveredSession = ref(null)
+const showDeviceInfo = ref(false)
+const pairingEntry = ref(null)
 
 watch(showNameDialog, (newVal) => { if (newVal) newName.value = authStore.userInfo?.user?.user_name || '' })
 
@@ -135,6 +148,19 @@ const addNewCredential = async () => {
   } catch (error) {
     console.error('Failed to add new passkey:', error)
     authStore.showMessage(error.message, 'error')
+  }
+}
+
+const handlePairingCompleted = () => {
+  authStore.showMessage('The other device is now signed in!', 'success', 4000)
+  // Reset the form after a delay
+  setTimeout(() => pairingEntry.value?.reset(), 3000)
+}
+
+const handlePairingError = (message) => {
+  // Error is already shown in the component, optionally show global message for severe errors
+  if (!message.includes('cancelled')) {
+    authStore.showMessage(message, 'error', 4000)
   }
 }
 
@@ -199,5 +225,7 @@ const saveName = async () => {
 .logout-row { gap: 1rem; }
 .logout-row.single { justify-content: flex-start; }
 .logout-note { margin: 0.75rem 0 0; color: var(--color-text-muted); font-size: 0.875rem; }
+.remote-auth-inline { display: flex; flex-direction: column; gap: 0.5rem; }
+.remote-auth-label { display: block; margin: 0; font-size: 0.875rem; color: var(--color-text-muted); font-weight: 500; }
 @media (max-width: 720px) { .logout-button { width: 100%; } }
 </style>
