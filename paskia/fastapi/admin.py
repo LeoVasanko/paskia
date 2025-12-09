@@ -559,6 +559,7 @@ async def admin_get_user_detail(
         sessions_payload.append(
             {
                 "id": encode_session_key(entry.key),
+                "credential_uuid": str(entry.credential_uuid),
                 "host": entry.host,
                 "ip": entry.ip,
                 "user_agent": useragent.compact_user_agent(entry.user_agent),
