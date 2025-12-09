@@ -24,6 +24,7 @@
                 tabindex="0"
                 @focusin="handleSessionFocus(session)"
                 @focusout="handleSessionBlur($event)"
+                @keydown="handleDelete($event, session)"
               >
                 <div class="item-top">
                   <h4 class="item-title">{{ session.user_agent }}</h4>
@@ -37,6 +38,7 @@
                       class="btn-card-delete"
                       :disabled="isTerminating(session.id)"
                       :title="isTerminating(session.id) ? 'Terminating...' : 'Terminate session'"
+                      tabindex="-1"
                     >🗑️</button>
                   </div>
                 </div>
@@ -89,6 +91,14 @@ const handleSessionBlur = (event) => {
     hoveredSession.value = null
     hoveredIp.value = null
     emit('sessionHover', null)
+  }
+}
+
+const handleDelete = (event, session) => {
+  const apple = navigator.userAgent.includes('Mac OS')
+  if (event.key === 'Delete' || apple && event.key === 'Backspace') {
+    event.preventDefault()
+    if (!isTerminating(session.id)) emit('terminate', session)
   }
 }
 

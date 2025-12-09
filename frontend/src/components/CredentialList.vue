@@ -14,6 +14,7 @@
         tabindex="0"
         @focusin="handleCredentialFocus(credential.credential_uuid)"
         @focusout="handleCredentialBlur($event)"
+        @keydown="handleDelete($event, credential)"
       >
         <div class="item-top">
           <div class="item-icon">
@@ -38,6 +39,7 @@
               class="btn-card-delete"
               :disabled="credential.is_current_session"
               :title="credential.is_current_session ? 'Cannot delete current session credential' : 'Delete passkey'"
+              tabindex="-1"
             >🗑️</button>
           </div>
         </div>
@@ -79,6 +81,14 @@ const handleCredentialBlur = (event) => {
   // Only clear if focus moved outside this element
   if (!event.currentTarget.contains(event.relatedTarget)) {
     emit('credentialHover', null)
+  }
+}
+
+const handleDelete = (event, credential) => {
+  const apple = navigator.userAgent.includes('Mac OS')
+  if (event.key === 'Delete' || apple && event.key === 'Backspace') {
+    event.preventDefault()
+    if (props.allowDelete && !credential.is_current_session) emit('delete', credential)
   }
 }
 
