@@ -19,24 +19,25 @@
         @edit-name="openNameDialog"
       >
         <div class="remote-auth-inline">
-          <label v-if="!showDeviceInfo" class="remote-auth-label">Code words from remote device:</label>
-          <RemoteAuth
+          <label v-if="!showDeviceInfo" class="remote-auth-label">Code words:</label>
+          <RemoteAuthPermit
             ref="pairingEntry"
             title=""
             description=""
-            placeholder="word word word"
             @completed="handlePairingCompleted"
             @error="handlePairingError"
             @device-info-visible="showDeviceInfo = $event"
           />
         </div>
+        <p class="remote-auth-description">Provided by another device requesting remote auth.</p>
       </UserBasicInfo>
     </section>
 
     <section class="section-block">
       <div class="section-header">
         <h2>Your Passkeys</h2>
-        <p class="section-description">Keep at least one trusted passkey so you can always sign in.</p>
+        <p class="section-description">Ideally have at least two passkeys in case you lose one. More than one user can be registered on the same device, giving you a choice at login.</p>
+        <p><a href="https://bitwarden.com/pricing/" target="_blank" rel="noopener noreferrer">Bitwarden</a> can sync one passkey to all your devices. Other secure options include <b>local passkeys</b>, as well as hardware keys such as <a href="https://www.yubico.com" target="_blank" rel="noopener noreferrer">YubiKey</a>. Cloud sync via Google, Microsoft or iCloud is discouraged.</p>
       </div>
       <div class="section-body">
         <CredentialList
@@ -50,8 +51,8 @@
           @credential-hover="hoveredCredentialUuid = $event"
         />
         <div class="button-row">
-          <button @click="addNewCredential" class="btn-primary">Add New Passkey</button>
-          <button @click="showRegLink = true" class="btn-secondary">Add Another Device</button>
+          <button @click="addNewCredential" class="btn-primary">Register New</button>
+          <button @click="showRegLink = true" class="btn-secondary">Another Device</button>
         </div>
       </div>
     </section>
@@ -62,7 +63,7 @@
       :hovered-credential-uuid="hoveredCredentialUuid"
       @terminate="terminateSession"
       @session-hover="hoveredSession = $event"
-      section-description="Review where you're signed in and end any sessions you no longer recognize."
+      section-description="You are currently signed in to the following sessions. If you don't recognize something, consider deleting not only the session but the associated passkey you suspect is compromised, as only this terminates all linked sessions and prevents logging in again."
     />
 
     <Modal v-if="showNameDialog" @close="showNameDialog = false">
@@ -112,7 +113,7 @@ import Modal from '@/components/Modal.vue'
 import NameEditForm from '@/components/NameEditForm.vue'
 import SessionList from '@/components/SessionList.vue'
 import RegistrationLinkModal from '@/components/RegistrationLinkModal.vue'
-import RemoteAuth from '@/components/RemoteAuthPermit.vue'
+import RemoteAuthPermit from '@/components/RemoteAuthPermit.vue'
 import { useAuthStore } from '@/stores/auth'
 import { adminUiPath, makeUiHref } from '@/utils/settings'
 import passkey from '@/utils/passkey'
@@ -167,10 +168,9 @@ const handlePairingError = (message) => {
 const handleDelete = async (credential) => {
   const credentialId = credential?.credential_uuid
   if (!credentialId) return
-  if (!confirm('Are you sure you want to delete this passkey?')) return
   try {
     await authStore.deleteCredential(credentialId)
-    authStore.showMessage('Passkey deleted successfully!', 'success', 3000)
+    authStore.showMessage('Passkey deleted! You should also remove it from your password manager or device.', 'success', 3000)
   } catch (error) { authStore.showMessage(`Failed to delete passkey: ${error.message}`, 'error') }
 }
 
@@ -219,9 +219,12 @@ const saveName = async () => {
 <style scoped>
 .view-lede { margin: 0; color: var(--color-text-muted); font-size: 1rem; }
 .section-header { display: flex; flex-direction: column; gap: 0.4rem; }
-.section-description { margin: 0; color: var(--color-text-muted); }
 .empty-state { margin: 0; color: var(--color-text-muted); text-align: center; padding: 1rem 0; }
 .logout-note { margin: 0.75rem 0 0; color: var(--color-text-muted); font-size: 0.875rem; }
 .remote-auth-inline { display: flex; flex-direction: column; gap: 0.5rem; }
 .remote-auth-label { display: block; margin: 0; font-size: 0.875rem; color: var(--color-text-muted); font-weight: 500; }
+.remote-auth-description {
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+}
 </style>

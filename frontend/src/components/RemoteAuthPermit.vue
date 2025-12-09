@@ -95,7 +95,7 @@ const props = defineProps({
   title: { type: String, default: 'Help Another Device Sign In' },
   description: { type: String, default: 'Enter the code shown on the device that needs to sign in.' },
   placeholder: { type: String, default: 'Enter three words' },
-  action: { type: String, default: 'login' } // 'login' or 'register'
+  action: { type: String, default: 'login' }, // 'login' or 'register'
 })
 
 const emit = defineEmits(['completed', 'error', 'cancelled', 'back', 'register', 'deviceInfoVisible'])
@@ -654,7 +654,6 @@ function reset() {
 
 onMounted(async () => {
   await fetchSettings()
-  inputRef.value?.focus()
   // Initialize cursor position
   nextTick(() => {
     cursorPos.value = inputRef.value?.selectionStart ?? 0
@@ -696,25 +695,14 @@ defineExpose({ reset, deny, code, handleInput, loading, error })
   max-width: 100%;
 }
 
-/* Slot machine visual display (matches RemoteAuthInline) */
+/* Slot machine visual display (matches RemoteAuthRequest) */
 .slot-machine {
   position: absolute;
   left: 0;
   top: 0;
   width: 100%;
   height: 100%;
-  padding: 0.875rem 1rem;
-  background: var(--color-surface-hover, rgba(0, 0, 0, 0.03));
-  border: 2px solid var(--color-border);
-  border-radius: var(--radius-sm, 6px);
-  font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
-  display: flex;
   gap: 0;
-  align-items: center;
-  user-select: none;
-  pointer-events: none;
-  white-space: nowrap;
-  overflow: hidden;
   box-sizing: border-box;
   z-index: 1;
 }
@@ -729,15 +717,8 @@ defineExpose({ reset, deny, code, handleInput, loading, error })
 }
 
 .slot-reel {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
   flex: 1 1 33.333%;
-  min-width: 0;
-  height: 1.8em;
   overflow: visible;
-  position: relative;
-  border-radius: 3px;
 }
 
 .slot-reel:not(:last-child) {

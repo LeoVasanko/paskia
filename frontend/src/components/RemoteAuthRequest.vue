@@ -360,16 +360,8 @@ defineExpose({ retry, cancel })
 }
 
 .slot-reel {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex: 1;
-  min-width: 0;
-  height: 1.8em;
   overflow: hidden;
-  position: relative;
   background: var(--color-surface, rgba(255, 255, 255, 0.5));
-  border-radius: 3px;
 }
 
 .slot-machine:not(.stopped) .slot-reel:nth-child(1) {

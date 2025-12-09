@@ -37,6 +37,7 @@
   --layout-max-width: 1400px;
   --layout-padding: clamp(1.5rem, 3vw + 1rem, 3.25rem);
   --transition-base: 160ms ease;
+  --focus-ring: 0 0 0 2px var(--color-accent);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -84,6 +85,10 @@ body {
   color: var(--color-text);
   line-height: 1.55;
   -webkit-font-smoothing: antialiased;
+  text-align: justify;
+  hyphens: auto;
+  -webkit-hyphens: auto;
+  -moz-hyphens: auto;
 }
 
 body,
@@ -108,13 +113,6 @@ a:visited {
 a:hover,
 a:focus-visible {
   color: var(--color-link-hover);
-  text-decoration: underline;
-}
-
-a:focus-visible {
-  outline: 2px solid var(--color-accent);
-  outline-offset: 2px;
-  border-radius: var(--radius-sm);
 }
 
 .app-shell {
@@ -187,6 +185,11 @@ a:focus-visible {
   gap: 1rem;
 }
 
+.section-description {
+  margin: 0;
+  color: var(--color-text-muted);
+}
+
 .button-row {
   display: flex;
   flex-wrap: wrap;
@@ -214,18 +217,12 @@ button {
   border: 1px solid transparent;
   padding: 0.65rem 1.1rem;
   cursor: pointer;
-  transition: all var(--transition-base);
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 0.4rem;
   background: var(--color-surface);
   color: var(--color-text);
-}
-
-button:focus-visible {
-  outline: 2px solid var(--color-accent);
-  outline-offset: 2px;
 }
 
 button:disabled {
@@ -437,7 +434,7 @@ th {
   color: var(--color-text);
 }
 
-:root { --card-width: 22rem; }
+:root { --card-width: 16rem; }
 
 .record-list,
 .credential-list,
@@ -447,7 +444,7 @@ th {
   grid-auto-flow: row;
   grid-template-columns: repeat(auto-fill, minmax(var(--card-width), 1fr));
   justify-content: start;
-  gap: 1rem 1.25rem;
+  gap: 0.5rem;
   align-items: stretch;
   margin: 0 auto;
 }
@@ -461,9 +458,7 @@ th {
 .session-item {
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
-  padding: 1rem;
-  border: 1px solid var(--color-border);
+  padding: 0.5rem;
   border-radius: var(--radius-md);
   background: var(--color-surface);
   height: 100%;
@@ -484,7 +479,7 @@ th {
 .credential-item.current-session,
 .credential-item.is-hovered,
 .session-item.is-current,
-.session-item.is-hovered { border-color: var(--color-accent); }
+.session-item.is-hovered { border-color: var(--color-accent); background-color: var(--color-surface-subtle); }
 
 .credential-item.is-linked-session,
 .session-item.is-linked-credential { border-color: var(--color-accent); background-color: var(--color-surface-subtle); }
@@ -492,7 +487,7 @@ th {
 .item-top {
   display: flex;
   align-items: center;
-  gap: 1rem;
+  height: 2.5rem;
 }
 
 .item-icon {
@@ -500,9 +495,6 @@ th {
   height: 40px;
   display: grid;
   place-items: center;
-  background: var(--color-surface-subtle, transparent);
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--color-border);
   flex-shrink: 0;
 }
 
@@ -516,12 +508,14 @@ th {
   font-size: 1rem;
   font-weight: 600;
   color: var(--color-heading);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .item-actions {
   flex-shrink: 0;
   display: flex;
-  gap: 0.5rem;
   align-items: center;
 }
 
@@ -529,39 +523,30 @@ th {
 .item-actions .badge + .badge { margin-left: 0.25rem; }
 
 .item-details {
-  margin-left: calc(40px + 1rem);
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
+  margin-left: 40px;
 }
 
-.credential-dates {
-  display: grid;
-  grid-auto-flow: row;
-  grid-template-columns: 7rem 1fr;
-  gap: 0.35rem 0.5rem;
-  font-size: 0.75rem;
-  color: var(--color-text-muted);
-  align-items: center;
-}
-
+.credential-dates,
 .session-dates {
   display: grid;
   grid-auto-flow: row;
-  grid-template-columns: 7rem 1fr;
-  gap: 0.35rem 0.5rem;
+  grid-template-columns: 8em 1fr;
   font-size: 0.75rem;
-  color: var(--color-text-muted);
   align-items: center;
 }
 
 .date-label {
   font-weight: 500;
-  color: inherit;
+  color: var(--color-text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .date-value {
   color: var(--color-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .btn-card-delete { background: transparent; border: none; color: var(--color-danger); padding: 0.35rem 0.5rem; font-size: 1.05rem; line-height: 1; border-radius: var(--radius-sm); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
@@ -578,6 +563,7 @@ th {
   border-radius: var(--radius-sm);
   font-size: 0.8rem;
   font-weight: 500;
+  white-space: nowrap;
 }
 
 .badge-current {
@@ -610,28 +596,18 @@ th {
 }
 
 .user-info {
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  padding: 1.1rem 1.25rem;
   display: grid;
-  grid-template-columns: auto 1fr;
-  gap: 0.75rem 1.25rem;
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  padding: 1.1rem 1.25rem;
 }
 
-.user-info h3 {
-  margin: 0;
-  grid-column: span 2;
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  font-size: 1.15rem;
-  font-weight: 600;
-}
-
-.user-info span {
-  text-align: left;
-  color: var(--color-text);
+.user-details {
+  display: grid;
+  grid-template-columns: 7em 1fr;
+  gap: 0 0.5rem;
+  padding-left: 40px;
+  font-size: 0.75rem;
 }
 
 .toggle-link {
@@ -651,11 +627,6 @@ th {
   .view-root {
     padding: clamp(1rem, 3vw + 0.75rem, 2rem);
     gap: 1.75rem;
-  }
-
-  .credential-dates {
-    grid-auto-flow: row;
-    grid-template-columns: auto auto;
   }
 
   .global-status {
@@ -737,4 +708,28 @@ body:has(#auth-iframe) {
   background: transparent;
   backdrop-filter: blur(.1rem) brightness(0.7);
   -webkit-backdrop-filter: blur(.1rem) brightness(0.7);
+}
+
+.slot-machine {
+  padding: 0.875rem 1rem;
+  background: var(--color-surface-hover, rgba(0, 0, 0, 0.03));
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
+  display: flex;
+  align-items: center;
+  user-select: none;
+  pointer-events: none;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.slot-reel {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  min-width: 0;
+  height: 1.8em;
+  position: relative;
 }

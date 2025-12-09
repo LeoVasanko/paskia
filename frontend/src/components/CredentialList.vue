@@ -12,6 +12,8 @@
           'is-linked-session': hoveredSessionCredentialUuid === credential.credential_uuid
         }]"
         tabindex="0"
+        @mousedown.prevent
+        @click.capture="handleCardClick"
         @focusin="handleCredentialFocus(credential.credential_uuid)"
         @focusout="handleCredentialBlur($event)"
         @keydown="handleDelete($event, credential)"
@@ -59,7 +61,6 @@
 </template>
 
 <script setup>
-import { computed, ref } from 'vue'
 import { formatDate } from '@/utils/helpers'
 
 const props = defineProps({
@@ -84,6 +85,13 @@ const handleCredentialBlur = (event) => {
   }
 }
 
+const handleCardClick = (event) => {
+  if (!event.currentTarget.matches(':focus')) {
+    event.currentTarget.focus()
+    event.stopPropagation()
+  }
+}
+
 const handleDelete = (event, credential) => {
   const apple = navigator.userAgent.includes('Mac OS')
   if (event.key === 'Delete' || apple && event.key === 'Backspace') {
@@ -105,3 +113,12 @@ const getCredentialAuthIcon = (credential) => {
   return info[iconKey] || null
 }
 </script>
+
+<style>
+.btn-card-delete {
+  display: none;
+}
+.credential-item:focus .btn-card-delete {
+  display: block;
+}
+</style>
