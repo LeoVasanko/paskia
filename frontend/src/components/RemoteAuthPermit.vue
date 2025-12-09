@@ -75,8 +75,6 @@
           </button>
         </div>
       </div>
-
-      <p v-if="error && !deviceInfo" class="error-message">{{ error }}</p>
     </form>
   </div>
 </template>
@@ -346,7 +344,7 @@ async function ensureConnection() {
   wsConnecting = true
   try {
     const authHost = settings.value?.auth_host
-    const wsPath = '/auth/ws/remote-auth/pair'
+    const wsPath = '/auth/ws/remote-auth/permit'
     const wsUrl = authHost && location.host !== authHost ? `//${authHost}${wsPath}` : wsPath
     ws = await aWebSocket(wsUrl)
     const msg = await ws.receive_json()
@@ -365,7 +363,7 @@ async function ensureConnection() {
 // Defer cursor position update to after browser processes the key
 function deferUpdateCursor(event) {
   // Handle Tab/Space for autocomplete immediately
-  if (event.key === 'Tab' || event.key === ' ') {
+  if (event.key === 'Tab' || event.key === ' ' || event.key === 'Escape') {
     handleKeydown(event)
     return
   }
@@ -527,7 +525,7 @@ async function lookupDeviceInfo() {
     const res = await ws.receive_json()
     updateChallenge(res.pow)
     if (typeof res.status === 'number' && res.status >= 400) {
-      error.value = res.detail || 'Request failed'
+      showMessage(res.detail || 'Request failed', 'error')
       serverError.value = true
       deviceInfo.value = null
       lastLookedUpCode = null
@@ -544,14 +542,14 @@ async function lookupDeviceInfo() {
       lastLookedUpCode = currentCode
       nextTick(() => { submitBtnRef.value?.focus() })
     } else {
-      error.value = 'Unexpected response from server'
+      showMessage('Unexpected response from server', 'error')
       serverError.value = true
       deviceInfo.value = null
       lastLookedUpCode = null
     }
   } catch (err) {
     console.error('Lookup error:', err)
-    error.value = err.message || 'Lookup failed'
+    showMessage(err.message || 'Lookup failed', 'error')
     serverError.value = true
     deviceInfo.value = null
     lastLookedUpCode = null
@@ -563,6 +561,12 @@ async function lookupDeviceInfo() {
 }
 
 function handleKeydown(event) {
+  if (event.key === 'Escape') {
+    code.value = ''
+    handleInput()
+    event.preventDefault()
+    return
+  }
   if (event.key === 'Tab') {
     if (autocompleteHint.value) {
       const applied = applyAutocomplete()
@@ -708,12 +712,15 @@ defineExpose({ reset, deny, code, handleInput, loading, error })
 }
 
 .slot-machine.has-error {
-  border-color: var(--color-error, #ef4444);
+  /* Error background only shown when focused */
+}
+
+.input-wrapper.focused.has-error .slot-machine {
   background: var(--color-error-bg, rgba(239, 68, 68, 0.05));
 }
 
 .slot-machine.is-complete {
-  border-color: var(--color-success, #10b981);
+  /* Success state - no special styling */
 }
 
 .slot-reel {
