@@ -85,7 +85,7 @@
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { startAuthentication } from '@simplewebauthn/browser'
 import aWebSocket from '@/utils/awaitable-websocket'
-import { dec as b64dec, enc as b64enc } from '@/utils/base64url'
+import { b64dec, b64enc } from '@/utils/base64url'
 import { getSettings } from '@/utils/settings'
 import { getUniqueMatch, isValidWord, isValidPrefix } from '@/utils/wordlist'
 import { solvePoW } from '@/utils/pow'
