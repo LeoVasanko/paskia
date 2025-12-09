@@ -3,11 +3,14 @@
     <form @submit.prevent="submitCode" class="pairing-form">
       <!-- Code input (shown when device info not yet received) -->
       <div v-if="!deviceInfo" class="input-row">
-        <div class="input-wrapper" :class="{ 'has-error': serverError, 'is-complete': deviceInfo && !serverError, 'focused': isFocused }">
+        <div class="input-wrapper" :class="{ 'has-error': serverError, 'is-complete': deviceInfo && !serverError, 'focused': isFocused, 'has-selection': hasSelection }">
           <!-- Visual slot-machine display overlay -->
           <div class="slot-machine" :class="{ 'has-error': serverError, 'is-complete': deviceInfo && !serverError }" aria-hidden="true">
             <div v-for="(word, index) in displayWords" :key="index" class="slot-reel" :class="{ 'invalid-word': word.invalid, 'empty': !word.text && !word.typedPrefix }">
               <div class="slot-word">
+                <span v-if="word.selectionStartChar >= 0 && word.selectionEndChar > word.selectionStartChar"
+                      class="selection-overlay"
+                      :style="{ '--sel-start': word.selectionStartChar, '--sel-end': word.selectionEndChar, '--word-len': word.wordLen }"></span>
                 <template v-if="word.typedPrefix">
                   <span class="typed-prefix">{{ word.typedPrefix }}</span><span class="hint-suffix">{{ word.hintSuffix }}</span>
                   <span v-if="word.hasCursor" class="cursor-overlay" :style="{ '--cursor-pos': word.cursorCharIndex, '--word-len': word.wordLen }"></span>
@@ -124,7 +127,11 @@ watch(deviceInfo, (newVal) => {
 const hasInvalidWord = ref(false)
 const serverError = ref(false)
 const cursorPos = ref(0)
+const selectionStart = ref(0)
+const selectionEnd = ref(0)
 const isFocused = ref(false)
+const isDeleting = ref(false)
+let previousCursorPos = 0
 let wsConnecting = false
 let currentChallenge = null
 let currentWork = null
@@ -164,9 +171,42 @@ function getWords(input) {
   return input.trim().split(/[.\s]+/).filter(w => w.length > 0)
 }
 
+// Get words for display, splitting concatenated valid words (e.g., "alienfood" -> ["alien", "food"])
+function getDisplayWords(input) {
+  const rawWords = getWords(input)
+  const result = []
+
+  for (const rawWord of rawWords) {
+    // Try to split this raw word into valid words
+    let remaining = rawWord.toLowerCase()
+    while (remaining.length > 0 && result.length < 3) {
+      let foundWord = null
+      // Try to find the longest valid word from the start
+      for (let len = Math.min(remaining.length, 6); len >= 3; len--) {
+        const candidate = remaining.slice(0, len)
+        if (isValidWord(candidate)) {
+          foundWord = candidate
+          break
+        }
+      }
+      if (foundWord) {
+        result.push(foundWord)
+        remaining = remaining.slice(foundWord.length)
+      } else {
+        // No valid word found, keep the remaining as partial word
+        result.push(remaining)
+        break
+      }
+    }
+    if (result.length >= 3) break
+  }
+
+  return result
+}
+
 function countCompleteWords(input) {
   const endsWithSeparator = /[.\s]$/.test(input)
-  const words = getWords(input)
+  const words = getDisplayWords(input)
   return endsWithSeparator ? words.length : Math.max(0, words.length - 1)
 }
 
@@ -197,7 +237,7 @@ const coloredSegments = computed(() => {
 })
 
 function checkWordsValidity(input) { return analyzeWords(input).valid }
-function allWordsValid(input) { return getWords(input).length > 0 && getWords(input).every(w => isValidWord(w)) }
+function allWordsValid(input) { return getDisplayWords(input).length > 0 && getDisplayWords(input).every(w => isValidWord(w)) }
 
 // Get the current partial word being typed (not yet a complete word)
 function getCurrentPartialWord(input) {
@@ -209,61 +249,127 @@ function getCurrentPartialWord(input) {
 
 // Calculate cursor position in the normalized display (wordIndex, charIndex within word)
 // Returns { wordIndex: number, charIndex: number } where charIndex is position within the word text
+// This handles concatenated words like "alienfood" being displayed as "alien" + "food"
 function calcDisplayCursor(input, rawCursorPos) {
   if (!input || rawCursorPos === 0) {
     return { wordIndex: 0, charIndex: 0 }
   }
 
-  // Parse input to find word boundaries
   const beforeCursor = input.slice(0, rawCursorPos)
-  const wordMatches = [...beforeCursor.matchAll(/[a-zA-Z]+/g)]
-
-  // Check if cursor is in whitespace after words
   const endsWithSeparator = /[.\s]$/.test(beforeCursor)
 
-  if (wordMatches.length === 0) {
-    // No words before cursor, cursor is at start of first word
+  // Get display words for the text before cursor
+  const displayWordsBefore = getDisplayWords(beforeCursor)
+
+  if (displayWordsBefore.length === 0) {
     return { wordIndex: 0, charIndex: 0 }
   }
 
-  const lastMatch = wordMatches[wordMatches.length - 1]
-  const lastMatchEnd = lastMatch.index + lastMatch[0].length
-
-  if (endsWithSeparator || rawCursorPos > lastMatchEnd) {
-    // Cursor is after the last word (in whitespace), so it's at start of next word
-    return { wordIndex: Math.min(wordMatches.length, 2), charIndex: 0 }
+  if (endsWithSeparator) {
+    // Cursor is in whitespace after words, so it's at start of next word
+    return { wordIndex: Math.min(displayWordsBefore.length, 2), charIndex: 0 }
   }
 
-  // Cursor is within the last word
-  const charIndex = rawCursorPos - lastMatch.index
-  return { wordIndex: wordMatches.length - 1, charIndex: charIndex }
+  // Cursor is within/after the last display word
+  const lastDisplayWord = displayWordsBefore[displayWordsBefore.length - 1]
+  const wordIndex = displayWordsBefore.length - 1
+
+  // Find where in the original input this display word ends
+  // by getting the full display words and comparing
+  const fullDisplayWords = getDisplayWords(input)
+
+  // Calculate char position within the word
+  // The last display word from beforeCursor might be partial
+  const charIndex = lastDisplayWord.length
+
+  // If this word is a complete valid word and it's not the 3rd word (index 2),
+  // show cursor at start of next slot - but only when typing forward, not when deleting
+  if (wordIndex < 2 && !isDeleting.value) {
+    if (isValidWord(lastDisplayWord)) {
+      return { wordIndex: wordIndex + 1, charIndex: 0 }
+    }
+  }
+
+  return { wordIndex: Math.min(wordIndex, 2), charIndex: charIndex }
+}
+
+// Calculate display cursor without the "advance to next word" logic (for selection bounds)
+function calcDisplayCursorRaw(input, rawCursorPos) {
+  if (!input || rawCursorPos === 0) {
+    return { wordIndex: 0, charIndex: 0 }
+  }
+
+  const beforeCursor = input.slice(0, rawCursorPos)
+  const endsWithSeparator = /[.\s]$/.test(beforeCursor)
+  const displayWordsBefore = getDisplayWords(beforeCursor)
+
+  if (displayWordsBefore.length === 0) {
+    return { wordIndex: 0, charIndex: 0 }
+  }
+
+  if (endsWithSeparator) {
+    return { wordIndex: Math.min(displayWordsBefore.length, 2), charIndex: 0 }
+  }
+
+  const lastDisplayWord = displayWordsBefore[displayWordsBefore.length - 1]
+  const wordIndex = displayWordsBefore.length - 1
+  return { wordIndex: Math.min(wordIndex, 2), charIndex: lastDisplayWord.length }
 }
 
 // Compute display words for slot-machine overlay (always 3 slots)
 const displayWords = computed(() => {
-  const words = getWords(code.value)
+  const words = getDisplayWords(code.value)
   const result = []
-
-  // Get analysis for validation
-  const { segments } = analyzeWords(code.value)
-  const wordSegments = segments.filter(s => s.isWord)
 
   // Get current partial word and autocomplete hint
   const partialWord = getCurrentPartialWord(code.value)
   const hint = autocompleteHint.value
   const endsWithSeparator = /[.\s]$/.test(code.value)
 
+  // Calculate selection bounds (raw positions without advance logic)
+  const hasSelectionNow = selectionStart.value !== selectionEnd.value
+  const selStart = calcDisplayCursorRaw(code.value, Math.min(selectionStart.value, selectionEnd.value))
+  const selEnd = calcDisplayCursorRaw(code.value, Math.max(selectionStart.value, selectionEnd.value))
+
   // Calculate where cursor should be displayed
-  const cursor = calcDisplayCursor(code.value, cursorPos.value)
+  // Use raw position when there's a selection (cursor shows at active end without advance)
+  // Use advance logic only when typing without selection
+  const cursor = hasSelectionNow
+    ? calcDisplayCursorRaw(code.value, cursorPos.value)
+    : calcDisplayCursor(code.value, cursorPos.value)
 
   // Always show exactly 3 slots
   for (let i = 0; i < 3; i++) {
     const isCursorSlot = cursor.wordIndex === i
 
+    // Calculate selection range for this word
+    let selectionStartChar = -1
+    let selectionEndChar = -1
+    if (hasSelectionNow) {
+      if (i > selStart.wordIndex && i < selEnd.wordIndex) {
+        // Entire word is selected
+        selectionStartChar = 0
+        selectionEndChar = words[i]?.length ?? 0
+      } else if (i === selStart.wordIndex && i === selEnd.wordIndex) {
+        // Selection starts and ends in this word
+        selectionStartChar = selStart.charIndex
+        selectionEndChar = selEnd.charIndex
+      } else if (i === selStart.wordIndex) {
+        // Selection starts in this word
+        selectionStartChar = selStart.charIndex
+        selectionEndChar = words[i]?.length ?? 0
+      } else if (i === selEnd.wordIndex) {
+        // Selection ends in this word
+        selectionStartChar = 0
+        selectionEndChar = selEnd.charIndex
+      }
+    }
+
     if (i < words.length) {
       const word = words[i].toLowerCase()
-      const isInvalid = wordSegments[i]?.invalid || false
       const isLastWord = i === words.length - 1
+      // Validate: last word without separator can be a prefix, others must be complete words
+      const isInvalid = (isLastWord && !endsWithSeparator) ? !isValidPrefix(word) : !isValidWord(word)
 
       if (isLastWord && !endsWithSeparator && hint && partialWord) {
         // Show typed prefix + hint suffix in the same slot
@@ -276,7 +382,9 @@ const displayWords = computed(() => {
           invalid: isInvalid,
           hasCursor: isCursorSlot,
           cursorCharIndex: isCursorSlot ? cursor.charIndex : -1,
-          wordLen: totalLen
+          wordLen: totalLen,
+          selectionStartChar,
+          selectionEndChar
         })
       } else {
         // Complete word - show cursor at appropriate position
@@ -285,7 +393,9 @@ const displayWords = computed(() => {
           invalid: isInvalid,
           hasCursor: isCursorSlot,
           cursorCharIndex: isCursorSlot ? cursor.charIndex : -1,
-          wordLen: word.length
+          wordLen: word.length,
+          selectionStartChar,
+          selectionEndChar
         })
       }
     } else {
@@ -295,7 +405,9 @@ const displayWords = computed(() => {
         invalid: false,
         hasCursor: isCursorSlot,
         cursorCharIndex: 0,
-        wordLen: 0
+        wordLen: 0,
+        selectionStartChar,
+        selectionEndChar
       })
     }
   }
@@ -303,13 +415,17 @@ const displayWords = computed(() => {
   return result
 })
 
+const hasSelection = computed(() => selectionStart.value !== selectionEnd.value)
+
 const hasThreeValidWords = computed(() => {
-  const words = getWords(code.value)
+  const words = getDisplayWords(code.value)
   return words.length === 3 && words.every(w => isValidWord(w))
 })
 
 function normalizeCode(input) {
-  return input.trim().toLowerCase().split(/[.\s]+/).filter(w => w).join('.')
+  // Use display words to handle concatenated words like "alienfood" -> "alien.food"
+  const words = getDisplayWords(input)
+  return words.join('.')
 }
 
 function startPowSolving() {
@@ -371,9 +487,22 @@ function deferUpdateCursor(event) {
   setTimeout(updateCursorPos, 0)
 }
 
-// Update cursor position from input
 function updateCursorPos() {
-  cursorPos.value = inputRef.value?.selectionStart ?? code.value.length
+  const input = inputRef.value
+  const start = input?.selectionStart ?? code.value.length
+  const end = input?.selectionEnd ?? start
+
+  // Track direction based on which end moved
+  // If selection exists, cursor is at the end being moved (selectionDirection)
+  const direction = input?.selectionDirection ?? 'none'
+  const activeCursor = direction === 'backward' ? start : end
+
+  isDeleting.value = activeCursor < previousCursorPos
+  previousCursorPos = activeCursor
+  cursorPos.value = activeCursor
+  selectionEnd.value = end
+  // Store start separately - cursorPos is the active end, we need both for selection
+  selectionStart.value = start
 }
 
 function updateAutocomplete() {
@@ -394,7 +523,7 @@ function applyAutocomplete() {
   const { word, start, end } = getWordAtCursor(code.value, cursorPos.value)
   if (!word) return false
   const before = code.value.slice(0, start)
-  const wordsBefore = getWords(before).length
+  const wordsBefore = getDisplayWords(before).length
   const isThirdWord = wordsBefore === 2
   const suffix = isThirdWord ? '' : ' '
   const after = code.value.slice(end)
@@ -408,93 +537,15 @@ function applyAutocomplete() {
   return true
 }
 
-// Try to split concatenated words (e.g., "alienalien" -> "alien alien")
-function trySplitWords(input) {
-  // Only process if there's a continuous string of letters at the end
-  const match = input.match(/^(.*?)([a-zA-Z]+)$/)
-  if (!match) return input
-
-  const prefix = match[1]  // Everything before the letter sequence
-  const letters = match[2].toLowerCase()
-
-  // Try to find valid word boundaries in the letter sequence
-  const foundWords = []
-  let remaining = letters
-
-  while (remaining.length > 0) {
-    let foundWord = null
-
-    // Try to find the longest valid word from the start
-    for (let len = Math.min(remaining.length, 6); len >= 3; len--) {
-      const candidate = remaining.slice(0, len)
-      if (isValidWord(candidate)) {
-        foundWord = candidate
-        break
-      }
-    }
-
-    if (foundWord) {
-      foundWords.push(foundWord)
-      remaining = remaining.slice(foundWord.length)
-
-      // Stop after 3 words
-      if (foundWords.length >= 3) {
-        remaining = ''
-        break
-      }
-    } else {
-      // No valid word found, keep the remaining as-is
-      foundWords.push(remaining)
-      break
-    }
-  }
-
-  // Only return split version if we found at least one complete word
-  // and there's a clear boundary (more than one segment, or the segment is a complete word)
-  if (foundWords.length > 1 || (foundWords.length === 1 && isValidWord(foundWords[0]) && remaining === '')) {
-    return prefix + foundWords.join(' ')
-  }
-
-  return input
-}
-
 function handleInput() {
-  // Immediately update cursor position
   cursorPos.value = inputRef.value?.selectionStart ?? code.value.length
-
-  // First, try to auto-split concatenated words
-  const splitCode = trySplitWords(code.value)
-  if (splitCode !== code.value) {
-    code.value = splitCode
-    nextTick(() => {
-      const newLen = splitCode.length
-      inputRef.value?.setSelectionRange(newLen, newLen)
-      cursorPos.value = newLen
-    })
-  }
-
-  const words = getWords(code.value)
-  if (words.length >= 3) {
-    const normalized = words.slice(0, 3).join(' ')
-    if (code.value !== normalized) {
-      const cursorWasAtEnd = cursorPos.value >= code.value.length
-      code.value = normalized
-      if (cursorWasAtEnd) {
-        nextTick(() => {
-          inputRef.value?.setSelectionRange(normalized.length, normalized.length)
-          cursorPos.value = normalized.length
-        })
-      }
-    }
-  }
-
   updateAutocomplete()
   if (lookupTimeout) { clearTimeout(lookupTimeout); lookupTimeout = null }
   deviceInfo.value = null
   error.value = null
   serverError.value = false
   hasInvalidWord.value = !checkWordsValidity(code.value)
-  const currentWords = getWords(code.value)
+  const currentWords = getDisplayWords(code.value)
   if (currentWords.length >= 1 && !ws && !wsConnecting) ensureConnection()
   if (currentWords.length === 3) {
     if (!allWordsValid(code.value)) return
@@ -532,7 +583,6 @@ async function lookupDeviceInfo() {
       return
     }
     if (res.status === 'found' && res.host) {
-      code.value = currentCode.replace(/\./g, ' ')
       deviceInfo.value = {
         host: res.host,
         user_agent_pretty: res.user_agent_pretty,
@@ -709,18 +759,11 @@ defineExpose({ reset, deny, code, handleInput, loading, error })
   gap: 0;
   box-sizing: border-box;
   z-index: 1;
-}
-
-.slot-machine.has-error {
-  /* Error background only shown when focused */
+  pointer-events: none;
 }
 
 .input-wrapper.focused.has-error .slot-machine {
   background: var(--color-error-bg, rgba(239, 68, 68, 0.05));
-}
-
-.slot-machine.is-complete {
-  /* Success state - no special styling */
 }
 
 .slot-reel {
@@ -733,7 +776,6 @@ defineExpose({ reset, deny, code, handleInput, loading, error })
 }
 
 .slot-word {
-  font-size: 1.25rem;
   font-weight: 600;
   letter-spacing: 0.05em;
   text-align: center;
@@ -769,16 +811,27 @@ defineExpose({ reset, deny, code, handleInput, loading, error })
 
 .input-wrapper.focused .cursor-overlay {
   opacity: 1;
-  animation: cursorBlink 1s ease-in-out infinite;
+  animation: cursorBlink 250ms alternate infinite;
+}
+
+.input-wrapper.focused.has-selection .cursor-overlay {
+  animation: none;
+}
+
+.selection-overlay {
+  position: absolute;
+  height: 1.2em;
+  background: var(--color-primary, #3b82f6);
+  opacity: 0.3;
+  pointer-events: none;
+  /* Position based on character indices - calculate from center of slot */
+  left: calc(50% + (var(--sel-start) - var(--word-len, 0) / 2) * 0.65em);
+  width: calc((var(--sel-end) - var(--sel-start)) * 0.65em);
 }
 
 @keyframes cursorBlink {
-  0%, 49% {
-    opacity: 1;
-  }
-  50%, 100% {
-    opacity: 0;
-  }
+  0%, 50% { opacity: 1; }
+  80%, 100% { opacity: 0; }
 }
 
 .slot-reel.invalid-word .slot-word {
@@ -802,23 +855,13 @@ defineExpose({ reset, deny, code, handleInput, loading, error })
   flex: 1;
   width: 100%;
   height: 100%;
-  padding: 0.875rem 1rem;
-  font-size: 1rem;
-  font-family: inherit;
-  border: 1px solid transparent;
   border-radius: var(--radius-sm, 6px);
-  background: transparent;
-  color: transparent;
-  caret-color: transparent;
-  outline: none;
-  box-sizing: border-box;
   position: relative;
   z-index: 0;
 }
 
 .pairing-input.hidden-input {
-  color: transparent;
-  caret-color: transparent;
+  opacity: 0;
 }
 
 .pairing-input:disabled {

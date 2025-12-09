@@ -278,14 +278,6 @@ select {
   transition: border-color var(--transition-base), box-shadow var(--transition-base);
 }
 
-input:focus-visible,
-textarea:focus-visible,
-select:focus-visible {
-  border-color: var(--color-accent);
-  box-shadow: 0 0 0 3px #c7d2fe;
-  outline: none;
-}
-
 label {
   display: flex;
   flex-direction: column;
