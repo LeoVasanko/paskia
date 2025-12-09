@@ -3,7 +3,7 @@ from uuid import UUID
 from fastapi import FastAPI, WebSocket
 
 from paskia.authsession import create_session, get_reset, get_session
-from paskia.fastapi import authz
+from paskia.fastapi import authz, remote
 from paskia.fastapi.session import AUTH_COOKIE, infodict
 from paskia.fastapi.wsutil import validate_origin, websocket_error_handler
 from paskia.globals import db, passkey
@@ -12,6 +12,9 @@ from paskia.util.tokens import create_token, session_key
 
 # Create a FastAPI subapp for WebSocket endpoints
 app = FastAPI()
+
+# Mount the remote auth WebSocket endpoints
+app.mount("/remote-auth", remote.app)
 
 
 async def register_chat(

@@ -39,6 +39,8 @@ async def init(
     In FastAPI lifespan we call with bootstrap=False to avoid duplicate bootstrapping
     since the CLI performs it once before servers start.
     """
+    from . import remoteauth
+
     # Initialize passkey instance with provided parameters
     passkey.instance = Passkey(
         rp_id=rp_id,
@@ -53,6 +55,9 @@ async def init(
         from .db import sql
 
         await sql.init()
+
+    # Initialize remote auth manager
+    await remoteauth.init()
 
     if bootstrap:
         # Bootstrap system if needed

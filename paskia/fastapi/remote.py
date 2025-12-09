@@ -38,7 +38,7 @@ async def websocket_remote_auth_request(ws: WebSocket):
     1. Client connects
     2. Server sends HARD PoW challenge, client solves and responds
     3. Server creates a 3-word pairing code and sends it with expiry
-    4. Server waits for another device to authenticate via /remote-auth/pair
+    4. Server waits for another device to authenticate via /remote-auth/permit
     5. When auth completes, server sends session_token to this client
     6. Client can then use the session token to set a cookie
     7. Connection times out after 5 minutes with explicit timeout message
@@ -250,9 +250,9 @@ async def websocket_remote_auth_request(ws: WebSocket):
         remoteauth.instance.decrement_connections()
 
 
-@app.websocket("/pair")
+@app.websocket("/permit")
 @websocket_error_handler
-async def websocket_remote_auth_pair(ws: WebSocket):
+async def websocket_remote_auth_permit(ws: WebSocket):
     """Complete a remote authentication request using a 3-word pairing code.
 
     This endpoint is called from the user's profile on the authenticating device.
