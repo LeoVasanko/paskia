@@ -49,6 +49,29 @@ let authPromise = null
 let authResolve = null
 let authReject = null
 
+// Global backdrop ref-count (works independently of Pinia store)
+let backdropHolders = 0
+
+/**
+ * Hold global backdrop (increment ref-count).
+ * Multiple callers can hold the backdrop; it only hides when all release.
+ */
+export function holdGlobalBackdrop() {
+  backdropHolders++
+  document.body.classList.add('has-backdrop')
+}
+
+/**
+ * Release global backdrop (decrement ref-count).
+ * Backdrop hides only when ref-count reaches zero.
+ */
+export function releaseGlobalBackdrop() {
+  backdropHolders = Math.max(0, backdropHolders - 1)
+  if (backdropHolders === 0) {
+    document.body.classList.remove('has-backdrop')
+  }
+}
+
 // Cache for auth iframe URL by mode
 const authIframeUrlCache = {}
 
@@ -93,6 +116,7 @@ export function isAuthIframeOpen() {
 /**
  * Show the authentication iframe and return a promise that resolves on success.
  * If an auth iframe is already open (from any source), hooks into its completion.
+ * Uses global backdrop system to avoid flicker between auth and caller's UI.
  * @param {string} iframeUrl - The URL for the iframe src
  * @returns {Promise<void>}
  * @throws {AuthCancelledError} - If authentication is cancelled by user
@@ -119,6 +143,9 @@ export function showAuthIframe(iframeUrl) {
   // Remove existing iframe if any
   hideAuthIframe()
 
+  // Hold global backdrop for auth iframe
+  holdGlobalBackdrop()
+
   // Create new iframe for authentication using src URL
   authIframe = document.createElement('iframe')
   authIframe.id = 'auth-iframe'
@@ -134,6 +161,7 @@ function hideAuthIframe() {
   if (authIframe) {
     authIframe.remove()
     authIframe = null
+    releaseGlobalBackdrop()
   }
 }
 

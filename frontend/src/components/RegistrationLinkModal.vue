@@ -1,5 +1,5 @@
 <template>
-  <div class="dialog-overlay" @keydown.esc.prevent="$emit('close')">
+  <div v-if="linkUrl" class="dialog-overlay no-backdrop" @keydown.esc.prevent="$emit('close')">
     <div class="device-dialog" role="dialog" aria-modal="true" aria-labelledby="regTitle">
       <div class="reg-header-row">
         <h2 id="regTitle" class="reg-title">
@@ -9,34 +9,19 @@
       </div>
 
       <div class="device-link-section">
-        <!-- Loading state -->
-        <div v-if="loading" class="loading-state">
-          <div class="spinner-small"></div>
-          <span>Generating registration link...</span>
-        </div>
+        <p class="reg-help">
+          Scan this QR code on the new device, or copy the link and open it there.
+        </p>
 
-        <!-- Error state -->
-        <div v-else-if="error" class="error-state">
-          <p class="error-message">{{ error }}</p>
-          <button class="btn-secondary" @click="generateLink">Retry</button>
-        </div>
+        <QRCodeDisplay
+          :url="linkUrl"
+          :show-link="true"
+          @copied="onCopied"
+        />
 
-        <!-- Success state with QR code and link -->
-        <template v-else-if="linkUrl">
-          <p class="reg-help">
-            Scan this QR code on the new device, or copy the link and open it there.
-          </p>
-
-          <QRCodeDisplay
-            :url="linkUrl"
-            :show-link="true"
-            @copied="onCopied"
-          />
-
-          <p class="expiry-note" v-if="expiresAt">
-            This link expires {{ formatDate(expiresAt).toLowerCase() }}.
-          </p>
-        </template>
+        <p class="expiry-note" v-if="expiresAt">
+          This link expires {{ formatDate(expiresAt).toLowerCase() }}.
+        </p>
       </div>
 
       <div class="reg-actions">
@@ -47,9 +32,9 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import QRCodeDisplay from '@/components/QRCodeDisplay.vue'
-import { apiJson } from '@/utils/api'
+import { apiJson, holdGlobalBackdrop, releaseGlobalBackdrop } from '@/utils/api'
 import { formatDate } from '@/utils/helpers'
 
 const props = defineProps({
@@ -59,29 +44,20 @@ const props = defineProps({
 
 const emit = defineEmits(['close', 'copied'])
 
-const loading = ref(true)
-const error = ref(null)
 const linkUrl = ref(null)
 const expiresAt = ref(null)
 
 async function generateLink() {
-  loading.value = true
-  error.value = null
-  linkUrl.value = null
-  expiresAt.value = null
-
   try {
     const data = await apiJson(props.endpoint, { method: 'POST' })
     if (data.url) {
       linkUrl.value = data.url
       expiresAt.value = data.expires ? new Date(data.expires) : null
     } else {
-      error.value = data.detail || 'Failed to generate link'
+      emit('close')
     }
-  } catch (err) {
-    error.value = err.message || 'Failed to generate link'
-  } finally {
-    loading.value = false
+  } catch {
+    emit('close')
   }
 }
 
@@ -90,7 +66,14 @@ function onCopied() {
 }
 
 onMounted(() => {
+  // Hold backdrop before fetch to avoid gap if auth iframe shows
+  holdGlobalBackdrop()
   generateLink()
+})
+
+onUnmounted(() => {
+  // Release backdrop when modal closes
+  releaseGlobalBackdrop()
 })
 </script>
 
@@ -102,8 +85,11 @@ onMounted(() => {
 .device-dialog { background: var(--color-surface); padding: 1.25rem 1.25rem 1rem; border-radius: var(--radius-md); max-width: 480px; width: 100%; box-shadow: 0 6px 28px rgba(0,0,0,.25); }
 .reg-help { margin: .5rem 0 .75rem; font-size: .85rem; line-height: 1.4; text-align: center; color: var(--color-text-muted); }
 .reg-actions { display: flex; justify-content: flex-end; gap: .5rem; margin-top: 1rem; }
-.loading-state { display: flex; align-items: center; justify-content: center; gap: .5rem; padding: 2rem 0; color: var(--color-text-muted); }
-.error-state { text-align: center; padding: 1rem 0; }
-.error-message { color: var(--color-danger-text); margin-bottom: 1rem; }
 .expiry-note { font-size: .75rem; color: var(--color-text-muted); text-align: center; margin-top: .75rem; }
+
+/* Use global backdrop, not local */
+.dialog-overlay.no-backdrop {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
 </style>

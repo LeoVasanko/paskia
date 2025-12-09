@@ -337,10 +337,13 @@ th {
 .global-status {
   position: fixed;
   top: 1.5rem;
-  left: 50%;
-  transform: translateX(-50%);
+  left: 0;
+  right: 0;
+  margin: 0 auto;
   z-index: 1200;
-  min-width: min(520px, calc(100vw - 2rem));
+  width: fit-content;
+  min-width: min(520px, calc(100% - 2rem));
+  max-width: calc(100% - 2rem);
   display: none;
 }
 
@@ -377,10 +380,11 @@ th {
 
 .dialog-overlay {
   position: fixed;
-  inset: 0;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  right: 0;
   background: transparent;
-  backdrop-filter: blur(.1rem) brightness(0.7);
-  -webkit-backdrop-filter: blur(.1rem) brightness(0.7);
   z-index: 1100;
   display: flex;
   align-items: center;
@@ -683,9 +687,41 @@ th {
   }
 }
 
-/* Auth iframe overlay styles */
+/* Global backdrop controlled by api.js ref-counting */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 1099;
+  background: transparent;
+  backdrop-filter: blur(0) brightness(1);
+  -webkit-backdrop-filter: blur(0) brightness(1);
+  pointer-events: none;
+  visibility: hidden;
+  transition: all 0.2s ease-out;
+}
+
+body.has-backdrop::before {
+  -webkit-backdrop-filter: blur(.2rem) brightness(0.5);
+  backdrop-filter: blur(.2rem) brightness(0.5);
+  visibility: visible;
+}
+
+/* Prevent scrolling via html to avoid scrollbar layout shift */
+html:has(body.has-backdrop),
+html:has(#auth-iframe) {
+  overflow: clip;
+}
+
+body.has-backdrop {
+  overflow: auto;
+}
+
+/* Make fixed elements (toast, dialog) position relative to body, not viewport */
+/* This works because transform creates a new containing block for fixed children */
+body.has-backdrop,
 body:has(#auth-iframe) {
-  overflow: hidden;
+  transform: translateZ(0);
 }
 
 #auth-iframe {
@@ -698,8 +734,6 @@ body:has(#auth-iframe) {
   z-index: 9999;
   color-scheme: auto;
   background: transparent;
-  backdrop-filter: blur(.1rem) brightness(0.7);
-  -webkit-backdrop-filter: blur(.1rem) brightness(0.7);
 }
 
 .slot-machine {
