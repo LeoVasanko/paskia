@@ -1,18 +1,18 @@
 <template>
   <section class="section-block" data-component="session-list-section">
     <div class="section-header">
-      <h2>Active Sessions</h2>
+      <h2>Login Sessions</h2>
       <p class="section-description">{{ sectionDescription }}</p>
     </div>
     <div class="section-body">
-      <div :class="['session-list']">
+      <div>
         <template v-if="Array.isArray(sessions) && sessions.length">
           <div v-for="(group, host) in groupedSessions" :key="host" class="session-group">
             <h3 :class="['session-group-host', { 'is-current-site': group.isCurrentSite }]">
               <template v-if="host"><a :href="hostUrl(host)">🌐 {{ host }}</a></template>
               <template v-else>🌐 Unbound host</template>
             </h3>
-            <div class="session-group-sessions">
+            <div class="session-list">
               <div
                 v-for="session in group.sessions"
                 :key="session.id"
@@ -22,6 +22,8 @@
                   'is-linked-credential': hoveredCredentialUuid === session.credential_uuid
                 }]"
                 tabindex="0"
+                @mousedown.prevent
+                @click.capture="handleCardClick"
                 @focusin="handleSessionFocus(session)"
                 @focusout="handleSessionBlur($event)"
                 @keydown="handleDelete($event, session)"
@@ -94,6 +96,13 @@ const handleSessionBlur = (event) => {
   }
 }
 
+const handleCardClick = (event) => {
+  if (!event.currentTarget.matches(':focus')) {
+    event.currentTarget.focus()
+    event.stopPropagation()
+  }
+}
+
 const handleDelete = (event, session) => {
   const apple = navigator.userAgent.includes('Mac OS')
   if (event.key === 'Delete' || apple && event.key === 'Backspace') {
@@ -159,55 +168,18 @@ const groupedSessions = computed(() => {
 </script>
 
 <style>
-.session-meta-info {
-  grid-column: span 2;
-}
-[data-component="session-list-section"] .session-list {
-  display: flex;
-  flex-direction: column;
-  gap: 1.5em;
-}
-.session-group {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5em;
-}
 .session-group-host {
   font-size: 1em;
   font-weight: 600;
-  margin: 0;
-}
-.session-group-host a {
-  color: inherit;
-  text-decoration: none;
-}
-.session-group-host a:hover {
-  text-decoration: underline;
+  margin: 0.5rem 0 0.5rem -1.2rem;
 }
 .session-group-host.is-current-site {
   color: var(--color-accent);
 }
-.session-group-sessions {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(var(--card-width), 1fr));
-  gap: 0.5em;
-  align-items: start;
+.btn-card-delete {
+  display: none;
 }
-.session-group-sessions .session-item {
-  width: auto;
-  height: auto;
-  padding: 0.75rem;
-  gap: 0.5rem;
-}
-.session-group-sessions .session-item .item-title {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.session-group-sessions .session-item .item-details {
-  margin-left: 0;
-}
-.session-group-sessions .session-item .session-dates {
-  grid-template-columns: auto 1fr;
+.session-item:focus .btn-card-delete {
+  display: block;
 }
 </style>

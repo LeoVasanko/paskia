@@ -33,6 +33,5 @@ const crumbs = computed(() => {
 .breadcrumbs ol { list-style: none; padding: 0; margin: 0; display: flex; flex-wrap: wrap; align-items: center; gap: .25rem; }
 .breadcrumbs li { display: inline-flex; align-items: center; gap: .25rem; font-size: .9rem; }
 .breadcrumbs a { text-decoration: none; color: var(--color-link); padding: 0 .25rem; border-radius:4px; transition: color 0.2s ease, background 0.2s ease; }
-.breadcrumbs a:hover, .breadcrumbs a:focus-visible { text-decoration: underline; color: var(--color-link-hover); outline: none; }
 .breadcrumbs .sep { color: var(--color-text-muted); margin: 0; }
 </style>

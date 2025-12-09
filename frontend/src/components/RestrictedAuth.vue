@@ -39,7 +39,7 @@
 
             <!-- Remote authentication view (request new remote auth) -->
             <div v-else-if="authView === 'remote'" class="auth-view">
-              <RemoteAuthInline
+              <RemoteAuthRequest
                 :active="authView === 'remote'"
                 @authenticated="handleRemoteAuthenticated"
                 @register="handleRemoteRegistration"
@@ -59,7 +59,7 @@ import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import passkey from '@/utils/passkey'
 import { getSettings, uiBasePath } from '@/utils/settings'
 import { fetchJson, getUserFriendlyErrorMessage } from '@/utils/api'
-import RemoteAuthInline from '@/components/RemoteAuthRequest.vue'
+import RemoteAuthRequest from '@/components/RemoteAuthRequest.vue'
 
 const props = defineProps({
   mode: {
