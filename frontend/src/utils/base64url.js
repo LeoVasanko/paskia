@@ -13,7 +13,7 @@
  * @param {string} str - Base64url encoded string
  * @returns {Uint8Array} - Decoded bytes
  */
-export function dec(str) {
+export function b64dec(str) {
   // Convert URL-safe characters to standard base64
   const base64 = str.replace(/-/g, '+').replace(/_/g, '/')
   // Add padding if needed
@@ -26,7 +26,7 @@ export function dec(str) {
  * @param {Uint8Array} bytes - Bytes to encode
  * @returns {string} - Base64url encoded string (no padding)
  */
-export function enc(bytes) {
+export function b64enc(bytes) {
   const base64 = btoa(String.fromCharCode(...bytes))
   // Convert to URL-safe and remove padding
   return base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')

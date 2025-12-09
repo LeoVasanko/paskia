@@ -56,7 +56,7 @@
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import aWebSocket from '@/utils/awaitable-websocket'
-import { dec as b64dec, enc as b64enc } from '@/utils/base64url'
+import { b64dec, b64enc } from '@/utils/base64url'
 import { getSettings } from '@/utils/settings'
 import { solvePoW } from '@/utils/pow'
 import { words } from '@/utils/wordlist'
