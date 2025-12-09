@@ -78,7 +78,7 @@
     </Modal>
 
     <section class="section-block">
-      <div class="button-row logout-row" :class="{ single: !hasMultipleSessions }">
+      <div class="button-row">
         <button
           type="button"
           class="btn-secondary"
@@ -86,10 +86,10 @@
         >
           Back
         </button>
-        <button v-if="!hasMultipleSessions" @click="logoutEverywhere" class="btn-danger logout-button" :disabled="authStore.isLoading">Logout</button>
+        <button v-if="!hasMultipleSessions" @click="logoutEverywhere" class="btn-danger" :disabled="authStore.isLoading">Logout</button>
         <template v-else>
-          <button @click="logout" class="btn-danger logout-button" :disabled="authStore.isLoading">Logout</button>
-          <button @click="logoutEverywhere" class="btn-danger logout-button" :disabled="authStore.isLoading">All</button>
+          <button @click="logout" class="btn-danger" :disabled="authStore.isLoading">Logout</button>
+          <button @click="logoutEverywhere" class="btn-danger" :disabled="authStore.isLoading">All</button>
         </template>
       </div>
       <p class="logout-note" v-if="!hasMultipleSessions"><strong>Logout</strong> from {{ currentSessionHost }}.</p>
@@ -221,11 +221,7 @@ const saveName = async () => {
 .section-header { display: flex; flex-direction: column; gap: 0.4rem; }
 .section-description { margin: 0; color: var(--color-text-muted); }
 .empty-state { margin: 0; color: var(--color-text-muted); text-align: center; padding: 1rem 0; }
-.logout-button { align-self: flex-start; }
-.logout-row { gap: 1rem; }
-.logout-row.single { justify-content: flex-start; }
 .logout-note { margin: 0.75rem 0 0; color: var(--color-text-muted); font-size: 0.875rem; }
 .remote-auth-inline { display: flex; flex-direction: column; gap: 0.5rem; }
 .remote-auth-label { display: block; margin: 0; font-size: 0.875rem; color: var(--color-text-muted); font-weight: 500; }
-@media (max-width: 720px) { .logout-button { width: 100%; } }
 </style>
