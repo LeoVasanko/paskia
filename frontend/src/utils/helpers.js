@@ -26,3 +26,18 @@ export function getCookie(name) {
 }
 
 export const goBack = () => history.back() || window.close()
+
+// IPv4 unchanged, IPv6 returns /64 network prefix in compact form
+export const hostIP = ip => {
+  try {
+    if (!ip || !ip.includes(':')) return ip
+    const strip = s => s.replace(/^\[|\]$/g, '')
+    const norm = strip(new URL(`http://[${ip}]/`).hostname)
+    const [l, r] = norm.split('::').map(s => s ? s.split(':') : [])
+    const full = r ? [...l, ...Array(8 - l.length - r.length).fill('0'), ...r] : l
+    return strip(new URL(`http://[${full.slice(0, 4).join(':')}::]/`).hostname).replace(/::$/, '')
+  } catch (e) {
+    console.error('hostIP processing failed for:', ip, e)
+    return ip
+  }
+}

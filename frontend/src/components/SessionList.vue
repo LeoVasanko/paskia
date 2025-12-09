@@ -31,7 +31,7 @@
                     <span v-if="session.is_current && !hoveredIp && !hoveredCredentialUuid" class="badge badge-current">Current</span>
                     <span v-else-if="hoveredSession?.id === session.id" class="badge badge-current">Selected</span>
                     <span v-else-if="hoveredCredentialUuid === session.credential_uuid" class="badge badge-current">Linked</span>
-                    <span v-else-if="!hoveredCredentialUuid && isSameNetwork(session.ip)" class="badge">Same IP</span>
+                    <span v-else-if="!hoveredCredentialUuid && isSameHost(session.ip)" class="badge">Same IP</span>
                     <button
                       @click="$emit('terminate', session)"
                       class="btn-card-delete"
@@ -43,7 +43,7 @@
                 <div class="item-details">
                   <div class="session-dates">
                     <span class="date-label">{{ formatDate(session.last_renewed) }}</span>
-                    <span class="date-value">{{ session.ip }}</span>
+                    <span class="date-value" @click="copyIp(session.ip)" title="Click to copy full IP">{{ displayIp(session.ip) }}</span>
                   </div>
                 </div>
               </div>
@@ -59,6 +59,8 @@
 <script setup>
 import { computed, ref } from 'vue'
 import { formatDate } from '@/utils/helpers'
+import { useAuthStore } from '@/stores/auth'
+import { hostIP } from '@/utils/helpers'
 
 const props = defineProps({
   sessions: { type: Array, default: () => [] },
@@ -69,6 +71,8 @@ const props = defineProps({
 })
 
 const emit = defineEmits(['terminate', 'sessionHover'])
+
+const authStore = useAuthStore()
 
 const hoveredIp = ref(null)
 const hoveredSession = ref(null)
@@ -96,33 +100,26 @@ const hostUrl = (host) => {
   return `${protocol}://${host}`
 }
 
-// Extract /64 prefix for IPv6, or return full IP for IPv4
-const getNetworkPrefix = ip => {
-  if (!ip) return null
-
-  // IPv4?
-  if (!ip.includes(':')) return ip
-
-  // Normalize IPv6 using URL
-  // Wrap in brackets so URL accepts it
-  const norm = new URL(`http://[${ip}]/`).hostname
-
-  // norm is now fully expanded, e.g. "2001:0db8:0000:0000:0000:0000:0000:0001"
-  const parts = norm.split(':')
-  return parts.slice(0, 4).join(':')
+const copyIp = async (ip) => {
+  if (!ip) return
+  try {
+    await navigator.clipboard.writeText(ip)
+    authStore.showMessage('Full IP copied to clipboard!', 'success', 2000)
+  } catch (err) {
+    console.error('Failed to copy IP:', err)
+    authStore.showMessage('Failed to copy IP', 'error', 3000)
+  }
 }
 
-const currentNetworkPrefix = computed(() => {
-  // Use hovered IP if available, otherwise fall back to current session
-  if (hoveredIp.value) return getNetworkPrefix(hoveredIp.value)
+const displayIp = ip => hostIP(ip) ?? ip
+
+const currentHostIP = computed(() => {
+  if (hoveredIp.value) return hostIP(hoveredIp.value)
   const current = props.sessions.find(s => s.is_current)
-  return current ? getNetworkPrefix(current.ip) : null
+  return current ? hostIP(current.ip) : null
 })
 
-const isSameNetwork = (ip) => {
-  if (!currentNetworkPrefix.value || !ip) return false
-  return getNetworkPrefix(ip) === currentNetworkPrefix.value
-}
+const isSameHost = ip => currentHostIP.value && hostIP(ip) === currentHostIP.value
 
 const groupedSessions = computed(() => {
   const groups = {}
