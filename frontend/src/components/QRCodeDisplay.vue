@@ -1,7 +1,7 @@
 <template>
   <div class="qr-display">
     <div class="qr-section">
-      <a :href="url" @click.prevent="copyLink" class="qr-link" title="Click to copy link">
+      <a :href="url" @click.prevent="copyLink" class="qr-link" title="Click to copy link" tabindex="0" @keydown.enter.prevent="copyLink">
         <canvas ref="qrCanvas" class="qr-code"></canvas>
         <div v-if="showLink && url" class="link-text">{{ displayUrl }}</div>
       </a>

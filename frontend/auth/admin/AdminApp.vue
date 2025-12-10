@@ -13,6 +13,7 @@ import AdminDialogs from '@/admin/AdminDialogs.vue'
 import { useAuthStore } from '@/stores/auth'
 import { getSettings, adminUiPath, makeUiHref } from '@/utils/settings'
 import { apiJson } from '@/utils/api'
+import { getDirection } from '@/utils/keynav'
 
 const info = ref(null)
 const loading = ref(true)
@@ -35,7 +36,17 @@ const renameIdValue = ref('')
 const editingPermDisplay = ref(null)
 const renameDisplayValue = ref('')
 const dialog = ref({ type: null, data: null, busy: false, error: '' })
+const dialogPreviousFocus = ref(null)  // Track element that had focus before dialog opened
 const safeIdRegex = /[^A-Za-z0-9:._~-]/g
+
+// Template refs for navigation
+const breadcrumbsRef = ref(null)
+const adminOverviewRef = ref(null)
+const adminOrgDetailRef = ref(null)
+const adminUserDetailRef = ref(null)
+
+// Check if any modal/dialog is open (blocks arrow key navigation)
+const hasActiveModal = computed(() => dialog.value.type !== null || showRegModal.value)
 
 function sanitizeRenameId() { if (renameIdValue.value) renameIdValue.value = renameIdValue.value.replace(safeIdRegex, '') }
 
@@ -394,8 +405,107 @@ async function toggleOrgPermission(org, permId, checked) {
   }
 }
 
-function openDialog(type, data) { dialog.value = { type, data, busy: false, error: '' } }
-function closeDialog() { dialog.value = { type: null, data: null, busy: false, error: '' } }
+function openDialog(type, data) {
+  const focused = document.activeElement
+  dialogPreviousFocus.value = focused
+
+  // For delete operations, store sibling info to help restore focus after deletion
+  if (type === 'confirm' && focused) {
+    const row = focused.closest('tr')
+    if (row) {
+      const tbody = row.closest('tbody')
+      if (tbody) {
+        const rows = Array.from(tbody.querySelectorAll('tr'))
+        const idx = rows.indexOf(row)
+        // Store context to find next/prev row after deletion
+        dialog.value.focusContext = {
+          tbody,
+          index: idx,
+          total: rows.length,
+          selector: 'button:not([disabled]), a'
+        }
+      }
+    }
+  }
+
+  dialog.value = { ...dialog.value, type, data, busy: false, error: '' }
+}
+
+function closeDialog() {
+  const prev = dialogPreviousFocus.value
+  const context = dialog.value.focusContext
+  dialog.value = { type: null, data: null, busy: false, error: '' }
+  // Restore focus after dialog closes
+  restoreFocusAfterDialog(prev, context)
+  dialogPreviousFocus.value = null
+}
+
+/**
+ * Restore focus to the previously focused element, or find a sibling if deleted.
+ */
+function restoreFocusAfterDialog(prev, context) {
+  if (!prev) return
+
+  // Check if the original element still exists in DOM and is focusable
+  if (document.body.contains(prev) && !prev.disabled) {
+    prev.focus()
+    return
+  }
+
+  // Element was deleted - try to find a sibling using stored context
+  if (context?.tbody && context.selector) {
+    const rows = Array.from(context.tbody.querySelectorAll('tr'))
+    if (rows.length > 0) {
+      // Try the same index (next row moved up) or the last row
+      const targetIdx = Math.min(context.index, rows.length - 1)
+      const targetRow = rows[targetIdx]
+      const focusable = targetRow?.querySelector(context.selector)
+      if (focusable) {
+        focusable.focus()
+        return
+      }
+    }
+  }
+
+  // Fallback: try to find any focusable element in the admin panels
+  const container = document.querySelector('.admin-panels')
+  if (!container) return
+
+  const focusable = container.querySelector('button:not([disabled]), a, input:not([disabled]), [tabindex="0"]')
+  if (focusable) {
+    focusable.focus()
+  }
+}
+
+// Keyboard navigation handlers
+function handleBreadcrumbKeydown(event) {
+  if (hasActiveModal.value) return
+
+  const direction = getDirection(event)
+  if (!direction) return
+
+  // Left/right handled internally by Breadcrumbs component
+  if (direction === 'down') {
+    event.preventDefault()
+    // Move to admin panel content
+    if (adminOverviewRef.value) {
+      adminOverviewRef.value.focusFirstElement?.()
+    } else if (adminOrgDetailRef.value) {
+      adminOrgDetailRef.value.focusFirstElement?.()
+    } else if (adminUserDetailRef.value) {
+      adminUserDetailRef.value.focusFirstElement?.()
+    }
+  }
+}
+
+function handlePanelNavigateOut(direction) {
+  if (hasActiveModal.value) return
+
+  if (direction === 'up') {
+    // Focus breadcrumbs - focus the current page's crumb
+    breadcrumbsRef.value?.focusCurrent?.()
+  }
+}
 
 async function refreshUserDetail() {
   await loadOrgs()
@@ -483,7 +593,7 @@ async function submitDialog() {
       <section v-else-if="authenticated && (info?.is_global_admin || info?.is_org_admin)" class="view-root view-root--wide view-admin">
         <header class="view-header">
           <h1>{{ pageHeading }}</h1>
-          <Breadcrumbs :entries="breadcrumbEntries" />
+          <Breadcrumbs ref="breadcrumbsRef" :entries="breadcrumbEntries" @keydown="handleBreadcrumbKeydown" />
         </header>
 
         <section class="section-block admin-section">
@@ -492,9 +602,11 @@ async function submitDialog() {
             <div v-else class="admin-panels">
                                   <AdminOverview
                   v-if="!selectedUser && !selectedOrg && (info.is_global_admin || info.is_org_admin)"
+                  ref="adminOverviewRef"
                   :info="info"
                   :orgs="orgs"
                   :permissions="permissions"
+                  :navigation-disabled="hasActiveModal"
                   :permission-summary="permissionSummary"
                   @create-org="createOrg"
                   @open-org="openOrg"
@@ -504,15 +616,18 @@ async function submitDialog() {
                   @open-dialog="openDialog"
                   @delete-permission="deletePermission"
                   @rename-permission-display="renamePermissionDisplay"
+                  @navigate-out="handlePanelNavigateOut"
                 />
 
                 <AdminUserDetail
                   v-else-if="selectedUser"
+                  ref="adminUserDetailRef"
                   :selected-user="selectedUser"
                   :user-detail="userDetail"
                   :selected-org="selectedOrg"
                   :loading="loading"
                   :show-reg-modal="showRegModal"
+                  :navigation-disabled="hasActiveModal"
                   @generate-user-registration-link="generateUserRegistrationLink"
                   @go-overview="goOverview"
                   @open-org="openOrg"
@@ -520,11 +635,14 @@ async function submitDialog() {
                   @refresh-user-detail="refreshUserDetail"
                   @edit-user-name="editUserName"
                   @close-reg-modal="showRegModal = false"
+                  @navigate-out="handlePanelNavigateOut"
                 />
                 <AdminOrgDetail
                   v-else-if="selectedOrg"
+                  ref="adminOrgDetailRef"
                   :selected-org="selectedOrg"
                   :permissions="permissions"
+                  :navigation-disabled="hasActiveModal"
                   @update-org="updateOrg"
                   @create-role="createRole"
                   @update-role="updateRole"
@@ -533,6 +651,7 @@ async function submitDialog() {
                   @open-user="openUser"
                   @toggle-role-permission="toggleRolePermission"
                   @on-role-drag-over="onRoleDragOver"
+                  @navigate-out="handlePanelNavigateOut"
                   @on-role-drop="onRoleDrop"
                   @on-user-drag-start="onUserDragStart"
                 />

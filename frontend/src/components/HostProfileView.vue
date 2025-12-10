@@ -5,7 +5,7 @@
       <p class="view-lede">{{ subheading }}</p>
     </header>
 
-    <section class="section-block">
+    <section class="section-block" ref="userInfoSection">
       <div class="section-body">
         <UserBasicInfo
           v-if="user"
@@ -25,7 +25,7 @@
 
     <section class="section-block">
       <div class="section-body host-actions">
-        <div class="button-row">
+        <div class="button-row" ref="buttonRow" @keydown="handleButtonRowKeydown">
           <button
             type="button"
             class="btn-secondary"
@@ -58,10 +58,11 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import UserBasicInfo from '@/components/UserBasicInfo.vue'
 import { useAuthStore } from '@/stores/auth'
 import { goBack } from '@/utils/helpers'
+import { getDirection, navigateButtonRow } from '@/utils/keynav'
 
 defineProps({
   initializing: {
@@ -72,6 +73,10 @@ defineProps({
 
 const authStore = useAuthStore()
 const currentHost = window.location.host
+
+// Template refs for navigation
+const userInfoSection = ref(null)
+const buttonRow = ref(null)
 
 const user = computed(() => authStore.userInfo?.user || null)
 const orgDisplayName = computed(() => authStore.userInfo?.org?.display_name || '')
@@ -104,6 +109,20 @@ const goToAuthSite = () => {
 
 const logout = async () => {
   await authStore.logout()
+}
+
+// Keyboard navigation for button row
+const handleButtonRowKeydown = (event) => {
+  const direction = getDirection(event)
+  if (!direction) return
+
+  event.preventDefault()
+
+  if (direction === 'left' || direction === 'right') {
+    navigateButtonRow(buttonRow.value, event.target, direction, { itemSelector: 'button' })
+  }
+  // Up does nothing (no elements above to navigate to)
+  // Down does nothing (no elements below to navigate to)
 }
 </script>
 

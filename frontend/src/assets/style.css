@@ -266,6 +266,13 @@ button:disabled {
   filter: brightness(0.92);
 }
 
+/* Focus-visible outlines for buttons */
+.btn-primary:focus-visible,
+.btn-secondary:focus-visible,
+.btn-danger:focus-visible {
+  outline: 1px solid var(-webkit-focus-ring-color);
+}
+
 input[type="text"],
 input[type="search"],
 input[type="email"],
@@ -446,6 +453,7 @@ th {
   gap: 0.5rem;
   align-items: stretch;
   margin: 0 auto;
+  outline: none;
 }
 
 @media (max-width: 720px) {
@@ -482,6 +490,11 @@ th {
 
 .credential-item.is-linked-session,
 .session-item.is-linked-credential { border-color: var(--color-accent); background-color: var(--color-surface-subtle); }
+
+.credential-item:focus,
+.session-item:focus {
+  outline: 1px solid var(-webkit-focus-ring-color);
+}
 
 .item-top {
   display: flex;
@@ -562,7 +575,7 @@ th {
   position: relative;
 }
 .session-group:focus-visible {
-  outline: var(-webkit-focus-ring-color) 1px solid;
+  outline: 1px solid var(-webkit-focus-ring-color);
 }
 .session-group-host {
   display: flex;

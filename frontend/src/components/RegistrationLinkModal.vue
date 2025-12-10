@@ -5,7 +5,7 @@
         <h2 id="regTitle" class="reg-title">
           📱 <span v-if="userName">Registration for {{ userName }}</span><span v-else>Add Another Device</span>
         </h2>
-        <button class="icon-btn" @click="$emit('close')" aria-label="Close">✕</button>
+        <button class="icon-btn" @click="$emit('close')" aria-label="Close" tabindex="-1">✕</button>
       </div>
 
       <div class="device-link-section">
@@ -17,6 +17,7 @@
           :url="linkUrl"
           :show-link="true"
           @copied="onCopied"
+          @keydown="handleQRKeydown"
         />
 
         <p class="expiry-note" v-if="expiresAt">
@@ -24,7 +25,7 @@
         </p>
       </div>
 
-      <div class="reg-actions">
+      <div class="reg-actions" ref="actionsRow" @keydown="handleActionsKeydown">
         <button class="btn-secondary" @click="$emit('close')">Close</button>
       </div>
     </div>
@@ -32,10 +33,11 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, onMounted, onUnmounted, nextTick } from 'vue'
 import QRCodeDisplay from '@/components/QRCodeDisplay.vue'
 import { apiJson, holdGlobalBackdrop, releaseGlobalBackdrop } from '@/utils/api'
 import { formatDate } from '@/utils/helpers'
+import { getDirection } from '@/utils/keynav'
 
 const props = defineProps({
   endpoint: { type: String, required: true },
@@ -46,6 +48,9 @@ const emit = defineEmits(['close', 'copied'])
 
 const linkUrl = ref(null)
 const expiresAt = ref(null)
+const actionsRow = ref(null)
+// Store the element that had focus before modal opened
+const previouslyFocusedElement = ref(null)
 
 async function generateLink() {
   try {
@@ -53,6 +58,11 @@ async function generateLink() {
     if (data.url) {
       linkUrl.value = data.url
       expiresAt.value = data.expires ? new Date(data.expires) : null
+      // Focus primary button (or first button if no primary) after content renders
+      await nextTick()
+      const actions = actionsRow.value
+      const target = actions?.querySelector('.btn-primary') || actions?.querySelector('button')
+      target?.focus()
     } else {
       emit('close')
     }
@@ -65,7 +75,37 @@ function onCopied() {
   emit('copied')
 }
 
+const handleQRKeydown = (event) => {
+  const direction = getDirection(event)
+  if (!direction) return
+
+  event.preventDefault()
+
+  // Navigation constrained within modal: QR link <-> Close button
+  if (direction === 'down' || direction === 'up') {
+    // Toggle between QR link and close button
+    actionsRow.value?.querySelector('button')?.focus()
+  }
+  // Left/right do nothing on QR code
+}
+
+const handleActionsKeydown = (event) => {
+  const direction = getDirection(event)
+  if (!direction) return
+
+  event.preventDefault()
+
+  // Navigation constrained within modal: Close button <-> QR link
+  if (direction === 'up' || direction === 'down') {
+    // Toggle between close button and QR link
+    document.querySelector('.qr-link')?.focus()
+  }
+  // Left/right do nothing (only one button)
+}
+
 onMounted(() => {
+  // Save currently focused element before modal takes focus
+  previouslyFocusedElement.value = document.activeElement
   // Hold backdrop before fetch to avoid gap if auth iframe shows
   holdGlobalBackdrop()
   generateLink()
@@ -74,6 +114,11 @@ onMounted(() => {
 onUnmounted(() => {
   // Release backdrop when modal closes
   releaseGlobalBackdrop()
+  // Restore focus when modal closes
+  const prev = previouslyFocusedElement.value
+  if (prev && document.body.contains(prev) && !prev.disabled) {
+    prev.focus()
+  }
 })
 </script>
 
