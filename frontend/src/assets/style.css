@@ -34,7 +34,6 @@
   --space-lg: 1.5rem;
   --space-xl: 2.25rem;
   --space-xxl: 3.5rem;
-  --layout-max-width: 1400px;
   --layout-padding: clamp(1.5rem, 3vw + 1rem, 3.25rem);
   --transition-base: 160ms ease;
   --focus-ring: 0 0 0 2px var(--color-accent);
@@ -141,7 +140,6 @@ a:focus-visible {
   padding: var(--layout-padding);
   box-sizing: border-box;
   margin: 0 auto;
-  width: min(100%, var(--layout-max-width));
 }
 
 .view-root--wide {
