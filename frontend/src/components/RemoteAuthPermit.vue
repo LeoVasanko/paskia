@@ -539,6 +539,34 @@ function applyAutocomplete() {
 
 function handleInput() {
   cursorPos.value = inputRef.value?.selectionStart ?? code.value.length
+
+  // Mobile fallback for autocomplete: if cursor is right after "prefix " (partial word + space),
+  // replace the partial with the completed word. On desktop, keydown intercepts space before input,
+  // but mobile soft keyboards often insert the space before we can catch it.
+  const cursor = cursorPos.value
+  const beforeCursor = code.value.slice(0, cursor)
+  // Check if cursor is right after a space that follows a word
+  const spaceMatch = beforeCursor.match(/([a-zA-Z]+) $/)
+  if (spaceMatch) {
+    const partialWord = spaceMatch[1].toLowerCase()
+    const match = getUniqueMatch(partialWord)
+    // Only autocomplete if it's not already a complete word and we have a unique match
+    if (match && match !== partialWord && !isValidWord(partialWord)) {
+      const wordStartPos = cursor - spaceMatch[0].length
+      const beforeWord = code.value.slice(0, wordStartPos)
+      const afterSpace = code.value.slice(cursor)
+      const wordsBefore = getDisplayWords(beforeWord).length
+      const isThirdWord = wordsBefore === 2
+      const suffix = isThirdWord ? '' : ' '
+      code.value = beforeWord + match + suffix + afterSpace
+      const newPos = wordStartPos + match.length + suffix.length
+      nextTick(() => {
+        inputRef.value?.setSelectionRange(newPos, newPos)
+        cursorPos.value = newPos
+      })
+    }
+  }
+
   updateAutocomplete()
   if (lookupTimeout) { clearTimeout(lookupTimeout); lookupTimeout = null }
   deviceInfo.value = null
