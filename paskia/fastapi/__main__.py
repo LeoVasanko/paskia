@@ -185,8 +185,12 @@ def main():
 
         # If origins are configured, ensure auth_host is included at top
         if origins:
-            # Insert auth_host at the beginning (Passkey.__init__ will dedupe)
+            # Insert auth_host at the beginning
             origins.insert(0, args.auth_host)
+
+    # Remove duplicates while preserving order
+    seen = set()
+    origins = [x for x in origins if not (x in seen or seen.add(x))]
 
     # Compute site_url and site_path for reset links
     # Priority: auth_host > first origin with localhost > http://localhost:port
