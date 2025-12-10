@@ -73,7 +73,7 @@ const NAME_EDIT_TYPES = new Set(['org-update', 'role-update', 'user-update-name'
             <input ref="displayNameInput" v-model="dialog.data.display_name" required />
           </label>
           <label>Permission ID
-            <input v-model="dialog.data.id" :placeholder="dialog.type === 'perm-create' ? 'yourapp:login' : dialog.data.permission.id" required :pattern="PERMISSION_ID_PATTERN" title="Allowed: A-Za-z0-9:._~-" />
+            <input v-model="dialog.data.id" :placeholder="dialog.type === 'perm-create' ? 'yourapp:permission' : dialog.data.permission.id" required :pattern="PERMISSION_ID_PATTERN" title="Allowed: A-Za-z0-9:._~-" data-form-type="other" />
           </label>
           <p class="small muted">The permission ID is used for permission checks in the application. Changing it may break deployed applications that reference this permission.</p>
         </template>
