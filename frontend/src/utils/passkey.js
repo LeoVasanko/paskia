@@ -57,21 +57,15 @@ export async function register(resetToken = null, displayName = null, onstartreg
 export async function authenticate() {
   const ws = await aWebSocket(await makeUrl('/auth/ws/authenticate'))
   try {
-    const res = await ws.receive_json()
-    console.log('Authentication options:', res)
-    // status field present means error
-    if (res.status) {
-      throw new Error(res.detail || `Authentication failed: ${res.status}`)
-    }
+    let res = await ws.receive_json()
+    if (res.status >= 400) throw new Error(res.detail || `Authentication failed: ${res.status}`)
 
     const authResponse = await startAuthentication(res)
     ws.send_json(authResponse)
 
-    const result = await ws.receive_json()
-    if (result.status) {
-      throw new Error(result.detail || `Authentication failed: ${result.status}`)
-    }
-    return result
+    res = await ws.receive_json()
+    if (res.status >= 400) throw new Error(res.detail || `Authentication failed: ${res.status}`)
+    return res
   } catch (error) {
     console.error('Authentication error:', error)
     throw Error(error.name === "NotAllowedError" ? 'Passkey authentication cancelled' : error.message)

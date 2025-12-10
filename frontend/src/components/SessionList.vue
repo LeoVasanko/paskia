@@ -7,7 +7,7 @@
     <div class="section-body">
       <div>
         <template v-if="Array.isArray(sessions) && sessions.length">
-          <div v-for="(group, host) in groupedSessions" :key="host" class="session-group" tabindex="0" @keydown.enter="handleGroupEnter($event, host)">
+          <div v-for="(group, host) in groupedSessions" :key="host" class="session-group" tabindex="0" @keydown="handleGroupKeydown($event, host)">
             <span :class="['session-group-host', { 'is-current-site': group.isCurrentSite }]">
               <span class="session-group-icon">🌐</span>
               <a v-if="host" :href="hostUrl(host)" tabindex="-1" target="_blank" rel="noopener noreferrer">{{ host }}</a>
@@ -22,12 +22,12 @@
                   'is-hovered': hoveredSession?.id === session.id,
                   'is-linked-credential': hoveredCredentialUuid === session.credential_uuid
                 }]"
-                tabindex="0"
+                tabindex="-1"
                 @mousedown.prevent
                 @click.capture="handleCardClick"
                 @focusin="handleSessionFocus(session)"
                 @focusout="handleSessionBlur($event)"
-                @keydown="handleDelete($event, session)"
+                @keydown="handleItemKeydown($event, session)"
               >
                 <div class="item-top">
                   <h4 class="item-title">{{ session.user_agent }}</h4>
@@ -66,6 +66,7 @@ import { computed, ref } from 'vue'
 import { formatDate } from '@/utils/helpers'
 import { useAuthStore } from '@/stores/auth'
 import { hostIP } from '@/utils/helpers'
+import { navigateGrid, handleDeleteKey, handleEscape, getDirection } from '@/utils/keynav'
 
 const props = defineProps({
   sessions: { type: Array, default: () => [] },
@@ -73,9 +74,10 @@ const props = defineProps({
   sectionDescription: { type: String, default: "Review where you're signed in and end any sessions you no longer recognize." },
   terminatingSessions: { type: Object, default: () => ({}) },
   hoveredCredentialUuid: { type: String, default: null },
+  navigationDisabled: { type: Boolean, default: false },
 })
 
-const emit = defineEmits(['terminate', 'sessionHover'])
+const emit = defineEmits(['terminate', 'sessionHover', 'navigate-out'])
 
 const authStore = useAuthStore()
 
@@ -104,19 +106,86 @@ const handleCardClick = (event) => {
   }
 }
 
-const handleDelete = (event, session) => {
-  const apple = navigator.userAgent.includes('Mac OS')
-  if (event.key === 'Delete' || apple && event.key === 'Backspace') {
-    event.preventDefault()
-    if (!isTerminating(session.id)) emit('terminate', session)
-  }
-}
-
 const isTerminating = (sessionId) => !!props.terminatingSessions[sessionId]
 
-const handleGroupEnter = (event, host) => {
-  if (host && event.target === event.currentTarget) {
-    event.currentTarget.querySelector('a')?.click()
+const handleGroupKeydown = (event, host) => {
+  const group = event.currentTarget
+  const sessionList = group.querySelector('.session-list')
+  const items = sessionList?.querySelectorAll('.session-item')
+  const allGroups = Array.from(document.querySelectorAll('.session-group'))
+  const groupIndex = allGroups.indexOf(group)
+
+  // Enter on group header opens link (always allowed)
+  if (event.key === 'Enter' && event.target === group) {
+    if (host) group.querySelector('a')?.click()
+    return
+  }
+
+  if (props.navigationDisabled) return
+
+  // Arrow keys to enter the grid from the group
+  const direction = getDirection(event)
+  if (['down', 'right'].includes(direction) && event.target === group) {
+    event.preventDefault()
+    items?.[0]?.focus()
+    return
+  }
+
+  // Up/Left from group navigates to previous group or out
+  if (['up', 'left'].includes(direction) && event.target === group) {
+    event.preventDefault()
+    if (groupIndex > 0) {
+      allGroups[groupIndex - 1].focus()
+    } else {
+      emit('navigate-out', 'up')
+    }
+    return
+  }
+
+  // Escape emits navigate-out
+  handleEscape(event, (dir) => emit('navigate-out', dir))
+}
+
+const handleItemKeydown = (event, session) => {
+  // Handle delete (always allowed even with modal)
+  handleDeleteKey(event, () => {
+    if (!isTerminating(session.id)) emit('terminate', session)
+  })
+  if (event.defaultPrevented) return
+
+  if (props.navigationDisabled) return
+
+  // Arrow key navigation
+  const direction = getDirection(event)
+  if (direction) {
+    event.preventDefault()
+    const group = event.currentTarget.closest('.session-group')
+    const sessionListEl = group.querySelector('.session-list')
+    const result = navigateGrid(sessionListEl, event.currentTarget, direction, { itemSelector: '.session-item' })
+
+    // Custom boundary handling for session list
+    if (result === 'boundary') {
+      if (direction === 'left' || direction === 'up') {
+        // At left/top edge, focus group
+        group?.focus()
+      } else if (direction === 'down' || direction === 'right') {
+        // Try to navigate to next group or emit navigate-out
+        const allGroups = Array.from(document.querySelectorAll('.session-group'))
+        const groupIndex = allGroups.indexOf(group)
+
+        if (groupIndex < allGroups.length - 1) {
+          allGroups[groupIndex + 1].focus()
+        } else {
+          emit('navigate-out', 'down')
+        }
+      }
+    }
+  }
+
+  // Escape focuses the group
+  if (event.key === 'Escape') {
+    event.preventDefault()
+    event.currentTarget.closest('.session-group')?.focus()
   }
 }
 

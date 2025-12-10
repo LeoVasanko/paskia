@@ -1,14 +1,24 @@
 <script setup>
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
+import { getDirection, navigateButtonRow, focusPreferred, focusAtIndex } from '@/utils/keynav'
 
 const props = defineProps({
   info: Object,
   orgs: Array,
   permissions: Array,
-  permissionSummary: Object
+  permissionSummary: Object,
+  navigationDisabled: { type: Boolean, default: false }
 })
 
-const emit = defineEmits(['createOrg', 'openOrg', 'updateOrg', 'deleteOrg', 'toggleOrgPermission', 'openDialog', 'deletePermission', 'renamePermissionDisplay'])
+const emit = defineEmits(['createOrg', 'openOrg', 'updateOrg', 'deleteOrg', 'toggleOrgPermission', 'openDialog', 'deletePermission', 'renamePermissionDisplay', 'navigateOut'])
+
+// Template refs for navigation
+const orgSection = ref(null)
+const orgActionsRef = ref(null)
+const orgTableRef = ref(null)
+const permMatrixRef = ref(null)
+const permActionsRef = ref(null)
+const permTableRef = ref(null)
 
 const sortedOrgs = computed(() => [...props.orgs].sort((a,b)=> {
   const nameCompare = a.display_name.localeCompare(b.display_name)
@@ -27,15 +37,219 @@ function getRoleNames(org) {
     .map(r => r.display_name)
     .join(', ')
 }
+
+// Table navigation for both org and permissions tables
+function handleTableKeydown(event, tableType) {
+  if (props.navigationDisabled) return
+
+  const direction = getDirection(event)
+  if (!direction) return
+
+  const target = event.target
+  const row = target.closest('tr')
+  if (!row) return
+
+  const tbody = row.closest('tbody')
+  if (!tbody) return
+
+  const rows = Array.from(tbody.querySelectorAll('tr'))
+  const currentIndex = rows.indexOf(row)
+  if (currentIndex === -1) return
+
+  // Handle left/right navigation within the row
+  if (direction === 'left' || direction === 'right') {
+    event.preventDefault()
+    const focusables = Array.from(row.querySelectorAll('a, button:not([disabled])'))
+    const currentFocusIndex = focusables.indexOf(target)
+    if (currentFocusIndex === -1) return
+
+    if (direction === 'left' && currentFocusIndex > 0) {
+      focusables[currentFocusIndex - 1].focus()
+    } else if (direction === 'right' && currentFocusIndex < focusables.length - 1) {
+      focusables[currentFocusIndex + 1].focus()
+    }
+    return
+  }
+
+  // Handle up/down navigation between rows
+  let newIndex = currentIndex
+  if (direction === 'up' && currentIndex > 0) {
+    newIndex = currentIndex - 1
+  } else if (direction === 'down' && currentIndex < rows.length - 1) {
+    newIndex = currentIndex + 1
+  } else if (direction === 'up' && currentIndex === 0) {
+    // At top of table, navigate to actions above
+    event.preventDefault()
+    if (tableType === 'org') {
+      focusPreferred(orgActionsRef.value, { itemSelector: 'button' })
+    } else if (tableType === 'perm') {
+      focusPreferred(permActionsRef.value, { itemSelector: 'button' })
+    }
+    return
+  } else if (direction === 'down' && currentIndex === rows.length - 1) {
+    // At bottom of org table, navigate to permissions section
+    event.preventDefault()
+    if (tableType === 'org' && props.info.is_global_admin) {
+      // Navigate to permissions matrix or actions
+      if (permMatrixRef.value) {
+        const firstCheckbox = permMatrixRef.value.querySelector('input[type="checkbox"]')
+        if (firstCheckbox) firstCheckbox.focus()
+        else focusPreferred(permActionsRef.value, { itemSelector: 'button' })
+      }
+    }
+    return
+  }
+
+  if (newIndex !== currentIndex) {
+    event.preventDefault()
+    const newRow = rows[newIndex]
+    const focusable = newRow.querySelector('a, button:not([disabled])')
+    if (focusable) focusable.focus()
+  }
+}
+
+// Handle org actions button keynav
+function handleOrgActionsKeydown(event) {
+  if (props.navigationDisabled) return
+
+  const direction = getDirection(event)
+  if (!direction) return
+
+  event.preventDefault()
+
+  if (direction === 'left' || direction === 'right') {
+    navigateButtonRow(orgActionsRef.value, event.target, direction, { itemSelector: 'button' })
+  } else if (direction === 'up') {
+    emit('navigateOut', 'up')
+  } else if (direction === 'down') {
+    // Move to org table
+    const firstFocusable = orgTableRef.value?.querySelector('tbody tr a, tbody tr button:not([disabled])')
+    if (firstFocusable) firstFocusable.focus()
+  }
+}
+
+// Handle permission matrix grid navigation
+function handleMatrixKeydown(event) {
+  if (props.navigationDisabled) return
+
+  const direction = getDirection(event)
+  if (!direction) return
+
+  const target = event.target
+  if (target.tagName !== 'INPUT') return
+
+  event.preventDefault()
+
+  const checkboxes = Array.from(permMatrixRef.value.querySelectorAll('input[type="checkbox"]'))
+  const currentIndex = checkboxes.indexOf(target)
+  if (currentIndex === -1) return
+
+  // Calculate grid dimensions
+  const cols = sortedOrgs.value.length
+  const rows = sortedPermissions.value.length
+
+  if (cols === 0 || rows === 0) return
+
+  const currentRow = Math.floor(currentIndex / cols)
+  const currentCol = currentIndex % cols
+
+  let newIndex = currentIndex
+  if (direction === 'left') {
+    if (currentCol > 0) {
+      // Move left within the same row
+      newIndex = currentIndex - 1
+    }
+    // At leftmost column, do nothing (no wrap)
+  } else if (direction === 'right') {
+    if (currentCol < cols - 1) {
+      // Move right within the same row
+      newIndex = currentIndex + 1
+    }
+    // At rightmost column, do nothing (no wrap)
+  } else if (direction === 'up') {
+    if (currentRow > 0) {
+      // Move up within the same column
+      newIndex = currentIndex - cols
+    } else {
+      // At top row, navigate up to org table
+      const lastRow = orgTableRef.value?.querySelector('tbody tr:last-child')
+      const focusable = lastRow?.querySelector('a, button:not([disabled])')
+      if (focusable) focusable.focus()
+      return
+    }
+  } else if (direction === 'down') {
+    if (currentRow < rows - 1) {
+      // Move down within the same column
+      newIndex = currentIndex + cols
+    } else {
+      // At bottom row, navigate down to permission actions
+      focusPreferred(permActionsRef.value, { itemSelector: 'button' })
+      return
+    }
+  }
+
+  if (newIndex !== currentIndex && checkboxes[newIndex]) {
+    checkboxes[newIndex].focus()
+  }
+}
+
+// Handle permission actions button keynav
+function handlePermActionsKeydown(event) {
+  if (props.navigationDisabled) return
+
+  const direction = getDirection(event)
+  if (!direction) return
+
+  event.preventDefault()
+
+  if (direction === 'left' || direction === 'right') {
+    navigateButtonRow(permActionsRef.value, event.target, direction, { itemSelector: 'button' })
+  } else if (direction === 'up') {
+    // Move to first column of last row in matrix
+    const checkboxes = permMatrixRef.value?.querySelectorAll('input[type="checkbox"]')
+    if (checkboxes?.length) {
+      const cols = sortedOrgs.value.length
+      const rows = sortedPermissions.value.length
+      // First checkbox of last row = (rows - 1) * cols
+      const lastRowFirstIndex = (rows - 1) * cols
+      if (checkboxes[lastRowFirstIndex]) {
+        checkboxes[lastRowFirstIndex].focus()
+      } else {
+        checkboxes[0].focus()
+      }
+    } else {
+      // No matrix, go to org table
+      const lastRow = orgTableRef.value?.querySelector('tbody tr:last-child')
+      const focusable = lastRow?.querySelector('a, button:not([disabled])')
+      if (focusable) focusable.focus()
+    }
+  } else if (direction === 'down') {
+    // Move to permissions table
+    const firstFocusable = permTableRef.value?.querySelector('tbody tr button:not([disabled])')
+    if (firstFocusable) firstFocusable.focus()
+  }
+}
+
+// Focus helper for external navigation
+function focusFirstElement() {
+  if (props.info.is_global_admin) {
+    focusPreferred(orgActionsRef.value, { itemSelector: 'button' })
+  } else {
+    const firstFocusable = orgTableRef.value?.querySelector('tbody tr a, tbody tr button:not([disabled])')
+    if (firstFocusable) firstFocusable.focus()
+  }
+}
+
+defineExpose({ focusFirstElement })
 </script>
 
 <template>
-  <div class="permissions-section">
+  <div class="permissions-section" ref="orgSection">
     <h2>{{ info.is_global_admin ? 'Organizations' : 'Your Organizations' }}</h2>
-    <div class="actions">
+    <div class="actions" ref="orgActionsRef" @keydown="handleOrgActionsKeydown">
       <button v-if="info.is_global_admin" @click="$emit('createOrg')">+ Create Org</button>
     </div>
-    <table class="org-table">
+    <table class="org-table" ref="orgTableRef" @keydown="e => handleTableKeydown(e, 'org')">
       <thead>
         <tr>
           <th>Name</th>
@@ -62,7 +276,7 @@ function getRoleNames(org) {
 
   <div v-if="info.is_global_admin" class="permissions-section">
     <h2>Permissions</h2>
-    <div class="matrix-wrapper">
+    <div class="matrix-wrapper" ref="permMatrixRef" @keydown="handleMatrixKeydown">
       <div class="matrix-scroll">
         <div
           class="perm-matrix-grid"
@@ -98,10 +312,10 @@ function getRoleNames(org) {
       </div>
       <p class="matrix-hint muted">Toggle which permissions each organization can grant to its members.</p>
     </div>
-    <div class="actions">
+    <div class="actions" ref="permActionsRef" @keydown="handlePermActionsKeydown">
       <button v-if="info.is_global_admin" @click="$emit('openDialog', 'perm-create', { display_name: '', id: '' })">+ Create Permission</button>
     </div>
-    <table class="org-table">
+    <table class="org-table" ref="permTableRef" @keydown="e => handleTableKeydown(e, 'perm')">
         <thead>
           <tr>
             <th scope="col">Permission</th>

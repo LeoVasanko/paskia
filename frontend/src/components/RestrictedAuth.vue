@@ -18,7 +18,7 @@
           <div class="section-body center">
             <!-- Local passkey authentication view -->
             <div v-if="authView === 'local'" class="auth-view">
-              <div class="button-row center">
+              <div class="button-row center" ref="buttonRow">
                 <slot name="actions"
                   :loading="loading"
                   :can-authenticate="canAuthenticate"
@@ -55,11 +55,12 @@
 </template>
 
 <script setup>
-import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import passkey from '@/utils/passkey'
 import { getSettings, uiBasePath } from '@/utils/settings'
 import { fetchJson, getUserFriendlyErrorMessage } from '@/utils/api'
 import RemoteAuthRequest from '@/components/RemoteAuthRequest.vue'
+import { focusDialogButton } from '@/utils/keynav'
 
 const props = defineProps({
   mode: {
@@ -78,6 +79,7 @@ const settings = ref(null)
 const userInfo = ref(null)
 const currentView = ref('initial') // 'initial', 'login', 'forbidden'
 const authView = ref('local') // 'local' or 'remote'
+const buttonRow = ref(null)
 let statusTimer = null
 
 const isAuthenticated = computed(() => !!userInfo.value?.authenticated)
@@ -254,6 +256,13 @@ function handleHeaderLinkClick(event) {
     }
   }
 }
+
+// Autofocus primary button when the view becomes ready
+watch(initializing, (newVal) => {
+  if (!newVal) {
+    nextTick(() => focusDialogButton(buttonRow.value))
+  }
+})
 
 onMounted(async () => {
   await fetchSettings()

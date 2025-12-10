@@ -12,7 +12,7 @@
       />
     </label>
     <div v-if="error" class="error small">{{ error }}</div>
-    <div class="modal-actions">
+    <div class="modal-actions" @keydown="handleActionsKeydown">
       <button
         type="button"
         class="btn-secondary"
@@ -25,6 +25,7 @@
         type="submit"
         class="btn-primary"
         :disabled="busy"
+        data-nav-primary
       >
         {{ submitText }}
       </button>
@@ -33,7 +34,8 @@
 </template>
 
 <script setup>
-import { computed, nextTick, onMounted, ref } from 'vue'
+import { computed, ref } from 'vue'
+import { getDirection } from '@/utils/keynav'
 
 const props = defineProps({
   modelValue: { type: String, default: '' },
@@ -60,16 +62,15 @@ const localValue = computed({
 
 const resolvedInputId = computed(() => props.inputId || generatedId)
 
-onMounted(() => {
-  if (!props.autoFocus) return
-  nextTick(() => {
-    if (props.autoSelect) {
-      inputRef.value?.select()
-    } else {
-      inputRef.value?.focus()
-    }
-  })
-})
+const handleActionsKeydown = (event) => {
+  const direction = getDirection(event)
+  if (direction === 'up') {
+    event.preventDefault()
+    inputRef.value?.focus()
+    return
+  }
+  // Left/right navigation is handled globally by keynav
+}
 
 function handleCancel() {
   emit('cancel')

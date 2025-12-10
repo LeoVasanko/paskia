@@ -1,5 +1,4 @@
 <script setup>
-import { ref, watch, nextTick } from 'vue'
 import Modal from '@/components/Modal.vue'
 import NameEditForm from '@/components/NameEditForm.vue'
 
@@ -10,25 +9,7 @@ const props = defineProps({
 
 const emit = defineEmits(['submitDialog', 'closeDialog'])
 
-const nameInput = ref(null)
-const displayNameInput = ref(null)
-
 const NAME_EDIT_TYPES = new Set(['org-update', 'role-update', 'user-update-name'])
-
-watch(() => props.dialog.type, (newType) => {
-  if (newType === 'org-create') {
-    nextTick(() => {
-      nameInput.value?.focus()
-    })
-  } else if (newType === 'perm-display' || newType === 'perm-create') {
-    nextTick(() => {
-      displayNameInput.value?.focus()
-      if (newType === 'perm-display') {
-        displayNameInput.value?.select()
-      }
-    })
-  }
-})
 </script>
 
 <template>
