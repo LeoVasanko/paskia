@@ -50,14 +50,13 @@ const userLoaded = computed(() => !!props.name)
 
 <style scoped>
 .user-info.has-extra {
-  grid-template-columns: auto 1fr;
+  grid-template-columns: auto 1fr 2fr;
   grid-template-areas:
-    "heading heading"
-    "org org"
-    "label1 value1"
-    "label2 value2"
-    "label3 value3"
-    "extra extra";
+    "heading heading extra"
+    "org org extra"
+    "label1 value1 extra"
+    "label2 value2 extra"
+    "label3 value3 extra";
 }
 
 .user-info:not(.has-extra) {
@@ -70,15 +69,16 @@ const userLoaded = computed(() => !!props.name)
     "label3 value3";
 }
 
-@media (min-width: 720px) {
+@media (max-width: 720px) {
   .user-info.has-extra {
-    grid-template-columns: auto 1fr 2fr;
+    grid-template-columns: auto 1fr;
     grid-template-areas:
-      "heading heading extra"
-      "org org extra"
-      "label1 value1 extra"
-      "label2 value2 extra"
-      "label3 value3 extra";
+      "heading heading"
+      "org org"
+      "label1 value1"
+      "label2 value2"
+      "label3 value3"
+      "extra extra";
   }
 }
 

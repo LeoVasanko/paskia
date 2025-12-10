@@ -130,11 +130,7 @@ const handleButtonRowKeydown = (event) => {
 .host-view { padding: 3rem 1.5rem 4rem; }
 .host-actions { display: flex; flex-direction: column; gap: 0.75rem; }
 .host-actions .button-row { gap: 0.75rem; flex-wrap: wrap; }
-.host-actions .button-row button { flex: 0 0 auto; }
+.host-actions .button-row button { flex: 1 1 0; }
 .note { margin: 0; color: var(--color-text-muted); }
 .empty-state { margin: 0; color: var(--color-text-muted); }
-@media (max-width: 600px) {
-  .host-actions .button-row { flex-direction: column; }
-  .host-actions .button-row button { width: 100%; }
-}
 </style>

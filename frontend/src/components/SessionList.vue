@@ -1,7 +1,7 @@
 <template>
   <section class="section-block" data-component="session-list-section">
     <div class="section-header">
-      <h2>Login Sessions</h2>
+      <h2>Active Sessions</h2>
       <p class="section-description">{{ sectionDescription }}</p>
     </div>
     <div class="section-body">

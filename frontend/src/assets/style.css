@@ -200,6 +200,11 @@ a:focus-visible {
   justify-content: flex-start;
 }
 
+.button-row button {
+  flex: 1;
+  min-width: 0;
+}
+
 .surface {
   background: var(--color-surface);
   border: 1px solid var(--color-border);
@@ -678,15 +683,8 @@ th {
   }
 }
 
-/* Mobile portrait (touch) or very narrow screens: stack buttons */
+/* Mobile portrait (touch) or very narrow screens */
 @media (max-width: 500px) and (orientation: portrait) and (pointer: coarse), (max-width: 350px) {
-  button {
-    width: 100%;
-  }
-
-  .button-row {
-    flex-direction: column;
-  }
 }
 
 .dialog-backdrop {
