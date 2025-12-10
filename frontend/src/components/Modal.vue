@@ -1,9 +1,7 @@
 <template>
-  <div class="modal-overlay" @keydown.esc="$emit('close')" @keydown="handleOverlayKeydown" tabindex="-1">
-    <div class="modal" role="dialog" aria-modal="true">
-      <slot />
-    </div>
-  </div>
+  <dialog ref="dialog" @close="$emit('close')" @keydown="handleDialogKeydown">
+    <slot />
+  </dialog>
 </template>
 
 <script setup>
@@ -20,6 +18,9 @@ const props = defineProps({
 })
 
 defineEmits(['close'])
+
+// Dialog element reference
+const dialog = ref(null)
 
 // Store the element that had focus before modal opened
 const previouslyFocusedElement = ref(null)
@@ -74,7 +75,7 @@ const restoreFocus = () => {
   }
 }
 
-const handleOverlayKeydown = (event) => {
+const handleDialogKeydown = (event) => {
   const direction = getDirection(event)
   if (!direction) return
 
@@ -110,19 +111,21 @@ onMounted(() => {
   // Save currently focused element before modal takes focus
   previouslyFocusedElement.value = document.activeElement
 
-  // Autofocus the most appropriate element:
-  // - For form dialogs (rename, edit): focus first input and select text
-  // - For other dialogs: focus primary button (or fallback)
+  // Show the dialog as a modal
   nextTick(() => {
-    const modal = document.querySelector('.modal')
-    if (modal) {
+    if (dialog.value) {
+      dialog.value.showModal()
+
+      // Autofocus the most appropriate element:
+      // - For form dialogs (rename, edit): focus first input and select text
+      // - For other dialogs: focus primary button (or fallback)
       // Mark primary button for keyboard navigation
-      const primaryBtn = modal.querySelector('.modal-actions .btn-primary')
+      const primaryBtn = dialog.value.querySelector('.modal-actions .btn-primary')
       if (primaryBtn) {
         primaryBtn.setAttribute('data-nav-primary', '')
       }
       // Focus the most appropriate element
-      focusDialogDefault(modal)
+      focusDialogDefault(dialog.value)
     }
   })
 })
@@ -134,22 +137,7 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-.modal-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: transparent;
-  backdrop-filter: blur(.1rem) brightness(0.7);
-  -webkit-backdrop-filter: blur(.1rem) brightness(0.7);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
-}
-
-.modal {
+dialog {
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
@@ -159,37 +147,47 @@ onUnmounted(() => {
   width: min(500px, 90vw);
   max-height: 90vh;
   overflow-y: auto;
+  position: fixed;
+  inset: 0;
+  margin: auto;
+  height: fit-content;
 }
 
-.modal :deep(.modal-title),
-.modal :deep(h3) {
+dialog::backdrop {
+  background: transparent;
+  backdrop-filter: blur(.1rem) brightness(0.7);
+  -webkit-backdrop-filter: blur(.1rem) brightness(0.7);
+}
+
+dialog :deep(.modal-title),
+dialog :deep(h3) {
   margin: 0 0 var(--space-md);
   font-size: 1.25rem;
   font-weight: 600;
   color: var(--color-heading);
 }
 
-.modal :deep(form) {
+dialog :deep(form) {
   display: flex;
   flex-direction: column;
   gap: var(--space-md);
 }
 
-.modal :deep(.modal-form) {
+dialog :deep(.modal-form) {
   display: flex;
   flex-direction: column;
   gap: var(--space-md);
 }
 
-.modal :deep(.modal-form label) {
+dialog :deep(.modal-form label) {
   display: flex;
   flex-direction: column;
   gap: var(--space-xs);
   font-weight: 500;
 }
 
-.modal :deep(.modal-form input),
-.modal :deep(.modal-form textarea) {
+dialog :deep(.modal-form input),
+dialog :deep(.modal-form textarea) {
   padding: var(--space-md);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
@@ -200,14 +198,14 @@ onUnmounted(() => {
   min-height: 2.5rem;
 }
 
-.modal :deep(.modal-form input:focus),
-.modal :deep(.modal-form textarea:focus) {
+dialog :deep(.modal-form input:focus),
+dialog :deep(.modal-form textarea:focus) {
   outline: none;
   border-color: var(--color-accent);
   box-shadow: 0 0 0 2px #c7d2fe;
 }
 
-.modal :deep(.modal-actions) {
+dialog :deep(.modal-actions) {
   display: flex;
   justify-content: flex-end;
   gap: var(--space-sm);

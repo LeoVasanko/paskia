@@ -1,5 +1,5 @@
 <template>
-  <div v-if="linkUrl" class="dialog-overlay no-backdrop" @keydown.esc.prevent="$emit('close')">
+  <dialog ref="dialog" @close="$emit('close')" @keydown="handleDialogKeydown">
     <div class="device-dialog" role="dialog" aria-modal="true" aria-labelledby="regTitle">
       <div class="reg-header-row">
         <h2 id="regTitle" class="reg-title">
@@ -29,13 +29,13 @@
         <button class="btn-secondary" @click="$emit('close')">Close</button>
       </div>
     </div>
-  </div>
+  </dialog>
 </template>
 
 <script setup>
 import { ref, onMounted, onUnmounted, nextTick } from 'vue'
 import QRCodeDisplay from '@/components/QRCodeDisplay.vue'
-import { apiJson, holdGlobalBackdrop, releaseGlobalBackdrop } from '@/utils/api'
+import { apiJson } from '@/utils/api'
 import { formatDate } from '@/utils/helpers'
 import { getDirection } from '@/utils/keynav'
 
@@ -46,6 +46,7 @@ const props = defineProps({
 
 const emit = defineEmits(['close', 'copied'])
 
+const dialog = ref(null)
 const linkUrl = ref(null)
 const expiresAt = ref(null)
 const actionsRow = ref(null)
@@ -58,11 +59,17 @@ async function generateLink() {
     if (data.url) {
       linkUrl.value = data.url
       expiresAt.value = data.expires ? new Date(data.expires) : null
-      // Focus primary button (or first button if no primary) after content renders
+
+      // Show the dialog as modal
       await nextTick()
-      const actions = actionsRow.value
-      const target = actions?.querySelector('.btn-primary') || actions?.querySelector('button')
-      target?.focus()
+      if (dialog.value) {
+        dialog.value.showModal()
+
+        // Focus primary button (or first button if no primary) after content renders
+        const actions = actionsRow.value
+        const target = actions?.querySelector('.btn-primary') || actions?.querySelector('button')
+        target?.focus()
+      }
     } else {
       emit('close')
     }
@@ -73,6 +80,18 @@ async function generateLink() {
 
 function onCopied() {
   emit('copied')
+}
+
+const handleDialogKeydown = (event) => {
+  // ESC is handled automatically by <dialog>
+  // Handle other key navigation
+  const direction = getDirection(event)
+  if (!direction) return
+
+  if (direction === 'down' || direction === 'up') {
+    // Let the individual handlers manage navigation
+    return
+  }
 }
 
 const handleQRKeydown = (event) => {
@@ -106,14 +125,10 @@ const handleActionsKeydown = (event) => {
 onMounted(() => {
   // Save currently focused element before modal takes focus
   previouslyFocusedElement.value = document.activeElement
-  // Hold backdrop before fetch to avoid gap if auth iframe shows
-  holdGlobalBackdrop()
   generateLink()
 })
 
 onUnmounted(() => {
-  // Release backdrop when modal closes
-  releaseGlobalBackdrop()
   // Restore focus when modal closes
   const prev = previouslyFocusedElement.value
   if (prev && document.body.contains(prev) && !prev.disabled) {
@@ -123,6 +138,23 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
+dialog {
+  border: none;
+  background: transparent;
+  padding: 0;
+  max-width: none;
+  width: fit-content;
+  height: fit-content;
+  position: fixed;
+  inset: 0;
+  margin: auto;
+}
+
+dialog::backdrop {
+  -webkit-backdrop-filter: blur(.2rem) brightness(0.5);
+  backdrop-filter: blur(.2rem) brightness(0.5);
+}
+
 .icon-btn { background: none; border: none; cursor: pointer; font-size: 1rem; opacity: .6; }
 .icon-btn:hover { opacity: 1; }
 .reg-header-row { display: flex; justify-content: space-between; align-items: center; gap: .75rem; margin-bottom: .75rem; }
@@ -131,10 +163,4 @@ onUnmounted(() => {
 .reg-help { margin: .5rem 0 .75rem; font-size: .85rem; line-height: 1.4; text-align: center; color: var(--color-text-muted); }
 .reg-actions { display: flex; justify-content: flex-end; gap: .5rem; margin-top: 1rem; }
 .expiry-note { font-size: .75rem; color: var(--color-text-muted); text-align: center; margin-top: .75rem; }
-
-/* Use global backdrop, not local */
-.dialog-overlay.no-backdrop {
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
-}
 </style>
