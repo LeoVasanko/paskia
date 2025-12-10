@@ -95,7 +95,6 @@ const userLoaded = computed(() => !!props.name)
 .user-info-extra { grid-area: extra; padding-left: 2rem; border-left: 1px solid var(--color-border); }
 .user-name-row { display: inline-flex; align-items: center; gap: 0.35rem; max-width: 100%; }
 .user-name-row.editing { flex: 1 1 auto; }
-.icon { flex: 0 0 auto; font-size: 1.5em; width: 40px; }
 .display-name { font-weight: 600; font-size: 1.05em; line-height: 1.2; max-width: 14ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .name-input { width: auto; flex: 1 1 140px; min-width: 120px; padding: 6px 8px; font-size: 0.9em; border: 1px solid var(--color-border-strong); border-radius: 6px; background: var(--color-surface); color: var(--color-text); }
 .user-name-heading .name-input { width: auto; }

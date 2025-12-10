@@ -7,7 +7,7 @@
   --color-surface-subtle: #f1f3f7;
   --color-border: #d0d5dd;
   --color-border-strong: #9aa2af;
-  --color-heading: #101828;
+  --color-heading: #000;
   --color-text: #1f2933;
   --color-text-muted: #52616b;
   --color-link: #2563eb;
@@ -47,7 +47,7 @@
     --color-surface-subtle: #1b243b;
     --color-border: #25304a;
     --color-border-strong: #3d4d6b;
-    --color-heading: #f8fafc;
+    --color-heading: #fff;
     --color-text: #e2e8f0;
     --color-text-muted: #94a3b8;
     --color-link: #60a5fa;
@@ -498,6 +498,8 @@ th {
   border-radius: var(--radius-sm);
 }
 
+.icon { flex: 0 0 auto; font-size: 1.5em; width: 40px; }
+
 .item-title {
   flex: 1;
   margin: 0;
@@ -552,6 +554,36 @@ th {
 
 .session-emoji {
   font-size: 1.2rem;
+}
+.session-group {
+  position: relative;
+}
+.session-group:focus-visible {
+  outline: var(-webkit-focus-ring-color) 1px solid;
+}
+.session-group-host {
+  display: flex;
+  align-items: center;
+  font-size: 1.5rem;
+  font-weight: 600;
+  margin: 0.5rem 0;
+}
+.session-group-icon {
+  margin-left: -1.5rem;
+}
+.session-group-host a {
+  color: var(--color-text);
+  text-decoration: none;
+}
+.session-group:focus-visible .session-group-host,
+.session-group:focus-visible .session-group-host a {
+  color: var(--color-heading);
+}
+.btn-card-delete {
+  display: none;
+}
+.session-item:focus .btn-card-delete {
+  display: block;
 }
 
 .badge {
