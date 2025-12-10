@@ -26,8 +26,6 @@ const permissions = ref([])
 const currentOrgId = ref(null) // UUID of selected org for detail view
 const currentUserId = ref(null) // UUID for user detail view
 const userDetail = ref(null) // cached user detail object
-const userLink = ref(null) // latest generated registration link
-const userLinkExpires = ref(null)
 const authStore = useAuthStore()
 const addingOrgForPermission = ref(null)
 const PERMISSION_ID_PATTERN = '^[A-Za-z0-9:._~-]+$'
@@ -112,33 +110,6 @@ const permissionSummary = computed(() => {
 
 function renamePermissionDisplay(p) { openDialog('perm-display', { permission: p, id: p.id, display_name: p.display_name }) }
 
-async function refreshPermissionsContext() {
-  // Reload both lists so All Permissions table shows new associations promptly.
-  await Promise.all([loadPermissions(), loadOrgs()])
-}
-
-async function attachPermissionToOrg(pid, orgUuid) {
-  if (!orgUuid) return
-  try {
-    const params = new URLSearchParams({ permission_id: pid })
-    await apiJson(`/auth/api/admin/orgs/${orgUuid}/permission?${params.toString()}`, { method: 'POST' })
-    await loadOrgs()
-  } catch (e) {
-  authStore.showMessage(e.message || 'Failed to add permission to org')
-  }
-}
-
-async function detachPermissionFromOrg(pid, orgUuid) {
-  openDialog('confirm', { message: 'Remove permission from this org?', action: async () => {
-    try {
-      const params = new URLSearchParams({ permission_id: pid })
-      await apiJson(`/auth/api/admin/orgs/${orgUuid}/permission?${params.toString()}`, { method: 'DELETE' })
-      await loadOrgs()
-    } catch (e) {
-      authStore.showMessage(e.message || 'Failed to remove permission from org')
-    }
-  } })
-}
 
 function parseHash() {
   const h = window.location.hash || ''
@@ -209,11 +180,37 @@ function updateOrg(org) { openDialog('org-update', { org, name: org.display_name
 
 function editUserName(user) { openDialog('user-update-name', { user, name: user.display_name }) }
 
+async function performOrgDeletion(orgUuid) {
+  await apiJson(`/auth/api/admin/orgs/${orgUuid}`, { method: 'DELETE' })
+  await Promise.all([loadOrgs(), loadPermissions()])
+}
+
 function deleteOrg(org) {
   if (!info.value?.is_global_admin) { authStore.showMessage('Global admin only'); return }
-  openDialog('confirm', { message: `Delete organization ${org.display_name}?`, action: async () => {
-    await apiJson(`/auth/api/admin/orgs/${org.uuid}`, { method: 'DELETE' })
-    await Promise.all([loadOrgs(), loadPermissions()])
+
+  const userCount = org.roles.reduce((acc, r) => acc + r.users.length, 0)
+
+  if (userCount === 0) {
+    // No users in the organization, safe to delete directly
+    performOrgDeletion(org.uuid)
+      .then(() => {
+        authStore.showMessage(`Organization "${org.display_name}" deleted.`, 'success', 2500)
+      })
+      .catch(e => {
+        authStore.showMessage(e.message || 'Failed to delete organization', 'error')
+      })
+    return
+  }
+
+  // Build detailed breakdown of users by role
+  const roleParts = org.roles
+    .filter(r => r.users.length > 0)
+    .map(r => `${r.users.length} ${r.display_name}`)
+
+  const affects = roleParts.join(', ')
+
+  openDialog('confirm', { message: `Delete organization "${org.display_name}", including accounts of ${affects})?`, action: async () => {
+    await performOrgDeletion(org.uuid)
   } })
 }
 
@@ -252,21 +249,21 @@ function onRoleDrop(e, org, role) {
   } catch (_) { /* ignore */ }
 }
 
-// (legacy function retained but unused in UI)
-async function addOrgPermission() { /* obsolete */ }
-
-async function removeOrgPermission() { /* obsolete */ }
-
 // Role actions
 function createRole(org) { openDialog('role-create', { org }) }
 
 function updateRole(role) { openDialog('role-update', { role, name: role.display_name }) }
 
 function deleteRole(role) {
-  openDialog('confirm', { message: `Delete role ${role.display_name}?`, action: async () => {
-    await apiJson(`/auth/api/admin/orgs/${role.org_uuid}/roles/${role.uuid}`, { method: 'DELETE' })
-    await loadOrgs()
-  } })
+  // UI only allows deleting empty roles, so no confirmation needed
+  apiJson(`/auth/api/admin/orgs/${role.org_uuid}/roles/${role.uuid}`, { method: 'DELETE' })
+    .then(() => {
+      authStore.showMessage(`Role "${role.display_name}" deleted.`, 'success', 2500)
+      loadOrgs()
+    })
+    .catch(e => {
+      authStore.showMessage(e.message || 'Failed to delete role', 'error')
+    })
 }
 
 async function toggleRolePermission(role, pid, checked) {
@@ -292,13 +289,44 @@ async function toggleRolePermission(role, pid, checked) {
 }
 
 // Permission actions
-function updatePermission(p) { openDialog('perm-display', { permission: p }) }
+async function performPermissionDeletion(permissionId) {
+  const params = new URLSearchParams({ permission_id: permissionId })
+  await apiJson(`/auth/api/admin/permission?${params.toString()}`, { method: 'DELETE' })
+  await loadPermissions()
+}
 
 function deletePermission(p) {
-  openDialog('confirm', { message: `Delete permission ${p.id}?`, action: async () => {
-    const params = new URLSearchParams({ permission_id: p.id })
-    await apiJson(`/auth/api/admin/permission?${params.toString()}`, { method: 'DELETE' })
-    await loadPermissions()
+  const userCount = permissionSummary.value[p.id]?.userCount || 0
+
+  // Count roles that have this permission
+  let roleCount = 0
+  for (const org of orgs.value) {
+    for (const role of org.roles) {
+      if (role.permissions.includes(p.id)) {
+        roleCount++
+      }
+    }
+  }
+
+  if (roleCount === 0) {
+    // No roles have this permission, safe to delete directly
+    performPermissionDeletion(p.id)
+      .then(() => {
+        authStore.showMessage(`Permission "${p.display_name}" deleted.`, 'success', 2500)
+      })
+      .catch(e => {
+        authStore.showMessage(e.message || 'Failed to delete permission', 'error')
+      })
+    return
+  }
+
+  const parts = []
+  if (roleCount > 0) parts.push(`${roleCount} role${roleCount !== 1 ? 's' : ''}`)
+  if (userCount > 0) parts.push(`${userCount} user${userCount !== 1 ? 's' : ''}`)
+  const affects = parts.join(', ')
+
+  openDialog('confirm', { message: `Delete permission "${p.display_name}" (${affects})?`, action: async () => {
+    await performPermissionDeletion(p.id)
   } })
 }
 
