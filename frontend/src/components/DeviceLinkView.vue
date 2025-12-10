@@ -55,13 +55,8 @@ onMounted(async () => {
   justify-content: flex-start;
 }
 
-@media (max-width: 720px) {
-  .button-row {
-    flex-direction: column;
-  }
-
-  .button-row button {
-    width: 100%;
-  }
+.button-row button {
+  flex: 1;
+  min-width: 0;
 }
 </style>
