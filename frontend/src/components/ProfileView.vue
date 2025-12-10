@@ -187,6 +187,7 @@ const handlePairingError = (message) => {
 
 const onLinkCopied = () => {
   authStore.showMessage('📋 Link copied! Send it to your other device.')
+  showRegLink.value = false
 }
 
 // Helper to focus preferred button in a row (primary first, or first button)
