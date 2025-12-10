@@ -73,11 +73,14 @@
 }
 
 html {
+  overflow: clip;
   height: 100%;
   background: var(--color-canvas);
 }
 
 body {
+  overflow: auto;
+  scrollbar-gutter: stable;
   height: 100%;
   margin: 0;
   font-family: var(--font-sans);
@@ -739,21 +742,8 @@ body.has-backdrop::before {
   visibility: visible;
 }
 
-/* Prevent scrolling via html to avoid scrollbar layout shift */
-html:has(body.has-backdrop),
-html:has(#auth-iframe) {
-  overflow: clip;
-}
-
 body.has-backdrop {
   overflow: auto;
-}
-
-/* Make fixed elements (toast, dialog) position relative to body, not viewport */
-/* This works because transform creates a new containing block for fixed children */
-body.has-backdrop,
-body:has(#auth-iframe) {
-  transform: translateZ(0);
 }
 
 #auth-iframe {
