@@ -36,6 +36,7 @@ const hasActiveModal = computed(() => props.showRegModal)
 
 function onLinkCopied() {
   authStore.showMessage(`📋 Link copied! Send it to ${props.selectedUser.display_name}.`)
+  emit('closeRegModal')
 }
 
 function handleEditName() {
