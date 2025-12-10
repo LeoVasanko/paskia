@@ -7,11 +7,12 @@
     <div class="section-body">
       <div>
         <template v-if="Array.isArray(sessions) && sessions.length">
-          <div v-for="(group, host) in groupedSessions" :key="host" class="session-group">
-            <h3 :class="['session-group-host', { 'is-current-site': group.isCurrentSite }]">
-              <template v-if="host"><a :href="hostUrl(host)">🌐 {{ host }}</a></template>
-              <template v-else>🌐 Unbound host</template>
-            </h3>
+          <div v-for="(group, host) in groupedSessions" :key="host" class="session-group" tabindex="0" @keydown.enter="handleGroupEnter($event, host)">
+            <span :class="['session-group-host', { 'is-current-site': group.isCurrentSite }]">
+              <span class="session-group-icon">🌐</span>
+              <a v-if="host" :href="hostUrl(host)" tabindex="-1" target="_blank" rel="noopener noreferrer">{{ host }}</a>
+              <template v-else>Unbound host</template>
+            </span>
             <div class="session-list">
               <div
                 v-for="session in group.sessions"
@@ -113,6 +114,12 @@ const handleDelete = (event, session) => {
 
 const isTerminating = (sessionId) => !!props.terminatingSessions[sessionId]
 
+const handleGroupEnter = (event, host) => {
+  if (host && event.target === event.currentTarget) {
+    event.currentTarget.querySelector('a')?.click()
+  }
+}
+
 const hostUrl = (host) => {
   // Assume http if there's a port number, https otherwise
   const protocol = host.includes(':') ? 'http' : 'https'
@@ -166,20 +173,3 @@ const groupedSessions = computed(() => {
   return sortedGroups
 })
 </script>
-
-<style>
-.session-group-host {
-  font-size: 1em;
-  font-weight: 600;
-  margin: 0.5rem 0 0.5rem -1.2rem;
-}
-.session-group-host.is-current-site {
-  color: var(--color-accent);
-}
-.btn-card-delete {
-  display: none;
-}
-.session-item:focus .btn-card-delete {
-  display: block;
-}
-</style>
