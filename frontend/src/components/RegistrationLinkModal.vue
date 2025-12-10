@@ -5,7 +5,7 @@
         <h2 id="regTitle" class="reg-title">
           📱 <span v-if="userName">Registration for {{ userName }}</span><span v-else>Add Another Device</span>
         </h2>
-        <button class="icon-btn" @click="$emit('close')" aria-label="Close">❌</button>
+        <button class="icon-btn" @click="$emit('close')" aria-label="Close">✕</button>
       </div>
 
       <div class="device-link-section">

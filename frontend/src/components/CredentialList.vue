@@ -40,9 +40,9 @@
               @click="$emit('delete', credential)"
               class="btn-card-delete"
               :disabled="credential.is_current_session"
-              :title="credential.is_current_session ? 'Cannot delete current session credential' : 'Delete passkey'"
+              :title="credential.is_current_session ? 'Cannot delete current session credential' : 'Delete passkey and terminate any linked sessions.'"
               tabindex="-1"
-            >🗑️</button>
+            >❌</button>
           </div>
         </div>
         <div class="item-details">
