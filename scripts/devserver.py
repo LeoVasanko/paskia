@@ -389,20 +389,25 @@ def main():
 
     # Compute origins for Caddy (user-specified or auto-generated)
     caddy_origins = []
+    if args.auth_host:
+        auth_host = args.auth_host
+        if "://" not in auth_host:
+            auth_host = f"https://{auth_host}"
+        caddy_origins.append(auth_host)
+        # Also run on rp-id when auth-host is specified
+        caddy_origins.append(f"https://{args.rp_id}")
     if args.origins:
-        # User specified explicit origins - use those
-        caddy_origins = args.origins
-    elif args.caddy:
-        # Caddy mode without explicit origins: add https origin for the hostname
-        if args.auth_host:
-            # auth-host is the primary origin
-            auth_host = args.auth_host
-            if "://" not in auth_host:
-                auth_host = f"https://{auth_host}"
-            caddy_origins.append(auth_host)
-        else:
-            # Use rp-id as the hostname (standard port 443, no port in URL)
-            caddy_origins.append(f"https://{args.rp_id}")
+        for origin in args.origins:
+            if "://" not in origin:
+                origin = f"https://{origin}"
+            caddy_origins.append(origin)
+    # If neither auth-host nor origins specified, run on rp-id
+    if not args.auth_host and not args.origins:
+        caddy_origins.append(f"https://{args.rp_id}")
+
+    # Remove duplicates while preserving order
+    seen = set()
+    caddy_origins = [x for x in caddy_origins if not (x in seen or seen.add(x))]
 
     # Start Caddy if requested (after computing origins)
     if args.caddy:
@@ -429,28 +434,10 @@ def main():
     if args.auth_host:
         cmd.extend(["--auth-host", args.auth_host])
 
-    # Collect all origins: Caddy origins first (auth-host first), then user origins
-    # Use a set to track and avoid duplicates
-    all_origins = []
-    seen_origins = set(args.origins) if args.origins else set()
-
-    # Add Caddy origins first (they include auth-host origin if configured)
-    if args.caddy:
-        for origin in caddy_origins:
-            if origin not in seen_origins:
-                all_origins.append(origin)
-                seen_origins.add(origin)
-
-    # Add user-specified origins
+    # Pass through origins as specified
     if args.origins:
         for origin in args.origins:
-            if origin not in seen_origins:
-                all_origins.append(origin)
-                seen_origins.add(origin)
-
-    # Pass all origins to backend
-    for origin in all_origins:
-        cmd.extend(["--origin", origin])
+            cmd.extend(["--origin", origin])
 
     # Add remaining args (ones we didn't parse)
     cmd.extend(remaining)
