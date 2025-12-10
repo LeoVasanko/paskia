@@ -542,28 +542,88 @@ async function submitDialog() {
     const t = dialog.value.type
     if (t === 'org-create') {
       const name = dialog.value.data.name?.trim(); if (!name) throw new Error('Name required')
-      await apiJson('/auth/api/admin/orgs', { method: 'POST', body: { display_name: name, permissions: [] } })
-      await Promise.all([loadOrgs(), loadPermissions()])
+
+      // Close dialog immediately, then perform async operation
+      closeDialog()
+      apiJson('/auth/api/admin/orgs', { method: 'POST', body: { display_name: name, permissions: [] } })
+        .then(() => {
+          authStore.showMessage(`Organization "${name}" created.`, 'success', 2500)
+          Promise.all([loadOrgs(), loadPermissions()])
+        })
+        .catch(e => {
+          authStore.showMessage(e.message || 'Failed to create organization', 'error')
+        })
+      return // Don't call closeDialog() again
     } else if (t === 'org-update') {
       const { org } = dialog.value.data; const name = dialog.value.data.name?.trim(); if (!name) throw new Error('Name required')
-      await apiJson(`/auth/api/admin/orgs/${org.uuid}`, { method: 'PUT', body: { display_name: name, permissions: org.permissions } })
-      await loadOrgs()
+
+      // Close dialog immediately, then perform async operation
+      closeDialog()
+      apiJson(`/auth/api/admin/orgs/${org.uuid}`, { method: 'PUT', body: { display_name: name, permissions: org.permissions } })
+        .then(() => {
+          authStore.showMessage(`Organization renamed to "${name}".`, 'success', 2500)
+          loadOrgs()
+        })
+        .catch(e => {
+          authStore.showMessage(e.message || 'Failed to update organization', 'error')
+        })
+      return // Don't call closeDialog() again
     } else if (t === 'role-create') {
       const { org } = dialog.value.data; const name = dialog.value.data.name?.trim(); if (!name) throw new Error('Name required')
-      await apiJson(`/auth/api/admin/orgs/${org.uuid}/roles`, { method: 'POST', body: { display_name: name, permissions: [] } })
-      await loadOrgs()
+
+      // Close dialog immediately, then perform async operation
+      closeDialog()
+      apiJson(`/auth/api/admin/orgs/${org.uuid}/roles`, { method: 'POST', body: { display_name: name, permissions: [] } })
+        .then(() => {
+          authStore.showMessage(`Role "${name}" created.`, 'success', 2500)
+          loadOrgs()
+        })
+        .catch(e => {
+          authStore.showMessage(e.message || 'Failed to create role', 'error')
+        })
+      return // Don't call closeDialog() again
     } else if (t === 'role-update') {
       const { role } = dialog.value.data; const name = dialog.value.data.name?.trim(); if (!name) throw new Error('Name required')
-      await apiJson(`/auth/api/admin/orgs/${role.org_uuid}/roles/${role.uuid}`, { method: 'PUT', body: { display_name: name, permissions: role.permissions } })
-      await loadOrgs()
+
+      // Close dialog immediately, then perform async operation
+      closeDialog()
+      apiJson(`/auth/api/admin/orgs/${role.org_uuid}/roles/${role.uuid}`, { method: 'PUT', body: { display_name: name, permissions: role.permissions } })
+        .then(() => {
+          authStore.showMessage(`Role renamed to "${name}".`, 'success', 2500)
+          loadOrgs()
+        })
+        .catch(e => {
+          authStore.showMessage(e.message || 'Failed to update role', 'error')
+        })
+      return // Don't call closeDialog() again
     } else if (t === 'user-create') {
       const { org, role } = dialog.value.data; const name = dialog.value.data.name?.trim(); if (!name) throw new Error('Name required')
-      await apiJson(`/auth/api/admin/orgs/${org.uuid}/users`, { method: 'POST', body: { display_name: name, role: role.display_name } })
-      await loadOrgs()
+
+      // Close dialog immediately, then perform async operation
+      closeDialog()
+      apiJson(`/auth/api/admin/orgs/${org.uuid}/users`, { method: 'POST', body: { display_name: name, role: role.display_name } })
+        .then(() => {
+          authStore.showMessage(`User "${name}" added to ${role.display_name} role.`, 'success', 2500)
+          loadOrgs()
+        })
+        .catch(e => {
+          authStore.showMessage(e.message || 'Failed to add user', 'error')
+        })
+      return // Don't call closeDialog() again
     } else if (t === 'user-update-name') {
       const { user } = dialog.value.data; const name = dialog.value.data.name?.trim(); if (!name) throw new Error('Name required')
-      await apiJson(`/auth/api/admin/orgs/${user.org_uuid}/users/${user.uuid}/display-name`, { method: 'PUT', body: { display_name: name } })
-      await onUserNameSaved()
+
+      // Close dialog immediately, then perform async operation
+      closeDialog()
+      apiJson(`/auth/api/admin/orgs/${user.org_uuid}/users/${user.uuid}/display-name`, { method: 'PUT', body: { display_name: name } })
+        .then(() => {
+          authStore.showMessage(`User renamed to "${name}".`, 'success', 2500)
+          onUserNameSaved()
+        })
+        .catch(e => {
+          authStore.showMessage(e.message || 'Failed to update user name', 'error')
+        })
+      return // Don't call closeDialog() again
     } else if (t === 'perm-display') {
       const { permission } = dialog.value.data
       const newId = dialog.value.data.id?.trim()
@@ -571,20 +631,45 @@ async function submitDialog() {
       if (!newDisplay) throw new Error('Display name required')
       if (!newId) throw new Error('ID required')
 
+      // Close dialog immediately, then perform async operation
+      closeDialog()
+
+      let apiCall;
       if (newId !== permission.id) {
         // ID changed, use rename endpoint
-        await apiJson('/auth/api/admin/permission/rename', { method: 'POST', body: { old_id: permission.id, new_id: newId, display_name: newDisplay } })
+        apiCall = apiJson('/auth/api/admin/permission/rename', { method: 'POST', body: { old_id: permission.id, new_id: newId, display_name: newDisplay } })
       } else if (newDisplay !== permission.display_name) {
         // Only display name changed
         const params = new URLSearchParams({ permission_id: permission.id, display_name: newDisplay })
-        await apiJson(`/auth/api/admin/permission?${params.toString()}`, { method: 'PUT' })
+        apiCall = apiJson(`/auth/api/admin/permission?${params.toString()}`, { method: 'PUT' })
+      } else {
+        // No changes
+        return
       }
-      await loadPermissions()
-    } else if (t === 'perm-create') {
+
+      apiCall
+        .then(() => {
+          authStore.showMessage(`Permission "${newDisplay}" updated.`, 'success', 2500)
+          loadPermissions()
+        })
+        .catch(e => {
+          authStore.showMessage(e.message || 'Failed to update permission', 'error')
+        })
+      return // Don't call closeDialog() again else if (t === 'perm-create') {
       const id = dialog.value.data.id?.trim(); if (!id) throw new Error('ID required')
       const display_name = dialog.value.data.display_name?.trim(); if (!display_name) throw new Error('Display name required')
-      await apiJson('/auth/api/admin/permissions', { method: 'POST', body: { id, display_name } })
-      await loadPermissions(); dialog.value.data.display_name = ''; dialog.value.data.id = ''
+
+      // Close dialog immediately, then perform async operation
+      closeDialog()
+      apiJson('/auth/api/admin/permissions', { method: 'POST', body: { id, display_name } })
+        .then(() => {
+          authStore.showMessage(`Permission "${display_name}" created.`, 'success', 2500)
+          loadPermissions()
+        })
+        .catch(e => {
+          authStore.showMessage(e.message || 'Failed to create permission', 'error')
+        })
+      return // Don't call closeDialog() again
     } else if (t === 'confirm') {
       const action = dialog.value.data.action; if (action) await action()
     }
