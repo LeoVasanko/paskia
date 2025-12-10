@@ -1,6 +1,5 @@
 
 :root {
-  color-scheme: light dark;
   --font-sans: "Inter", "Inter var", "Segoe UI", system-ui, -apple-system, "Helvetica Neue", sans-serif;
   --font-mono: "DM Mono", "JetBrains Mono", "SFMono-Regular", Menlo, Monaco, Consolas, "Liberation Mono", monospace;
   --color-canvas: #f5f6f8;
@@ -80,6 +79,7 @@ html {
 }
 
 body {
+  color-scheme: light dark;
   overflow: auto;
   scrollbar-gutter: stable;
   height: 100%;
