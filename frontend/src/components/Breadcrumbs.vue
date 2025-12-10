@@ -15,8 +15,14 @@ const props = defineProps({
 const navRef = ref(null)
 
 const crumbs = computed(() => {
-  const base = props.showHome ? [{ label: '🏠', href: props.homeHref }] : []
-  return [...base, ...props.entries]
+  if (props.showHome && props.entries.length > 0 && props.entries[0].href === props.homeHref) {
+    // Combine home and first entry if they have the same href
+    const combined = { label: '🏠 ' + props.entries[0].label, href: props.homeHref }
+    return [combined, ...props.entries.slice(1)]
+  } else {
+    const base = props.showHome ? [{ label: '🏠', href: props.homeHref }] : []
+    return [...base, ...props.entries]
+  }
 })
 
 // Find the index of the crumb matching current location
@@ -70,7 +76,7 @@ defineExpose({ focusCurrent })
     ref="navRef"
     class="breadcrumbs"
     aria-label="Breadcrumb"
-    v-if="crumbs.length"
+    v-if="crumbs.length > 1"
     tabindex="0"
     @focusin="handleFocusIn"
     @keydown="handleKeydown"
