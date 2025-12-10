@@ -372,20 +372,6 @@ function generateUserRegistrationLink(u) {
   showRegModal.value = true
 }
 
-function onLinkCopied() {
-  authStore.showMessage('Link copied to clipboard!')
-}
-
-function copy(text) {
-  if (!text) return
-  navigator.clipboard.writeText(text)
-    .catch(()=>{})
-}
-
-function permissionDisplayName(id) {
-  return permissions.value.find(p => p.id === id)?.display_name || id
-}
-
 async function toggleOrgPermission(org, permId, checked) {
   // Build next permission list
   const has = org.permissions.includes(permId)
