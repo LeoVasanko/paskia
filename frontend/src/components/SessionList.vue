@@ -41,7 +41,7 @@
                       :disabled="isTerminating(session.id)"
                       :title="isTerminating(session.id) ? 'Terminating...' : 'Terminate session'"
                       tabindex="-1"
-                    >🗑️</button>
+                    >❌</button>
                   </div>
                 </div>
                 <div class="item-details">
