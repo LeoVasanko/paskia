@@ -7,9 +7,6 @@
       </a>
     </div>
 
-    <div v-if="showCopyToast" class="copy-toast">
-      ✓ Link copied to clipboard
-    </div>
   </div>
 </template>
 
@@ -25,9 +22,6 @@ const props = defineProps({
 const emit = defineEmits(['copied'])
 
 const qrCanvas = ref(null)
-const showCopyToast = ref(false)
-
-let copyToastTimer = null
 
 const displayUrl = computed(() => {
   if (!props.url) return ''
@@ -65,13 +59,7 @@ async function copyLink() {
   if (!props.url) return
   try {
     await navigator.clipboard.writeText(props.url)
-    showCopyToast.value = true
     emit('copied')
-
-    if (copyToastTimer) clearTimeout(copyToastTimer)
-    copyToastTimer = setTimeout(() => {
-      showCopyToast.value = false
-    }, 2000)
   } catch (err) {
     console.error('Failed to copy link:', err)
   }
@@ -138,24 +126,5 @@ watch(qrCanvas, () => {
 
 .qr-link:hover .link-text {
   color: var(--color-text);
-}
-
-.copy-toast {
-  position: absolute;
-  top: -2rem;
-  left: 50%;
-  transform: translateX(-50%);
-  background: var(--color-success);
-  color: white;
-  padding: 0.5rem 1rem;
-  border-radius: var(--radius-sm);
-  font-size: 0.875rem;
-  z-index: 10;
-  animation: fadeInOut 2s ease-in-out;
-}
-
-@keyframes fadeInOut {
-  0%, 100% { opacity: 0; }
-  10%, 90% { opacity: 1; }
 }
 </style>

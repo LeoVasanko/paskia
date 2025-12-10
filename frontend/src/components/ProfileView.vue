@@ -108,6 +108,7 @@
       v-if="showRegLink"
       endpoint="/auth/api/user/create-link"
       @close="showRegLink = false"
+      @copied="onLinkCopied"
     />
   </section>
 </template>
@@ -182,6 +183,10 @@ const handlePairingError = (message) => {
   if (!message.includes('cancelled')) {
     authStore.showMessage(message, 'error', 4000)
   }
+}
+
+const onLinkCopied = () => {
+  authStore.showMessage('📋 Link copied! Send it to your other device.')
 }
 
 // Helper to focus preferred button in a row (primary first, or first button)
