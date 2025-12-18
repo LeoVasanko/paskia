@@ -6,6 +6,7 @@ build-backend = "hatchling.build"
 name = "paskia"
 dynamic = ["version"]
 description = "Passkey Auth made easy: all sites and APIs can be guarded even without any changes on the protected site."
+readme = "README.md"
 keywords = [ "forward_auth", "auth_request", "FastAPI" ]
 authors = [
     {name = "Leo Vasanko"},
@@ -22,6 +23,10 @@ dependencies = [
     "user-agents>=2.2.0",
 ]
 requires-python = ">=3.10"
+
+[project.urls]
+Homepage = "https://git.zi.fi/LeoVasanko/paskia"
+Repository = "https://github.com/LeoVasanko/paskia"
 
 [tool.hatch.version]
 source = "vcs"
