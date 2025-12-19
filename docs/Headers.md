@@ -1,4 +1,4 @@
-# Paskia Trusted Headers for Apps
+# Paskia Trusted Headers for Backend Apps
 
 | HTTP Header | Meaning | Example |
 |---|---|---|
