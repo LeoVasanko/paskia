@@ -53,12 +53,12 @@ These are for internal use only, but are documented here because they are the co
 
 ### Auth host mode (`--auth-host`)
 
-On the auth host:
+#### On the auth host:
 - The Web UI is served at site root (e.g. admin UI at `/admin/`), and the `/auth/...` equivalents (e.g. `/auth/admin/`) redirect to the root paths.
 - All of the API stays under `/auth/api/*`
 - Auth WebSockets remain at `/auth/ws/*` but take connections from other hosts to issue sessions for each of those.
 
-On non-auth hosts:
+#### On non-auth hosts:
 - `/auth/` shows only minimal profile and allows logging out of the current site
 - `/auth/api/*` is served normally.
 - `/auth/api/user/*`, `/auth/api/admin/*`, and `/auth/ws/*` don't exist.
