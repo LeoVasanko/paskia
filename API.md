@@ -1,16 +1,8 @@
 # Paskia API
 
-## Integrating with your app frontend
+For integrating Paskia with your app frontend, see [AuthFlow](AuthFlow.md).
 
-Protect API routes with forward-auth (see [Caddy](Caddy.md)). Optionally protect your app assets and not just the API.
-
-Catch response status 401/403 in fetch calls to protected endpoints and implement authentication flow in this case. The response is JSON and contains `auth.iframe` (a URL). [Render that URL in an iframe](AuthFlow.md) and retry the request after authentication.
-
-While the app is in (active) use, call `/auth/api/validate` occasionally to keep the session alive (session lifetime is 24h), otherwise the user will have to login every day. Max-age limits are unaffected by this and can be used on endpoints needing to reauthenticate with passkey more frequently.
-
-Use `/auth/api/user-info` to display user/session details, or link to `/auth/` if you prefer using the built-in profile UI and not having to anything more.
-
-### Web Interface
+## Web Interface
 
 | Method | Path | What it is for | Notes |
 |---:|---|---|---|
