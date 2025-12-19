@@ -54,7 +54,7 @@ paskia serve [options]
 | --rp-id *domain* | Main/top domain | **localhost** |
 | --rp-name *"text"* | Name of your company or site | Same as rp-id |
 | --origin *url* | Explicitly list the domain names served | **https://**_rp-id_ |
-| --auth-host *domain* | Dedicated authentication site (e.g., **auth.example.com**) | Unspecified: we use **/auth/** on **every** site under rp-id.|
+| --auth-host *domain* | Dedicated authentication site (e.g., **auth.example.com**) | **Unspecified:** we use **/auth/** on **every** site under rp-id.|
 
 ## Further Documentation
 
