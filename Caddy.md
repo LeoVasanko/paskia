@@ -1,7 +1,6 @@
-# Paskia
-## Caddy configuration
+# Paskia Caddy configuration
 
-We provide a few Caddy snippets that make the configuration easier, although the `forward_auth` directive of Caddy can be used directly as well. Place the [auth folder](caddy/auth) with the snippets `require` and `setup` where your config file is (e.g. `/etc/caddy/auth`)
+[Caddy](https://caddyserver.com/) is a modern web server that makes setting up web services easy. We provide a few Caddy snippets that make the configuration even easier, although the `forward_auth` directive of Caddy can be used directly as well. Place the [auth folder](caddy/auth) with the snippets `require` and `setup` where your config file is (e.g. `/etc/caddy/auth`)
 
 What these snippets do
 - `setup`: Mount the auth UI at `/auth/` proxying to `:4401`
