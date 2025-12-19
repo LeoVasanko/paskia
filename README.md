@@ -52,11 +52,11 @@ paskia serve [options]
 
 | Option | Description | Default |
 |--------|-------------|---------|
-| Listen address | One of **<host>:<port>** (default all hosts, port 4401) or **unix:/path/to/paskia.socket** (Unix socket) | **localhost:4401** |
-| --rp-id **<domain>** | Main/top domain | **localhost** |
-| --rp-name **<text>** | Name of your company or site | Same as rp-id |
-| --origin **url>** | Explicitly list the domain names served () | **https://rp-id** |
-| --auth-host **<domain>** | Dedicated authentication site (e.g., **auth.example.com**) | Unspecified: we use **/auth/** on *every* site under rp-id.|
+| Listen address | One of *host***:***port* (default all hosts, port 4401) or **unix:***path***/paskia.socket** (Unix socket) | **localhost:4401** |
+| --rp-id *domain* | Main/top domain | **localhost** |
+| --rp-name *"text"* | Name of your company or site | Same as rp-id |
+| --origin *url* | Explicitly list the domain names served | **https://**_rp-id_ |
+| --auth-host *domain* | Dedicated authentication site (e.g., **auth.example.com**) | Unspecified: we use **/auth/** on *every* site under rp-id.|
 
 ## Further Documentation
 
