@@ -32,14 +32,9 @@ uvx paskia serve --rp-id example.com
 
 On the first run it downloads the software and prints a registration link for the Admin. If you are going to be connecting `localhost` directly, for testing, leave out the rp-id.
 
-The server will start up on [localhost:4401](http://localhost:4401) "for authentication required", serving for `*.example.com`.
+The server will start up on [localhost:4401](http://localhost:4401) *for authentication required*, serving for `*.example.com`.
 
-Otherwise you will need a web server such as [Caddy](https://caddyserver.com/) to serve HTTPS on your actual domain names and proxy requests to Paskia and your backend apps.
-
-A quick example without any config file:
-```fish
-sudo caddy reverse-proxy --from example.com --to :4401
-```
+Otherwise you will need a web server such as [Caddy](https://caddyserver.com/) to serve HTTPS on your actual domain names and proxy requests to Paskia and your backend apps (see documentation below).
 
 For a permanent install of `paskia` CLI command, not needing `uvx`:
 
@@ -55,15 +50,13 @@ There is no config file. Pass only the options on CLI:
 paskia serve [options]
 ```
 
-### Optional options
-
 | Option | Description | Default |
 |--------|-------------|---------|
-| Listen address | One of **[host]:port** (address and port) or **unix:/path.sock** (Unix socket) | **localhost:4401** |
-| --rp-id *<domain>* | Main domain (required for production) | |
-| --rp-name "*<text>*" | Name of your company or site | same as rp-id |
-| --origin *<url>* | Explicit single site | **https://*<rp-id>*** |
-| --auth-host *<domain>* | Dedicated authentication site (e.g., **auth.example.com**) | |
+| Listen address | One of *<host>***:***<port>* (default all hosts, port 4401) or **unix:***/path/to/***paskia.socket** (Unix socket) | **localhost:4401** |
+| --rp-id *<domain>* | Main/top domain | **localhost** |
+| --rp-name "*<text>*" | Name of your company or site | Same as rp-id |
+| --origin *<url>* | Explicitly list the domain names served () | **https://*<rp-id>*** |
+| --auth-host *<domain>* | Dedicated authentication site (e.g., **auth.example.com**) | Unspecified: we use **/auth/** on *every* site under rp-id.|
 
 ## Documentation
 
