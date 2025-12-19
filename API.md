@@ -1,6 +1,6 @@
 # Paskia API
 
-For integrating Paskia with your app frontend, see [AuthFlow](AuthFlow.md).
+For integrating Paskia with your app frontend, see [integration](Integration.md).
 
 ## Web Interface
 

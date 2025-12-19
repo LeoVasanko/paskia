@@ -1,5 +1,4 @@
-# Paskia
-## Trusted Headers for Apps
+# Paskia Trusted Headers for Apps
 
 | HTTP Header | Meaning | Example |
 |---|---|---|
@@ -20,3 +19,5 @@ When a request is allowed, the auth service adds these headers by the forward-au
 Only the UUID values should be used for identification needs, because they never change, even when things are renamed (display names change), and are never reused (created on authentication server). They are UUIDv7 so you can also extract the creation timestamp from them.
 
 Any `Remote-*` headers from clients are stripped by our [Caddy configuration](Caddy.md) to avoid dealing with any fake headers.
+
+Note: the headers are intended primarily for the backend, while either frontend or backend (passing the session cookie) can request `/auth/api/user-info` for more complete information, and that is the recommended way to do it in the frontend. See [integration](Integration.md) for more.

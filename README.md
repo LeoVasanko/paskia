@@ -60,6 +60,10 @@ paskia serve [options]
 
 ## Further Documentation
 
-- [API reference](https://git.zi.fi/LeoVasanko/paskia/src/branch/main/API.md)
-- [Caddy configuration](https://git.zi.fi/LeoVasanko/paskia/src/branch/main/Caddy.md)
-- [Trusted Headers for Apps](https://git.zi.fi/LeoVasanko/paskia/src/branch/main/Headers.md)
+#### Integrating with your app:
+- [Caddy configuration](Caddy.md)
+- [Trusted Headers](Headers.md)
+- [Frontend integration](Integration.md)
+
+#### API paths
+- [Paskia API](API.md)
