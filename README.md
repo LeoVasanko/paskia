@@ -58,8 +58,8 @@ paskia serve [options]
 | --origin *<url>* | Explicitly list the domain names served () | **https://*<rp-id>*** |
 | --auth-host *<domain>* | Dedicated authentication site (e.g., **auth.example.com**) | Unspecified: we use **/auth/** on *every* site under rp-id.|
 
-## Documentation
+## Further Documentation
 
 - [API reference](https://git.zi.fi/LeoVasanko/paskia/src/branch/main/API.md)
 - [Caddy configuration](https://git.zi.fi/LeoVasanko/paskia/src/branch/main/Caddy.md)
-- [HTTP headers passed to your application](https://git.zi.fi/LeoVasanko/paskia/src/branch/main/Headers.md)
+- [Trusted Headers for Apps](https://git.zi.fi/LeoVasanko/paskia/src/branch/main/Headers.md)

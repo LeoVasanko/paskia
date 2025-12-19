@@ -1,36 +1,39 @@
+# Paskia
 ## Caddy configuration
 
-We provide a few Caddy snippets that make the configuration easier, although the `forward_auth` directive of Caddy can be used directly as well. Place the auth folder with the snippets where your Caddyfile is.
+We provide a few Caddy snippets that make the configuration easier, although the `forward_auth` directive of Caddy can be used directly as well. Place the [auth folder](caddy/auth) with the snippets `require` and `setup` where your config file is (e.g. `/etc/caddy/auth`)
 
 What these snippets do
-- Mount the auth UI at `/auth/` proxying to `:4401` (auth backend)
-- Use the forward-auth interface `/auth/api/forward` to verify the required credentials
+- `setup`: Mount the auth UI at `/auth/` proxying to `:4401`
+- `require`: Use `/auth/api/forward` for access control
 - Render a login page or a permission denied page if needed (without changing URL)
 
 Your backend may not use authentication at all, or it can make use of the user information passed via `Remote-*` headers by the authentication system, see [Headers.md](Headers.md) for details.
 
-### 1) Protect the full site (auth/all)
-
-Use this when you want “login required everywhere” which is useful to protect some service that doesn't have any authentication of its own:
+We assume the normal unprotected **Caddyfile** for your site looks like this:
 
 ```caddyfile
-localhost {
-    import auth/all "" {
-        reverse_proxy :3000  # your app
+app.example.com {
+    @public path /.well-known/* /favicon.ico
+    handle @public {
+        root * /var/www/
+        file_server
+    }
+
+    handle {
+        reverse_proxy :3000  # Your app backend
     }
 }
 ```
 
-The auth/all protects the entire site with a simple directive. Put your normal setup inside the block. In this example we don't require any permissions, only that the user is logged in. Instead of `""` you may specify `perm=myapp:login` or other permissions.
+Note: We use the `handle @name` approach rather than `handle_path` to keep the path unaltered. Unlike bare directives, these blocks will be tried in sequence and each can contain what you'd typically put in your site definition (by default `reverse_proxy` takes precedence and nothing reaches the static files).
 
-It is possible to add your own `handle @matcher` blocks prior importing `auth/all` for endpoints that don't require authentication, e.g. to exclude `/favicon.ico`.
+We will adapt from this to protect your app.
 
-### 2) Different areas, different permissions (auth/setup, auth/require)
-
-When you need a more fine-grained control, use the auth/setup and auth/require snippets:
+### Protect your site (auth/setup, auth/require)
 
 ```caddyfile
-localhost {
+app.example.com {
     import auth/setup
 
     @public path /.well-known/* /favicon.ico
@@ -45,20 +48,33 @@ localhost {
         reverse_proxy :3000
     }
 
-    # Anywhere else, require login only
     handle {
-        import auth/require ""
+        import auth/require max-age=12h
         reverse_proxy :3000
     }
 }
 ```
 
-Note: We use the `handle @name` approach rather than `handle_path` to prevent the matched path being removed out of upstream URL. Unlike bare directives, these blocks will be tried in sequence and each can contain what you'd typically put in your site definition.
+The above setup allows unauthenticated access to certain files, then implements two different access controls for your backend app depending on which path is accessed. Note that the perm and max-age options may be combined, e.g. ``perm=myapp:admin&max-age=5min` on a very sensitive endpoint. This will require additional authentication if the passkey hasn't been used in the last 5 minutes (automatic session renewals don't affect this). Use `""` if you only want the user to be authenticated with no time or perm requirements.
 
----
+### Dedicated Authentication Site
 
-## Override the auth backend URL (AUTH_UPSTREAM)
+When you setup a separate subdomain for the authentication site, just add to your config another section for the auth host:
 
-By default, the auth service is contacted at localhost port 4401 ("for authentication required"). You can point Caddy to a different by setting the `AUTH_UPSTREAM` environment variable for Caddy.
+```
+auth.example.com {
+    reverse_proxy :4401
+}
+```
+
+Remember to specify `paskia serve --auth-host auth.example.com` to restrict the authentication services to this domain.
+
+Note that we still reserve `/auth/` on each site for logout page and any APIs your application may require, while full user profile and global options are only available on the auth host.
+
+Paskia does not require CORS configuration, but it can access the authentication and registration of auth host WS API from the other sites as WebSockets don't require any CORS.
+
+### Override the paskia backend address (AUTH_UPSTREAM)
+
+By default, the auth service is contacted at localhost port 4401. You can point Caddy to a different address by setting the `AUTH_UPSTREAM` environment variable for Caddy.
 
 If unset, the snippets use `:4401` by default.
