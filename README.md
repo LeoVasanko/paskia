@@ -55,18 +55,18 @@ There is no config file. Pass only the options on CLI:
 paskia serve [options]
 ```
 
-Optional options:
+### Optional options
 
-- Listen address (one of):
-    * `[host]:port`: Address and port (default: `localhost:4401`)
-    * `unix:/path.sock`: Unix socket
-- `--rp-id <domain>`: Main domain (required for production)
-- `--rp-name "<text>"`: Name of your company or site (default: same as rp-id)
-- `--origin <url>`: Explicit single site (default: `https://<rp-id>`)
-- `--auth-host <domain>`: Dedicated authentication site (e.g., `auth.example.com`)
+| Option | Description | Default |
+|--------|-------------|---------|
+| Listen address | One of **[host]:port** (address and port) or **unix:/path.sock** (Unix socket) | **localhost:4401** |
+| --rp-id *<domain>* | Main domain (required for production) | |
+| --rp-name "*<text>*" | Name of your company or site | same as rp-id |
+| --origin *<url>* | Explicit single site | **https://*<rp-id>*** |
+| --auth-host *<domain>* | Dedicated authentication site (e.g., **auth.example.com**) | |
 
 ## Documentation
 
-- `API.md`: Complete HTTP and WebSocket API reference
-- `Caddy.md`: Caddy configuration examples
-- `Headers.md`: HTTP headers passed to protected applications
+- [API reference](https://git.zi.fi/LeoVasanko/paskia/src/branch/main/API.md)
+- [Caddy configuration](https://git.zi.fi/LeoVasanko/paskia/src/branch/main/Caddy.md)
+- [HTTP headers passed to your application](https://git.zi.fi/LeoVasanko/paskia/src/branch/main/Headers.md)
