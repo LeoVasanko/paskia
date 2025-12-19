@@ -60,7 +60,7 @@ The above setup allows unauthenticated access to certain files, then implements 
 
 When you setup a separate subdomain for the authentication site, just add to your config another section for the auth host:
 
-```
+```caddyfile
 auth.example.com {
     reverse_proxy :4401
 }
