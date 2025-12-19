@@ -54,7 +54,7 @@ app.example.com {
 }
 ```
 
-The above setup allows unauthenticated access to certain files, then implements two different access controls for your backend app depending on which path is accessed. Note that the perm and max-age options may be combined, e.g. ``perm=myapp:admin&max-age=5min` on a very sensitive endpoint. This will require additional authentication if the passkey hasn't been used in the last 5 minutes (automatic session renewals don't affect this). Use `""` if you only want the user to be authenticated with no time or perm requirements.
+The above setup allows unauthenticated access to certain files, then implements two different access controls for your backend app depending on which path is accessed. Note that the perm and max-age options may be combined, e.g. `perm=myapp:admin&max-age=5min` on a very sensitive endpoint. This will require additional authentication if the passkey hasn't been used in the last 5 minutes (automatic session renewals don't affect this). Use `""` if you only want the user to be authenticated with no time or perm requirements.
 
 ### Dedicated Authentication Site
 
