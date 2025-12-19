@@ -77,6 +77,7 @@ async def validate_token(
     request: Request,
     response: Response,
     perm: list[str] = Query([]),
+    max_age: str | None = Query(None),
     auth=AUTH_COOKIE,
 ):
     """Validate the current session and extend its expiry.
@@ -86,7 +87,12 @@ async def validate_token(
     refresh endpoint.
     """
     try:
-        ctx = await authz.verify(auth, perm, host=request.headers.get("host"))
+        ctx = await authz.verify(
+            auth,
+            perm,
+            host=request.headers.get("host"),
+            max_age=max_age,
+        )
     except HTTPException:
         # Global handler will clear cookie if 401
         raise
