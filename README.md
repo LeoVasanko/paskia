@@ -60,7 +60,7 @@ paskia serve [options]
 
 ## Further Documentation
 
-- [Caddy configuration](Caddy.md)
-- [Trusted Headers](Headers.md)
-- [Frontend integration](Integration.md)
-- [Paskia API](API.md)
+- [Caddy configuration](https://git.zi.fi/LeoVasanko/paskia/src/branch/main/docs/Caddy.md)
+- [Trusted Headers](https://git.zi.fi/LeoVasanko/paskia/src/branch/main/docs/Headers.md)
+- [Frontend integration](https://git.zi.fi/LeoVasanko/paskia/src/branch/main/docs/Integration.md)
+- [Paskia API](https://git.zi.fi/LeoVasanko/paskia/src/branch/main/docs/API.md)
