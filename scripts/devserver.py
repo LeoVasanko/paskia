@@ -118,7 +118,9 @@ def parse_endpoint(
     return host, port, None, False
 
 
-def run_vite(vite_url: str, vite_host: str | None, vite_port: int, auth_host: str | None = None):
+def run_vite(
+    vite_url: str, vite_host: str | None, vite_port: int, auth_host: str | None = None
+):
     """Spawn the frontend dev server (deno, npm, or bunx) as a background process."""
     devpath = Path(__file__).parent.parent / "frontend"
     if not (devpath / "package.json").exists():
@@ -163,7 +165,9 @@ def run_vite(vite_url: str, vite_host: str | None, vite_port: int, auth_host: st
             vite_env = os.environ.copy()
             if auth_host:
                 vite_env["PASKIA_AUTH_HOST"] = auth_host
-            vite_process = subprocess.Popen(full_cmd, cwd=str(devpath), shell=False, env=vite_env)
+            vite_process = subprocess.Popen(
+                full_cmd, cwd=str(devpath), shell=False, env=vite_env
+            )
         except Exception as e:
             stderr.write(
                 f"┃ ⚠️  Vite couldn't start: {e}\n"
