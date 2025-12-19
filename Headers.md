@@ -5,11 +5,11 @@
 | `Remote-User` | Authenticated user UUID | **01c03276-b8f0-**… (string) |
 | `Remote-Name` | User display name | **John Doe** |
 | `Remote-Org` | Organization UUID | Identifier for user's org (string) |
-| `Remote-Org-Name` | Organization display name | `The Company Ltd.` |
+| `Remote-Org-Name` | Organization display name | **The Company Ltd.** |
 | `Remote-Role` | Role UUID | Identifier for user's role (string) |
-| `Remote-Role-Name` | Role display name | `Employee` |
-| `Remote-Groups` | Permissions the user has, comma separated | `auth:admin,yourapp:reports` |
-| `Remote-Session-Expires` | Session expiry timestamp (ISO 8601 UTC) | `2030-12-31T23:59:59Z` |
+| `Remote-Role-Name` | Role display name | **Employee** |
+| `Remote-Groups` | Permissions the user has, comma separated | **auth:admin,yourapp:reports** |
+| `Remote-Session-Expires` | Session expiry timestamp (ISO 8601 UTC) | **2030-12-31T23:59:59Z** |
 | `Remote-Credential` | Credential UUID | Identifier for the sign-in passkey (string) |
 
 Similar headers are also used by other authentication systems like [Authelia](https://www.authelia.com/integration/trusted-header-sso/introduction/) to signal the backend application information about the signed in user.
