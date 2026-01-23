@@ -47,15 +47,24 @@ def cleanup() -> None:
 
 async def flush() -> None:
     """Write all pending database changes to disk."""
+    import sys
     from paskia.db.operations import _db
 
     if _db is None:
+        _logger.warning("flush() called but _db is None")
+        print("[DB] flush() called but _db is None", file=sys.stderr)
         return
+    pending_count = len(_db._pending_changes)
+    if pending_count > 0:
+        print(f"[DB] flush() called with {pending_count} pending changes, db_path={_db.db_path}", file=sys.stderr)
     await flush_changes(_db.db_path, _db._pending_changes)
 
 
 async def _background_loop():
     """Background task that periodically flushes changes and cleans up."""
+    import sys
+    print("[DB] Background loop starting", file=sys.stderr)
+    _logger.info("Background loop starting")
     # Run cleanup immediately on startup to clear old expired items
     cleanup()
     await flush()
@@ -75,6 +84,7 @@ async def _background_loop():
                 await flush()  # Flush cleanup changes
                 last_cleanup = now
         except asyncio.CancelledError:
+            _logger.info("Background loop cancelled, final flush")
             # Final flush before exit
             await flush()
             break
@@ -84,10 +94,14 @@ async def _background_loop():
 
 async def start_background():
     """Start the background flush/cleanup task."""
+    import sys
     global _background_task
     if _background_task is None:
         _background_task = asyncio.create_task(_background_loop())
         _logger.info("Database background task started")
+        print("[DB] Database background task started", file=sys.stderr)
+    else:
+        print(f"[DB] Background task already exists: {_background_task}", file=sys.stderr)
 
 
 async def stop_background():

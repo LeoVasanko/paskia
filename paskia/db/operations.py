@@ -19,8 +19,6 @@ from uuid import UUID
 
 import msgspec
 
-_logger = logging.getLogger(__name__)
-
 from paskia.db.jsonl import (
     DB_PATH_DEFAULT,
     _ChangeRecord,
@@ -47,6 +45,8 @@ from paskia.db.structs import (
     _UserData,
 )
 from paskia.util.passphrase import is_well_formed as _is_passphrase
+
+_logger = logging.getLogger(__name__)
 
 # msgspec encoder/decoder
 _json_encoder = msgspec.json.Encoder()
@@ -101,11 +101,13 @@ class DB:
                 create_change_record(self._current_actor, diff)
             )
             self._previous_builtins = current
-            _logger.debug(
+            _logger.info(
                 "Queued change by %s, %d pending",
                 self._current_actor,
                 len(self._pending_changes),
             )
+            import sys
+            print(f"[DB] Queued change by {self._current_actor}, {len(self._pending_changes)} pending", file=sys.stderr)
 
     @contextmanager
     def transaction(self, actor: str = "system"):
