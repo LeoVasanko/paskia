@@ -5,8 +5,6 @@ import msgspec
 
 
 class Permission(msgspec.Struct, omit_defaults=True):
-    """A permission that can be granted to roles."""
-
     uuid: UUID  # UUID primary key
     scope: str  # Permission scope identifier (e.g. "auth:admin", "myapp:write")
     display_name: str
@@ -14,8 +12,6 @@ class Permission(msgspec.Struct, omit_defaults=True):
 
 
 class Role(msgspec.Struct):
-    """A role within an organization that can be assigned to users."""
-
     uuid: UUID
     org_uuid: UUID
     display_name: str
@@ -23,8 +19,6 @@ class Role(msgspec.Struct):
 
 
 class Org(msgspec.Struct):
-    """An organization that contains users and roles."""
-
     uuid: UUID
     display_name: str
     permissions: list[str] = []  # permission IDs this org can grant
@@ -32,8 +26,6 @@ class Org(msgspec.Struct):
 
 
 class User(msgspec.Struct):
-    """A user in the authentication system."""
-
     uuid: UUID
     display_name: str
     role_uuid: UUID
@@ -43,8 +35,6 @@ class User(msgspec.Struct):
 
 
 class Credential(msgspec.Struct):
-    """A WebAuthn credential (passkey) belonging to a user."""
-
     uuid: UUID
     credential_id: bytes  # Long binary ID from the authenticator
     user_uuid: UUID
@@ -57,8 +47,6 @@ class Credential(msgspec.Struct):
 
 
 class Session(msgspec.Struct):
-    """An active user session."""
-
     key: bytes
     user_uuid: UUID
     credential_uuid: UUID
@@ -76,14 +64,7 @@ class Session(msgspec.Struct):
         }
 
 
-# -------------------------------------------------------------------------
-# Public data types (msgspec Structs)
-# -------------------------------------------------------------------------
-
-
 class ResetToken(msgspec.Struct):
-    """A token for password reset or device addition."""
-
     key: bytes
     user_uuid: UUID
     expiry: datetime
@@ -91,8 +72,6 @@ class ResetToken(msgspec.Struct):
 
 
 class SessionContext(msgspec.Struct):
-    """Complete context for an authenticated session."""
-
     session: Session
     user: User
     org: Org
@@ -133,10 +112,10 @@ class _UserData(msgspec.Struct):
 
 
 class _CredentialData(msgspec.Struct):
-    credential_id: bytes  # msgspec uses standard base64
+    credential_id: bytes
     user: UUID
     aaguid: UUID
-    public_key: bytes  # msgspec uses standard base64
+    public_key: bytes
     sign_count: int
     created_at: datetime
     last_used: datetime | None
@@ -158,7 +137,7 @@ class _ResetTokenData(msgspec.Struct):
     token_type: str
 
 
-class _DatabaseData(msgspec.Struct):
+class _DatabaseData(msgspec.Struct, omit_defaults=True):
     permissions: dict[UUID, _PermissionData]
     orgs: dict[UUID, _OrgData]
     roles: dict[UUID, _RoleData]
@@ -166,3 +145,4 @@ class _DatabaseData(msgspec.Struct):
     credentials: dict[UUID, _CredentialData]
     sessions: dict[bytes, _SessionData]
     reset_tokens: dict[bytes, _ResetTokenData]
+    v: int = 0
