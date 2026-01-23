@@ -99,14 +99,14 @@ class Session(msgspec.Struct):
     host: str | None
     ip: str | None
     user_agent: str | None
-    renewed: datetime
+    expiry: datetime
 
     def metadata(self) -> dict:
         """Return session metadata for backwards compatibility."""
         return {
             "ip": self.ip,
             "user_agent": self.user_agent,
-            "renewed": self.renewed.isoformat(),
+            "expiry": self.expiry.isoformat(),
         }
 
 
@@ -176,7 +176,7 @@ class _SessionData(msgspec.Struct):
     host: str | None
     ip: str | None
     user_agent: str | None
-    renewed: datetime
+    expiry: datetime
 
 
 class _ResetTokenData(msgspec.Struct):
@@ -519,7 +519,7 @@ class DB:
             host=s.host,
             ip=s.ip,
             user_agent=s.user_agent,
-            renewed=s.renewed,
+            expiry=s.expiry,
         )
 
     # -------------------------------------------------------------------------
@@ -664,7 +664,7 @@ class DB:
         host: str,
         ip: str,
         user_agent: str,
-        renewed: datetime,
+        expiry: datetime,
         actor: str = "system",
     ) -> None:
         with self.session(actor):
@@ -675,7 +675,7 @@ class DB:
                 host=host,
                 ip=ip,
                 user_agent=user_agent,
-                renewed=renewed,
+                expiry=expiry,
             )
 
     def get_session(self, key: bytes) -> Session | None:
@@ -697,7 +697,7 @@ class DB:
         *,
         ip: str,
         user_agent: str,
-        renewed: datetime,
+        expiry: datetime,
         actor: str = "system",
     ) -> Session | None:
         with self.session(actor):
@@ -707,7 +707,7 @@ class DB:
             s = self._data.sessions[key_b64]
             s.ip = ip
             s.user_agent = user_agent
-            s.renewed = renewed
+            s.expiry = expiry
             return self._build_session(key_b64)
 
     def set_session_host(self, key: bytes, host: str, actor: str = "system") -> None:
@@ -727,8 +727,8 @@ class DB:
                     key_bytes = _str_to_bytes(key_b64)
                     if key_bytes and key_bytes.startswith(b"sess"):
                         sessions.append(self._build_session(key_b64))
-            # Sort by renewed desc
-            sessions.sort(key=lambda x: x.renewed, reverse=True)
+            # Sort by expiry desc (most recent expiry first)
+            sessions.sort(key=lambda x: x.expiry, reverse=True)
             return sessions
 
     def delete_sessions_for_user(self, user_uuid: UUID, actor: str = "system") -> None:
@@ -1186,7 +1186,7 @@ class DB:
             if display_name and user_key in self._data.users:
                 self._data.users[user_key].display_name = display_name
 
-            # New session
+            # New session - compute expiry from credential.last_used
             sess_key_b64 = _bytes_to_str(session_key)
             self._data.sessions[sess_key_b64] = _SessionData(
                 user=user_key,
@@ -1194,7 +1194,7 @@ class DB:
                 host=host,
                 ip=ip,
                 user_agent=user_agent,
-                renewed=credential.last_used,
+                expiry=credential.last_used + SESSION_LIFETIME,
             )
 
             # Login side-effects
@@ -1208,13 +1208,11 @@ class DB:
         """Remove expired sessions and reset tokens."""
         with self.session("expiry"):
             current_time = datetime.now(timezone.utc)
-            session_threshold = current_time - SESSION_LIFETIME
 
             # Clean expired sessions
             to_delete_sessions = []
             for k, s in self._data.sessions.items():
-                renewed = s.renewed
-                if renewed and renewed < session_threshold:
+                if s.expiry < current_time:
                     to_delete_sessions.append(k)
             for k in to_delete_sessions:
                 del self._data.sessions[k]
@@ -1222,8 +1220,7 @@ class DB:
             # Clean expired reset tokens
             to_delete_tokens = []
             for k, t in self._data.reset_tokens.items():
-                expiry = t.expiry
-                if expiry and expiry < current_time:
+                if t.expiry < current_time:
                     to_delete_tokens.append(k)
             for k in to_delete_tokens:
                 del self._data.reset_tokens[k]

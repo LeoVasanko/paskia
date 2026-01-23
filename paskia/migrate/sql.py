@@ -8,6 +8,7 @@ DO NOT use this module for new code. Use paskia.db.json instead.
 """
 
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from uuid import UUID
 
@@ -30,11 +31,23 @@ from paskia.db import (
     Permission,
     ResetToken,
     Role,
-    Session,
     User,
 )
 
 DB_PATH_DEFAULT = "sqlite+aiosqlite:///paskia.sqlite"
+
+
+# Local Session class for SQL schema (uses 'renewed' not 'expiry')
+@dataclass
+class _SqlSession:
+    """Session as stored in the old SQL schema with renewed timestamp."""
+    key: bytes
+    user_uuid: UUID
+    credential_uuid: UUID
+    host: str
+    ip: str
+    user_agent: str
+    renewed: datetime
 
 
 def _normalize_dt(value: datetime | None) -> datetime | None:
@@ -187,7 +200,7 @@ class SessionModel(Base):
     )
 
     def as_dataclass(self):
-        return Session(
+        return _SqlSession(
             key=self.key,
             user_uuid=UUID(bytes=self.user_uuid),
             credential_uuid=UUID(bytes=self.credential_uuid),
@@ -198,7 +211,7 @@ class SessionModel(Base):
         )
 
     @staticmethod
-    def from_dataclass(session: Session):
+    def from_dataclass(session: _SqlSession):
         return SessionModel(
             key=session.key,
             user_uuid=session.user_uuid.bytes,

@@ -19,6 +19,7 @@ import pytest
 import pytest_asyncio
 import uuid7
 
+from paskia.authsession import expires
 from paskia.db import Credential, Org, Permission, Role, User
 from paskia.db.json import DB
 from paskia.util.tokens import create_token, encode_session_key, session_key
@@ -101,7 +102,7 @@ async def second_org_session_token(
         host="localhost:4401",
         ip="127.0.0.1",
         user_agent="pytest",
-        renewed=datetime.now(timezone.utc),
+        expiry=expires(),
     )
     return token
 
@@ -167,7 +168,7 @@ async def org_admin_session_token(
         host="localhost:4401",
         ip="127.0.0.1",
         user_agent="pytest",
-        renewed=datetime.now(timezone.utc),
+        expiry=expires(),
     )
     return token
 
@@ -1181,7 +1182,7 @@ class TestAdminSessions:
             host="other.host:4401",
             ip="192.168.1.1",
             user_agent="other-agent",
-            renewed=datetime.now(timezone.utc),
+            expiry=expires(),
         )
 
         encoded_key = encode_session_key(extra_key)
