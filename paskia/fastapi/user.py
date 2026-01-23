@@ -10,6 +10,7 @@ from fastapi import (
 )
 from fastapi.responses import JSONResponse
 
+from paskia import db
 from paskia.authsession import (
     delete_credential,
     expires,
@@ -17,7 +18,6 @@ from paskia.authsession import (
 )
 from paskia.fastapi import authz, session
 from paskia.fastapi.session import AUTH_COOKIE
-from paskia import db
 from paskia.util import hostutil, passphrase, tokens
 from paskia.util.tokens import decode_session_key, session_key
 

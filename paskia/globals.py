@@ -42,8 +42,7 @@ async def init(
         Set PASKIA_DB environment variable to specify the JSONL database file path.
         Default: paskia.jsonl
     """
-    from . import remoteauth
-    from .db import json as json_db
+    from . import db, remoteauth
 
     # Initialize passkey instance with provided parameters
     passkey.instance = Passkey(
@@ -52,9 +51,8 @@ async def init(
         origins=origins,
     )
 
-    # Initialize database if not already done
-    if json_db._db is None:
-        await json_db.init()
+    # Initialize database
+    await db.init()
 
     # Initialize remote auth manager
     await remoteauth.init()

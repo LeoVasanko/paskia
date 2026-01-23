@@ -2,11 +2,11 @@ from uuid import UUID
 
 from fastapi import FastAPI, WebSocket
 
+from paskia import db
 from paskia.authsession import create_session, get_reset, get_session
 from paskia.fastapi import authz, remote
 from paskia.fastapi.session import AUTH_COOKIE, infodict
 from paskia.fastapi.wsutil import validate_origin, websocket_error_handler
-from paskia import db
 from paskia.globals import passkey
 from paskia.util import passphrase
 from paskia.util.tokens import create_token, session_key

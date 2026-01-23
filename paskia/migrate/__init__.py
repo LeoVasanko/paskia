@@ -59,10 +59,8 @@ async def migrate_from_sql(
     import uuid7
     from sqlalchemy import select
 
-    from paskia.db.json import (
-        DB as JSONDB,
-    )
-    from paskia.db.json import (
+    from paskia.db.operations import DB as JSONDB
+    from paskia.db.structs import (
         _CredentialData,
         _OrgData,
         _PermissionData,
