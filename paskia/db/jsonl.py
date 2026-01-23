@@ -32,7 +32,7 @@ class _ChangeRecord(msgspec.Struct):
 _change_encoder = msgspec.json.Encoder()
 
 
-async def load_jsonl(db_path: Path, empty_data: dict) -> dict:
+async def load_jsonl(db_path: Path) -> dict:
     """Load data from disk by applying change log.
 
     Replays all changes from JSONL file using plain dicts (to handle
@@ -40,29 +40,32 @@ async def load_jsonl(db_path: Path, empty_data: dict) -> dict:
 
     Args:
         db_path: Path to the JSONL database file
-        empty_data: Empty data structure to start with (as dict)
 
     Returns:
         The final state after applying all changes
+
+    Raises:
+        ValueError: If file doesn't exist or cannot be loaded
     """
-    data_dict = empty_data.copy()
-    if db_path.exists():
-        try:
-            # Read entire file at once and split into lines
-            async with aiofiles.open(db_path, "rb") as f:
-                content = await f.read()
-            for line_num, line in enumerate(content.split(b"\n"), 1):
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    change = msgspec.json.decode(line)
-                    # Apply the diff to current state (marshal=True for $-prefixed keys)
-                    data_dict = jsondiff.patch(data_dict, change["diff"], marshal=True)
-                except Exception as e:
-                    raise ValueError(f"Error parsing line {line_num}: {e}")
-        except (OSError, ValueError, msgspec.DecodeError) as e:
-            raise ValueError(f"Failed to load database: {e}")
+    if not db_path.exists():
+        raise ValueError(f"Database file not found: {db_path}")
+    data_dict: dict = {}
+    try:
+        # Read entire file at once and split into lines
+        async with aiofiles.open(db_path, "rb") as f:
+            content = await f.read()
+        for line_num, line in enumerate(content.split(b"\n"), 1):
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                change = msgspec.json.decode(line)
+                # Apply the diff to current state (marshal=True for $-prefixed keys)
+                data_dict = jsondiff.patch(data_dict, change["diff"], marshal=True)
+            except Exception as e:
+                raise ValueError(f"Error parsing line {line_num}: {e}")
+    except (OSError, ValueError, msgspec.DecodeError) as e:
+        raise ValueError(f"Failed to load database: {e}")
     return data_dict
 
 
