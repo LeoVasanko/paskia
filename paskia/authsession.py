@@ -31,35 +31,6 @@ def reset_expires() -> datetime:
     return datetime.now(timezone.utc) + RESET_LIFETIME
 
 
-async def create_session(
-    user_uuid: UUID,
-    credential_uuid: UUID,
-    *,
-    host: str,
-    ip: str,
-    user_agent: str,
-) -> str:
-    """Create a new session and return a session token."""
-    normalized_host = hostutil.normalize_host(host)
-    if not normalized_host:
-        raise ValueError("Host required for session creation")
-    hostname = normalized_host.split(":")[0]  # Domain names only, IPs aren't supported
-    rp_id = passkey.instance.rp_id
-    if not (hostname == rp_id or hostname.endswith(f".{rp_id}")):
-        raise ValueError(f"Host must be the same as or a subdomain of {rp_id}")
-    token = create_token()
-    db.create_session(
-        user_uuid=user_uuid,
-        credential_uuid=credential_uuid,
-        key=session_key(token),
-        host=normalized_host,
-        ip=ip,
-        user_agent=user_agent,
-        expiry=expires(),
-    )
-    return token
-
-
 async def get_reset(token: str) -> ResetToken:
     """Validate a credential reset token."""
     record = db.get_reset_token(reset_key(token))
