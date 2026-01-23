@@ -24,10 +24,14 @@ const sortedOrgs = computed(() => [...props.orgs].sort((a,b)=> {
   const nameCompare = a.display_name.localeCompare(b.display_name)
   return nameCompare !== 0 ? nameCompare : a.uuid.localeCompare(b.uuid)
 }))
-const sortedPermissions = computed(() => [...props.permissions].sort((a,b)=> a.id.localeCompare(b.id)))
+const sortedPermissions = computed(() => [...props.permissions].sort((a,b)=> a.scope.localeCompare(b.scope)))
 
-function permissionDisplayName(id) {
-  return props.permissions.find(p => p.id === id)?.display_name || id
+// Derive admin status from permissions
+const isGlobalAdmin = computed(() => props.info?.permissions?.includes('auth:admin') ?? false)
+const isOrgAdmin = computed(() => props.info?.permissions?.includes('auth:org:admin') ?? false)
+
+function permissionDisplayName(scope) {
+  return props.permissions.find(p => p.scope === scope)?.display_name || scope
 }
 
 function getRoleNames(org) {
@@ -89,7 +93,7 @@ function handleTableKeydown(event, tableType) {
   } else if (direction === 'down' && currentIndex === rows.length - 1) {
     // At bottom of org table, navigate to permissions section
     event.preventDefault()
-    if (tableType === 'org' && props.info.is_global_admin) {
+    if (tableType === 'org' && isGlobalAdmin.value) {
       // Navigate to permissions matrix or actions
       if (permMatrixRef.value) {
         const firstCheckbox = permMatrixRef.value.querySelector('input[type="checkbox"]')
@@ -232,7 +236,7 @@ function handlePermActionsKeydown(event) {
 
 // Focus helper for external navigation
 function focusFirstElement() {
-  if (props.info.is_global_admin) {
+  if (isGlobalAdmin.value) {
     focusPreferred(orgActionsRef.value, { itemSelector: 'button' })
   } else {
     const firstFocusable = orgTableRef.value?.querySelector('tbody tr a, tbody tr button:not([disabled])')
@@ -245,9 +249,9 @@ defineExpose({ focusFirstElement })
 
 <template>
   <div class="permissions-section" ref="orgSection">
-    <h2>{{ info.is_global_admin ? 'Organizations' : 'Your Organizations' }}</h2>
+    <h2>{{ isGlobalAdmin ? 'Organizations' : 'Your Organizations' }}</h2>
     <div class="actions" ref="orgActionsRef" @keydown="handleOrgActionsKeydown">
-      <button v-if="info.is_global_admin" @click="$emit('createOrg')">+ Create Org</button>
+      <button v-if="isGlobalAdmin" @click="$emit('createOrg')">+ Create Org</button>
     </div>
     <table class="org-table" ref="orgTableRef" @keydown="e => handleTableKeydown(e, 'org')">
       <thead>
@@ -255,18 +259,18 @@ defineExpose({ focusFirstElement })
           <th>Name</th>
           <th>Roles</th>
           <th>Members</th>
-          <th v-if="info.is_global_admin">Actions</th>
+          <th v-if="isGlobalAdmin">Actions</th>
         </tr>
       </thead>
       <tbody>
         <tr v-for="o in sortedOrgs" :key="o.uuid">
           <td>
             <a href="#org/{{o.uuid}}" @click.prevent="$emit('openOrg', o)">{{ o.display_name }}</a>
-            <button v-if="info.is_global_admin || info.is_org_admin" @click="$emit('updateOrg', o)" class="icon-btn edit-org-btn" aria-label="Rename organization" title="Rename organization">✏️</button>
+            <button v-if="isGlobalAdmin || isOrgAdmin" @click="$emit('updateOrg', o)" class="icon-btn edit-org-btn" aria-label="Rename organization" title="Rename organization">✏️</button>
           </td>
           <td class="role-names">{{ getRoleNames(o) }}</td>
           <td class="center">{{ o.roles.reduce((acc,r)=>acc + r.users.length,0) }}</td>
-          <td v-if="info.is_global_admin" class="center">
+          <td v-if="isGlobalAdmin" class="center">
             <button @click="$emit('deleteOrg', o)" class="icon-btn delete-icon" aria-label="Delete organization" title="Delete organization">❌</button>
           </td>
         </tr>
@@ -274,7 +278,7 @@ defineExpose({ focusFirstElement })
     </table>
   </div>
 
-  <div v-if="info.is_global_admin" class="permissions-section">
+  <div v-if="isGlobalAdmin" class="permissions-section">
     <h2>Permissions</h2>
     <div class="matrix-wrapper" ref="permMatrixRef" @keydown="handleMatrixKeydown">
       <div class="matrix-scroll">
@@ -292,19 +296,19 @@ defineExpose({ focusFirstElement })
             <span>{{ o.display_name }}</span>
           </div>
 
-          <template v-for="p in sortedPermissions" :key="p.id">
-            <div class="perm-name" :title="p.id">
+          <template v-for="p in sortedPermissions" :key="p.scope">
+            <div class="perm-name" :title="p.scope">
               <span class="display-text">{{ p.display_name }}</span>
             </div>
             <div
               v-for="o in sortedOrgs"
-              :key="o.uuid + '-' + p.id"
+              :key="o.uuid + '-' + p.scope"
               class="matrix-cell"
             >
               <input
                 type="checkbox"
-                :checked="o.permissions.includes(p.id)"
-                @change="e => $emit('toggleOrgPermission', o, p.id, e.target.checked)"
+                :checked="o.permissions.includes(p.scope)"
+                @change="e => $emit('toggleOrgPermission', o, p.scope, e.target.checked)"
               />
             </div>
           </template>
@@ -313,28 +317,30 @@ defineExpose({ focusFirstElement })
       <p class="matrix-hint muted">Toggle which permissions each organization can grant to its members.</p>
     </div>
     <div class="actions" ref="permActionsRef" @keydown="handlePermActionsKeydown">
-      <button v-if="info.is_global_admin" @click="$emit('openDialog', 'perm-create', { display_name: '', id: '' })">+ Create Permission</button>
+      <button v-if="isGlobalAdmin" @click="$emit('openDialog', 'perm-create', { display_name: '', scope: '', domain: '' })">+ Create Permission</button>
     </div>
     <table class="org-table" ref="permTableRef" @keydown="e => handleTableKeydown(e, 'perm')">
         <thead>
           <tr>
             <th scope="col">Permission</th>
+            <th scope="col">Domain</th>
             <th scope="col" class="center">Members</th>
             <th scope="col" class="center">Actions</th>
           </tr>
         </thead>
         <tbody>
-          <tr v-for="p in sortedPermissions" :key="p.id">
+          <tr v-for="p in sortedPermissions" :key="p.scope">
             <td class="perm-name-cell">
               <div class="perm-title">
                 <span class="display-text">{{ p.display_name }}</span>
-                <button @click="$emit('renamePermissionDisplay', p)" class="icon-btn edit-display-btn" aria-label="Edit display name" title="Edit display name">✏️</button>
+                <button @click="$emit('renamePermissionDisplay', p)" class="icon-btn edit-display-btn" aria-label="Edit permission" title="Edit permission">✏️</button>
               </div>
               <div class="perm-id-info">
-                <span class="id-text">{{ p.id }}</span>
+                <span class="id-text">{{ p.scope }}</span>
               </div>
             </td>
-            <td class="perm-members center">{{ permissionSummary[p.id]?.userCount || 0 }}</td>
+            <td class="perm-domain">{{ p.domain || '—' }}</td>
+            <td class="perm-members center">{{ permissionSummary[p.scope]?.userCount || 0 }}</td>
             <td class="perm-actions center">
               <button @click="$emit('deletePermission', p)" class="icon-btn delete-icon" aria-label="Delete permission" title="Delete permission">❌</button>
             </td>
@@ -355,7 +361,8 @@ defineExpose({ focusFirstElement })
 .org-table .role-names { max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .perm-name-cell { display: flex; flex-direction: column; gap: 0.3rem; }
 .perm-title { font-weight: 600; color: var(--color-heading); }
-.perm-id-info { font-size: 0.8rem; color: var(--color-text-muted); }
+.perm-id-info { font-size: 0.8rem; color: var(--color-text-muted); display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+.perm-domain { color: var(--color-text-muted); font-size: 0.9rem; }
 .icon-btn { background: none; border: none; color: var(--color-text-muted); padding: 0.2rem; border-radius: var(--radius-sm); cursor: pointer; transition: background 0.2s ease, color 0.2s ease; }
 .icon-btn:hover { color: var(--color-heading); background: var(--color-surface-muted); }
 .delete-icon { color: var(--color-danger); }

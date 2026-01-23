@@ -26,8 +26,8 @@ const sortedRoles = computed(() => {
   })
 })
 
-function permissionDisplayName(id) {
-  return props.permissions.find(p => p.id === id)?.display_name || id
+function permissionDisplayName(scope) {
+  return props.permissions.find(p => p.scope === scope)?.display_name || scope
 }
 
 function toggleRolePermission(role, pid, checked) {

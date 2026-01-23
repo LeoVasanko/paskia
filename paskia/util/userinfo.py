@@ -2,9 +2,8 @@
 
 from datetime import timezone
 
-from paskia import aaguid
+from paskia import aaguid, db
 from paskia.authsession import EXPIRES, session_key
-from paskia import db
 from paskia.util import hostutil, permutil, tokens, useragent
 
 
@@ -76,8 +75,6 @@ async def format_user_info(
     role_info = None
     org_info = None
     effective_permissions: list[str] = []
-    is_global_admin = False
-    is_org_admin = False
 
     if ctx:
         role_info = {
@@ -90,11 +87,7 @@ async def format_user_info(
             "display_name": ctx.org.display_name,
             "permissions": ctx.org.permissions,
         }
-        effective_permissions = [p.id for p in (ctx.permissions or [])]
-        is_global_admin = "auth:admin" in (role_info["permissions"] or [])
-        is_org_admin = any(
-            p.startswith("auth:org:") for p in (role_info["permissions"] or [])
-        )
+        effective_permissions = [p.scope for p in (ctx.permissions or [])]
 
     # Format sessions
     normalized_request_host = hostutil.normalize_host(request_host)
@@ -132,8 +125,6 @@ async def format_user_info(
         "org": org_info,
         "role": role_info,
         "permissions": effective_permissions,
-        "is_global_admin": is_global_admin,
-        "is_org_admin": is_org_admin,
         "credentials": credentials,
         "aaguid_info": aaguid_info,
         "sessions": sessions_payload,

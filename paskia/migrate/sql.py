@@ -28,11 +28,20 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from paskia.db import (
     Credential,
     Org,
-    Permission,
     ResetToken,
     Role,
     User,
 )
+
+
+# Local Permission class for SQL schema (uses 'id' not 'uuid' + 'scope')
+@dataclass
+class SqlPermission:
+    """Permission as stored in the old SQL schema with id field."""
+
+    id: str
+    display_name: str
+
 
 DB_PATH_DEFAULT = "sqlite+aiosqlite:///paskia.sqlite"
 
@@ -41,6 +50,7 @@ DB_PATH_DEFAULT = "sqlite+aiosqlite:///paskia.sqlite"
 @dataclass
 class _SqlSession:
     """Session as stored in the old SQL schema with renewed timestamp."""
+
     key: bytes
     user_uuid: UUID
     credential_uuid: UUID
@@ -249,11 +259,14 @@ class PermissionModel(Base):
     display_name: Mapped[str] = mapped_column(String, nullable=False)
 
     def as_dataclass(self):
-        return Permission(self.id, self.display_name)
+        return SqlPermission(self.id, self.display_name)
 
     @staticmethod
-    def from_dataclass(permission: Permission):
-        return PermissionModel(id=permission.id, display_name=permission.display_name)
+    def from_dataclass(permission: SqlPermission):
+        return PermissionModel(
+            id=permission.id,
+            display_name=permission.display_name,
+        )
 
 
 class OrgPermission(Base):
@@ -320,7 +333,7 @@ class DB:
         async with self.engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
 
-    async def list_permissions(self) -> list[Permission]:
+    async def list_permissions(self) -> list[SqlPermission]:
         async with self.session() as session:
             result = await session.execute(select(PermissionModel))
             return [p.as_dataclass() for p in result.scalars().all()]

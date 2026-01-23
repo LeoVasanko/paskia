@@ -84,19 +84,42 @@ async def test_org(test_db: DB, admin_permission: Permission) -> Org:
 @pytest_asyncio.fixture(scope="function")
 async def admin_permission(test_db: DB) -> Permission:
     """Create the auth:admin permission."""
-    perm = Permission(id="auth:admin", display_name="Master Admin")
+    import uuid7
+
+    perm = Permission(
+        uuid=uuid7.create(), scope="auth:admin", display_name="Master Admin"
+    )
     test_db.create_permission(perm)
     return perm
 
 
 @pytest_asyncio.fixture(scope="function")
-async def test_role(test_db: DB, test_org: Org, admin_permission: Permission) -> Role:
+async def org_admin_permission(test_db: DB, test_org: Org) -> Permission:
+    """Create the auth:org:admin permission."""
+    import uuid7
+
+    perm = Permission(
+        uuid=uuid7.create(), scope="auth:org:admin", display_name="Organization Admin"
+    )
+    test_db.create_permission(perm)
+    # Make it grantable by the org
+    test_db.add_permission_to_organization(str(test_org.uuid), "auth:org:admin")
+    return perm
+
+
+@pytest_asyncio.fixture(scope="function")
+async def test_role(
+    test_db: DB,
+    test_org: Org,
+    admin_permission: Permission,
+    org_admin_permission: Permission,
+) -> Role:
     """Create a test role with admin permission."""
     role = Role(
         uuid=uuid7.create(),
         org_uuid=test_org.uuid,
         display_name="Test Admin Role",
-        permissions=["auth:admin", f"auth:org:{test_org.uuid}"],
+        permissions=["auth:admin", "auth:org:admin"],
     )
     test_db.create_role(role)
     return role

@@ -40,11 +40,13 @@ CLEANUP_INTERVAL = 1
 # -------------------------------------------------------------------------
 
 
-class Permission(msgspec.Struct):
+class Permission(msgspec.Struct, omit_defaults=True):
     """A permission that can be granted to roles."""
 
-    id: str  # String primary key (max 128 chars)
+    uuid: UUID  # UUID primary key
+    scope: str  # Permission scope identifier (e.g. "auth:admin", "myapp:write")
     display_name: str
+    domain: str | None = None  # If set, scopes permission to this domain
 
 
 class Role(msgspec.Struct):
@@ -135,8 +137,10 @@ class SessionContext(msgspec.Struct):
 # -------------------------------------------------------------------------
 
 
-class _PermissionData(msgspec.Struct):
+class _PermissionData(msgspec.Struct, omit_defaults=True):
+    scope: str  # Permission scope identifier
     display_name: str
+    domain: str | None = None
     orgs: dict[str, bool] = {}  # org_uuid -> True (which orgs can grant this)
 
 
@@ -477,14 +481,14 @@ class DB:
     def _build_org(self, org_uuid: str, include_roles: bool = False) -> Org:
         """Build an Org object from internal storage. Caller must hold lock."""
         o = self._data.orgs[org_uuid]
-        # Get permissions this org can grant
-        perm_ids = [
-            pid for pid, p in self._data.permissions.items() if org_uuid in p.orgs
+        # Get permission scopes this org can grant
+        perm_scopes = [
+            p.scope for pid, p in self._data.permissions.items() if org_uuid in p.orgs
         ]
         org = Org(
             uuid=UUID(org_uuid),
             display_name=o.display_name,
-            permissions=perm_ids,
+            permissions=perm_scopes,
         )
         if include_roles:
             org.roles = [
@@ -642,7 +646,9 @@ class DB:
                     return
             raise ValueError("Credential not found")
 
-    def delete_credential(self, uuid: UUID, user_uuid: UUID, actor: str = "system") -> None:
+    def delete_credential(
+        self, uuid: UUID, user_uuid: UUID, actor: str = "system"
+    ) -> None:
         with self.session(actor):
             key = str(uuid)
             if key not in self._data.credentials:
@@ -784,30 +790,45 @@ class DB:
     # -------------------------------------------------------------------------
 
     def create_organization(self, org: Org, actor: str = "system") -> None:
+        import uuid7
+
         with self.session(actor):
             key = str(org.uuid)
             self._data.orgs[key] = _OrgData(
                 display_name=org.display_name,
             )
 
-            # Update permissions to allow this org to grant them
-            for perm_id in org.permissions:
-                if perm_id in self._data.permissions:
-                    self._data.permissions[perm_id].orgs[key] = True
+            # Update permissions to allow this org to grant them (by scope)
+            for perm_scope in org.permissions:
+                # Find permission by scope and add org
+                for pid, p in self._data.permissions.items():
+                    if p.scope == perm_scope:
+                        p.orgs[key] = True
+                        break
 
-            # Automatically create an organization admin permission if not present
-            auto_perm_id = f"auth:org:{org.uuid}"
-            if auto_perm_id not in self._data.permissions:
-                self._data.permissions[auto_perm_id] = _PermissionData(
-                    display_name=f"{org.display_name} Admin",
-                    orgs={key: True},  # This org can grant its own admin permission
+            # Automatically create or enable the common org admin permission
+            org_admin_scope = "auth:org:admin"
+            org_admin_key = None
+            for pid, p in self._data.permissions.items():
+                if p.scope == org_admin_scope:
+                    org_admin_key = pid
+                    break
+
+            if org_admin_key is None:
+                # Create the common org admin permission
+                org_admin_key = str(uuid7.create())
+                self._data.permissions[org_admin_key] = _PermissionData(
+                    scope=org_admin_scope,
+                    display_name="Organization Admin",
+                    orgs={key: True},
                 )
             else:
-                # Ensure this org can grant its own admin permission
-                self._data.permissions[auto_perm_id].orgs[key] = True
-            # Reflect the automatically added permission in the dataclass instance
-            if auto_perm_id not in org.permissions:
-                org.permissions.append(auto_perm_id)
+                # Ensure this org can grant the org admin permission
+                self._data.permissions[org_admin_key].orgs[key] = True
+
+            # Reflect the org admin permission in the dataclass instance
+            if org_admin_scope not in org.permissions:
+                org.permissions.append(org_admin_scope)
 
     def get_organization(self, org_id: str) -> Org:
         with self._lock:
@@ -828,15 +849,17 @@ class DB:
             if key not in self._data.orgs:
                 raise ValueError("Organization not found")
             self._data.orgs[key].display_name = org.display_name
-            # Update which permissions this org can grant
+            # Update which permissions this org can grant (by scope)
             # First remove this org from all permissions
             for p in self._data.permissions.values():
                 if key in p.orgs:
                     del p.orgs[key]
-            # Then add this org to the specified permissions
-            for perm_id in org.permissions:
-                if perm_id in self._data.permissions:
-                    self._data.permissions[perm_id].orgs[key] = True
+            # Then add this org to the specified permissions (by scope)
+            for perm_scope in org.permissions:
+                for pid, p in self._data.permissions.items():
+                    if p.scope == perm_scope:
+                        p.orgs[key] = True
+                        break
 
     def delete_organization(self, org_uuid: UUID, actor: str = "system") -> None:
         with self.session(actor):
@@ -889,7 +912,9 @@ class DB:
         with self._lock:
             # Get all roles for this org
             org_role_uuids = {
-                role_uuid for role_uuid, r in self._data.roles.items() if r.org == org_id
+                role_uuid
+                for role_uuid, r in self._data.roles.items()
+                if r.org == org_id
             }
             return [
                 (self._build_user(user_uuid), self._data.roles[u.role].display_name)
@@ -905,9 +930,7 @@ class DB:
                 if r.org == org_id
             ]
 
-    def get_user_role_in_organization(
-        self, user_uuid: UUID, org_id: str
-    ) -> str | None:
+    def get_user_role_in_organization(self, user_uuid: UUID, org_id: str) -> str | None:
         with self._lock:
             user_key = str(user_uuid)
             if user_key not in self._data.users:
@@ -947,83 +970,167 @@ class DB:
 
     def create_permission(self, permission: Permission, actor: str = "system") -> None:
         with self.session(actor):
-            self._data.permissions[permission.id] = _PermissionData(
+            key = str(permission.uuid)
+            self._data.permissions[key] = _PermissionData(
+                scope=permission.scope,
                 display_name=permission.display_name,
+                domain=permission.domain,
                 orgs={},  # Will be populated when orgs are allowed to grant this permission
             )
 
     def get_permission(self, permission_id: str) -> Permission:
+        """Get a permission by UUID string or scope.
+
+        For backwards compatibility, this accepts either:
+        - A UUID string (the primary key)
+        - A scope string (searches for matching scope)
+        """
         with self._lock:
-            if permission_id not in self._data.permissions:
-                raise ValueError("Permission not found")
-            p = self._data.permissions[permission_id]
-            return Permission(id=permission_id, display_name=p.display_name)
+            # First try as UUID key
+            if permission_id in self._data.permissions:
+                p = self._data.permissions[permission_id]
+                return Permission(
+                    uuid=UUID(permission_id),
+                    scope=p.scope,
+                    display_name=p.display_name,
+                    domain=p.domain,
+                )
+            # Fall back to scope search
+            for pid, p in self._data.permissions.items():
+                if p.scope == permission_id:
+                    return Permission(
+                        uuid=UUID(pid),
+                        scope=p.scope,
+                        display_name=p.display_name,
+                        domain=p.domain,
+                    )
+            raise ValueError("Permission not found")
+
+    def get_permission_by_scope(self, scope: str) -> Permission | None:
+        """Get a permission by its scope string."""
+        with self._lock:
+            for pid, p in self._data.permissions.items():
+                if p.scope == scope:
+                    return Permission(
+                        uuid=UUID(pid),
+                        scope=p.scope,
+                        display_name=p.display_name,
+                        domain=p.domain,
+                    )
+            return None
 
     def list_permissions(self) -> list[Permission]:
         with self._lock:
             return [
-                Permission(id=pid, display_name=p.display_name)
+                Permission(
+                    uuid=UUID(pid),
+                    scope=p.scope,
+                    display_name=p.display_name,
+                    domain=p.domain,
+                )
                 for pid, p in self._data.permissions.items()
             ]
 
     def update_permission(self, permission: Permission, actor: str = "system") -> None:
         with self.session(actor):
-            if permission.id not in self._data.permissions:
+            key = str(permission.uuid)
+            if key not in self._data.permissions:
                 raise ValueError("Permission not found")
-            self._data.permissions[permission.id].display_name = permission.display_name
+            self._data.permissions[key].scope = permission.scope
+            self._data.permissions[key].display_name = permission.display_name
+            self._data.permissions[key].domain = permission.domain
 
     def delete_permission(self, permission_id: str, actor: str = "system") -> None:
+        """Delete a permission by UUID string or scope."""
         with self.session(actor):
-            if permission_id in self._data.permissions:
-                del self._data.permissions[permission_id]
-            # Remove from roles (permissions is a dict)
-            for r in self._data.roles.values():
-                if permission_id in r.permissions:
-                    del r.permissions[permission_id]
+            # Find the UUID key
+            key = self._resolve_permission_key(permission_id)
+            if key and key in self._data.permissions:
+                scope = self._data.permissions[key].scope
+                del self._data.permissions[key]
+                # Remove from roles (roles store scopes, not UUIDs)
+                for r in self._data.roles.values():
+                    if scope in r.permissions:
+                        del r.permissions[scope]
+
+    def _resolve_permission_key(self, permission_id: str) -> str | None:
+        """Resolve a permission_id (UUID or scope) to its UUID key."""
+        if permission_id in self._data.permissions:
+            return permission_id
+        for pid, p in self._data.permissions.items():
+            if p.scope == permission_id:
+                return pid
+        return None
+
+    def _resolve_permission_scope(self, permission_id: str) -> str | None:
+        """Resolve a permission_id (UUID or scope) to its scope."""
+        if permission_id in self._data.permissions:
+            return self._data.permissions[permission_id].scope
+        for pid, p in self._data.permissions.items():
+            if p.scope == permission_id:
+                return p.scope
+        return None
 
     def rename_permission(
-        self, old_id: str, new_id: str, display_name: str, actor: str = "system"
+        self,
+        old_scope: str,
+        new_scope: str,
+        display_name: str,
+        domain: str | None = None,
+        actor: str = "system",
     ) -> None:
+        """Rename a permission's scope. The UUID remains the same."""
         with self.session(actor):
-            if old_id == new_id:
-                if old_id in self._data.permissions:
-                    self._data.permissions[old_id].display_name = display_name
-                return
-            if old_id not in self._data.permissions:
+            # Find the permission by scope
+            key = self._resolve_permission_key(old_scope)
+            if not key:
                 raise ValueError("Original permission not found")
-            if new_id in self._data.permissions:
-                raise ValueError("New permission id already exists")
 
-            # Create new permission with same orgs
-            old_perm = self._data.permissions[old_id]
-            self._data.permissions[new_id] = _PermissionData(
-                display_name=display_name,
-                orgs=dict(old_perm.orgs),
-            )
-            # Update role references (roles store permissions as dict)
-            for r in self._data.roles.values():
-                if old_id in r.permissions:
-                    del r.permissions[old_id]
-                    r.permissions[new_id] = True
-            # Delete old permission
-            del self._data.permissions[old_id]
+            # Check if new scope already exists
+            for pid, p in self._data.permissions.items():
+                if p.scope == new_scope and pid != key:
+                    raise ValueError("New permission scope already exists")
+
+            old_scope_value = self._data.permissions[key].scope
+
+            # Update the permission
+            self._data.permissions[key].scope = new_scope
+            self._data.permissions[key].display_name = display_name
+            self._data.permissions[key].domain = domain
+
+            # Update role references if scope changed
+            if old_scope_value != new_scope:
+                for r in self._data.roles.values():
+                    if old_scope_value in r.permissions:
+                        del r.permissions[old_scope_value]
+                        r.permissions[new_scope] = True
 
     def add_permission_to_organization(
         self, org_id: str, permission_id: str, actor: str = "system"
     ) -> None:
+        """Add a permission to an organization (allows org to grant it).
+
+        permission_id can be a UUID string or a scope string.
+        """
         with self.session(actor):
             if org_id not in self._data.orgs:
                 raise ValueError("Organization not found")
-            if permission_id not in self._data.permissions:
+            key = self._resolve_permission_key(permission_id)
+            if not key:
                 raise ValueError("Permission not found")
-            self._data.permissions[permission_id].orgs[org_id] = True
+            self._data.permissions[key].orgs[org_id] = True
 
     def remove_permission_from_organization(
         self, org_id: str, permission_id: str, actor: str = "system"
     ) -> None:
+        """Remove a permission from an organization.
+
+        permission_id can be a UUID string or a scope string.
+        """
         with self.session(actor):
-            if permission_id in self._data.permissions:
-                orgs = self._data.permissions[permission_id].orgs
+            key = self._resolve_permission_key(permission_id)
+            if key and key in self._data.permissions:
+                orgs = self._data.permissions[key].orgs
                 if org_id in orgs:
                     del orgs[org_id]
 
@@ -1034,14 +1141,26 @@ class DB:
             permissions = []
             for pid, p in self._data.permissions.items():
                 if org_id in p.orgs:
-                    permissions.append(Permission(id=pid, display_name=p.display_name))
+                    permissions.append(
+                        Permission(
+                            uuid=UUID(pid),
+                            scope=p.scope,
+                            display_name=p.display_name,
+                            domain=p.domain,
+                        )
+                    )
             return permissions
 
     def get_permission_organizations(self, permission_id: str) -> list[Org]:
+        """Get organizations that can grant a permission.
+
+        permission_id can be a UUID string or a scope string.
+        """
         with self._lock:
-            if permission_id not in self._data.permissions:
+            key = self._resolve_permission_key(permission_id)
+            if not key or key not in self._data.permissions:
                 return []
-            org_ids = self._data.permissions[permission_id].orgs
+            org_ids = self._data.permissions[key].orgs
             return [
                 self._build_org(org_id)
                 for org_id in org_ids
@@ -1055,49 +1174,86 @@ class DB:
     def add_permission_to_role(
         self, role_uuid: UUID, permission_id: str, actor: str = "system"
     ) -> None:
+        """Add a permission to a role.
+
+        permission_id can be a UUID string or a scope string.
+        Stores the scope in the role's permissions dict.
+        """
         with self.session(actor):
             key = str(role_uuid)
             if key not in self._data.roles:
                 raise ValueError("Role not found")
-            if permission_id not in self._data.permissions:
+            scope = self._resolve_permission_scope(permission_id)
+            if not scope:
                 raise ValueError("Permission not found")
-            self._data.roles[key].permissions[permission_id] = True
+            self._data.roles[key].permissions[scope] = True
 
     def remove_permission_from_role(
         self, role_uuid: UUID, permission_id: str, actor: str = "system"
     ) -> None:
+        """Remove a permission from a role.
+
+        permission_id can be a UUID string or a scope string.
+        """
         with self.session(actor):
             key = str(role_uuid)
             if key in self._data.roles:
-                if permission_id in self._data.roles[key].permissions:
+                # Try to find the scope
+                scope = self._resolve_permission_scope(permission_id)
+                if scope and scope in self._data.roles[key].permissions:
+                    del self._data.roles[key].permissions[scope]
+                # Also try the raw permission_id in case it's already a scope
+                elif permission_id in self._data.roles[key].permissions:
                     del self._data.roles[key].permissions[permission_id]
 
     def get_role_permissions(self, role_uuid: UUID) -> list[Permission]:
+        """Get permissions granted by a role.
+
+        Note: Roles store scopes, so we need to look up permissions by scope.
+        """
         with self._lock:
             key = str(role_uuid)
             if key not in self._data.roles:
                 return []
-            perm_ids = list(self._data.roles[key].permissions)
+            scopes = list(self._data.roles[key].permissions.keys())
             permissions = []
-            for pid in perm_ids:
-                if pid in self._data.permissions:
-                    p = self._data.permissions[pid]
-                    permissions.append(Permission(id=pid, display_name=p.display_name))
+            for scope in scopes:
+                # Find permission with this scope
+                for pid, p in self._data.permissions.items():
+                    if p.scope == scope:
+                        permissions.append(
+                            Permission(
+                                uuid=UUID(pid),
+                                scope=p.scope,
+                                display_name=p.display_name,
+                                domain=p.domain,
+                            )
+                        )
+                        break
             return permissions
 
     def get_permission_roles(self, permission_id: str) -> list[Role]:
+        """Get roles that have a permission.
+
+        permission_id can be a UUID string or a scope string.
+        """
         with self._lock:
+            scope = self._resolve_permission_scope(permission_id)
+            if not scope:
+                return []
             return [
                 self._build_role(role_uuid)
                 for role_uuid, r in self._data.roles.items()
-                if permission_id in r.permissions
+                if scope in r.permissions
             ]
 
     # -------------------------------------------------------------------------
     # Combined operations
     # -------------------------------------------------------------------------
 
-    def login(self, user_uuid: UUID, credential: Credential, actor: str = "system") -> None:
+    def login(
+        self, user_uuid: UUID, credential: Credential, actor: str = "system"
+    ) -> None:
         with self.session(actor):
             # Update credential
             for key, c in self._data.credentials.items():
@@ -1277,12 +1433,30 @@ class DB:
                 else None
             )
 
-            # Effective permissions: role permissions that the org can grant
-            effective_permissions = [
-                Permission(id=pid, display_name=self._data.permissions[pid].display_name)
-                for pid in role_obj.permissions
-                if pid in self._data.permissions and pid in org_obj.permissions
-            ]
+            # Effective permissions: role permissions (scopes) that the org can grant
+            # role_obj.permissions contains scopes, org_obj.permissions contains scopes
+            from paskia.util.hostutil import normalize_host
+
+            normalized_host = normalize_host(host)
+            effective_permissions = []
+            for scope in role_obj.permissions:
+                if scope not in org_obj.permissions:
+                    continue
+                # Find the permission by scope
+                for pid, p in self._data.permissions.items():
+                    if p.scope == scope:
+                        # Check domain restriction
+                        if p.domain is not None and p.domain != normalized_host:
+                            continue
+                        effective_permissions.append(
+                            Permission(
+                                uuid=UUID(pid),
+                                scope=p.scope,
+                                display_name=p.display_name,
+                                domain=p.domain,
+                            )
+                        )
+                        break
 
             return SessionContext(
                 session=session_obj,

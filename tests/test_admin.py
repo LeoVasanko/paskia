@@ -108,13 +108,13 @@ async def second_org_session_token(
 
 
 @pytest_asyncio.fixture(scope="function")
-async def org_admin_role(test_db: DB, test_org: Org) -> Role:
+async def org_admin_role(test_db: DB, test_org: Org, org_admin_permission) -> Role:
     """Create a role with org admin permission only (no global admin)."""
     role = Role(
         uuid=uuid7.create(),
         org_uuid=test_org.uuid,
         display_name="Org Admin Role",
-        permissions=[f"auth:org:{test_org.uuid}"],
+        permissions=["auth:org:admin"],
     )
     test_db.create_role(role)
     return role
@@ -176,10 +176,14 @@ async def org_admin_session_token(
 @pytest_asyncio.fixture(scope="function")
 async def grantable_permission(test_db: DB, test_org: Org) -> Permission:
     """Create a permission and add it to org's grantable permissions."""
-    perm = Permission(id="test:grantable:perm", display_name="Grantable Perm")
+    import uuid7
+
+    perm = Permission(
+        uuid=uuid7.create(), scope="test:grantable:perm", display_name="Grantable Perm"
+    )
     test_db.create_permission(perm)
     # Add to org's grantable permissions
-    test_db.add_permission_to_organization(str(test_org.uuid), perm.id)
+    test_db.add_permission_to_organization(str(test_org.uuid), perm.scope)
     return perm
 
 
@@ -355,7 +359,7 @@ class TestAdminOrganizations:
             f"/auth/api/admin/orgs/{test_org.uuid}",
             json={
                 "display_name": "Org Admin Updated Name",
-                "permissions": [f"auth:org:{test_org.uuid}"],  # Keep org admin perm
+                "permissions": ["auth:org:admin"],  # Keep org admin perm
             },
             headers={**auth_headers(org_admin_session_token), "Host": "localhost:4401"},
         )
@@ -372,18 +376,7 @@ class TestAdminOrganizations:
         test_db: DB,
     ):
         """Org admin cannot remove their org admin permission from org's permissions."""
-        # First create and add the org admin perm to the org's grantable perms
-        org_admin_perm_id = f"auth:org:{test_org.uuid}"
-        perm = Permission(id=org_admin_perm_id, display_name="Org Admin")
-        try:
-            test_db.create_permission(perm)
-        except Exception:
-            pass  # Permission may already exist
-
-        # Add it to the org's permissions
-        test_db.add_permission_to_organization(
-            str(test_org.uuid), org_admin_perm_id
-        )
+        # The auth:org:admin perm is already created and added by org_admin_permission fixture
 
         # Try to remove all permissions including org admin perm
         response = await client.put(
@@ -419,6 +412,8 @@ class TestAdminOrganizations:
         test_db: DB,
     ):
         """Admin should be able to delete another organization."""
+        import uuid7
+
         # Create org to delete
         org_to_delete = Org(
             uuid=uuid7.create(),
@@ -429,7 +424,9 @@ class TestAdminOrganizations:
 
         # Create some org-specific permissions to test cleanup
         org_perm = Permission(
-            id=f"test:org:{org_to_delete.uuid}:feature", display_name="Org Feature"
+            uuid=uuid7.create(),
+            scope=f"test:org:{org_to_delete.uuid}:feature",
+            display_name="Org Feature",
         )
         test_db.create_permission(org_perm)
 
@@ -456,7 +453,7 @@ class TestAdminOrgPermissions:
         # First create a permission
         await client.post(
             "/auth/api/admin/permissions",
-            json={"id": "test:org:addable", "display_name": "Addable"},
+            json={"scope": "test:org:addable", "display_name": "Addable"},
             headers={**auth_headers(session_token), "Host": "localhost:4401"},
         )
 
@@ -491,7 +488,7 @@ class TestAdminOrgPermissions:
         # First create and add a permission
         await client.post(
             "/auth/api/admin/permissions",
-            json={"id": "test:org:removable", "display_name": "Removable"},
+            json={"scope": "test:org:removable", "display_name": "Removable"},
             headers={**auth_headers(session_token), "Host": "localhost:4401"},
         )
         await client.post(
@@ -585,7 +582,7 @@ class TestAdminRoles:
             f"/auth/api/admin/orgs/{test_org.uuid}/roles",
             json={
                 "display_name": "Role With Perms",
-                "permissions": [grantable_permission.id],
+                "permissions": [grantable_permission.scope],
             },
             headers={**auth_headers(session_token), "Host": "localhost:4401"},
         )
@@ -603,7 +600,13 @@ class TestAdminRoles:
     ):
         """Creating role with non-grantable permission should fail."""
         # Create permission but don't add to org
-        perm = Permission(id="test:not:grantable", display_name="Not Grantable")
+        import uuid7
+
+        perm = Permission(
+            uuid=uuid7.create(),
+            scope="test:not:grantable",
+            display_name="Not Grantable",
+        )
         test_db.create_permission(perm)
 
         response = await client.post(
@@ -658,7 +661,7 @@ class TestAdminRoles:
         """Admin should be able to add grantable permissions to role."""
         response = await client.put(
             f"/auth/api/admin/orgs/{test_org.uuid}/roles/{user_role.uuid}",
-            json={"permissions": [grantable_permission.id]},
+            json={"permissions": [grantable_permission.scope]},
             headers={**auth_headers(session_token), "Host": "localhost:4401"},
         )
         assert response.status_code == 200
@@ -673,7 +676,13 @@ class TestAdminRoles:
         test_db: DB,
     ):
         """Adding non-grantable permission to role should fail."""
-        perm = Permission(id="test:not:grantable:update", display_name="Not Grantable")
+        import uuid7
+
+        perm = Permission(
+            uuid=uuid7.create(),
+            scope="test:not:grantable:update",
+            display_name="Not Grantable",
+        )
         test_db.create_permission(perm)
 
         response = await client.put(
@@ -1291,8 +1300,8 @@ class TestAdminPermissions:
         data = response.json()
         assert isinstance(data, list)
         # Should include at least auth:admin
-        perm_ids = [p["id"] for p in data]
-        assert "auth:admin" in perm_ids
+        perm_scopes = [p["scope"] for p in data]
+        assert "auth:admin" in perm_scopes
 
     @pytest.mark.asyncio
     async def test_list_permissions_org_admin(
@@ -1310,12 +1319,12 @@ class TestAdminPermissions:
         assert response.status_code == 200
         data = response.json()
         # Should only see permissions the org can grant
-        perm_ids = [p["id"] for p in data]
-        assert grantable_permission.id in perm_ids
+        perm_scopes = [p["scope"] for p in data]
+        assert grantable_permission.scope in perm_scopes
         # test_org CAN grant auth:admin (it's in org.permissions), so org admin sees it
-        assert "auth:admin" in perm_ids
+        assert "auth:admin" in perm_scopes
         # Should also see auto-created org admin permission
-        assert f"auth:org:{test_org.uuid}" in perm_ids
+        assert "auth:org:admin" in perm_scopes
 
     @pytest.mark.asyncio
     async def test_create_permission(
@@ -1324,7 +1333,7 @@ class TestAdminPermissions:
         """Admin should be able to create new permissions."""
         response = await client.post(
             "/auth/api/admin/permissions",
-            json={"id": "test:create:permission", "display_name": "Test Permission"},
+            json={"scope": "test:create:permission", "display_name": "Test Permission"},
             headers={**auth_headers(session_token), "Host": "localhost:4401"},
         )
         assert response.status_code == 200
@@ -1352,7 +1361,7 @@ class TestAdminPermissions:
         """Creating permission without admin should fail."""
         response = await client.post(
             "/auth/api/admin/permissions",
-            json={"id": "test:forbidden", "display_name": "Forbidden"},
+            json={"scope": "test:forbidden", "display_name": "Forbidden"},
             headers={
                 **auth_headers(regular_session_token),
                 "Host": "localhost:4401",
@@ -1366,7 +1375,11 @@ class TestAdminPermissions:
     ):
         """Admin should be able to update a permission."""
         # Create permission first
-        perm = Permission(id="test:updateable", display_name="Updateable")
+        import uuid7
+
+        perm = Permission(
+            uuid=uuid7.create(), scope="test:updateable", display_name="Updateable"
+        )
         test_db.create_permission(perm)
 
         response = await client.put(
@@ -1379,9 +1392,17 @@ class TestAdminPermissions:
 
     @pytest.mark.asyncio
     async def test_update_permission_empty_name(
-        self, client: httpx.AsyncClient, session_token: str
+        self, client: httpx.AsyncClient, session_token: str, test_db: DB
     ):
         """Updating permission with empty name should fail."""
+        # Create permission first
+        import uuid7
+
+        perm = Permission(
+            uuid=uuid7.create(), scope="test:perm", display_name="Test Perm"
+        )
+        test_db.create_permission(perm)
+
         response = await client.put(
             "/auth/api/admin/permission?permission_id=test:perm&display_name=",
             headers={**auth_headers(session_token), "Host": "localhost:4401"},
@@ -1396,12 +1417,16 @@ class TestAdminPermissions:
     ):
         """Admin should be able to rename a permission."""
         # Create permission first
-        perm = Permission(id="test:renameable2", display_name="Renameable")
+        import uuid7
+
+        perm = Permission(
+            uuid=uuid7.create(), scope="test:renameable2", display_name="Renameable"
+        )
         test_db.create_permission(perm)
 
         response = await client.post(
             "/auth/api/admin/permission/rename",
-            json={"old_id": "test:renameable2", "new_id": "test:renamed2"},
+            json={"old_scope": "test:renameable2", "new_scope": "test:renamed2"},
             headers={**auth_headers(session_token), "Host": "localhost:4401"},
         )
         assert response.status_code == 200
@@ -1439,14 +1464,18 @@ class TestAdminPermissions:
         self, client: httpx.AsyncClient, session_token: str, test_db: DB
     ):
         """Renaming permission can also update display name."""
-        perm = Permission(id="test:rename:withname", display_name="Old Name")
+        import uuid7
+
+        perm = Permission(
+            uuid=uuid7.create(), scope="test:rename:withname", display_name="Old Name"
+        )
         test_db.create_permission(perm)
 
         response = await client.post(
             "/auth/api/admin/permission/rename",
             json={
-                "old_id": "test:rename:withname",
-                "new_id": "test:renamed:withname",
+                "old_scope": "test:rename:withname",
+                "new_scope": "test:renamed:withname",
                 "display_name": "New Display Name",
             },
             headers={**auth_headers(session_token), "Host": "localhost:4401"},
@@ -1459,7 +1488,11 @@ class TestAdminPermissions:
     ):
         """Admin should be able to delete a permission."""
         # Create permission first
-        perm = Permission(id="test:deleteable", display_name="Deleteable")
+        import uuid7
+
+        perm = Permission(
+            uuid=uuid7.create(), scope="test:deleteable", display_name="Deleteable"
+        )
         test_db.create_permission(perm)
 
         response = await client.delete(

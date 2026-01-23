@@ -61,15 +61,17 @@ async def bootstrap_system() -> dict:
         dict: Contains information about created entities and reset link
     """
     # Create permission first - will fail if already exists
-    perm0 = Permission(id="auth:admin", display_name="Master Admin")
+    perm0 = Permission(
+        uuid=uuid7.create(), scope="auth:admin", display_name="Master Admin"
+    )
     db.create_permission(perm0)
 
     org = Org(uuid7.create(), "Organization")
     db.create_organization(org)
 
-    # After creation, org.permissions now includes the auto-created org admin permission
+    # After creation, org.permissions now includes the auto-created org admin permission (auth:org:admin)
     # Allow this org to grant global admin explicitly
-    db.add_permission_to_organization(str(org.uuid), perm0.id)
+    db.add_permission_to_organization(str(org.uuid), perm0.scope)
 
     # Create an Administration role granting both org and global admin
     # Compose permissions for Administration role: global admin + org admin auto-perm
@@ -77,7 +79,7 @@ async def bootstrap_system() -> dict:
         uuid7.create(),
         org.uuid,
         "Administration",
-        permissions=[perm0.id, *org.permissions],
+        permissions=[perm0.scope, *org.permissions],
     )
     db.create_role(role)
 
@@ -101,7 +103,11 @@ async def bootstrap_system() -> dict:
         "role": role,
         "permissions": [
             perm0,
-            *[Permission(id=p, display_name="") for p in org.permissions],
+            *[
+                db.get_permission_by_scope(p)
+                for p in org.permissions
+                if db.get_permission_by_scope(p)
+            ],
         ],
         "reset_link": reset_link,
     }
@@ -116,17 +122,13 @@ async def check_admin_credentials() -> bool:
     """
     try:
         # Get permission organizations to find admin users
-        permission_orgs = db.get_permission_organizations(
-            "auth:admin"
-        )
+        permission_orgs = db.get_permission_organizations("auth:admin")
 
         if not permission_orgs:
             return False
 
         # Get users from the first organization with admin permission
-        org_users = db.get_organization_users(
-            str(permission_orgs[0].uuid)
-        )
+        org_users = db.get_organization_users(str(permission_orgs[0].uuid))
         admin_users = [user for user, role in org_users if role == "Administration"]
 
         if not admin_users:
@@ -134,9 +136,7 @@ async def check_admin_credentials() -> bool:
 
         # Check first admin user for credentials
         admin_user = admin_users[0]
-        credentials = db.get_credentials_by_user_uuid(
-            admin_user.uuid
-        )
+        credentials = db.get_credentials_by_user_uuid(admin_user.uuid)
 
         if not credentials:
             # Admin exists but has no credentials, create reset link
