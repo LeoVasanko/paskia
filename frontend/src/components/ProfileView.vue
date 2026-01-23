@@ -336,7 +336,7 @@ const saveName = async () => {
   if (!name) { authStore.showMessage('Name cannot be empty', 'error'); return }
   try {
     saving.value = true
-    await apiJson('/auth/api/user/display-name', { method: 'PUT', body: { display_name: name } })
+    await apiJson('/auth/api/user/display-name', { method: 'PATCH', body: { display_name: name } })
     showNameDialog.value = false
     await authStore.loadUserInfo()
     authStore.showMessage('Name updated successfully!', 'success', 3000)

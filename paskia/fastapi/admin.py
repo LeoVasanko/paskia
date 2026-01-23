@@ -25,7 +25,12 @@ app = FastAPI()
 
 def is_global_admin(ctx) -> bool:
     """Check if user has global admin permission."""
-    return "auth:admin" in ctx.role.permissions
+    effective_scopes = (
+        {p.scope for p in (ctx.permissions or [])}
+        if ctx.permissions
+        else set(ctx.role.permissions or [])
+    )
+    return "auth:admin" in effective_scopes
 
 
 def is_org_admin(ctx, org_uuid: UUID | None = None) -> bool:
@@ -34,7 +39,12 @@ def is_org_admin(ctx, org_uuid: UUID | None = None) -> bool:
     If org_uuid is provided, checks if user is admin of that specific org.
     If org_uuid is None, checks if user is admin of their own org.
     """
-    if "auth:org:admin" not in ctx.role.permissions:
+    effective_scopes = (
+        {p.scope for p in (ctx.permissions or [])}
+        if ctx.permissions
+        else set(ctx.role.permissions or [])
+    )
+    if "auth:org:admin" not in effective_scopes:
         return False
     if org_uuid is None:
         return True
@@ -148,13 +158,14 @@ async def admin_create_org(
     return {"uuid": str(org_uuid)}
 
 
-@app.put("/orgs/{org_uuid}")
-async def admin_update_org(
+@app.patch("/orgs/{org_uuid}")
+async def admin_update_org_name(
     org_uuid: UUID,
     request: Request,
     payload: dict = Body(...),
     auth=AUTH_COOKIE,
 ):
+    """Update organization display name only."""
     ctx = await authz.verify(
         auth,
         ["auth:admin", "auth:org:admin"],
@@ -165,26 +176,11 @@ async def admin_update_org(
         raise authz.AuthException(
             status_code=403, detail="Insufficient permissions", mode="forbidden"
         )
-    from ..db import Org as OrgDC  # local import to avoid cycles
+    display_name = payload.get("display_name")
+    if not display_name:
+        raise ValueError("display_name is required")
 
-    current = db.get_organization(str(org_uuid))
-    display_name = payload.get("display_name") or current.display_name
-    permissions = payload.get("permissions")
-    if permissions is None:
-        permissions = current.permissions or []
-
-    # Sanity check: prevent removing permissions that would break current user's admin access
-    org_admin_perm = "auth:org:admin"
-
-    # If current user is org admin (not global admin), ensure org admin perm remains
-    if not is_global_admin(ctx) and is_org_admin(ctx, org_uuid):
-        if org_admin_perm not in permissions:
-            raise ValueError(
-                "Cannot remove organization admin permission from your own organization"
-            )
-
-    org = OrgDC(uuid=org_uuid, display_name=display_name, permissions=permissions)
-    db.update_organization(org)
+    db.update_organization_name(org_uuid, display_name)
     return {"status": "ok"}
 
 
@@ -301,15 +297,15 @@ async def admin_create_role(
     return {"uuid": str(role_uuid)}
 
 
-@app.put("/orgs/{org_uuid}/roles/{role_uuid}")
-async def admin_update_role(
+@app.patch("/orgs/{org_uuid}/roles/{role_uuid}")
+async def admin_update_role_name(
     org_uuid: UUID,
     role_uuid: UUID,
     request: Request,
     payload: dict = Body(...),
     auth=AUTH_COOKIE,
 ):
-    # Verify caller is global admin or admin of provided org
+    """Update role display name only."""
     ctx = await authz.verify(
         auth,
         ["auth:admin", "auth:org:admin"],
@@ -323,35 +319,85 @@ async def admin_update_role(
     role = db.get_role(role_uuid)
     if role.org_uuid != org_uuid:
         raise HTTPException(status_code=404, detail="Role not found in organization")
-    from ..db import Role as RoleDC
 
-    display_name = payload.get("display_name") or role.display_name
-    permissions = payload.get("permissions")
-    if permissions is None:
-        permissions = role.permissions
-    org = db.get_organization(str(org_uuid))
-    grantable = set(org.permissions or [])
-    existing_permissions = set(role.permissions)
-    for pid in permissions:
-        db.get_permission(pid)
-        if pid not in existing_permissions and pid not in grantable:
-            raise ValueError(f"Permission not grantable by org: {pid}")
+    display_name = payload.get("display_name")
+    if not display_name:
+        raise ValueError("display_name is required")
 
-    # Sanity check: prevent admin from removing their own access via role update
-    if ctx.org.uuid == org_uuid and ctx.role.uuid == role_uuid:
-        has_admin_access = (
-            "auth:admin" in permissions or "auth:org:admin" in permissions
-        )
-        if not has_admin_access:
-            raise ValueError("Cannot update your own role to remove admin permissions")
+    db.update_role_name(role_uuid, display_name)
+    return {"status": "ok"}
 
-    updated = RoleDC(
-        uuid=role_uuid,
-        org_uuid=org_uuid,
-        display_name=display_name,
-        permissions=permissions,
+
+@app.post("/orgs/{org_uuid}/roles/{role_uuid}/permissions/{permission_id}")
+async def admin_add_role_permission(
+    org_uuid: UUID,
+    role_uuid: UUID,
+    permission_id: str,
+    request: Request,
+    auth=AUTH_COOKIE,
+):
+    """Add a permission to a role (intent-based API)."""
+    ctx = await authz.verify(
+        auth,
+        ["auth:admin", "auth:org:admin"],
+        match=permutil.has_any,
+        host=request.headers.get("host"),
     )
-    db.update_role(updated)
+    if not can_manage_org(ctx, org_uuid):
+        raise authz.AuthException(
+            status_code=403, detail="Insufficient permissions", mode="forbidden"
+        )
+
+    role = db.get_role(role_uuid)
+    if role.org_uuid != org_uuid:
+        raise HTTPException(status_code=404, detail="Role not found in organization")
+
+    # Verify permission exists and org can grant it
+    db.get_permission(permission_id)
+    org = db.get_organization(str(org_uuid))
+    if permission_id not in org.permissions:
+        raise ValueError(f"Permission not grantable by organization")
+
+    db.add_permission_to_role(role_uuid, permission_id)
+    return {"status": "ok"}
+
+
+@app.delete("/orgs/{org_uuid}/roles/{role_uuid}/permissions/{permission_id}")
+async def admin_remove_role_permission(
+    org_uuid: UUID,
+    role_uuid: UUID,
+    permission_id: str,
+    request: Request,
+    auth=AUTH_COOKIE,
+):
+    """Remove a permission from a role (intent-based API)."""
+    ctx = await authz.verify(
+        auth,
+        ["auth:admin", "auth:org:admin"],
+        match=permutil.has_any,
+        host=request.headers.get("host"),
+    )
+    if not can_manage_org(ctx, org_uuid):
+        raise authz.AuthException(
+            status_code=403, detail="Insufficient permissions", mode="forbidden"
+        )
+
+    role = db.get_role(role_uuid)
+    if role.org_uuid != org_uuid:
+        raise HTTPException(status_code=404, detail="Role not found in organization")
+
+    # Sanity check: prevent admin from removing their own access
+    if ctx.org.uuid == org_uuid and ctx.role.uuid == role_uuid:
+        if permission_id in ["auth:admin", "auth:org:admin"]:
+            # Check if removing this permission would leave no admin access
+            remaining_perms = set(role.permissions) - {permission_id}
+            if (
+                "auth:admin" not in remaining_perms
+                and "auth:org:admin" not in remaining_perms
+            ):
+                raise ValueError("Cannot remove your own admin permissions")
+
+    db.remove_permission_from_role(role_uuid, permission_id)
     return {"status": "ok"}
 
 
@@ -427,7 +473,7 @@ async def admin_create_user(
     return {"uuid": str(user_uuid)}
 
 
-@app.put("/orgs/{org_uuid}/users/{user_uuid}/role")
+@app.patch("/orgs/{org_uuid}/users/{user_uuid}/role")
 async def admin_update_user_role(
     org_uuid: UUID,
     user_uuid: UUID,
@@ -668,7 +714,7 @@ async def admin_get_user_detail(
     }
 
 
-@app.put("/orgs/{org_uuid}/users/{user_uuid}/display-name")
+@app.patch("/orgs/{org_uuid}/users/{user_uuid}/display-name")
 async def admin_update_user_display_name(
     org_uuid: UUID,
     user_uuid: UUID,
@@ -923,7 +969,7 @@ async def admin_create_permission(
     return {"status": "ok"}
 
 
-@app.put("/permission")
+@app.patch("/permission")
 async def admin_update_permission(
     request: Request,
     auth=AUTH_COOKIE,

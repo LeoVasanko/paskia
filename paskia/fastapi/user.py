@@ -33,7 +33,7 @@ async def auth_exception_handler(_request, exc: authz.AuthException):
     )
 
 
-@app.put("/display-name")
+@app.patch("/display-name")
 async def user_update_display_name(
     request: Request,
     response: Response,

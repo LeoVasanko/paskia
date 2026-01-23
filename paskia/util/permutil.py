@@ -17,12 +17,24 @@ def _match(perms: set[str], patterns: Sequence[str]):
     )
 
 
+def _get_effective_scopes(ctx) -> set[str]:
+    """Get effective permission scopes from context.
+
+    Returns scopes from ctx.permissions (filtered by org) if available,
+    otherwise falls back to ctx.role.permissions for backwards compatibility.
+    """
+    if ctx.permissions:
+        return {p.scope for p in ctx.permissions}
+    # Fallback for contexts without effective permissions computed
+    return set(ctx.role.permissions or [])
+
+
 def has_any(ctx, patterns: Sequence[str]) -> bool:
-    return any(_match(ctx.role.permissions, patterns)) if ctx else False
+    return any(_match(_get_effective_scopes(ctx), patterns)) if ctx else False
 
 
 def has_all(ctx, patterns: Sequence[str]) -> bool:
-    return all(_match(ctx.role.permissions, patterns)) if ctx else False
+    return all(_match(_get_effective_scopes(ctx), patterns)) if ctx else False
 
 
 async def session_context(auth: str | None, host: str | None = None):

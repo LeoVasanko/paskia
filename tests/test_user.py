@@ -16,12 +16,12 @@ from tests.conftest import auth_headers
 
 
 class TestUserDisplayName:
-    """Tests for PUT /auth/api/user/display-name"""
+    """Tests for PATCH /auth/api/user/display-name"""
 
     @pytest.mark.asyncio
     async def test_update_display_name_requires_auth(self, client: httpx.AsyncClient):
         """Update display name without auth should return 401."""
-        response = await client.put(
+        response = await client.patch(
             "/auth/api/user/display-name",
             json={"display_name": "New Name"},
         )
@@ -32,7 +32,7 @@ class TestUserDisplayName:
         self, client: httpx.AsyncClient, session_token: str
     ):
         """User should be able to update their display name."""
-        response = await client.put(
+        response = await client.patch(
             "/auth/api/user/display-name",
             json={"display_name": "Updated Name"},
             headers={**auth_headers(session_token), "Host": "localhost:4401"},
@@ -46,7 +46,7 @@ class TestUserDisplayName:
         self, client: httpx.AsyncClient, session_token: str
     ):
         """Empty display name should fail."""
-        response = await client.put(
+        response = await client.patch(
             "/auth/api/user/display-name",
             json={"display_name": ""},
             headers={**auth_headers(session_token), "Host": "localhost:4401"},
@@ -59,7 +59,7 @@ class TestUserDisplayName:
     ):
         """Display name over 64 chars should fail."""
         long_name = "x" * 100
-        response = await client.put(
+        response = await client.patch(
             "/auth/api/user/display-name",
             json={"display_name": long_name},
             headers={**auth_headers(session_token), "Host": "localhost:4401"},
