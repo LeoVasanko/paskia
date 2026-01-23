@@ -468,14 +468,32 @@ class DB:
             visits=u.visits,
         )
 
-    def _build_role(self, role_uuid: str) -> Role:
-        """Build a Role object from internal storage. Caller must hold lock."""
+    def _build_role(self, role_uuid: str, org_filter: bool = False) -> Role:
+        """Build a Role object from internal storage. Caller must hold lock.
+
+        Args:
+            role_uuid: The role UUID string
+            org_filter: If True, filter permissions to only those the org can grant
+        """
         r = self._data.roles[role_uuid]
+        permissions = list(r.permissions)
+
+        # Filter by org if requested
+        if org_filter:
+            org_uuid = r.org
+            if org_uuid in self._data.orgs:
+                org_allowed_scopes = {
+                    p.scope
+                    for pid, p in self._data.permissions.items()
+                    if org_uuid in p.orgs
+                }
+                permissions = [p for p in permissions if p in org_allowed_scopes]
+
         return Role(
             uuid=UUID(role_uuid),
             org_uuid=UUID(r.org),
             display_name=r.display_name,
-            permissions=list(r.permissions),
+            permissions=permissions,
         )
 
     def _build_org(self, org_uuid: str, include_roles: bool = False) -> Org:
@@ -491,8 +509,9 @@ class DB:
             permissions=perm_scopes,
         )
         if include_roles:
+            # When building roles for org display, filter by what org can grant
             org.roles = [
-                self._build_role(role_uuid)
+                self._build_role(role_uuid, org_filter=True)
                 for role_uuid, r in self._data.roles.items()
                 if r.org == org_uuid
             ]
@@ -582,6 +601,16 @@ class DB:
                 {p: True for p in role.permissions} if role.permissions else {}
             )
 
+    def update_role_name(
+        self, role_uuid: UUID, display_name: str, actor: str = "system"
+    ) -> None:
+        """Update only the role display name (intent-based API)."""
+        with self.session(actor):
+            key = str(role_uuid)
+            if key not in self._data.roles:
+                raise ValueError("Role not found")
+            self._data.roles[key].display_name = display_name
+
     def delete_role(self, role_uuid: UUID, actor: str = "system") -> None:
         with self.session(actor):
             key = str(role_uuid)
@@ -598,6 +627,37 @@ class DB:
             if key not in self._data.roles:
                 raise ValueError("Role not found")
             return self._build_role(key)
+
+    def get_role_hidden_permissions(self, role_uuid: UUID) -> list[str]:
+        """Get permission scopes assigned to role but not grantable by its org.
+
+        These are "hidden" permissions that should be preserved when updating
+        the role, so they can become effective again if the org regains access.
+        """
+        with self._lock:
+            key = str(role_uuid)
+            if key not in self._data.roles:
+                return []
+
+            role_data = self._data.roles[key]
+            org_uuid = role_data.org
+
+            # Get org's grantable scopes
+            if org_uuid not in self._data.orgs:
+                return []
+
+            org_allowed_scopes = {
+                p.scope
+                for pid, p in self._data.permissions.items()
+                if org_uuid in p.orgs
+            }
+
+            # Return scopes in role but not in org
+            return [
+                scope
+                for scope in role_data.permissions
+                if scope not in org_allowed_scopes
+            ]
 
     # -------------------------------------------------------------------------
     # Credential operations
@@ -843,6 +903,16 @@ class DB:
                     if p.scope == perm_scope:
                         p.orgs[key] = True
                         break
+
+    def update_organization_name(
+        self, org_uuid: UUID, display_name: str, actor: str = "system"
+    ) -> None:
+        """Update only the organization display name (intent-based API)."""
+        with self.session(actor):
+            key = str(org_uuid)
+            if key not in self._data.orgs:
+                raise ValueError("Organization not found")
+            self._data.orgs[key].display_name = display_name
 
     def delete_organization(self, org_uuid: UUID, actor: str = "system") -> None:
         with self.session(actor):
@@ -1189,18 +1259,43 @@ class DB:
                 elif permission_id in self._data.roles[key].permissions:
                     del self._data.roles[key].permissions[permission_id]
 
-    def get_role_permissions(self, role_uuid: UUID) -> list[Permission]:
+    def get_role_permissions(
+        self, role_uuid: UUID, filter_by_org: bool = True
+    ) -> list[Permission]:
         """Get permissions granted by a role.
 
         Note: Roles store scopes, so we need to look up permissions by scope.
+
+        Args:
+            role_uuid: The role UUID
+            filter_by_org: If True, only return permissions that the role's org
+                          can grant. Set to False to see all assigned permissions
+                          regardless of org restrictions.
         """
         with self._lock:
             key = str(role_uuid)
             if key not in self._data.roles:
                 return []
-            scopes = list(self._data.roles[key].permissions.keys())
+            role_data = self._data.roles[key]
+            scopes = list(role_data.permissions.keys())
+
+            # Get org permissions if filtering
+            org_allowed_scopes = None
+            if filter_by_org:
+                org_uuid = role_data.org
+                if org_uuid in self._data.orgs:
+                    org_allowed_scopes = {
+                        p.scope
+                        for pid, p in self._data.permissions.items()
+                        if org_uuid in p.orgs
+                    }
+
             permissions = []
             for scope in scopes:
+                # Skip if org filtering is enabled and scope not allowed by org
+                if org_allowed_scopes is not None and scope not in org_allowed_scopes:
+                    continue
+
                 # Find permission with this scope
                 for pid, p in self._data.permissions.items():
                     if p.scope == scope:

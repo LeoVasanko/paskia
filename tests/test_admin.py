@@ -338,7 +338,7 @@ class TestAdminOrganizations:
         self, client: httpx.AsyncClient, session_token: str, test_org
     ):
         """Admin should be able to update an organization."""
-        response = await client.put(
+        response = await client.patch(
             f"/auth/api/admin/orgs/{test_org.uuid}",
             json={"display_name": "Updated Org Name"},
             headers={**auth_headers(session_token), "Host": "localhost:4401"},
@@ -355,11 +355,10 @@ class TestAdminOrganizations:
         test_org,
     ):
         """Org admin should be able to update their organization."""
-        response = await client.put(
+        response = await client.patch(
             f"/auth/api/admin/orgs/{test_org.uuid}",
             json={
                 "display_name": "Org Admin Updated Name",
-                "permissions": ["auth:org:admin"],  # Keep org admin perm
             },
             headers={**auth_headers(org_admin_session_token), "Host": "localhost:4401"},
         )
@@ -378,18 +377,13 @@ class TestAdminOrganizations:
         """Org admin cannot remove their org admin permission from org's permissions."""
         # The auth:org:admin perm is already created and added by org_admin_permission fixture
 
-        # Try to remove all permissions including org admin perm
-        response = await client.put(
-            f"/auth/api/admin/orgs/{test_org.uuid}",
-            json={
-                "display_name": "Try Remove Own Perm",
-                "permissions": [],  # Remove org admin perm from org's permissions
-            },
+        # Try to remove org admin perm (this is validated server-side in the remove endpoint)
+        response = await client.delete(
+            f"/auth/api/admin/orgs/{test_org.uuid}/permission?permission_id=auth:org:admin",
             headers={**auth_headers(org_admin_session_token), "Host": "localhost:4401"},
         )
-        assert response.status_code == 400
-        data = response.json()
-        assert "Cannot remove organization admin permission" in data["detail"]
+        # This should fail because only global admin can remove perms from org
+        assert response.status_code == 403
 
     @pytest.mark.asyncio
     async def test_delete_org_own_org_fails(
@@ -626,7 +620,7 @@ class TestAdminRoles:
         self, client: httpx.AsyncClient, session_token: str, test_org, test_role
     ):
         """Admin should be able to update a role."""
-        response = await client.put(
+        response = await client.patch(
             f"/auth/api/admin/orgs/{test_org.uuid}/roles/{test_role.uuid}",
             json={"display_name": "Updated Role Name"},
             headers={**auth_headers(session_token), "Host": "localhost:4401"},
@@ -640,7 +634,7 @@ class TestAdminRoles:
         self, client: httpx.AsyncClient, session_token: str, test_org, second_org_role
     ):
         """Cannot update role from another org."""
-        response = await client.put(
+        response = await client.patch(
             f"/auth/api/admin/orgs/{test_org.uuid}/roles/{second_org_role.uuid}",
             json={"display_name": "Try Update Wrong Org"},
             headers={**auth_headers(session_token), "Host": "localhost:4401"},
@@ -659,9 +653,8 @@ class TestAdminRoles:
         grantable_permission,
     ):
         """Admin should be able to add grantable permissions to role."""
-        response = await client.put(
-            f"/auth/api/admin/orgs/{test_org.uuid}/roles/{user_role.uuid}",
-            json={"permissions": [grantable_permission.scope]},
+        response = await client.post(
+            f"/auth/api/admin/orgs/{test_org.uuid}/roles/{user_role.uuid}/permissions/{grantable_permission.scope}",
             headers={**auth_headers(session_token), "Host": "localhost:4401"},
         )
         assert response.status_code == 200
@@ -685,9 +678,8 @@ class TestAdminRoles:
         )
         test_db.create_permission(perm)
 
-        response = await client.put(
-            f"/auth/api/admin/orgs/{test_org.uuid}/roles/{user_role.uuid}",
-            json={"permissions": ["test:not:grantable:update"]},
+        response = await client.post(
+            f"/auth/api/admin/orgs/{test_org.uuid}/roles/{user_role.uuid}/permissions/test:not:grantable:update",
             headers={**auth_headers(session_token), "Host": "localhost:4401"},
         )
         assert response.status_code == 400
@@ -699,14 +691,22 @@ class TestAdminRoles:
         self, client: httpx.AsyncClient, session_token: str, test_org, test_role
     ):
         """Admin cannot remove their own admin permissions."""
-        response = await client.put(
-            f"/auth/api/admin/orgs/{test_org.uuid}/roles/{test_role.uuid}",
-            json={"permissions": []},  # Remove all permissions
+        # test_role has both auth:admin and auth:org:admin
+        # Remove auth:admin first (should succeed since org:admin remains)
+        response = await client.delete(
+            f"/auth/api/admin/orgs/{test_org.uuid}/roles/{test_role.uuid}/permissions/auth:admin",
+            headers={**auth_headers(session_token), "Host": "localhost:4401"},
+        )
+        assert response.status_code == 200
+
+        # Now try to remove auth:org:admin (should fail - would leave no admin access)
+        response = await client.delete(
+            f"/auth/api/admin/orgs/{test_org.uuid}/roles/{test_role.uuid}/permissions/auth:org:admin",
             headers={**auth_headers(session_token), "Host": "localhost:4401"},
         )
         assert response.status_code == 400
         data = response.json()
-        assert "Cannot update your own role" in data["detail"]
+        assert "Cannot remove your own admin permissions" in data["detail"]
 
     @pytest.mark.asyncio
     async def test_delete_role(
@@ -863,7 +863,7 @@ class TestAdminUsersInOrg:
         self, client: httpx.AsyncClient, session_token: str, test_org, test_user
     ):
         """Admin should be able to update user display name."""
-        response = await client.put(
+        response = await client.patch(
             f"/auth/api/admin/orgs/{test_org.uuid}/users/{test_user.uuid}/display-name",
             json={"display_name": "Updated Admin Name"},
             headers={**auth_headers(session_token), "Host": "localhost:4401"},
@@ -876,7 +876,7 @@ class TestAdminUsersInOrg:
     ):
         """Updating non-existent user should return 404."""
         fake_uuid = uuid7.create()
-        response = await client.put(
+        response = await client.patch(
             f"/auth/api/admin/orgs/{test_org.uuid}/users/{fake_uuid}/display-name",
             json={"display_name": "New Name"},
             headers={**auth_headers(session_token), "Host": "localhost:4401"},
@@ -890,7 +890,7 @@ class TestAdminUsersInOrg:
         self, client: httpx.AsyncClient, session_token: str, test_org, second_org_user
     ):
         """Updating user from another org should return 404."""
-        response = await client.put(
+        response = await client.patch(
             f"/auth/api/admin/orgs/{test_org.uuid}/users/{second_org_user.uuid}/display-name",
             json={"display_name": "New Name"},
             headers={**auth_headers(session_token), "Host": "localhost:4401"},
@@ -902,7 +902,7 @@ class TestAdminUsersInOrg:
         self, client: httpx.AsyncClient, session_token: str, test_org, test_user
     ):
         """Updating user with empty display name should fail."""
-        response = await client.put(
+        response = await client.patch(
             f"/auth/api/admin/orgs/{test_org.uuid}/users/{test_user.uuid}/display-name",
             json={"display_name": "   "},
             headers={**auth_headers(session_token), "Host": "localhost:4401"},
@@ -916,7 +916,7 @@ class TestAdminUsersInOrg:
         self, client: httpx.AsyncClient, session_token: str, test_org, test_user
     ):
         """Updating user with too long display name should fail."""
-        response = await client.put(
+        response = await client.patch(
             f"/auth/api/admin/orgs/{test_org.uuid}/users/{test_user.uuid}/display-name",
             json={"display_name": "x" * 100},
             headers={**auth_headers(session_token), "Host": "localhost:4401"},
@@ -936,7 +936,7 @@ class TestAdminUsersInOrg:
     ):
         """Admin should be able to change user's role within org."""
         # Use regular_user who is in the same org but not the session owner
-        response = await client.put(
+        response = await client.patch(
             f"/auth/api/admin/orgs/{test_org.uuid}/users/{regular_user.uuid}/role",
             json={"role": user_role.display_name},
             headers={**auth_headers(session_token), "Host": "localhost:4401"},
@@ -948,7 +948,7 @@ class TestAdminUsersInOrg:
         self, client: httpx.AsyncClient, session_token: str, test_org, test_user
     ):
         """Updating user role without specifying role should fail."""
-        response = await client.put(
+        response = await client.patch(
             f"/auth/api/admin/orgs/{test_org.uuid}/users/{test_user.uuid}/role",
             json={},
             headers={**auth_headers(session_token), "Host": "localhost:4401"},
@@ -963,7 +963,7 @@ class TestAdminUsersInOrg:
     ):
         """Updating role for non-existent user should fail."""
         fake_uuid = uuid7.create()
-        response = await client.put(
+        response = await client.patch(
             f"/auth/api/admin/orgs/{test_org.uuid}/users/{fake_uuid}/role",
             json={"role": "User Role"},
             headers={**auth_headers(session_token), "Host": "localhost:4401"},
@@ -977,7 +977,7 @@ class TestAdminUsersInOrg:
         self, client: httpx.AsyncClient, session_token: str, test_org, second_org_user
     ):
         """Updating role for user in another org should fail."""
-        response = await client.put(
+        response = await client.patch(
             f"/auth/api/admin/orgs/{test_org.uuid}/users/{second_org_user.uuid}/role",
             json={"role": "User Role"},
             headers={**auth_headers(session_token), "Host": "localhost:4401"},
@@ -991,7 +991,7 @@ class TestAdminUsersInOrg:
         self, client: httpx.AsyncClient, session_token: str, test_org, test_user
     ):
         """Updating user to non-existent role should fail."""
-        response = await client.put(
+        response = await client.patch(
             f"/auth/api/admin/orgs/{test_org.uuid}/users/{test_user.uuid}/role",
             json={"role": "Nonexistent Role"},
             headers={**auth_headers(session_token), "Host": "localhost:4401"},
@@ -1010,7 +1010,7 @@ class TestAdminUsersInOrg:
         user_role,
     ):
         """Admin cannot change their own role to non-admin role."""
-        response = await client.put(
+        response = await client.patch(
             f"/auth/api/admin/orgs/{test_org.uuid}/users/{org_admin_user.uuid}/role",
             json={"role": user_role.display_name},
             headers={**auth_headers(org_admin_session_token), "Host": "localhost:4401"},
@@ -1031,7 +1031,7 @@ class TestAdminUsersInOrg:
         """Admin can change their own role to another admin role."""
         # test_user is already on test_role which has auth:admin
         # Changing to the same role should succeed (no permission loss)
-        response = await client.put(
+        response = await client.patch(
             f"/auth/api/admin/orgs/{test_org.uuid}/users/{test_user.uuid}/role",
             json={"role": test_role.display_name},
             headers={**auth_headers(session_token), "Host": "localhost:4401"},
@@ -1382,7 +1382,7 @@ class TestAdminPermissions:
         )
         test_db.create_permission(perm)
 
-        response = await client.put(
+        response = await client.patch(
             "/auth/api/admin/permission?permission_id=test:updateable&display_name=Updated%20Name",
             headers={**auth_headers(session_token), "Host": "localhost:4401"},
         )
@@ -1403,7 +1403,7 @@ class TestAdminPermissions:
         )
         test_db.create_permission(perm)
 
-        response = await client.put(
+        response = await client.patch(
             "/auth/api/admin/permission?permission_id=test:perm&display_name=",
             headers={**auth_headers(session_token), "Host": "localhost:4401"},
         )
@@ -1626,7 +1626,7 @@ class TestOrgAdminAuthExceptions:
         test_user,
     ):
         """Regular user trying to update display name should get 403."""
-        response = await client.put(
+        response = await client.patch(
             f"/auth/api/admin/orgs/{test_org.uuid}/users/{test_user.uuid}/display-name",
             json={"display_name": "New Name"},
             headers={**auth_headers(regular_session_token), "Host": "localhost:4401"},

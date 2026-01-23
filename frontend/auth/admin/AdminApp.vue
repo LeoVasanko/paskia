@@ -225,7 +225,7 @@ async function moveUserToRole(org, user, targetRoleDisplayName) {
   if (user.role === targetRoleDisplayName) return
   try {
     await apiJson(`/auth/api/admin/orgs/${org.uuid}/users/${user.uuid}/role`, {
-      method: 'PUT',
+      method: 'PATCH',
       body: { role: targetRoleDisplayName }
     })
     await loadOrgs()
@@ -272,19 +272,17 @@ function deleteRole(role) {
 }
 
 async function toggleRolePermission(role, pid, checked) {
-  // Calculate new permissions array
+  // Optimistic update
+  const prevPermissions = [...role.permissions]
   const newPermissions = checked
     ? [...role.permissions, pid]
     : role.permissions.filter(p => p !== pid)
-
-  // Optimistic update
-  const prevPermissions = [...role.permissions]
   role.permissions = newPermissions
 
   try {
-    await apiJson(`/auth/api/admin/orgs/${role.org_uuid}/roles/${role.uuid}`, {
-      method: 'PUT',
-      body: { display_name: role.display_name, permissions: newPermissions }
+    const method = checked ? 'POST' : 'DELETE'
+    await apiJson(`/auth/api/admin/orgs/${role.org_uuid}/roles/${role.uuid}/permissions/${pid}`, {
+      method
     })
     await loadOrgs()
   } catch (e) {
@@ -564,7 +562,7 @@ async function submitDialog() {
 
       // Close dialog immediately, then perform async operation
       closeDialog()
-      apiJson(`/auth/api/admin/orgs/${org.uuid}`, { method: 'PUT', body: { display_name: name, permissions: org.permissions } })
+      apiJson(`/auth/api/admin/orgs/${org.uuid}`, { method: 'PATCH', body: { display_name: name } })
         .then(() => {
           authStore.showMessage(`Organization renamed to "${name}".`, 'success', 2500)
           loadOrgs()
@@ -592,7 +590,7 @@ async function submitDialog() {
 
       // Close dialog immediately, then perform async operation
       closeDialog()
-      apiJson(`/auth/api/admin/orgs/${role.org_uuid}/roles/${role.uuid}`, { method: 'PUT', body: { display_name: name, permissions: role.permissions } })
+      apiJson(`/auth/api/admin/orgs/${role.org_uuid}/roles/${role.uuid}`, { method: 'PATCH', body: { display_name: name } })
         .then(() => {
           authStore.showMessage(`Role renamed to "${name}".`, 'success', 2500)
           loadOrgs()
@@ -620,7 +618,7 @@ async function submitDialog() {
 
       // Close dialog immediately, then perform async operation
       closeDialog()
-      apiJson(`/auth/api/admin/orgs/${user.org_uuid}/users/${user.uuid}/display-name`, { method: 'PUT', body: { display_name: name } })
+      apiJson(`/auth/api/admin/orgs/${user.org_uuid}/users/${user.uuid}/display-name`, { method: 'PATCH', body: { display_name: name } })
         .then(() => {
           authStore.showMessage(`User renamed to "${name}".`, 'success', 2500)
           onUserNameSaved()
@@ -649,7 +647,7 @@ async function submitDialog() {
         // Display name or domain changed
         const params = new URLSearchParams({ permission_id: permission.scope, display_name: newDisplay })
         if (newDomain) params.set('domain', newDomain)
-        apiCall = apiJson(`/auth/api/admin/permission?${params.toString()}`, { method: 'PUT' })
+        apiCall = apiJson(`/auth/api/admin/permission?${params.toString()}`, { method: 'PATCH' })
       } else {
         // No changes
         return
