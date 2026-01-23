@@ -119,9 +119,11 @@ async def flush_changes(
         # Append all lines in a single write (binary mode for Windows compatibility)
         async with aiofiles.open(db_path, "ab") as f:
             await f.write(b"\n".join(lines) + b"\n")
-        _logger.debug(
+        _logger.info(
             "Flushed %d change(s) to %s", len(changes_to_write), db_path
         )
+        import sys
+        print(f"[DB] Flushed {len(changes_to_write)} change(s) to {db_path}", file=sys.stderr)
         return True
     except OSError:
         _logger.exception("Failed to flush database changes")
