@@ -107,7 +107,9 @@ class DB:
                 len(self._pending_changes),
             )
             import sys
+            import json
             print(f"[DB] Queued change by {self._current_actor}, {len(self._pending_changes)} pending", file=sys.stderr)
+            print(f"[DB]   diff: {json.dumps(diff, default=str)}", file=sys.stderr)
 
     @contextmanager
     def transaction(self, actor: str = "system"):
@@ -171,8 +173,10 @@ def build_role(uuid: UUID) -> Role:
 
 
 def build_org(uuid: UUID, include_roles: bool = False) -> Org:
+    import sys
     o = _db._data.orgs[uuid]
     perm_scopes = [p.scope for p in _db._data.permissions.values() if uuid in p.orgs]
+    print(f"[DB] build_org({uuid}): permissions={perm_scopes}", file=sys.stderr)
     org = Org(uuid=uuid, display_name=o.display_name, permissions=perm_scopes)
     if include_roles:
         org.roles = [
@@ -525,6 +529,8 @@ def rename_permission(
 
     Also updates all role references to use the new scope.
     """
+    import sys
+    
     # Find permission by old scope
     key = None
     for pid, p in _db._data.permissions.items():
@@ -539,6 +545,10 @@ def rename_permission(
         if p.scope == new_scope and pid != key:
             raise ValueError(f"Permission with scope '{new_scope}' already exists")
 
+    # Debug: Print orgs before change
+    print(f"[DB] rename_permission: {old_scope} -> {new_scope}", file=sys.stderr)
+    print(f"[DB]   orgs BEFORE: {_db._data.permissions[key].orgs}", file=sys.stderr)
+
     with _db.transaction(actor):
         # Update the permission
         _db._data.permissions[key].scope = new_scope
@@ -551,6 +561,9 @@ def rename_permission(
                 if old_scope in r.permissions:
                     del r.permissions[old_scope]
                     r.permissions[new_scope] = True
+
+    # Debug: Print orgs after change
+    print(f"[DB]   orgs AFTER: {_db._data.permissions[key].orgs}", file=sys.stderr)
 
 
 def delete_permission(uuid: str | UUID, actor: str = "system") -> None:

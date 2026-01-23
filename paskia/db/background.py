@@ -96,12 +96,31 @@ async def start_background():
     """Start the background flush/cleanup task."""
     import sys
     global _background_task
+    
+    # Check if task exists but is no longer running (e.g., after uvicorn reload)
+    if _background_task is not None:
+        if _background_task.done():
+            print(f"[DB] Previous background task was done, restarting", file=sys.stderr)
+            _background_task = None
+        else:
+            # Task exists and is running - but might be in a dead event loop
+            try:
+                # Check if task is in current event loop
+                loop = asyncio.get_running_loop()
+                task_loop = _background_task.get_loop()
+                if loop is not task_loop:
+                    print(f"[DB] Background task in different event loop, restarting", file=sys.stderr)
+                    _background_task = None
+            except Exception as e:
+                print(f"[DB] Error checking background task loop: {e}, restarting", file=sys.stderr)
+                _background_task = None
+    
     if _background_task is None:
         _background_task = asyncio.create_task(_background_loop())
         _logger.info("Database background task started")
         print("[DB] Database background task started", file=sys.stderr)
     else:
-        print(f"[DB] Background task already exists: {_background_task}", file=sys.stderr)
+        print(f"[DB] Background task already running: {_background_task}", file=sys.stderr)
 
 
 async def stop_background():
