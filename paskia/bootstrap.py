@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 
 import uuid7
 
-from paskia import authsession, globals
+from paskia import authsession, db
 from paskia.db import Org, Permission, Role, User
 from paskia.util import hostutil, passphrase, tokens
 
@@ -42,7 +42,7 @@ async def _create_and_log_admin_reset_link(user_uuid, message, session_type) -> 
     """Create an admin reset link and log it with the provided message."""
     token = passphrase.generate()
     expiry = authsession.reset_expires()
-    await globals.db.instance.create_reset_token(
+    await db.create_reset_token(
         user_uuid=user_uuid,
         key=tokens.reset_key(token),
         expiry=expiry,
@@ -62,14 +62,14 @@ async def bootstrap_system() -> dict:
     """
     # Create permission first - will fail if already exists
     perm0 = Permission(id="auth:admin", display_name="Master Admin")
-    await globals.db.instance.create_permission(perm0)
+    await db.create_permission(perm0)
 
     org = Org(uuid7.create(), "Organization")
-    await globals.db.instance.create_organization(org)
+    await db.create_organization(org)
 
     # After creation, org.permissions now includes the auto-created org admin permission
     # Allow this org to grant global admin explicitly
-    await globals.db.instance.add_permission_to_organization(str(org.uuid), perm0.id)
+    await db.add_permission_to_organization(str(org.uuid), perm0.id)
 
     # Create an Administration role granting both org and global admin
     # Compose permissions for Administration role: global admin + org admin auto-perm
@@ -79,7 +79,7 @@ async def bootstrap_system() -> dict:
         "Administration",
         permissions=[perm0.id, *org.permissions],
     )
-    await globals.db.instance.create_role(role)
+    await db.create_role(role)
 
     user = User(
         uuid=uuid7.create(),
@@ -88,7 +88,7 @@ async def bootstrap_system() -> dict:
         created_at=datetime.now(timezone.utc),
         visits=0,
     )
-    await globals.db.instance.create_user(user)
+    await db.create_user(user)
 
     # Generate reset link and log it
     reset_link = await _create_and_log_admin_reset_link(
@@ -116,7 +116,7 @@ async def check_admin_credentials() -> bool:
     """
     try:
         # Get permission organizations to find admin users
-        permission_orgs = await globals.db.instance.get_permission_organizations(
+        permission_orgs = await db.get_permission_organizations(
             "auth:admin"
         )
 
@@ -124,7 +124,7 @@ async def check_admin_credentials() -> bool:
             return False
 
         # Get users from the first organization with admin permission
-        org_users = await globals.db.instance.get_organization_users(
+        org_users = await db.get_organization_users(
             str(permission_orgs[0].uuid)
         )
         admin_users = [user for user, role in org_users if role == "Administration"]
@@ -134,7 +134,7 @@ async def check_admin_credentials() -> bool:
 
         # Check first admin user for credentials
         admin_user = admin_users[0]
-        credentials = await globals.db.instance.get_credentials_by_user_uuid(
+        credentials = await db.get_credentials_by_user_uuid(
             admin_user.uuid
         )
 
@@ -162,7 +162,7 @@ async def bootstrap_if_needed() -> bool:
     """
     try:
         # Check if the admin permission exists - if it does, system is already bootstrapped
-        await globals.db.instance.get_permission("auth:admin")
+        await db.get_permission("auth:admin")
         # Permission exists, system is already bootstrapped
         # Check if admin needs credentials (only for already-bootstrapped systems)
         await check_admin_credentials()

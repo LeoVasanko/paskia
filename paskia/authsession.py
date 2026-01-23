@@ -11,9 +11,10 @@ independent of any web framework:
 from datetime import datetime, timezone
 from uuid import UUID
 
+from paskia import db
 from paskia.config import SESSION_LIFETIME
 from paskia.db import ResetToken, Session
-from paskia.globals import db, passkey
+from paskia.globals import passkey
 from paskia.util import hostutil
 from paskia.util.tokens import create_token, reset_key, session_key
 
@@ -54,7 +55,7 @@ async def create_session(
         raise ValueError(f"Host must be the same as or a subdomain of {rp_id}")
     token = create_token()
     now = datetime.now(timezone.utc)
-    await db.instance.create_session(
+    await db.create_session(
         user_uuid=user_uuid,
         credential_uuid=credential_uuid,
         key=session_key(token),
@@ -68,7 +69,7 @@ async def create_session(
 
 async def get_reset(token: str) -> ResetToken:
     """Validate a credential reset token. Returns None if the token is not well formed (i.e. it is another type of token)."""
-    record = await db.instance.get_reset_token(reset_key(token))
+    record = await db.get_reset_token(reset_key(token))
     if record and record.expiry >= datetime.now(timezone.utc):
         return record
     raise ValueError("This authentication link is no longer valid.")
@@ -79,11 +80,11 @@ async def get_session(token: str, host: str | None = None) -> Session:
     host = hostutil.normalize_host(host)
     if not host:
         raise ValueError("Invalid host")
-    session = await db.instance.get_session(session_key(token))
+    session = await db.get_session(session_key(token))
     if session and session_expiry(session) >= datetime.now(timezone.utc):
         if session.host is None:
             # First time binding: store exact host:port (or IPv6 form) now.
-            await db.instance.set_session_host(session.key, host)
+            await db.set_session_host(session.key, host)
             session.host = host
         elif session.host != host:
             raise ValueError("Session host mismatch")
@@ -93,10 +94,10 @@ async def get_session(token: str, host: str | None = None) -> Session:
 
 async def refresh_session_token(token: str, *, ip: str, user_agent: str):
     """Refresh a session extending its expiry."""
-    session_record = await db.instance.get_session(session_key(token))
+    session_record = await db.get_session(session_key(token))
     if not session_record:
         raise ValueError("Session not found or expired")
-    updated = await db.instance.update_session(
+    updated = await db.update_session(
         session_key(token),
         ip=ip,
         user_agent=user_agent,
@@ -109,4 +110,4 @@ async def refresh_session_token(token: str, *, ip: str, user_agent: str):
 async def delete_credential(credential_uuid: UUID, auth: str, host: str | None = None):
     """Delete a specific credential for the current user."""
     s = await get_session(auth, host=host)
-    await db.instance.delete_credential(credential_uuid, s.user_uuid)
+    await db.delete_credential(credential_uuid, s.user_uuid)

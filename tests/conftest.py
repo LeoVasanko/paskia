@@ -11,6 +11,7 @@ in the database to test authenticated endpoints.
 
 import asyncio
 import os
+import tempfile
 from collections.abc import AsyncGenerator
 from datetime import datetime, timezone
 from uuid import UUID
@@ -20,15 +21,11 @@ import pytest
 import pytest_asyncio
 import uuid7
 
-from paskia import globals
 from paskia.db import Credential, Org, Permission, Role, User
-from paskia.db.sql import DB
+from paskia.db.json import DB
 from paskia.fastapi.session import AUTH_COOKIE_NAME
 from paskia.sansio import Passkey
 from paskia.util.tokens import create_token, session_key
-
-# Use in-memory SQLite for tests
-os.environ["PASKIA_DB"] = "sqlite+aiosqlite:///:memory:"
 
 
 @pytest.fixture(scope="session")
@@ -41,16 +38,19 @@ def event_loop():
 
 @pytest_asyncio.fixture(scope="function")
 async def test_db() -> AsyncGenerator[DB, None]:
-    """Create an in-memory SQLite database for testing.
+    """Create an in-memory JSON database for testing.
 
-    We use :memory: for speed - each test gets a fresh database.
+    Uses a temp file that gets cleaned up after each test.
     """
-    db = DB("sqlite+aiosqlite:///:memory:")
-    await db.init_db()
-    globals.db._instance = db
-    yield db
-    # Clean up
-    globals.db._instance = None
+    import paskia.db.json as json_db
+
+    with tempfile.NamedTemporaryFile(suffix=".jsonl", delete=True) as f:
+        db = DB(f.name)
+        await db.init_db()
+        json_db._db = db
+        yield db
+        # Clean up
+        json_db._db = None
 
 
 @pytest_asyncio.fixture(scope="function")

@@ -3,7 +3,7 @@
 from collections.abc import Sequence
 from fnmatch import fnmatchcase
 
-from paskia.globals import db
+from paskia import db
 from paskia.util.hostutil import normalize_host
 from paskia.util.tokens import session_key
 
@@ -29,4 +29,4 @@ async def session_context(auth: str | None, host: str | None = None):
     if not auth:
         return None
     normalized_host = normalize_host(host) if host else None
-    return await db.instance.get_session_context(session_key(auth), normalized_host)
+    return await db.get_session_context(session_key(auth), normalized_host)

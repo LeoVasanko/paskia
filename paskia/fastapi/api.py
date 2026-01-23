@@ -22,7 +22,7 @@ from paskia.authsession import (
 )
 from paskia.fastapi import authz, session, user
 from paskia.fastapi.session import AUTH_COOKIE, AUTH_COOKIE_NAME
-from paskia.globals import db
+from paskia import db
 from paskia.globals import passkey as global_passkey
 from paskia.util import frontend, hostutil, htmlutil, passphrase, userinfo
 from paskia.util.tokens import session_key
@@ -227,7 +227,7 @@ async def api_token_info(token: str):
     # Check if this is a reset token
     try:
         reset_token = await get_reset(token)
-        user = await db.instance.get_user_by_uuid(reset_token.user_uuid)
+        user = await db.get_user_by_uuid(reset_token.user_uuid)
         return {
             "type": "reset",
             "user_name": user.display_name,
@@ -297,7 +297,7 @@ async def api_logout(request: Request, response: Response, auth=AUTH_COOKIE):
     except ValueError:
         return {"message": "Already logged out"}
     with suppress(Exception):
-        await db.instance.delete_session(session_key(auth))
+        await db.delete_session(session_key(auth))
     session.clear_session_cookie(response)
     return {"message": "Logged out successfully"}
 
