@@ -119,6 +119,9 @@ async def flush_changes(
         # Append all lines in a single write (binary mode for Windows compatibility)
         async with aiofiles.open(db_path, "ab") as f:
             await f.write(b"\n".join(lines) + b"\n")
+        _logger.debug(
+            "Flushed %d change(s) to %s", len(changes_to_write), db_path
+        )
         return True
     except OSError:
         _logger.exception("Failed to flush database changes")

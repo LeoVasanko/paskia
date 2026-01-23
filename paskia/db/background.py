@@ -87,6 +87,7 @@ async def start_background():
     global _background_task
     if _background_task is None:
         _background_task = asyncio.create_task(_background_loop())
+        _logger.info("Database background task started")
 
 
 async def stop_background():
