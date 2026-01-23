@@ -1504,17 +1504,81 @@ class TestAdminPermissions:
         assert data["status"] == "ok"
 
     @pytest.mark.asyncio
-    async def test_delete_permission_auth_admin_fails(
+    async def test_delete_permission_auth_admin_last_one_fails(
         self, client: httpx.AsyncClient, session_token: str
     ):
-        """Cannot delete the auth:admin permission."""
+        """Cannot delete the only auth:admin permission (would lock out admin)."""
         response = await client.delete(
             "/auth/api/admin/permission?permission_id=auth:admin",
             headers={**auth_headers(session_token), "Host": "localhost:4401"},
         )
         assert response.status_code == 400
         data = response.json()
-        assert "Cannot delete the master admin" in data["detail"]
+        assert "lock you out of admin access" in data["detail"]
+
+    @pytest.mark.asyncio
+    async def test_delete_permission_auth_admin_with_another_succeeds(
+        self, client: httpx.AsyncClient, session_token: str, test_db: DB
+    ):
+        """Can delete an auth:admin permission if another accessible one exists."""
+        import uuid7
+
+        from paskia.db import Permission
+
+        # Create a second auth:admin permission (no domain restriction)
+        perm2 = Permission(
+            uuid=uuid7.create(), scope="auth:admin", display_name="Secondary Admin"
+        )
+        test_db.create_permission(perm2)
+
+        # Now we can delete the original one
+        response = await client.delete(
+            "/auth/api/admin/permission?permission_id=auth:admin",
+            headers={**auth_headers(session_token), "Host": "localhost:4401"},
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "ok"
+
+    @pytest.mark.asyncio
+    async def test_delete_permission_auth_admin_domain_mismatch_fails(
+        self, client: httpx.AsyncClient, session_token: str, test_db: DB
+    ):
+        """Cannot delete auth:admin if remaining one has mismatched domain."""
+        import uuid7
+
+        from paskia.db import Permission
+
+        # Create a second auth:admin permission with a different domain
+        perm2 = Permission(
+            uuid=uuid7.create(),
+            scope="auth:admin",
+            display_name="Other Domain Admin",
+            domain="other.example.com",
+        )
+        test_db.create_permission(perm2)
+
+        # Cannot delete the original one because the remaining one is not accessible
+        response = await client.delete(
+            "/auth/api/admin/permission?permission_id=auth:admin",
+            headers={**auth_headers(session_token), "Host": "localhost:4401"},
+        )
+        assert response.status_code == 400
+        data = response.json()
+        assert "lock you out of admin access" in data["detail"]
+
+    @pytest.mark.asyncio
+    async def test_remove_auth_admin_from_own_org_fails(
+        self, client: httpx.AsyncClient, session_token: str, test_org
+    ):
+        """Cannot remove auth:admin permission from your own organization."""
+        response = await client.delete(
+            f"/auth/api/admin/orgs/{test_org.uuid}/permission?permission_id=auth:admin",
+            headers={**auth_headers(session_token), "Host": "localhost:4401"},
+        )
+        assert response.status_code == 400
+        data = response.json()
+        assert "lock you out of admin access" in data["detail"]
 
 
 # -------------------- Edge Cases for AuthException in Org-Admin Checks --------------------
