@@ -13,6 +13,7 @@ from fastapi import (
 from fastapi.responses import JSONResponse
 from fastapi.security import HTTPBearer
 
+from paskia import db
 from paskia.authsession import (
     EXPIRES,
     get_reset,
@@ -21,7 +22,6 @@ from paskia.authsession import (
 )
 from paskia.fastapi import authz, session, user
 from paskia.fastapi.session import AUTH_COOKIE, AUTH_COOKIE_NAME
-from paskia import db
 from paskia.globals import passkey as global_passkey
 from paskia.util import frontend, hostutil, htmlutil, passphrase, userinfo
 from paskia.util.tokens import session_key

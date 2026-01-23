@@ -356,7 +356,7 @@ async def admin_add_role_permission(
     db.get_permission(permission_id)
     org = db.get_organization(str(org_uuid))
     if permission_id not in org.permissions:
-        raise ValueError(f"Permission not grantable by organization")
+        raise ValueError("Permission not grantable by organization")
 
     db.add_permission_to_role(role_uuid, permission_id)
     return {"status": "ok"}
@@ -593,14 +593,10 @@ async def admin_get_user_detail(
             status_code=403, detail="Insufficient permissions", mode="forbidden"
         )
     user = db.get_user_by_uuid(user_uuid)
-    cred_ids = db.get_credentials_by_user_uuid(user_uuid)
+    user_creds = db.get_credentials_by_user_uuid(user_uuid)
     creds: list[dict] = []
     aaguids: set[str] = set()
-    for cid in cred_ids:
-        try:
-            c = db.get_credential_by_id(cid)
-        except ValueError:  # pragma: no cover - race condition handling
-            continue
+    for c in user_creds:
         aaguid_str = str(c.aaguid)
         aaguids.add(aaguid_str)
         creds.append(

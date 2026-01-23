@@ -15,11 +15,10 @@ from uuid import UUID
 import base64url
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 
-from paskia import remoteauth
+from paskia import db, remoteauth
 from paskia.authsession import create_session
 from paskia.fastapi.session import infodict
 from paskia.fastapi.wsutil import validate_origin, websocket_error_handler
-from paskia import db
 from paskia.globals import passkey
 from paskia.util import passphrase, pow
 

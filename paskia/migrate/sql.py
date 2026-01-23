@@ -4,7 +4,7 @@ Legacy SQL database implementation for migration purposes.
 This module provides the async SQLAlchemy database layer that was used
 before the JSONL format. It is kept here for migration purposes only.
 
-DO NOT use this module for new code. Use paskia.db.json instead.
+DO NOT use this module for new code. Use paskia.db instead.
 """
 
 from contextlib import asynccontextmanager

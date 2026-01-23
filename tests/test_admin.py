@@ -20,8 +20,21 @@ import pytest_asyncio
 import uuid7
 
 from paskia.authsession import expires
-from paskia.db import Credential, Org, Permission, Role, User
-from paskia.db.json import DB
+from paskia.db import (
+    Credential,
+    Org,
+    Permission,
+    Role,
+    User,
+    add_permission_to_organization,
+    create_credential,
+    create_organization,
+    create_permission,
+    create_role,
+    create_session,
+    create_user,
+)
+from paskia.db.operations import DB
 from paskia.util.tokens import create_token, encode_session_key, session_key
 from tests.conftest import auth_headers
 
@@ -36,7 +49,7 @@ async def second_org(test_db: DB) -> Org:
         display_name="Second Organization",
         permissions=[],
     )
-    test_db.create_organization(org)
+    create_organization(org)
     return org
 
 
@@ -51,7 +64,7 @@ async def second_org_role(
         display_name="Second Org Admin Role",
         permissions=["auth:admin"],
     )
-    test_db.create_role(role)
+    create_role(role)
     return role
 
 
@@ -65,7 +78,7 @@ async def second_org_user(test_db: DB, second_org_role: Role) -> User:
         created_at=datetime.now(timezone.utc),
         visits=0,
     )
-    test_db.create_user(user)
+    create_user(user)
     return user
 
 
@@ -85,7 +98,7 @@ async def second_org_credential(test_db: DB, second_org_user: User) -> Credentia
         last_used=datetime.now(timezone.utc),
         last_verified=datetime.now(timezone.utc),
     )
-    test_db.create_credential(credential)
+    create_credential(credential)
     return credential
 
 
@@ -95,7 +108,7 @@ async def second_org_session_token(
 ) -> str:
     """Create a session for the second org admin user."""
     token = create_token()
-    test_db.create_session(
+    create_session(
         user_uuid=second_org_user.uuid,
         credential_uuid=second_org_credential.uuid,
         key=session_key(token),
@@ -116,7 +129,7 @@ async def org_admin_role(test_db: DB, test_org: Org, org_admin_permission) -> Ro
         display_name="Org Admin Role",
         permissions=["auth:org:admin"],
     )
-    test_db.create_role(role)
+    create_role(role)
     return role
 
 
@@ -131,7 +144,7 @@ async def org_admin_user(test_db: DB, org_admin_role: Role) -> User:
         visits=5,
         last_seen=datetime.now(timezone.utc),
     )
-    test_db.create_user(user)
+    create_user(user)
     return user
 
 
@@ -151,7 +164,7 @@ async def org_admin_credential(test_db: DB, org_admin_user: User) -> Credential:
         last_used=datetime.now(timezone.utc),
         last_verified=None,
     )
-    test_db.create_credential(credential)
+    create_credential(credential)
     return credential
 
 
@@ -161,7 +174,7 @@ async def org_admin_session_token(
 ) -> str:
     """Create a session for the org admin user."""
     token = create_token()
-    test_db.create_session(
+    create_session(
         user_uuid=org_admin_user.uuid,
         credential_uuid=org_admin_credential.uuid,
         key=session_key(token),
@@ -181,9 +194,9 @@ async def grantable_permission(test_db: DB, test_org: Org) -> Permission:
     perm = Permission(
         uuid=uuid7.create(), scope="test:grantable:perm", display_name="Grantable Perm"
     )
-    test_db.create_permission(perm)
+    create_permission(perm)
     # Add to org's grantable permissions
-    test_db.add_permission_to_organization(str(test_org.uuid), perm.scope)
+    add_permission_to_organization(str(test_org.uuid), perm.scope)
     return perm
 
 
@@ -414,7 +427,7 @@ class TestAdminOrganizations:
             display_name="Org To Delete",
             permissions=[],
         )
-        test_db.create_organization(org_to_delete)
+        create_organization(org_to_delete)
 
         # Create some org-specific permissions to test cleanup
         org_perm = Permission(
@@ -422,7 +435,7 @@ class TestAdminOrganizations:
             scope=f"test:org:{org_to_delete.uuid}:feature",
             display_name="Org Feature",
         )
-        test_db.create_permission(org_perm)
+        create_permission(org_perm)
 
         response = await client.delete(
             f"/auth/api/admin/orgs/{org_to_delete.uuid}",
@@ -601,7 +614,7 @@ class TestAdminRoles:
             scope="test:not:grantable",
             display_name="Not Grantable",
         )
-        test_db.create_permission(perm)
+        create_permission(perm)
 
         response = await client.post(
             f"/auth/api/admin/orgs/{test_org.uuid}/roles",
@@ -676,7 +689,7 @@ class TestAdminRoles:
             scope="test:not:grantable:update",
             display_name="Not Grantable",
         )
-        test_db.create_permission(perm)
+        create_permission(perm)
 
         response = await client.post(
             f"/auth/api/admin/orgs/{test_org.uuid}/roles/{user_role.uuid}/permissions/test:not:grantable:update",
@@ -1097,7 +1110,7 @@ class TestAdminUsersInOrg:
             created_at=datetime.now(timezone.utc),
             visits=0,
         )
-        test_db.create_user(user_no_cred)
+        create_user(user_no_cred)
 
         response = await client.post(
             f"/auth/api/admin/orgs/{test_org.uuid}/users/{user_no_cred.uuid}/create-link",
@@ -1184,7 +1197,7 @@ class TestAdminSessions:
         # Create an additional session to delete
         extra_token = create_token()
         extra_key = session_key(extra_token)
-        test_db.create_session(
+        create_session(
             user_uuid=test_user.uuid,
             credential_uuid=test_credential.uuid,
             key=extra_key,
@@ -1380,7 +1393,7 @@ class TestAdminPermissions:
         perm = Permission(
             uuid=uuid7.create(), scope="test:updateable", display_name="Updateable"
         )
-        test_db.create_permission(perm)
+        create_permission(perm)
 
         response = await client.patch(
             "/auth/api/admin/permission?permission_id=test:updateable&display_name=Updated%20Name",
@@ -1401,7 +1414,7 @@ class TestAdminPermissions:
         perm = Permission(
             uuid=uuid7.create(), scope="test:perm", display_name="Test Perm"
         )
-        test_db.create_permission(perm)
+        create_permission(perm)
 
         response = await client.patch(
             "/auth/api/admin/permission?permission_id=test:perm&display_name=",
@@ -1422,7 +1435,7 @@ class TestAdminPermissions:
         perm = Permission(
             uuid=uuid7.create(), scope="test:renameable2", display_name="Renameable"
         )
-        test_db.create_permission(perm)
+        create_permission(perm)
 
         response = await client.post(
             "/auth/api/admin/permission/rename",
@@ -1469,7 +1482,7 @@ class TestAdminPermissions:
         perm = Permission(
             uuid=uuid7.create(), scope="test:rename:withname", display_name="Old Name"
         )
-        test_db.create_permission(perm)
+        create_permission(perm)
 
         response = await client.post(
             "/auth/api/admin/permission/rename",
@@ -1493,7 +1506,7 @@ class TestAdminPermissions:
         perm = Permission(
             uuid=uuid7.create(), scope="test:deleteable", display_name="Deleteable"
         )
-        test_db.create_permission(perm)
+        create_permission(perm)
 
         response = await client.delete(
             "/auth/api/admin/permission?permission_id=test:deleteable",
@@ -1529,7 +1542,7 @@ class TestAdminPermissions:
         perm2 = Permission(
             uuid=uuid7.create(), scope="auth:admin", display_name="Secondary Admin"
         )
-        test_db.create_permission(perm2)
+        create_permission(perm2)
 
         # Now we can delete the original one
         response = await client.delete(
@@ -1556,7 +1569,7 @@ class TestAdminPermissions:
             display_name="Other Domain Admin",
             domain="other.example.com",
         )
-        test_db.create_permission(perm2)
+        create_permission(perm2)
 
         # Cannot delete the original one because the remaining one is not accessible
         response = await client.delete(

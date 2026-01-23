@@ -18,14 +18,27 @@ from uuid import UUID
 
 import httpx
 import pytest
-
-from paskia.authsession import expires
 import pytest_asyncio
 import uuid7
 
 from paskia import globals as paskia_globals
-from paskia.db import Credential, Org, Permission, Role, User
-from paskia.db.json import DB
+from paskia.authsession import expires
+from paskia.db import (
+    Credential,
+    Org,
+    Permission,
+    Role,
+    User,
+    add_permission_to_organization,
+    create_credential,
+    create_organization,
+    create_permission,
+    create_reset_token,
+    create_role,
+    create_session,
+    create_user,
+)
+from paskia.db.operations import DB
 from paskia.fastapi.session import AUTH_COOKIE_NAME
 from paskia.sansio import Passkey
 from paskia.util.tokens import create_token, session_key
@@ -45,15 +58,15 @@ async def test_db() -> AsyncGenerator[DB, None]:
 
     Uses a temp file that gets cleaned up after each test.
     """
-    import paskia.db.json as json_db
+    import paskia.db.operations as ops_db
 
     with tempfile.NamedTemporaryFile(suffix=".jsonl", delete=True) as f:
         db = DB(f.name)
-        db.load()  # Synchronous now
-        json_db._db = db
+        await db.load()
+        ops_db._db = db
         yield db
         # Clean up
-        json_db._db = None
+        ops_db._db = None
 
 
 @pytest_asyncio.fixture(scope="function")
@@ -77,7 +90,7 @@ async def test_org(test_db: DB, admin_permission: Permission) -> Org:
         display_name="Test Organization",
         permissions=["auth:admin"],  # Org can grant this permission
     )
-    test_db.create_organization(org)
+    create_organization(org)
     return org
 
 
@@ -89,7 +102,7 @@ async def admin_permission(test_db: DB) -> Permission:
     perm = Permission(
         uuid=uuid7.create(), scope="auth:admin", display_name="Master Admin"
     )
-    test_db.create_permission(perm)
+    create_permission(perm)
     return perm
 
 
@@ -101,9 +114,9 @@ async def org_admin_permission(test_db: DB, test_org: Org) -> Permission:
     perm = Permission(
         uuid=uuid7.create(), scope="auth:org:admin", display_name="Organization Admin"
     )
-    test_db.create_permission(perm)
+    create_permission(perm)
     # Make it grantable by the org
-    test_db.add_permission_to_organization(str(test_org.uuid), "auth:org:admin")
+    add_permission_to_organization(str(test_org.uuid), "auth:org:admin")
     return perm
 
 
@@ -121,7 +134,7 @@ async def test_role(
         display_name="Test Admin Role",
         permissions=["auth:admin", "auth:org:admin"],
     )
-    test_db.create_role(role)
+    create_role(role)
     return role
 
 
@@ -134,7 +147,7 @@ async def user_role(test_db: DB, test_org: Org) -> Role:
         display_name="User Role",
         permissions=[],
     )
-    test_db.create_role(role)
+    create_role(role)
     return role
 
 
@@ -148,7 +161,7 @@ async def test_user(test_db: DB, test_role: Role) -> User:
         created_at=datetime.now(timezone.utc),
         visits=0,
     )
-    test_db.create_user(user)
+    create_user(user)
     return user
 
 
@@ -162,7 +175,7 @@ async def regular_user(test_db: DB, user_role: Role) -> User:
         created_at=datetime.now(timezone.utc),
         visits=0,
     )
-    test_db.create_user(user)
+    create_user(user)
     return user
 
 
@@ -180,7 +193,7 @@ async def test_credential(test_db: DB, test_user: User) -> Credential:
         last_used=None,
         last_verified=None,
     )
-    test_db.create_credential(credential)
+    create_credential(credential)
     return credential
 
 
@@ -198,7 +211,7 @@ async def regular_credential(test_db: DB, regular_user: User) -> Credential:
         last_used=None,
         last_verified=None,
     )
-    test_db.create_credential(credential)
+    create_credential(credential)
     return credential
 
 
@@ -208,7 +221,7 @@ async def session_token(
 ) -> str:
     """Create a session for the admin user and return the token."""
     token = create_token()
-    test_db.create_session(
+    create_session(
         user_uuid=test_user.uuid,
         credential_uuid=test_credential.uuid,
         key=session_key(token),
@@ -226,7 +239,7 @@ async def regular_session_token(
 ) -> str:
     """Create a session for a regular user and return the token."""
     token = create_token()
-    test_db.create_session(
+    create_session(
         user_uuid=regular_user.uuid,
         credential_uuid=regular_credential.uuid,
         key=session_key(token),
@@ -246,7 +259,7 @@ async def reset_token(test_db: DB, test_user: User, test_credential: Credential)
     from paskia.util.tokens import reset_key
 
     token = generate()
-    test_db.create_reset_token(
+    create_reset_token(
         user_uuid=test_user.uuid,
         key=reset_key(token),
         expiry=reset_expires(),

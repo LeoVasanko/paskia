@@ -44,16 +44,11 @@ async def format_user_info(
     ctx = await permutil.session_context(auth, request_host)
 
     # Fetch and format credentials
-    credential_ids = db.get_credentials_by_user_uuid(user_uuid)
+    user_credentials = db.get_credentials_by_user_uuid(user_uuid)
     credentials: list[dict] = []
     user_aaguids: set[str] = set()
 
-    for cred_id in credential_ids:
-        try:
-            c = db.get_credential_by_id(cred_id)
-        except ValueError:
-            continue
-
+    for c in user_credentials:
         aaguid_str = str(c.aaguid)
         user_aaguids.add(aaguid_str)
         credentials.append(

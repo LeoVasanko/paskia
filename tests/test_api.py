@@ -15,6 +15,7 @@ from datetime import datetime, timezone
 import httpx
 import pytest
 
+from paskia.db import create_session, delete_session
 from tests.conftest import auth_headers
 
 
@@ -526,7 +527,7 @@ class TestValidateSessionRefresh:
         # Create a session with an old expiry time to trigger refresh
         token = create_token()
         old_expiry = datetime.now(timezone.utc) + EXPIRES - timedelta(minutes=10)
-        test_db.create_session(
+        create_session(
             user_uuid=test_user.uuid,
             credential_uuid=test_credential.uuid,
             key=session_key(token),
@@ -537,7 +538,7 @@ class TestValidateSessionRefresh:
         )
 
         # Delete the session right before validate tries to refresh
-        test_db.delete_session(session_key(token))
+        delete_session(session_key(token))
 
         response = await client.post(
             "/auth/api/validate",
