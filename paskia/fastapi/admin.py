@@ -5,10 +5,10 @@ from uuid import UUID, uuid4
 from fastapi import Body, FastAPI, HTTPException, Request, Response
 from fastapi.responses import JSONResponse
 
+from paskia import db
 from paskia.authsession import EXPIRES, reset_expires
 from paskia.fastapi import authz
 from paskia.fastapi.session import AUTH_COOKIE
-from paskia import db
 from paskia.util import (
     frontend,
     hostutil,
@@ -243,9 +243,19 @@ async def admin_remove_org_permission(
     request: Request,
     auth=AUTH_COOKIE,
 ):
-    await authz.verify(
+    ctx = await authz.verify(
         auth, ["auth:admin"], host=request.headers.get("host"), match=permutil.has_all
     )
+
+    # Guard rail: prevent removing auth:admin from your own org if it would lock you out
+    if permission_id == "auth:admin" and ctx.org.uuid == org_uuid:
+        # Check if any other org grants auth:admin that we're a member of
+        # (we only know our current org, so this effectively means we can't remove it from our own org)
+        raise ValueError(
+            "Cannot remove auth:admin from your own organization. "
+            "This would lock you out of admin access."
+        )
+
     db.remove_permission_from_organization(str(org_uuid), permission_id)
     return {"status": "ok"}
 
@@ -778,13 +788,84 @@ def _validate_permission_domain(domain: str | None) -> None:
     """Validate that domain is rp_id or a subdomain of it."""
     if domain is None:
         return
-    from paskia.globals import global_passkey
+    from paskia.globals import passkey
 
-    rp_id = global_passkey.instance.rp_id
+    rp_id = passkey.instance.rp_id
     if domain == rp_id or domain.endswith(f".{rp_id}"):
         return
+    raise ValueError(f"Domain '{domain}' must be '{rp_id}' or its subdomain")
+
+
+def _check_admin_lockout(
+    perm_uuid: str, new_domain: str | None, current_host: str | None
+) -> None:
+    """Check if setting domain on auth:admin would lock out the admin.
+
+    Raises ValueError if this change would result in no auth:admin permissions
+    being accessible from the current host.
+    """
+    from paskia.util.hostutil import normalize_host
+
+    normalized_host = normalize_host(current_host)
+    host_without_port = normalized_host.rsplit(":", 1)[0] if normalized_host else None
+
+    # Get all auth:admin permissions
+    all_perms = db.list_permissions()
+    admin_perms = [p for p in all_perms if p.scope == "auth:admin"]
+
+    # Check if at least one auth:admin would remain accessible
+    for p in admin_perms:
+        # If this is the permission being modified, use the new domain
+        domain = new_domain if str(p.uuid) == perm_uuid else p.domain
+
+        # No domain restriction = accessible from anywhere
+        if domain is None:
+            return
+
+        # Domain matches current host
+        if host_without_port and domain == host_without_port:
+            return
+
+    # No accessible auth:admin permission would remain
     raise ValueError(
-        f"Domain '{domain}' must be the same as or a subdomain of rp_id '{rp_id}'"
+        "Cannot set this domain restriction: it would lock you out of admin access. "
+        "Ensure at least one auth:admin permission remains accessible from your current host."
+    )
+
+
+def _check_admin_lockout_on_delete(perm_uuid: str, current_host: str | None) -> None:
+    """Check if deleting an auth:admin permission would lock out the admin.
+
+    Raises ValueError if this deletion would result in no auth:admin permissions
+    being accessible from the current host.
+    """
+    from paskia.util.hostutil import normalize_host
+
+    normalized_host = normalize_host(current_host)
+    host_without_port = normalized_host.rsplit(":", 1)[0] if normalized_host else None
+
+    # Get all auth:admin permissions
+    all_perms = db.list_permissions()
+    admin_perms = [p for p in all_perms if p.scope == "auth:admin"]
+
+    # Check if at least one auth:admin would remain accessible after deletion
+    for p in admin_perms:
+        # Skip the permission being deleted
+        if str(p.uuid) == perm_uuid:
+            continue
+
+        # No domain restriction = accessible from anywhere
+        if p.domain is None:
+            return
+
+        # Domain matches current host
+        if host_without_port and p.domain == host_without_port:
+            return
+
+    # No accessible auth:admin permission would remain
+    raise ValueError(
+        "Cannot delete this permission: it would lock you out of admin access. "
+        "Ensure at least one auth:admin permission remains accessible from your current host."
     )
 
 
@@ -822,6 +903,7 @@ async def admin_create_permission(
         max_age="5m",
     )
     import uuid7
+
     from ..db import Permission as PermDC
 
     scope = payload.get("scope") or payload.get(
@@ -873,6 +955,10 @@ async def admin_update_permission(
     querysafe.assert_safe(new_scope, field="scope")
     _validate_permission_domain(domain_value)
 
+    # Safety check: prevent admin lockout when setting domain on auth:admin
+    if perm.scope == "auth:admin" or new_scope == "auth:admin":
+        _check_admin_lockout(str(perm.uuid), domain_value, request.headers.get("host"))
+
     from ..db import Permission as PermDC
 
     db.update_permission(
@@ -921,6 +1007,11 @@ async def admin_rename_permission(
     else:
         domain_value = domain if domain else None
     _validate_permission_domain(domain_value)
+
+    # Safety check: prevent admin lockout when setting domain on auth:admin
+    if perm.scope == "auth:admin" or new_scope == "auth:admin":
+        _check_admin_lockout(str(perm.uuid), domain_value, request.headers.get("host"))
+
     # All current backends support rename_permission
     db.rename_permission(old_scope, new_scope, display_name, domain_value)
     return {"status": "ok"}
@@ -949,9 +1040,9 @@ async def admin_delete_permission(
     # Get the permission to check its scope
     perm = db.get_permission(perm_identifier)
 
-    # Sanity check: prevent deleting critical permissions
+    # Sanity check: prevent deleting critical permissions if it would lock out admin
     if perm.scope == "auth:admin":
-        raise ValueError("Cannot delete the master admin permission")
+        _check_admin_lockout_on_delete(str(perm.uuid), request.headers.get("host"))
 
     db.delete_permission(str(perm.uuid))
     return {"status": "ok"}

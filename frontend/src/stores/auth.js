@@ -26,16 +26,18 @@ export const useAuthStore = defineStore('auth', {
     setLoading(flag) {
       this.isLoading = !!flag
     },
-    showMessage(message, type = 'info', duration = 3000) {
+    showMessage(message, type = 'info', duration = null) {
+      // Default duration: 5 seconds for errors, 3 seconds for others
+      const effectiveDuration = duration ?? (type === 'error' ? 5000 : 3000)
       this.status = {
         message,
         type,
         show: true
       }
-      if (duration > 0) {
+      if (effectiveDuration > 0) {
         setTimeout(() => {
           this.status.show = false
-        }, duration)
+        }, effectiveDuration)
       }
     },
     async setSessionCookie(result) {

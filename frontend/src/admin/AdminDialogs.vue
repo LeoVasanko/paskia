@@ -1,15 +1,18 @@
 <script setup>
+import { computed } from 'vue'
 import Modal from '@/components/Modal.vue'
 import NameEditForm from '@/components/NameEditForm.vue'
 
 const props = defineProps({
   dialog: Object,
-  PERMISSION_ID_PATTERN: String
+  PERMISSION_ID_PATTERN: String,
+  settings: Object
 })
 
 const emit = defineEmits(['submitDialog', 'closeDialog'])
 
 const NAME_EDIT_TYPES = new Set(['org-update', 'role-update', 'user-update-name'])
+const rpId = computed(() => props.settings?.rp_id || 'the configured domain')
 </script>
 
 <template>
@@ -75,11 +78,11 @@ const NAME_EDIT_TYPES = new Set(['org-update', 'role-update', 'user-update-name'
           <label>Permission Scope
             <input v-model="dialog.data.scope" :placeholder="dialog.type === 'perm-create' ? 'yourapp:permission' : dialog.data.permission.scope" required :pattern="PERMISSION_ID_PATTERN" title="Allowed: A-Za-z0-9:._~-" data-form-type="other" />
           </label>
-          <label>Domain Scope <span class="optional">(optional)</span>
+          <p class="small muted">E.g. yourapp:reports. Changing the scope name may break deployed applications.</p>
+          <label>Domain Scope
             <input v-model="dialog.data.domain" placeholder="e.g. app.example.com" data-form-type="other" />
           </label>
-          <p class="small muted">If set, this permission only applies when accessed from the specified domain. Must be the RP ID or a subdomain of it.</p>
-          <p class="small muted">The permission scope is used for permission checks in the application. Changing it may break deployed applications that reference this permission.</p>
+          <p class="small muted">If set, this permission is effective only on the specified domain, which can be {{ rpId }} or its subdomain.</p>
         </template>
         <template v-else-if="dialog.type==='confirm'">
           <p>{{ dialog.data.message }}</p>

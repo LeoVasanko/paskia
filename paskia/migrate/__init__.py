@@ -61,6 +61,8 @@ async def migrate_from_sql(
 
     from paskia.db.json import (
         DB as JSONDB,
+    )
+    from paskia.db.json import (
         _CredentialData,
         _OrgData,
         _PermissionData,
@@ -99,7 +101,7 @@ async def migrate_from_sql(
         org_admin_perm_uuid = str(uuid7.create())
         json_db._data.permissions[org_admin_perm_uuid] = _PermissionData(
             scope="auth:org:admin",
-            display_name="Organization Admin",
+            display_name="Org Admin",
             orgs={},
         )
 

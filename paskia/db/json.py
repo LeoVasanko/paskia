@@ -790,8 +790,6 @@ class DB:
     # -------------------------------------------------------------------------
 
     def create_organization(self, org: Org, actor: str = "system") -> None:
-        import uuid7
-
         with self.session(actor):
             key = str(org.uuid)
             self._data.orgs[key] = _OrgData(
@@ -806,29 +804,14 @@ class DB:
                         p.orgs[key] = True
                         break
 
-            # Automatically create or enable the common org admin permission
+            # Automatically allow the org to grant the org admin permission if it exists
             org_admin_scope = "auth:org:admin"
-            org_admin_key = None
             for pid, p in self._data.permissions.items():
                 if p.scope == org_admin_scope:
-                    org_admin_key = pid
+                    p.orgs[key] = True
+                    if org_admin_scope not in org.permissions:
+                        org.permissions.append(org_admin_scope)
                     break
-
-            if org_admin_key is None:
-                # Create the common org admin permission
-                org_admin_key = str(uuid7.create())
-                self._data.permissions[org_admin_key] = _PermissionData(
-                    scope=org_admin_scope,
-                    display_name="Organization Admin",
-                    orgs={key: True},
-                )
-            else:
-                # Ensure this org can grant the org admin permission
-                self._data.permissions[org_admin_key].orgs[key] = True
-
-            # Reflect the org admin permission in the dataclass instance
-            if org_admin_scope not in org.permissions:
-                org.permissions.append(org_admin_scope)
 
     def get_organization(self, org_id: str) -> Org:
         with self._lock:
@@ -1438,6 +1421,10 @@ class DB:
             from paskia.util.hostutil import normalize_host
 
             normalized_host = normalize_host(host)
+            # Strip port for domain matching (e.g., localhost:4401 -> localhost)
+            host_without_port = (
+                normalized_host.rsplit(":", 1)[0] if normalized_host else None
+            )
             effective_permissions = []
             for scope in role_obj.permissions:
                 if scope not in org_obj.permissions:
@@ -1445,8 +1432,8 @@ class DB:
                 # Find the permission by scope
                 for pid, p in self._data.permissions.items():
                     if p.scope == scope:
-                        # Check domain restriction
-                        if p.domain is not None and p.domain != normalized_host:
+                        # Check domain restriction (compare without port)
+                        if p.domain is not None and p.domain != host_without_port:
                             continue
                         effective_permissions.append(
                             Permission(

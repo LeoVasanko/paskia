@@ -11,9 +11,10 @@ import AdminOrgDetail from '@/admin/AdminOrgDetail.vue'
 import AdminUserDetail from '@/admin/AdminUserDetail.vue'
 import AdminDialogs from '@/admin/AdminDialogs.vue'
 import { useAuthStore } from '@/stores/auth'
-import { getSettings, adminUiPath, makeUiHref } from '@/utils/settings'
+import { adminUiPath, makeUiHref } from '@/utils/settings'
 import { apiJson } from '@/utils/api'
 import { getDirection } from '@/utils/keynav'
+import { goBack } from '@/utils/helpers'
 
 const info = ref(null)
 const loading = ref(true)
@@ -64,8 +65,8 @@ function handleGlobalClick(e) {
 onMounted(async () => {
   document.addEventListener('click', handleGlobalClick)
   window.addEventListener('hashchange', parseHash)
-  const settings = await getSettings()
-  if (settings?.rp_name) document.title = settings.rp_name + ' Admin'
+  await authStore.loadSettings()
+  if (authStore.settings?.rp_name) document.title = authStore.settings.rp_name + ' Admin'
   await load()
 })
 
@@ -418,7 +419,7 @@ async function toggleOrgPermission(org, permId, checked) {
     await apiJson(`/auth/api/admin/orgs/${org.uuid}/permission?${params.toString()}`, { method: checked ? 'POST' : 'DELETE' })
     await loadOrgs()
   } catch (e) {
-    authStore.showMessage(e.message || 'Failed to update organization permission')
+    authStore.showMessage(e.message || 'Failed to update organization permission', 'error')
     org.permissions = prev // revert
   }
 }
@@ -680,7 +681,17 @@ async function submitDialog() {
         })
       return // Don't call closeDialog() again
     } else if (t === 'confirm') {
-      const action = dialog.value.data.action; if (action) await action()
+      const action = dialog.value.data.action
+      // Close dialog first, then perform action (errors shown via showMessage)
+      closeDialog()
+      if (action) {
+        try {
+          await action()
+        } catch (e) {
+          authStore.showMessage(e.message || 'Action failed', 'error')
+        }
+      }
+      return // Already closed
     }
     closeDialog()
   } catch (e) {
@@ -698,6 +709,18 @@ async function submitDialog() {
         v-else-if="showBackMessage"
         @reload="reloadPage"
       />
+      <!-- Access denied: authenticated but not admin, or error occurred -->
+      <div v-else-if="error || (authenticated && !isGlobalAdmin && !isOrgAdmin)" class="access-denied-container">
+        <div class="access-denied-content">
+          <h2>⛔ Access Denied</h2>
+          <p v-if="error" class="error-detail">{{ error }}</p>
+          <p v-else class="error-detail">You do not have admin permissions for this application.</p>
+          <div class="button-row">
+            <button class="btn-secondary" @click="goBack">Back</button>
+            <button class="btn-primary" @click="reloadPage">Reload Page</button>
+          </div>
+        </div>
+      </div>
       <section v-else-if="authenticated && (isGlobalAdmin || isOrgAdmin)" class="view-root view-root--wide view-admin">
         <header class="view-header">
           <h1>{{ pageHeading }}</h1>
@@ -706,8 +729,7 @@ async function submitDialog() {
 
         <section class="section-block admin-section">
           <div class="section-body admin-section-body">
-            <div v-if="error" class="surface surface--tight error">{{ error }}</div>
-            <div v-else class="admin-panels">
+            <div class="admin-panels">
                                   <AdminOverview
                   v-if="!selectedUser && !selectedOrg && (isGlobalAdmin || isOrgAdmin)"
                   ref="adminOverviewRef"
@@ -772,6 +794,7 @@ async function submitDialog() {
     <AdminDialogs
       :dialog="dialog"
       :permission-id-pattern="PERMISSION_ID_PATTERN"
+      :settings="authStore.settings"
       @submit-dialog="submitDialog"
       @close-dialog="closeDialog"
     />
@@ -784,4 +807,9 @@ async function submitDialog() {
 .admin-section { margin-top: var(--space-xl); }
 .admin-section-body { display: flex; flex-direction: column; gap: var(--space-xl); }
 .admin-panels { display: flex; flex-direction: column; gap: var(--space-xl); }
+.access-denied-container { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 60vh; padding: 2rem; }
+.access-denied-content { text-align: center; max-width: 480px; }
+.access-denied-content h2 { margin: 0 0 1rem; color: var(--color-heading); font-size: 1.5rem; }
+.access-denied-content .error-detail { margin: 0 0 1.5rem; color: var(--color-text-muted); }
+.access-denied-content .button-row { display: flex; gap: 0.75rem; justify-content: center; }
 </style>

@@ -66,20 +66,25 @@ async def bootstrap_system() -> dict:
     )
     db.create_permission(perm0)
 
+    # Create org admin permission - allows managing users within an org
+    perm_org_admin = Permission(
+        uuid=uuid7.create(), scope="auth:org:admin", display_name="Org Admin"
+    )
+    db.create_permission(perm_org_admin)
+
     org = Org(uuid7.create(), "Organization")
     db.create_organization(org)
 
-    # After creation, org.permissions now includes the auto-created org admin permission (auth:org:admin)
-    # Allow this org to grant global admin explicitly
+    # Allow this org to grant global admin and org admin permissions
     db.add_permission_to_organization(str(org.uuid), perm0.scope)
+    db.add_permission_to_organization(str(org.uuid), perm_org_admin.scope)
 
     # Create an Administration role granting both org and global admin
-    # Compose permissions for Administration role: global admin + org admin auto-perm
     role = Role(
         uuid7.create(),
         org.uuid,
         "Administration",
-        permissions=[perm0.scope, *org.permissions],
+        permissions=[perm0.scope, perm_org_admin.scope],
     )
     db.create_role(role)
 
