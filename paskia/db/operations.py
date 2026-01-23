@@ -530,7 +530,10 @@ def delete_permission(uuid: str | UUID, actor: str = "system") -> None:
 
 
 def create_organization(org: Org, actor: str = "system") -> None:
-    """Create a new organization."""
+    """Create a new organization with an Administration role.
+
+    Automatically creates an 'Administration' role with auth:org:admin permission.
+    """
     if org.uuid in _db._data.orgs:
         raise ValueError(f"Organization {org.uuid} already exists")
     with _db.transaction(actor):
@@ -542,6 +545,15 @@ def create_organization(org: Org, actor: str = "system") -> None:
             for pid, p in _db._data.permissions.items():
                 if p.scope == scope:
                     p.orgs[org.uuid] = True
+        # Create Administration role with org admin permission
+        import uuid7
+
+        admin_role_uuid = uuid7.create()
+        _db._data.roles[admin_role_uuid] = _RoleData(
+            org=org.uuid,
+            display_name="Administration",
+            permissions={"auth:org:admin": True},
+        )
 
 
 def update_organization_name(
@@ -939,8 +951,25 @@ def cleanup_expired(actor: str = "system") -> int:
 # -------------------------------------------------------------------------
 
 
-def login(user_uuid: str | UUID, credential: Credential, actor: str = "system") -> None:
-    """Update user last_seen and credential sign_count/last_used on login."""
+def login(
+    user_uuid: str | UUID,
+    credential: Credential,
+    session_key: bytes,
+    host: str | None,
+    ip: str | None,
+    user_agent: str | None,
+    expiry: datetime,
+) -> None:
+    """Update user/credential on login and create session in a single transaction.
+
+    Updates:
+    - user.last_seen, user.visits
+    - credential.sign_count, credential.last_used
+    Creates:
+    - new session
+
+    Actor is set to the user UUID being logged in.
+    """
     if isinstance(user_uuid, str):
         user_uuid = UUID(user_uuid)
     now = datetime.now(timezone.utc)
@@ -948,11 +977,26 @@ def login(user_uuid: str | UUID, credential: Credential, actor: str = "system") 
         raise ValueError(f"User {user_uuid} not found")
     if credential.uuid not in _db._data.credentials:
         raise ValueError(f"Credential {credential.uuid} not found")
+    if session_key in _db._data.sessions:
+        raise ValueError("Session already exists")
+
+    actor = str(user_uuid)
     with _db.transaction(actor):
+        # Update user
         _db._data.users[user_uuid].last_seen = now
         _db._data.users[user_uuid].visits += 1
+        # Update credential
         _db._data.credentials[credential.uuid].sign_count = credential.sign_count
         _db._data.credentials[credential.uuid].last_used = now
+        # Create session
+        _db._data.sessions[session_key] = _SessionData(
+            user=user_uuid,
+            credential=credential.uuid,
+            host=host,
+            ip=ip,
+            user_agent=user_agent,
+            expiry=expiry,
+        )
 
 
 def create_credential_session(

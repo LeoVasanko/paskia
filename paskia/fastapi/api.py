@@ -289,11 +289,11 @@ async def api_logout(request: Request, response: Response, auth=AUTH_COOKIE):
     if not auth:
         return {"message": "Already logged out"}
     try:
-        await get_session(auth, host=request.headers.get("host"))
+        s = await get_session(auth, host=request.headers.get("host"))
     except ValueError:
         return {"message": "Already logged out"}
     with suppress(Exception):
-        db.delete_session(session_key(auth))
+        db.delete_session(session_key(auth), actor=str(s.user_uuid))
     session.clear_session_cookie(response)
     return {"message": "Logged out successfully"}
 

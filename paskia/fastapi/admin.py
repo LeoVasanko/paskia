@@ -136,7 +136,6 @@ async def admin_create_org(
         auth, ["auth:admin"], host=request.headers.get("host"), match=permutil.has_all
     )
     from ..db import Org as OrgDC  # local import to avoid cycles
-    from ..db import Role as RoleDC  # local import to avoid cycles
 
     actor = str(ctx.user.uuid)
     org_uuid = uuid4()
@@ -144,17 +143,6 @@ async def admin_create_org(
     permissions = payload.get("permissions") or []
     org = OrgDC(uuid=org_uuid, display_name=display_name, permissions=permissions)
     db.create_organization(org, actor=actor)
-
-    # Automatically create Administration role with org admin permission
-    # The auth:org:admin permission is automatically created/enabled by create_organization
-    role_uuid = uuid4()
-    admin_role = RoleDC(
-        uuid=role_uuid,
-        org_uuid=org_uuid,
-        display_name="Administration",
-        permissions=["auth:org:admin"],
-    )
-    db.create_role(admin_role, actor=actor)
 
     return {"uuid": str(org_uuid)}
 

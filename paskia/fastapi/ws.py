@@ -3,12 +3,12 @@ from uuid import UUID
 from fastapi import FastAPI, WebSocket
 
 from paskia import db
-from paskia.authsession import create_session, get_reset, get_session
+from paskia.authsession import expires, get_reset, get_session
 from paskia.fastapi import authz, remote
 from paskia.fastapi.session import AUTH_COOKIE, infodict
 from paskia.fastapi.wsutil import validate_origin, websocket_error_handler
 from paskia.globals import passkey
-from paskia.util import passphrase
+from paskia.util import hostutil, passphrase
 from paskia.util.tokens import create_token, session_key
 
 # Create a FastAPI subapp for WebSocket endpoints
@@ -89,6 +89,7 @@ async def websocket_register_add(
         host=host,
         ip=metadata.get("ip"),
         user_agent=metadata.get("user_agent"),
+        actor=str(user_uuid),
     )
     auth = token
 
@@ -140,18 +141,27 @@ async def websocket_authenticate(ws: WebSocket, auth=AUTH_COOKIE):
 
     # Verify the credential matches the stored data
     passkey.instance.auth_verify(credential, challenge, stored_cred, origin)
-    # Update both credential and user's last_seen timestamp
-    db.login(stored_cred.user_uuid, stored_cred)
 
-    # Create a session token for the authenticated user
+    # Create session and update user/credential in a single transaction
     assert stored_cred.uuid is not None
     metadata = infodict(ws, "auth")
-    token = await create_session(
+    token = create_token()
+    normalized_host = hostutil.normalize_host(host)
+    if not normalized_host:
+        raise ValueError("Host required for session creation")
+    hostname = normalized_host.split(":")[0]
+    rp_id = passkey.instance.rp_id
+    if not (hostname == rp_id or hostname.endswith(f".{rp_id}")):
+        raise ValueError(f"Host must be the same as or a subdomain of {rp_id}")
+
+    db.login(
         user_uuid=stored_cred.user_uuid,
-        credential_uuid=stored_cred.uuid,
-        host=host,
+        credential=stored_cred,
+        session_key=session_key(token),
+        host=normalized_host,
         ip=metadata.get("ip") or "",
         user_agent=metadata.get("user_agent") or "",
+        expiry=expires(),
     )
 
     await ws.send_json(

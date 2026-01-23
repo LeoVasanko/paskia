@@ -16,7 +16,6 @@ import base64url
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 
 from paskia import db, remoteauth
-from paskia.authsession import create_session
 from paskia.fastapi.session import infodict
 from paskia.fastapi.wsutil import validate_origin, websocket_error_handler
 from paskia.globals import passkey
@@ -334,9 +333,6 @@ async def websocket_remote_auth_permit(ws: WebSocket):
                     credential, webauthn_challenge, stored_cred, origin
                 )
 
-                # Update credential last_used
-                db.login(stored_cred.user_uuid, stored_cred)
-
                 # Create a session for the REQUESTING device
                 assert stored_cred.uuid is not None
 
@@ -346,7 +342,7 @@ async def websocket_remote_auth_permit(ws: WebSocket):
                 if request.action == "register":
                     # For registration, create a reset token for device addition
                     from paskia.authsession import expires
-                    from paskia.util import tokens
+                    from paskia.util import hostutil, tokens
 
                     token_str = passphrase.generate()
                     expiry = expires()
@@ -355,25 +351,36 @@ async def websocket_remote_auth_permit(ws: WebSocket):
                         key=tokens.reset_key(token_str),
                         expiry=expiry,
                         token_type="device addition",
+                        actor=str(stored_cred.user_uuid),
                     )
                     reset_token = token_str
-                    # Also create a session so the device is logged in?
-                    # User requested: "We can make the flow always create a new session, but make additional tokens for other possibilities."
-                    session_token = await create_session(
+                    # Also create a session so the device is logged in
+                    session_token = passphrase.generate()
+                    normalized_host = hostutil.normalize_host(request.host)
+                    db.login(
                         user_uuid=stored_cred.user_uuid,
-                        credential_uuid=stored_cred.uuid,
-                        host=request.host,
+                        credential=stored_cred,
+                        session_key=tokens.session_key(session_token),
+                        host=normalized_host,
                         ip=request.ip,
                         user_agent=request.user_agent,
+                        expiry=expires(),
                     )
                 else:
                     # Default login action
-                    session_token = await create_session(
+                    from paskia.authsession import expires
+                    from paskia.util import hostutil, tokens
+
+                    session_token = passphrase.generate()
+                    normalized_host = hostutil.normalize_host(request.host)
+                    db.login(
                         user_uuid=stored_cred.user_uuid,
-                        credential_uuid=stored_cred.uuid,
-                        host=request.host,
+                        credential=stored_cred,
+                        session_key=tokens.session_key(session_token),
+                        host=normalized_host,
                         ip=request.ip,
                         user_agent=request.user_agent,
+                        expiry=expires(),
                     )
 
                 # Complete the remote auth request (notifies the waiting device)
