@@ -101,15 +101,17 @@ class DB:
                 create_change_record(self._current_actor, diff)
             )
             self._previous_builtins = current
-            _logger.info(
-                "Queued change by %s, %d pending",
-                self._current_actor,
-                len(self._pending_changes),
-            )
-            import sys
+            # Log the change with user display name if available
+            actor_display = self._current_actor
+            if self._current_actor not in ("system", "expiry", "migrate"):
+                try:
+                    user_uuid = UUID(self._current_actor)
+                    if user_uuid in self._data.users:
+                        actor_display = self._data.users[user_uuid].display_name
+                except (ValueError, KeyError):
+                    pass
             import json
-            print(f"[DB] Queued change by {self._current_actor}, {len(self._pending_changes)} pending", file=sys.stderr)
-            print(f"[DB]   diff: {json.dumps(diff, default=str)}", file=sys.stderr)
+            _logger.info("DB change by %s: %s", actor_display, json.dumps(diff, default=str))
 
     @contextmanager
     def transaction(self, actor: str = "system"):
@@ -173,10 +175,8 @@ def build_role(uuid: UUID) -> Role:
 
 
 def build_org(uuid: UUID, include_roles: bool = False) -> Org:
-    import sys
     o = _db._data.orgs[uuid]
     perm_scopes = [p.scope for p in _db._data.permissions.values() if uuid in p.orgs]
-    print(f"[DB] build_org({uuid}): permissions={perm_scopes}", file=sys.stderr)
     org = Org(uuid=uuid, display_name=o.display_name, permissions=perm_scopes)
     if include_roles:
         org.roles = [
@@ -528,9 +528,8 @@ def rename_permission(
     """Rename a permission's scope. The UUID remains the same.
 
     Also updates all role references to use the new scope.
+    Note: Scopes do not need to be unique (same scope with different domains is valid).
     """
-    import sys
-    
     # Find permission by old scope
     key = None
     for pid, p in _db._data.permissions.items():
@@ -539,15 +538,6 @@ def rename_permission(
             break
     if not key:
         raise ValueError(f"Permission with scope '{old_scope}' not found")
-
-    # Check if new scope already exists (on a different permission)
-    for pid, p in _db._data.permissions.items():
-        if p.scope == new_scope and pid != key:
-            raise ValueError(f"Permission with scope '{new_scope}' already exists")
-
-    # Debug: Print orgs before change
-    print(f"[DB] rename_permission: {old_scope} -> {new_scope}", file=sys.stderr)
-    print(f"[DB]   orgs BEFORE: {_db._data.permissions[key].orgs}", file=sys.stderr)
 
     with _db.transaction(actor):
         # Update the permission
@@ -561,9 +551,6 @@ def rename_permission(
                 if old_scope in r.permissions:
                     del r.permissions[old_scope]
                     r.permissions[new_scope] = True
-
-    # Debug: Print orgs after change
-    print(f"[DB]   orgs AFTER: {_db._data.permissions[key].orgs}", file=sys.stderr)
 
 
 def delete_permission(uuid: str | UUID, actor: str = "system") -> None:
