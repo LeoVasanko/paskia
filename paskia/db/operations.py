@@ -7,6 +7,7 @@ Write operations: Functions that validate and commit, or raise ValueError.
 """
 
 import hashlib
+import logging
 import os
 import secrets
 from collections import deque
@@ -17,6 +18,8 @@ from typing import Any
 from uuid import UUID
 
 import msgspec
+
+_logger = logging.getLogger(__name__)
 
 from paskia.db.jsonl import (
     DB_PATH_DEFAULT,
@@ -98,6 +101,11 @@ class DB:
                 create_change_record(self._current_actor, diff)
             )
             self._previous_builtins = current
+            _logger.debug(
+                "Queued change by %s, %d pending",
+                self._current_actor,
+                len(self._pending_changes),
+            )
 
     @contextmanager
     def transaction(self, actor: str = "system"):
