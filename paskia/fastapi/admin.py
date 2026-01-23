@@ -5,7 +5,7 @@ from uuid import UUID, uuid4
 from fastapi import Body, FastAPI, HTTPException, Request, Response
 from fastapi.responses import JSONResponse
 
-from paskia.authsession import reset_expires
+from paskia.authsession import EXPIRES, reset_expires
 from paskia.fastapi import authz
 from paskia.fastapi.session import AUTH_COOKIE
 from paskia import db
@@ -556,6 +556,7 @@ async def admin_get_user_detail(
     current_session_key = session_key(auth)
     sessions_payload: list[dict] = []
     for entry in session_records:
+        renewed = entry.expiry - EXPIRES
         sessions_payload.append(
             {
                 "id": encode_session_key(entry.key),
@@ -564,11 +565,11 @@ async def admin_get_user_detail(
                 "ip": entry.ip,
                 "user_agent": useragent.compact_user_agent(entry.user_agent),
                 "last_renewed": (
-                    entry.renewed.astimezone(timezone.utc)
+                    renewed.astimezone(timezone.utc)
                     .isoformat()
                     .replace("+00:00", "Z")
-                    if entry.renewed.tzinfo
-                    else entry.renewed.replace(tzinfo=timezone.utc)
+                    if renewed.tzinfo
+                    else renewed.replace(tzinfo=timezone.utc)
                     .isoformat()
                     .replace("+00:00", "Z")
                 ),

@@ -18,7 +18,6 @@ from paskia.authsession import (
     get_reset,
     get_session,
     refresh_session_token,
-    session_expiry,
 )
 from paskia.fastapi import authz, session, user
 from paskia.fastapi.session import AUTH_COOKIE, AUTH_COOKIE_NAME
@@ -98,8 +97,7 @@ async def validate_token(
         raise
     renewed = False
     if auth:
-        current_expiry = session_expiry(ctx.session)
-        consumed = EXPIRES - (current_expiry - datetime.now(timezone.utc))
+        consumed = EXPIRES - (ctx.session.expiry - datetime.now(timezone.utc))
         if not timedelta(0) < consumed < _REFRESH_INTERVAL:
             try:
                 await refresh_session_token(
@@ -160,12 +158,12 @@ async def forward_authentication(
             "Remote-Role": str(ctx.role.uuid),
             "Remote-Role-Name": ctx.role.display_name,
             "Remote-Session-Expires": (
-                session_expiry(ctx.session)
+                ctx.session.expiry
                 .astimezone(timezone.utc)
                 .isoformat()
                 .replace("+00:00", "Z")
-                if session_expiry(ctx.session).tzinfo
-                else session_expiry(ctx.session)
+                if ctx.session.expiry.tzinfo
+                else ctx.session.expiry
                 .replace(tzinfo=timezone.utc)
                 .isoformat()
                 .replace("+00:00", "Z")

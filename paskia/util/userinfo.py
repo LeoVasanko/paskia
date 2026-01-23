@@ -3,7 +3,7 @@
 from datetime import timezone
 
 from paskia import aaguid
-from paskia.authsession import session_key
+from paskia.authsession import EXPIRES, session_key
 from paskia import db
 from paskia.util import hostutil, permutil, tokens, useragent
 
@@ -110,7 +110,7 @@ async def format_user_info(
                 "host": entry.host,
                 "ip": entry.ip,
                 "user_agent": useragent.compact_user_agent(entry.user_agent),
-                "last_renewed": _format_datetime(entry.renewed),
+                "last_renewed": _format_datetime(entry.expiry - EXPIRES),
                 "is_current": entry.key == current_session_key,
                 "is_current_host": bool(
                     normalized_request_host

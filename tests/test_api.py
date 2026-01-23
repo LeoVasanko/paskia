@@ -520,11 +520,12 @@ class TestValidateSessionRefresh:
         """Validate should return 401 if session disappears during refresh."""
         from datetime import timedelta
 
+        from paskia.authsession import EXPIRES
         from paskia.util.tokens import create_token, session_key
 
-        # Create a session with an old renewed time to trigger refresh
+        # Create a session with an old expiry time to trigger refresh
         token = create_token()
-        old_time = datetime.now(timezone.utc) - timedelta(minutes=10)
+        old_expiry = datetime.now(timezone.utc) + EXPIRES - timedelta(minutes=10)
         test_db.create_session(
             user_uuid=test_user.uuid,
             credential_uuid=test_credential.uuid,
@@ -532,7 +533,7 @@ class TestValidateSessionRefresh:
             host="localhost:4401",
             ip="127.0.0.1",
             user_agent="pytest",
-            renewed=old_time,
+            expiry=old_expiry,
         )
 
         # Delete the session right before validate tries to refresh

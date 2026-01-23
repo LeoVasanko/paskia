@@ -2,6 +2,7 @@
 
 from datetime import datetime, timezone
 
+from paskia.authsession import EXPIRES
 from paskia.db import SessionContext
 from paskia.util.timeutil import parse_duration
 
@@ -27,11 +28,11 @@ def check_session_age(ctx: SessionContext, max_age: str | None) -> bool:
 
     max_age_delta = parse_duration(max_age)
 
-    # Use credential's last_used time if available, fall back to session renewed
+    # Use credential's last_used time if available, fall back to session renewed time
     if ctx.credential and ctx.credential.last_used:
         auth_time = ctx.credential.last_used
     else:
-        auth_time = ctx.session.renewed
+        auth_time = ctx.session.expiry - EXPIRES
 
     time_since_auth = datetime.now(timezone.utc) - auth_time
     return time_since_auth <= max_age_delta

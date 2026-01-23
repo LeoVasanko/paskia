@@ -16,6 +16,8 @@ from datetime import datetime, timezone
 
 import base64url
 
+from paskia.authsession import EXPIRES
+
 from .sql import (
     DB as SQLDB,
 )
@@ -56,15 +58,13 @@ async def migrate_from_sql(
 
     from paskia.db.json import (
         DB as JSONDB,
-    )
-    from paskia.db.json import (
-        CredentialData,
-        OrgData,
-        PermissionData,
-        ResetTokenData,
-        RoleData,
-        SessionData,
-        UserData,
+        _CredentialData,
+        _OrgData,
+        _PermissionData,
+        _ResetTokenData,
+        _RoleData,
+        _SessionData,
+        _UserData,
     )
 
     # Initialize source SQL database
@@ -73,16 +73,16 @@ async def migrate_from_sql(
 
     # Initialize destination JSON database
     json_db = JSONDB(json_db_path)
-    await json_db.init_db()
+    json_db.load()
 
     print(f"Migrating from {sql_db_path} to {json_db_path}...")
 
     # Build all data directly without saving (we'll save once at the end)
-    async with json_db._lock:
+    with json_db._lock:
         # Migrate permissions
         permissions = await sql_db.list_permissions()
         for perm in permissions:
-            json_db._data.permissions[perm.id] = PermissionData(
+            json_db._data.permissions[perm.id] = _PermissionData(
                 display_name=perm.display_name,
                 orgs={},
             )
@@ -92,7 +92,7 @@ async def migrate_from_sql(
         orgs = await sql_db.list_organizations()
         for org in orgs:
             key = str(org.uuid)
-            json_db._data.orgs[key] = OrgData(
+            json_db._data.orgs[key] = _OrgData(
                 display_name=org.display_name,
             )
             # Update permissions to allow this org to grant them
@@ -106,7 +106,7 @@ async def migrate_from_sql(
         for org in orgs:
             for role in org.roles:
                 key = str(role.uuid)
-                json_db._data.roles[key] = RoleData(
+                json_db._data.roles[key] = _RoleData(
                     org=str(role.org_uuid),
                     display_name=role.display_name,
                     permissions={p: True for p in role.permissions}
@@ -123,7 +123,7 @@ async def migrate_from_sql(
             for um in user_models:
                 user = um.as_dataclass()
                 key = str(user.uuid)
-                json_db._data.users[key] = UserData(
+                json_db._data.users[key] = _UserData(
                     display_name=user.display_name,
                     role=str(user.role_uuid),
                     created_at=user.created_at or datetime.now(timezone.utc),
@@ -139,7 +139,7 @@ async def migrate_from_sql(
             for cm in cred_models:
                 cred = cm.as_dataclass()
                 key = str(cred.uuid)
-                json_db._data.credentials[key] = CredentialData(
+                json_db._data.credentials[key] = _CredentialData(
                     credential_id=cred.credential_id,
                     user=str(cred.user_uuid),
                     aaguid=str(cred.aaguid),
@@ -158,13 +158,13 @@ async def migrate_from_sql(
             for sm in session_models:
                 sess = sm.as_dataclass()
                 key_b64 = _bytes_to_str(sess.key)
-                json_db._data.sessions[key_b64] = SessionData(
+                json_db._data.sessions[key_b64] = _SessionData(
                     user=str(sess.user_uuid),
                     credential=str(sess.credential_uuid),
                     host=sess.host,
                     ip=sess.ip,
                     user_agent=sess.user_agent,
-                    renewed=sess.renewed,
+                    expiry=sess.renewed + EXPIRES,  # Convert renewed to expiry
                 )
             print(f"  Migrated {len(session_models)} sessions")
 
@@ -175,17 +175,17 @@ async def migrate_from_sql(
             for tm in token_models:
                 token = tm.as_dataclass()
                 key_b64 = _bytes_to_str(token.key)
-                json_db._data.reset_tokens[key_b64] = ResetTokenData(
+                json_db._data.reset_tokens[key_b64] = _ResetTokenData(
                     user=str(token.user_uuid),
                     expiry=token.expiry,
                     token_type=token.token_type,
                 )
             print(f"  Migrated {len(token_models)} reset tokens")
 
-        # Save all changes as a single diff with actor "migrate"
-        # Start from empty {} so diff shows pure insertions
-        json_db._previous_builtins = {}
-        await json_db._save(actor="migrate")
+        # Queue and flush all changes with actor "migrate"
+        json_db._current_actor = "migrate"
+        json_db._queue_change()
+        json_db.flush()
 
     print("Migration complete!")
 

@@ -18,6 +18,8 @@ from uuid import UUID
 
 import httpx
 import pytest
+
+from paskia.authsession import expires
 import pytest_asyncio
 import uuid7
 
@@ -190,7 +192,7 @@ async def session_token(
         host="localhost:4401",
         ip="127.0.0.1",
         user_agent="pytest",
-        renewed=datetime.now(timezone.utc),
+        expiry=expires(),
     )
     return token
 
@@ -208,7 +210,7 @@ async def regular_session_token(
         host="localhost:4401",
         ip="127.0.0.1",
         user_agent="pytest",
-        renewed=datetime.now(timezone.utc),
+        expiry=expires(),
     )
     return token
 

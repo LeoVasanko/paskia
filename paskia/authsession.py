@@ -31,12 +31,6 @@ def reset_expires() -> datetime:
     return datetime.now(timezone.utc) + RESET_LIFETIME
 
 
-def session_expiry(session: Session) -> datetime:
-    """Calculate the expiration timestamp for a session (UTC aware)."""
-    # After migration all renewed timestamps are timezone-aware UTC
-    return session.renewed + EXPIRES
-
-
 async def create_session(
     user_uuid: UUID,
     credential_uuid: UUID,
@@ -54,7 +48,6 @@ async def create_session(
     if not (hostname == rp_id or hostname.endswith(f".{rp_id}")):
         raise ValueError(f"Host must be the same as or a subdomain of {rp_id}")
     token = create_token()
-    now = datetime.now(timezone.utc)
     db.create_session(
         user_uuid=user_uuid,
         credential_uuid=credential_uuid,
@@ -62,15 +55,15 @@ async def create_session(
         host=normalized_host,
         ip=ip,
         user_agent=user_agent,
-        renewed=now,
+        expiry=expires(),
     )
     return token
 
 
 async def get_reset(token: str) -> ResetToken:
-    """Validate a credential reset token. Returns None if the token is not well formed (i.e. it is another type of token)."""
+    """Validate a credential reset token."""
     record = db.get_reset_token(reset_key(token))
-    if record and record.expiry >= datetime.now(timezone.utc):
+    if record:
         return record
     raise ValueError("This authentication link is no longer valid.")
 
@@ -81,7 +74,7 @@ async def get_session(token: str, host: str | None = None) -> Session:
     if not host:
         raise ValueError("Invalid host")
     session = db.get_session(session_key(token))
-    if session and session_expiry(session) >= datetime.now(timezone.utc):
+    if session:
         if session.host is None:
             # First time binding: store exact host:port (or IPv6 form) now.
             db.set_session_host(session.key, host)
@@ -101,7 +94,7 @@ async def refresh_session_token(token: str, *, ip: str, user_agent: str):
         session_key(token),
         ip=ip,
         user_agent=user_agent,
-        renewed=datetime.now(timezone.utc),
+        expiry=expires(),
     )
     if not updated:
         raise ValueError("Session not found or expired")
