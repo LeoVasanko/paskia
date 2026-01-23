@@ -110,7 +110,7 @@ class _PermissionData(msgspec.Struct, omit_defaults=True):
     scope: str  # Permission scope identifier
     display_name: str
     domain: str | None = None
-    orgs: dict[str, bool] = {}  # org_uuid -> True (which orgs can grant this)
+    orgs: dict[UUID, bool] = {}  # org_uuid -> True (which orgs can grant this)
 
 
 class _OrgData(msgspec.Struct):
@@ -119,14 +119,14 @@ class _OrgData(msgspec.Struct):
 
 
 class _RoleData(msgspec.Struct):
-    org: str
+    org: UUID
     display_name: str
     permissions: dict[str, bool]  # permission_id -> True
 
 
 class _UserData(msgspec.Struct):
     display_name: str
-    role: str
+    role: UUID
     created_at: datetime
     last_seen: datetime | None
     visits: int
@@ -134,8 +134,8 @@ class _UserData(msgspec.Struct):
 
 class _CredentialData(msgspec.Struct):
     credential_id: bytes  # msgspec uses standard base64
-    user: str
-    aaguid: str
+    user: UUID
+    aaguid: UUID
     public_key: bytes  # msgspec uses standard base64
     sign_count: int
     created_at: datetime
@@ -144,8 +144,8 @@ class _CredentialData(msgspec.Struct):
 
 
 class _SessionData(msgspec.Struct):
-    user: str
-    credential: str
+    user: UUID
+    credential: UUID
     host: str | None
     ip: str | None
     user_agent: str | None
@@ -153,16 +153,16 @@ class _SessionData(msgspec.Struct):
 
 
 class _ResetTokenData(msgspec.Struct):
-    user: str
+    user: UUID
     expiry: datetime
     token_type: str
 
 
 class _DatabaseData(msgspec.Struct):
-    permissions: dict[str, _PermissionData]
-    orgs: dict[str, _OrgData]
-    roles: dict[str, _RoleData]
-    users: dict[str, _UserData]
-    credentials: dict[str, _CredentialData]
-    sessions: dict[str, _SessionData]
-    reset_tokens: dict[str, _ResetTokenData]
+    permissions: dict[UUID, _PermissionData]
+    orgs: dict[UUID, _OrgData]
+    roles: dict[UUID, _RoleData]
+    users: dict[UUID, _UserData]
+    credentials: dict[UUID, _CredentialData]
+    sessions: dict[bytes, _SessionData]
+    reset_tokens: dict[bytes, _ResetTokenData]
