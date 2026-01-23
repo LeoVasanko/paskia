@@ -47,23 +47,16 @@ def cleanup() -> None:
 
 async def flush() -> None:
     """Write all pending database changes to disk."""
-    import sys
     from paskia.db.operations import _db
 
     if _db is None:
         _logger.warning("flush() called but _db is None")
-        print("[DB] flush() called but _db is None", file=sys.stderr)
         return
-    pending_count = len(_db._pending_changes)
-    if pending_count > 0:
-        print(f"[DB] flush() called with {pending_count} pending changes, db_path={_db.db_path}", file=sys.stderr)
     await flush_changes(_db.db_path, _db._pending_changes)
 
 
 async def _background_loop():
     """Background task that periodically flushes changes and cleans up."""
-    import sys
-    print("[DB] Background loop starting", file=sys.stderr)
     _logger.info("Background loop starting")
     # Run cleanup immediately on startup to clear old expired items
     cleanup()
@@ -94,13 +87,12 @@ async def _background_loop():
 
 async def start_background():
     """Start the background flush/cleanup task."""
-    import sys
     global _background_task
     
     # Check if task exists but is no longer running (e.g., after uvicorn reload)
     if _background_task is not None:
         if _background_task.done():
-            print(f"[DB] Previous background task was done, restarting", file=sys.stderr)
+            _logger.debug("Previous background task was done, restarting")
             _background_task = None
         else:
             # Task exists and is running - but might be in a dead event loop
@@ -109,18 +101,17 @@ async def start_background():
                 loop = asyncio.get_running_loop()
                 task_loop = _background_task.get_loop()
                 if loop is not task_loop:
-                    print(f"[DB] Background task in different event loop, restarting", file=sys.stderr)
+                    _logger.debug("Background task in different event loop, restarting")
                     _background_task = None
             except Exception as e:
-                print(f"[DB] Error checking background task loop: {e}, restarting", file=sys.stderr)
+                _logger.debug("Error checking background task loop: %s, restarting", e)
                 _background_task = None
     
     if _background_task is None:
         _background_task = asyncio.create_task(_background_loop())
         _logger.info("Database background task started")
-        print("[DB] Database background task started", file=sys.stderr)
     else:
-        print(f"[DB] Background task already running: {_background_task}", file=sys.stderr)
+        _logger.debug("Background task already running: %s", _background_task)
 
 
 async def stop_background():
