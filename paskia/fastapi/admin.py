@@ -23,6 +23,30 @@ from paskia.util.tokens import encode_session_key, session_key
 app = FastAPI()
 
 
+def is_global_admin(ctx) -> bool:
+    """Check if user has global admin permission."""
+    return "auth:admin" in ctx.role.permissions
+
+
+def is_org_admin(ctx, org_uuid: UUID | None = None) -> bool:
+    """Check if user has org admin permission.
+
+    If org_uuid is provided, checks if user is admin of that specific org.
+    If org_uuid is None, checks if user is admin of their own org.
+    """
+    if "auth:org:admin" not in ctx.role.permissions:
+        return False
+    if org_uuid is None:
+        return True
+    # User must belong to the target org (via their role)
+    return ctx.org.uuid == org_uuid
+
+
+def can_manage_org(ctx, org_uuid: UUID) -> bool:
+    """Check if user can manage the specified organization."""
+    return is_global_admin(ctx) or is_org_admin(ctx, org_uuid)
+
+
 @app.exception_handler(ValueError)
 async def value_error_handler(_request, exc: ValueError):  # pragma: no cover - simple
     return JSONResponse(status_code=400, content={"detail": str(exc)})
@@ -55,13 +79,14 @@ async def adminapp(request: Request, auth=AUTH_COOKIE):
 async def admin_list_orgs(request: Request, auth=AUTH_COOKIE):
     ctx = await authz.verify(
         auth,
-        ["auth:admin", "auth:org:*"],
+        ["auth:admin", "auth:org:admin"],
         match=permutil.has_any,
         host=request.headers.get("host"),
     )
     orgs = db.list_organizations()
-    if "auth:admin" not in ctx.role.permissions:
-        orgs = [o for o in orgs if f"auth:org:{o.uuid}" in ctx.role.permissions]
+    if not is_global_admin(ctx):
+        # Org admins can only see their own organization
+        orgs = [o for o in orgs if o.uuid == ctx.org.uuid]
 
     def role_to_dict(r):
         return {
@@ -110,12 +135,13 @@ async def admin_create_org(
     db.create_organization(org)
 
     # Automatically create Administration role with org admin permission
+    # The auth:org:admin permission is automatically created/enabled by create_organization
     role_uuid = uuid4()
     admin_role = RoleDC(
         uuid=role_uuid,
         org_uuid=org_uuid,
         display_name="Administration",
-        permissions=[f"auth:org:{org_uuid}"],
+        permissions=["auth:org:admin"],
     )
     db.create_role(admin_role)
 
@@ -131,10 +157,14 @@ async def admin_update_org(
 ):
     ctx = await authz.verify(
         auth,
-        ["auth:admin", f"auth:org:{org_uuid}"],
+        ["auth:admin", "auth:org:admin"],
         match=permutil.has_any,
         host=request.headers.get("host"),
     )
+    if not can_manage_org(ctx, org_uuid):
+        raise authz.AuthException(
+            status_code=403, detail="Insufficient permissions", mode="forbidden"
+        )
     from ..db import Org as OrgDC  # local import to avoid cycles
 
     current = db.get_organization(str(org_uuid))
@@ -144,13 +174,10 @@ async def admin_update_org(
         permissions = current.permissions or []
 
     # Sanity check: prevent removing permissions that would break current user's admin access
-    org_admin_perm = f"auth:org:{org_uuid}"
+    org_admin_perm = "auth:org:admin"
 
     # If current user is org admin (not global admin), ensure org admin perm remains
-    if (
-        "auth:admin" not in ctx.role.permissions
-        and f"auth:org:{org_uuid}" in ctx.role.permissions
-    ):
+    if not is_global_admin(ctx) and is_org_admin(ctx, org_uuid):
         if org_admin_perm not in permissions:
             raise ValueError(
                 "Cannot remove organization admin permission from your own organization"
@@ -165,11 +192,15 @@ async def admin_update_org(
 async def admin_delete_org(org_uuid: UUID, request: Request, auth=AUTH_COOKIE):
     ctx = await authz.verify(
         auth,
-        ["auth:admin", f"auth:org:{org_uuid}"],
+        ["auth:admin", "auth:org:admin"],
         match=permutil.has_any,
         host=request.headers.get("host"),
         max_age="5m",
     )
+    if not can_manage_org(ctx, org_uuid):
+        raise authz.AuthException(
+            status_code=403, detail="Insufficient permissions", mode="forbidden"
+        )
     if ctx.org.uuid == org_uuid:
         raise ValueError("Cannot delete the organization you belong to")
 
@@ -177,15 +208,15 @@ async def admin_delete_org(org_uuid: UUID, request: Request, auth=AUTH_COOKIE):
     org_perm_pattern = f"org:{str(org_uuid).lower()}"
     all_permissions = db.list_permissions()
     for perm in all_permissions:
-        perm_id_lower = perm.id.lower()
+        perm_scope_lower = perm.scope.lower()
         # Check if permission contains "org:{uuid}" separated by colons or at boundaries
         if (
-            f":{org_perm_pattern}:" in perm_id_lower
-            or perm_id_lower.startswith(f"{org_perm_pattern}:")
-            or perm_id_lower.endswith(f":{org_perm_pattern}")
-            or perm_id_lower == org_perm_pattern
+            f":{org_perm_pattern}:" in perm_scope_lower
+            or perm_scope_lower.startswith(f"{org_perm_pattern}:")
+            or perm_scope_lower.endswith(f":{org_perm_pattern}")
+            or perm_scope_lower == org_perm_pattern
         ):
-            db.delete_permission(perm.id)
+            db.delete_permission(str(perm.uuid))
 
     db.delete_organization(org_uuid)
     return {"status": "ok"}
@@ -229,12 +260,16 @@ async def admin_create_role(
     payload: dict = Body(...),
     auth=AUTH_COOKIE,
 ):
-    await authz.verify(
+    ctx = await authz.verify(
         auth,
-        ["auth:admin", f"auth:org:{org_uuid}"],
+        ["auth:admin", "auth:org:admin"],
         match=permutil.has_any,
         host=request.headers.get("host"),
     )
+    if not can_manage_org(ctx, org_uuid):
+        raise authz.AuthException(
+            status_code=403, detail="Insufficient permissions", mode="forbidden"
+        )
     from ..db import Role as RoleDC
 
     role_uuid = uuid4()
@@ -267,10 +302,14 @@ async def admin_update_role(
     # Verify caller is global admin or admin of provided org
     ctx = await authz.verify(
         auth,
-        ["auth:admin", f"auth:org:{org_uuid}"],
+        ["auth:admin", "auth:org:admin"],
         match=permutil.has_any,
         host=request.headers.get("host"),
     )
+    if not can_manage_org(ctx, org_uuid):
+        raise authz.AuthException(
+            status_code=403, detail="Insufficient permissions", mode="forbidden"
+        )
     role = db.get_role(role_uuid)
     if role.org_uuid != org_uuid:
         raise HTTPException(status_code=404, detail="Role not found in organization")
@@ -291,7 +330,7 @@ async def admin_update_role(
     # Sanity check: prevent admin from removing their own access via role update
     if ctx.org.uuid == org_uuid and ctx.role.uuid == role_uuid:
         has_admin_access = (
-            "auth:admin" in permissions or f"auth:org:{org_uuid}" in permissions
+            "auth:admin" in permissions or "auth:org:admin" in permissions
         )
         if not has_admin_access:
             raise ValueError("Cannot update your own role to remove admin permissions")
@@ -315,11 +354,15 @@ async def admin_delete_role(
 ):
     ctx = await authz.verify(
         auth,
-        ["auth:admin", f"auth:org:{org_uuid}"],
+        ["auth:admin", "auth:org:admin"],
         match=permutil.has_any,
         host=request.headers.get("host"),
         max_age="5m",
     )
+    if not can_manage_org(ctx, org_uuid):
+        raise authz.AuthException(
+            status_code=403, detail="Insufficient permissions", mode="forbidden"
+        )
     role = db.get_role(role_uuid)
     if role.org_uuid != org_uuid:
         raise HTTPException(status_code=404, detail="Role not found in organization")
@@ -342,12 +385,16 @@ async def admin_create_user(
     payload: dict = Body(...),
     auth=AUTH_COOKIE,
 ):
-    await authz.verify(
+    ctx = await authz.verify(
         auth,
-        ["auth:admin", f"auth:org:{org_uuid}"],
+        ["auth:admin", "auth:org:admin"],
         match=permutil.has_any,
         host=request.headers.get("host"),
     )
+    if not can_manage_org(ctx, org_uuid):
+        raise authz.AuthException(
+            status_code=403, detail="Insufficient permissions", mode="forbidden"
+        )
     display_name = payload.get("display_name")
     role_name = payload.get("role")
     if not display_name or not role_name:
@@ -380,10 +427,14 @@ async def admin_update_user_role(
 ):
     ctx = await authz.verify(
         auth,
-        ["auth:admin", f"auth:org:{org_uuid}"],
+        ["auth:admin", "auth:org:admin"],
         match=permutil.has_any,
         host=request.headers.get("host"),
     )
+    if not can_manage_org(ctx, org_uuid):
+        raise authz.AuthException(
+            status_code=403, detail="Insufficient permissions", mode="forbidden"
+        )
     new_role = payload.get("role")
     if not new_role:
         raise ValueError("role is required")
@@ -403,7 +454,7 @@ async def admin_update_user_role(
         if new_role_obj:  # pragma: no branch - always true, role validated above
             has_admin_access = (
                 "auth:admin" in new_role_obj.permissions
-                or f"auth:org:{org_uuid}" in new_role_obj.permissions
+                or "auth:org:admin" in new_role_obj.permissions
             )
             if not has_admin_access:
                 raise ValueError(
@@ -429,15 +480,12 @@ async def admin_create_user_registration_link(
         raise HTTPException(status_code=404, detail="User not found in organization")
     ctx = await authz.verify(
         auth,
-        ["auth:admin", f"auth:org:{org_uuid}"],
+        ["auth:admin", "auth:org:admin"],
         match=permutil.has_any,
         host=request.headers.get("host"),
         max_age="5m",
     )
-    if (  # pragma: no cover - defense in depth, authz.verify already checked
-        "auth:admin" not in ctx.role.permissions
-        and f"auth:org:{org_uuid}" not in ctx.role.permissions
-    ):
+    if not can_manage_org(ctx, org_uuid):
         raise authz.AuthException(
             status_code=403, detail="Insufficient permissions", mode="forbidden"
         )
@@ -480,14 +528,11 @@ async def admin_get_user_detail(
         raise HTTPException(status_code=404, detail="User not found in organization")
     ctx = await authz.verify(
         auth,
-        ["auth:admin", f"auth:org:{org_uuid}"],
+        ["auth:admin", "auth:org:admin"],
         match=permutil.has_any,
         host=request.headers.get("host"),
     )
-    if (  # pragma: no cover - defense in depth, authz.verify already checked
-        "auth:admin" not in ctx.role.permissions
-        and f"auth:org:{org_uuid}" not in ctx.role.permissions
-    ):
+    if not can_manage_org(ctx, org_uuid):
         raise authz.AuthException(
             status_code=403, detail="Insufficient permissions", mode="forbidden"
         )
@@ -565,9 +610,7 @@ async def admin_get_user_detail(
                 "ip": entry.ip,
                 "user_agent": useragent.compact_user_agent(entry.user_agent),
                 "last_renewed": (
-                    renewed.astimezone(timezone.utc)
-                    .isoformat()
-                    .replace("+00:00", "Z")
+                    renewed.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
                     if renewed.tzinfo
                     else renewed.replace(tzinfo=timezone.utc)
                     .isoformat()
@@ -631,14 +674,11 @@ async def admin_update_user_display_name(
         raise HTTPException(status_code=404, detail="User not found in organization")
     ctx = await authz.verify(
         auth,
-        ["auth:admin", f"auth:org:{org_uuid}"],
+        ["auth:admin", "auth:org:admin"],
         match=permutil.has_any,
         host=request.headers.get("host"),
     )
-    if (  # pragma: no cover - defense in depth, authz.verify already checked
-        "auth:admin" not in ctx.role.permissions
-        and f"auth:org:{org_uuid}" not in ctx.role.permissions
-    ):
+    if not can_manage_org(ctx, org_uuid):
         raise authz.AuthException(
             status_code=403, detail="Insufficient permissions", mode="forbidden"
         )
@@ -667,15 +707,12 @@ async def admin_delete_user_credential(
         raise HTTPException(status_code=404, detail="User not found in organization")
     ctx = await authz.verify(
         auth,
-        ["auth:admin", f"auth:org:{org_uuid}"],
+        ["auth:admin", "auth:org:admin"],
         match=permutil.has_any,
         host=request.headers.get("host"),
         max_age="5m",
     )
-    if (  # pragma: no cover - defense in depth, authz.verify already checked
-        "auth:admin" not in ctx.role.permissions
-        and f"auth:org:{org_uuid}" not in ctx.role.permissions
-    ):
+    if not can_manage_org(ctx, org_uuid):
         raise authz.AuthException(
             status_code=403, detail="Insufficient permissions", mode="forbidden"
         )
@@ -699,14 +736,11 @@ async def admin_delete_user_session(
         raise HTTPException(status_code=404, detail="User not found in organization")
     ctx = await authz.verify(
         auth,
-        ["auth:admin", f"auth:org:{org_uuid}"],
+        ["auth:admin", "auth:org:admin"],
         match=permutil.has_any,
         host=request.headers.get("host"),
     )
-    if (  # pragma: no cover - defense in depth, authz.verify already checked
-        "auth:admin" not in ctx.role.permissions
-        and f"auth:org:{org_uuid}" not in ctx.role.permissions
-    ):
+    if not can_manage_org(ctx, org_uuid):
         raise authz.AuthException(
             status_code=403, detail="Insufficient permissions", mode="forbidden"
         )
@@ -732,24 +766,46 @@ async def admin_delete_user_session(
 # -------------------- Permissions (global) --------------------
 
 
+def _perm_to_dict(p):
+    """Convert Permission to dict, omitting domain if None."""
+    d = {"uuid": str(p.uuid), "scope": p.scope, "display_name": p.display_name}
+    if p.domain is not None:
+        d["domain"] = p.domain
+    return d
+
+
+def _validate_permission_domain(domain: str | None) -> None:
+    """Validate that domain is rp_id or a subdomain of it."""
+    if domain is None:
+        return
+    from paskia.globals import global_passkey
+
+    rp_id = global_passkey.instance.rp_id
+    if domain == rp_id or domain.endswith(f".{rp_id}"):
+        return
+    raise ValueError(
+        f"Domain '{domain}' must be the same as or a subdomain of rp_id '{rp_id}'"
+    )
+
+
 @app.get("/permissions")
 async def admin_list_permissions(request: Request, auth=AUTH_COOKIE):
     ctx = await authz.verify(
         auth,
-        ["auth:admin", "auth:org:*"],
+        ["auth:admin", "auth:org:admin"],
         match=permutil.has_any,
         host=request.headers.get("host"),
     )
     perms = db.list_permissions()
 
     # Global admins see all permissions
-    if "auth:admin" in ctx.role.permissions:
-        return [{"id": p.id, "display_name": p.display_name} for p in perms]
+    if is_global_admin(ctx):
+        return [_perm_to_dict(p) for p in perms]
 
     # Org admins only see permissions their org can grant
     grantable = set(ctx.org.permissions or [])
-    filtered_perms = [p for p in perms if p.id in grantable]
-    return [{"id": p.id, "display_name": p.display_name} for p in filtered_perms]
+    filtered_perms = [p for p in perms if p.scope in grantable]
+    return [_perm_to_dict(p) for p in filtered_perms]
 
 
 @app.post("/permissions")
@@ -765,34 +821,67 @@ async def admin_create_permission(
         match=permutil.has_all,
         max_age="5m",
     )
+    import uuid7
     from ..db import Permission as PermDC
 
-    perm_id = payload.get("id")
+    scope = payload.get("scope") or payload.get(
+        "id"
+    )  # Support both for backwards compat
     display_name = payload.get("display_name")
-    if not perm_id or not display_name:
-        raise ValueError("id and display_name are required")
-    querysafe.assert_safe(perm_id, field="id")
-    db.create_permission(PermDC(id=perm_id, display_name=display_name))
+    domain = payload.get("domain") or None  # Treat empty string as None
+    if not scope or not display_name:
+        raise ValueError("scope and display_name are required")
+    querysafe.assert_safe(scope, field="scope")
+    _validate_permission_domain(domain)
+    db.create_permission(
+        PermDC(
+            uuid=uuid7.create(), scope=scope, display_name=display_name, domain=domain
+        )
+    )
     return {"status": "ok"}
 
 
 @app.put("/permission")
 async def admin_update_permission(
-    permission_id: str,
-    display_name: str,
     request: Request,
     auth=AUTH_COOKIE,
+    permission_uuid: str | None = None,
+    permission_id: str | None = None,  # Backwards compat - treated as scope
+    display_name: str | None = None,
+    scope: str | None = None,
+    domain: str | None = None,
 ):
     await authz.verify(
         auth, ["auth:admin"], host=request.headers.get("host"), match=permutil.has_all
     )
+
+    # permission_uuid or permission_id (scope) to identify the permission
+    perm_identifier = permission_uuid or permission_id
+    if not perm_identifier:
+        raise ValueError("permission_uuid or permission_id required")
+
+    # Get existing permission
+    perm = db.get_permission(perm_identifier)
+
+    # Update fields that were provided
+    new_scope = scope if scope is not None else perm.scope
+    new_display_name = display_name if display_name is not None else perm.display_name
+    domain_value = domain if domain else None
+
+    if not new_display_name:
+        raise ValueError("display_name is required")
+    querysafe.assert_safe(new_scope, field="scope")
+    _validate_permission_domain(domain_value)
+
     from ..db import Permission as PermDC
 
-    if not display_name:
-        raise ValueError("display_name is required")
-    querysafe.assert_safe(permission_id, field="permission_id")
     db.update_permission(
-        PermDC(id=permission_id, display_name=display_name)
+        PermDC(
+            uuid=perm.uuid,
+            scope=new_scope,
+            display_name=new_display_name,
+            domain=domain_value,
+        )
     )
     return {"status": "ok"}
 
@@ -806,31 +895,43 @@ async def admin_rename_permission(
     await authz.verify(
         auth, ["auth:admin"], host=request.headers.get("host"), match=permutil.has_all
     )
-    old_id = payload.get("old_id")
-    new_id = payload.get("new_id")
+    old_scope = payload.get("old_scope") or payload.get("old_id")  # Support both
+    new_scope = payload.get("new_scope") or payload.get("new_id")  # Support both
     display_name = payload.get("display_name")
-    if not old_id or not new_id:
-        raise ValueError("old_id and new_id required")
+    domain = payload.get(
+        "domain"
+    )  # Can be None (not provided), empty string (clear), or value
+    if not old_scope or not new_scope:
+        raise ValueError("old_scope and new_scope required")
 
     # Sanity check: prevent renaming critical permissions
-    if old_id == "auth:admin":
+    if old_scope == "auth:admin":
         raise ValueError("Cannot rename the master admin permission")
 
-    querysafe.assert_safe(old_id, field="old_id")
-    querysafe.assert_safe(new_id, field="new_id")
+    querysafe.assert_safe(old_scope, field="old_scope")
+    querysafe.assert_safe(new_scope, field="new_scope")
+
+    # Get existing permission to preserve values not being changed
+    perm = db.get_permission(old_scope)
     if display_name is None:
-        perm = db.get_permission(old_id)
         display_name = perm.display_name
+    # domain=None means "not provided, keep existing", domain="" means "clear it"
+    if domain is None:
+        domain_value = perm.domain
+    else:
+        domain_value = domain if domain else None
+    _validate_permission_domain(domain_value)
     # All current backends support rename_permission
-    db.rename_permission(old_id, new_id, display_name)
+    db.rename_permission(old_scope, new_scope, display_name, domain_value)
     return {"status": "ok"}
 
 
 @app.delete("/permission")
 async def admin_delete_permission(
-    permission_id: str,
     request: Request,
     auth=AUTH_COOKIE,
+    permission_uuid: str | None = None,
+    permission_id: str | None = None,  # Backwards compat - treated as scope
 ):
     await authz.verify(
         auth,
@@ -839,11 +940,18 @@ async def admin_delete_permission(
         match=permutil.has_all,
         max_age="5m",
     )
-    querysafe.assert_safe(permission_id, field="permission_id")
+
+    perm_identifier = permission_uuid or permission_id
+    if not perm_identifier:
+        raise ValueError("permission_uuid or permission_id required")
+    querysafe.assert_safe(perm_identifier, field="permission_id")
+
+    # Get the permission to check its scope
+    perm = db.get_permission(perm_identifier)
 
     # Sanity check: prevent deleting critical permissions
-    if permission_id == "auth:admin":
+    if perm.scope == "auth:admin":
         raise ValueError("Cannot delete the master admin permission")
 
-    db.delete_permission(permission_id)
+    db.delete_permission(str(perm.uuid))
     return {"status": "ok"}

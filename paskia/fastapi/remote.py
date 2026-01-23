@@ -324,9 +324,7 @@ async def websocket_remote_auth_permit(ws: WebSocket):
 
                 # Fetch and verify credential
                 try:
-                    stored_cred = db.get_credential_by_id(
-                        credential.raw_id
-                    )
+                    stored_cred = db.get_credential_by_id(credential.raw_id)
                 except ValueError:
                     raise ValueError(
                         f"This passkey is no longer registered with {passkey.instance.rp_name}"

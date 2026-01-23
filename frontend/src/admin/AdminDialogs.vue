@@ -72,10 +72,14 @@ const NAME_EDIT_TYPES = new Set(['org-update', 'role-update', 'user-update-name'
           <label>Display Name
             <input ref="displayNameInput" v-model="dialog.data.display_name" required />
           </label>
-          <label>Permission ID
-            <input v-model="dialog.data.id" :placeholder="dialog.type === 'perm-create' ? 'yourapp:permission' : dialog.data.permission.id" required :pattern="PERMISSION_ID_PATTERN" title="Allowed: A-Za-z0-9:._~-" data-form-type="other" />
+          <label>Permission Scope
+            <input v-model="dialog.data.scope" :placeholder="dialog.type === 'perm-create' ? 'yourapp:permission' : dialog.data.permission.scope" required :pattern="PERMISSION_ID_PATTERN" title="Allowed: A-Za-z0-9:._~-" data-form-type="other" />
           </label>
-          <p class="small muted">The permission ID is used for permission checks in the application. Changing it may break deployed applications that reference this permission.</p>
+          <label>Domain Scope <span class="optional">(optional)</span>
+            <input v-model="dialog.data.domain" placeholder="e.g. app.example.com" data-form-type="other" />
+          </label>
+          <p class="small muted">If set, this permission only applies when accessed from the specified domain. Must be the RP ID or a subdomain of it.</p>
+          <p class="small muted">The permission scope is used for permission checks in the application. Changing it may break deployed applications that reference this permission.</p>
         </template>
         <template v-else-if="dialog.type==='confirm'">
           <p>{{ dialog.data.message }}</p>
@@ -106,4 +110,5 @@ const NAME_EDIT_TYPES = new Set(['org-update', 'role-update', 'user-update-name'
 .error { color: var(--color-danger-text); }
 .small { font-size: 0.9rem; }
 .muted { color: var(--color-text-muted); }
+.optional { font-weight: normal; color: var(--color-text-muted); font-size: 0.85em; }
 </style>

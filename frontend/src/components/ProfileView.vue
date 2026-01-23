@@ -324,7 +324,10 @@ const terminateSession = async (session) => {
 const logoutEverywhere = async () => { await authStore.logoutEverywhere() }
 const logout = async () => { await authStore.logout() }
 const openNameDialog = () => { newName.value = authStore.userInfo?.user?.user_name || ''; showNameDialog.value = true }
-const isAdmin = computed(() => !!(authStore.userInfo?.is_global_admin || authStore.userInfo?.is_org_admin))
+const isAdmin = computed(() => {
+  const perms = authStore.userInfo?.permissions ?? []
+  return perms.includes('auth:admin') || perms.includes('auth:org:admin')
+})
 const hasMultipleSessions = computed(() => sessions.value.length > 1)
 const breadcrumbEntries = computed(() => { const entries = [{ label: 'Auth', href: makeUiHref() }]; if (isAdmin.value) entries.push({ label: 'Admin', href: adminUiPath() }); return entries })
 

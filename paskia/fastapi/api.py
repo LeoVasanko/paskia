@@ -147,7 +147,7 @@ async def forward_authentication(
         )
         role_permissions = set(ctx.role.permissions or [])
         if ctx.permissions:
-            role_permissions.update(permission.id for permission in ctx.permissions)
+            role_permissions.update(permission.scope for permission in ctx.permissions)
 
         remote_headers: dict[str, str] = {
             "Remote-User": str(ctx.user.uuid),
@@ -158,13 +158,11 @@ async def forward_authentication(
             "Remote-Role": str(ctx.role.uuid),
             "Remote-Role-Name": ctx.role.display_name,
             "Remote-Session-Expires": (
-                ctx.session.expiry
-                .astimezone(timezone.utc)
+                ctx.session.expiry.astimezone(timezone.utc)
                 .isoformat()
                 .replace("+00:00", "Z")
                 if ctx.session.expiry.tzinfo
-                else ctx.session.expiry
-                .replace(tzinfo=timezone.utc)
+                else ctx.session.expiry.replace(tzinfo=timezone.utc)
                 .isoformat()
                 .replace("+00:00", "Z")
             ),

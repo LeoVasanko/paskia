@@ -46,6 +46,10 @@ const adminUserDetailRef = ref(null)
 // Check if any modal/dialog is open (blocks arrow key navigation)
 const hasActiveModal = computed(() => dialog.value.type !== null || showRegModal.value)
 
+// Derive admin status from permissions
+const isGlobalAdmin = computed(() => info.value?.permissions?.includes('auth:admin') ?? false)
+const isOrgAdmin = computed(() => info.value?.permissions?.includes('auth:org:admin') ?? false)
+
 function sanitizeRenameId() { if (renameIdValue.value) renameIdValue.value = renameIdValue.value.replace(safeIdRegex, '') }
 
 function handleGlobalClick(e) {
@@ -108,7 +112,7 @@ const permissionSummary = computed(() => {
   return display
 })
 
-function renamePermissionDisplay(p) { openDialog('perm-display', { permission: p, id: p.id, display_name: p.display_name }) }
+function renamePermissionDisplay(p) { openDialog('perm-display', { permission: p, scope: p.scope, display_name: p.display_name, domain: p.domain || '' }) }
 
 
 function parseHash() {
@@ -153,7 +157,7 @@ async function load() {
     // If we get here, user has admin access - now fetch user info for display
     await loadUserInfo()
 
-    if (!info.value.is_global_admin && info.value.is_org_admin && orgs.value.length === 1) {
+    if (!isGlobalAdmin.value && isOrgAdmin.value && orgs.value.length === 1) {
       if (!window.location.hash || window.location.hash === '#overview') {
         currentOrgId.value = orgs.value[0].uuid
         window.location.hash = `#org/${currentOrgId.value}`
@@ -186,7 +190,7 @@ async function performOrgDeletion(orgUuid) {
 }
 
 function deleteOrg(org) {
-  if (!info.value?.is_global_admin) { authStore.showMessage('Global admin only'); return }
+  if (!isGlobalAdmin.value) { authStore.showMessage('Global admin only'); return }
 
   const userCount = org.roles.reduce((acc, r) => acc + r.users.length, 0)
 
@@ -289,20 +293,20 @@ async function toggleRolePermission(role, pid, checked) {
 }
 
 // Permission actions
-async function performPermissionDeletion(permissionId) {
-  const params = new URLSearchParams({ permission_id: permissionId })
+async function performPermissionDeletion(permissionScope) {
+  const params = new URLSearchParams({ permission_id: permissionScope })
   await apiJson(`/auth/api/admin/permission?${params.toString()}`, { method: 'DELETE' })
   await loadPermissions()
 }
 
 function deletePermission(p) {
-  const userCount = permissionSummary.value[p.id]?.userCount || 0
+  const userCount = permissionSummary.value[p.scope]?.userCount || 0
 
   // Count roles that have this permission
   let roleCount = 0
   for (const org of orgs.value) {
     for (const role of org.roles) {
-      if (role.permissions.includes(p.id)) {
+      if (role.permissions.includes(p.scope)) {
         roleCount++
       }
     }
@@ -310,7 +314,7 @@ function deletePermission(p) {
 
   if (roleCount === 0) {
     // No roles have this permission, safe to delete directly
-    performPermissionDeletion(p.id)
+    performPermissionDeletion(p.scope)
       .then(() => {
         authStore.showMessage(`Permission "${p.display_name}" deleted.`, 'success', 2500)
       })
@@ -326,7 +330,7 @@ function deletePermission(p) {
   const affects = parts.join(', ')
 
   openDialog('confirm', { message: `Delete permission "${p.display_name}" (${affects})?`, action: async () => {
-    await performPermissionDeletion(p.id)
+    await performPermissionDeletion(p.scope)
   } })
 }
 
@@ -626,21 +630,24 @@ async function submitDialog() {
       return // Don't call closeDialog() again
     } else if (t === 'perm-display') {
       const { permission } = dialog.value.data
-      const newId = dialog.value.data.id?.trim()
+      const newId = dialog.value.data.scope?.trim()
       const newDisplay = dialog.value.data.display_name?.trim()
+      const newDomain = dialog.value.data.domain?.trim() || ''
       if (!newDisplay) throw new Error('Display name required')
-      if (!newId) throw new Error('ID required')
+      if (!newId) throw new Error('Scope required')
 
       // Close dialog immediately, then perform async operation
       closeDialog()
 
+      const oldDomain = permission.domain || ''
       let apiCall;
-      if (newId !== permission.id) {
-        // ID changed, use rename endpoint
-        apiCall = apiJson('/auth/api/admin/permission/rename', { method: 'POST', body: { old_id: permission.id, new_id: newId, display_name: newDisplay } })
-      } else if (newDisplay !== permission.display_name) {
-        // Only display name changed
-        const params = new URLSearchParams({ permission_id: permission.id, display_name: newDisplay })
+      if (newId !== permission.scope) {
+        // Scope changed, use rename endpoint (also update domain)
+        apiCall = apiJson('/auth/api/admin/permission/rename', { method: 'POST', body: { old_scope: permission.scope, new_scope: newId, display_name: newDisplay, domain: newDomain } })
+      } else if (newDisplay !== permission.display_name || newDomain !== oldDomain) {
+        // Display name or domain changed
+        const params = new URLSearchParams({ permission_id: permission.scope, display_name: newDisplay })
+        if (newDomain) params.set('domain', newDomain)
         apiCall = apiJson(`/auth/api/admin/permission?${params.toString()}`, { method: 'PUT' })
       } else {
         // No changes
@@ -655,13 +662,15 @@ async function submitDialog() {
         .catch(e => {
           authStore.showMessage(e.message || 'Failed to update permission', 'error')
         })
-      return // Don't call closeDialog() again else if (t === 'perm-create') {
-      const id = dialog.value.data.id?.trim(); if (!id) throw new Error('ID required')
+      return // Don't call closeDialog() again
+    } else if (t === 'perm-create') {
+      const scope = dialog.value.data.scope?.trim(); if (!scope) throw new Error('Scope required')
       const display_name = dialog.value.data.display_name?.trim(); if (!display_name) throw new Error('Display name required')
+      const domain = dialog.value.data.domain?.trim() || ''
 
       // Close dialog immediately, then perform async operation
       closeDialog()
-      apiJson('/auth/api/admin/permissions', { method: 'POST', body: { id, display_name } })
+      apiJson('/auth/api/admin/permissions', { method: 'POST', body: { scope, display_name, domain: domain || undefined } })
         .then(() => {
           authStore.showMessage(`Permission "${display_name}" created.`, 'success', 2500)
           loadPermissions()
@@ -689,7 +698,7 @@ async function submitDialog() {
         v-else-if="showBackMessage"
         @reload="reloadPage"
       />
-      <section v-else-if="authenticated && (info?.is_global_admin || info?.is_org_admin)" class="view-root view-root--wide view-admin">
+      <section v-else-if="authenticated && (isGlobalAdmin || isOrgAdmin)" class="view-root view-root--wide view-admin">
         <header class="view-header">
           <h1>{{ pageHeading }}</h1>
           <Breadcrumbs ref="breadcrumbsRef" :entries="breadcrumbEntries" @keydown="handleBreadcrumbKeydown" />
@@ -700,7 +709,7 @@ async function submitDialog() {
             <div v-if="error" class="surface surface--tight error">{{ error }}</div>
             <div v-else class="admin-panels">
                                   <AdminOverview
-                  v-if="!selectedUser && !selectedOrg && (info.is_global_admin || info.is_org_admin)"
+                  v-if="!selectedUser && !selectedOrg && (isGlobalAdmin || isOrgAdmin)"
                   ref="adminOverviewRef"
                   :info="info"
                   :orgs="orgs"

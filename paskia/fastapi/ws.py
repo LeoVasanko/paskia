@@ -116,9 +116,7 @@ async def websocket_authenticate(ws: WebSocket, auth=AUTH_COOKIE):
         try:
             session = await get_session(auth, host=host)
             session_user_uuid = session.user_uuid
-            credential_ids = db.get_credentials_by_user_uuid(
-                session_user_uuid
-            )
+            credential_ids = db.get_credentials_by_user_uuid(session_user_uuid)
         except ValueError:
             pass  # Invalid/expired session - allow normal authentication
 
