@@ -19,7 +19,8 @@ from paskia import remoteauth
 from paskia.authsession import create_session
 from paskia.fastapi.session import infodict
 from paskia.fastapi.wsutil import validate_origin, websocket_error_handler
-from paskia.globals import db, passkey
+from paskia import db
+from paskia.globals import passkey
 from paskia.util import passphrase, pow
 
 # Create a FastAPI subapp for remote auth WebSocket endpoints
@@ -323,7 +324,7 @@ async def websocket_remote_auth_permit(ws: WebSocket):
 
                 # Fetch and verify credential
                 try:
-                    stored_cred = await db.instance.get_credential_by_id(
+                    stored_cred = await db.get_credential_by_id(
                         credential.raw_id
                     )
                 except ValueError:
@@ -337,7 +338,7 @@ async def websocket_remote_auth_permit(ws: WebSocket):
                 )
 
                 # Update credential last_used
-                await db.instance.login(stored_cred.user_uuid, stored_cred)
+                await db.login(stored_cred.user_uuid, stored_cred)
 
                 # Create a session for the REQUESTING device
                 assert stored_cred.uuid is not None
@@ -352,7 +353,7 @@ async def websocket_remote_auth_permit(ws: WebSocket):
 
                     token_str = passphrase.generate()
                     expiry = expires()
-                    await db.instance.create_reset_token(
+                    await db.create_reset_token(
                         user_uuid=stored_cred.user_uuid,
                         key=tokens.reset_key(token_str),
                         expiry=expiry,

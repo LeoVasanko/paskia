@@ -50,7 +50,7 @@ async def lifespan(app: FastAPI):  # pragma: no cover - startup path
     yield
 
 
-app = FastAPI(lifespan=lifespan)
+app = FastAPI(lifespan=lifespan, redirect_slashes=False)
 
 # Apply redirections to auth-host if configured (deny access to restricted endpoints, remove /auth/)
 app.middleware("http")(auth_host.redirect_middleware)
@@ -96,6 +96,7 @@ async def admin_root_redirect():
 
 
 @app.get("/admin/", include_in_schema=False)
+@app.get("/auth/admin/", include_in_schema=False)
 async def admin_root(request: Request, auth=AUTH_COOKIE):
     return await admin.adminapp(request, auth)  # Delegated to admin app
 

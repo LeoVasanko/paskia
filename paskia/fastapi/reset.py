@@ -16,7 +16,7 @@ import asyncio
 from uuid import UUID
 
 from paskia import authsession as _authsession
-from paskia import globals as _g
+from paskia import db as _db
 from paskia.util import hostutil, passphrase
 from paskia.util import tokens as _tokens
 
@@ -27,9 +27,9 @@ async def _resolve_targets(query: str | None):
         targets: list[tuple] = []
         try:
             q_uuid = UUID(query)
-            perm_orgs = await _g.db.instance.get_permission_organizations("auth:admin")
+            perm_orgs = await _db.get_permission_organizations("auth:admin")
             for o in perm_orgs:
-                users = await _g.db.instance.get_organization_users(str(o.uuid))
+                users = await _db.get_organization_users(str(o.uuid))
                 for u, role_name in users:
                     if u.uuid == q_uuid:
                         return [(u, role_name)]
@@ -38,9 +38,9 @@ async def _resolve_targets(query: str | None):
             pass
         # Substring search
         needle = query.lower()
-        perm_orgs = await _g.db.instance.get_permission_organizations("auth:admin")
+        perm_orgs = await _db.get_permission_organizations("auth:admin")
         for o in perm_orgs:
-            users = await _g.db.instance.get_organization_users(str(o.uuid))
+            users = await _db.get_organization_users(str(o.uuid))
             for u, role_name in users:
                 if needle in (u.display_name or "").lower():
                     targets.append((u, role_name))
@@ -53,10 +53,10 @@ async def _resolve_targets(query: str | None):
                 deduped.append((u, role_name))
         return deduped
     # No query -> master admin
-    perm_orgs = await _g.db.instance.get_permission_organizations("auth:admin")
+    perm_orgs = await _db.get_permission_organizations("auth:admin")
     if not perm_orgs:
         return []
-    users = await _g.db.instance.get_organization_users(str(perm_orgs[0].uuid))
+    users = await _db.get_organization_users(str(perm_orgs[0].uuid))
     admin_users = [pair for pair in users if pair[1] == "Administration"]
     return admin_users[:1]
 
@@ -64,7 +64,7 @@ async def _resolve_targets(query: str | None):
 async def _create_reset(user, role_name: str):
     token = passphrase.generate()
     expiry = _authsession.reset_expires()
-    await _g.db.instance.create_reset_token(
+    await _db.create_reset_token(
         user_uuid=user.uuid,
         key=_tokens.reset_key(token),
         expiry=expiry,

@@ -1,6 +1,5 @@
 from typing import Generic, TypeVar
 
-from paskia.db import DatabaseInterface
 from paskia.sansio import Passkey
 
 T = TypeVar("T")
@@ -38,8 +37,13 @@ async def init(
     If bootstrap=True (default) the system bootstrap_if_needed() will be invoked.
     In FastAPI lifespan we call with bootstrap=False to avoid duplicate bootstrapping
     since the CLI performs it once before servers start.
+
+    Database configuration:
+        Set PASKIA_DB environment variable to specify the JSONL database file path.
+        Default: paskia.jsonl
     """
     from . import remoteauth
+    from .db import json as json_db
 
     # Initialize passkey instance with provided parameters
     passkey.instance = Passkey(
@@ -48,13 +52,9 @@ async def init(
         origins=origins,
     )
 
-    # Test if we have a database already initialized, otherwise use SQL
-    try:
-        db.instance
-    except RuntimeError:
-        from .db import sql
-
-        await sql.init()
+    # Initialize database if not already done
+    if json_db._db is None:
+        await json_db.init()
 
     # Initialize remote auth manager
     await remoteauth.init()
@@ -68,4 +68,3 @@ async def init(
 
 # Global instances
 passkey = Manager[Passkey]("Passkey")
-db = Manager[DatabaseInterface]("Database")

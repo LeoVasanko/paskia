@@ -8,7 +8,7 @@ from fastapi.responses import JSONResponse
 from paskia.authsession import reset_expires
 from paskia.fastapi import authz
 from paskia.fastapi.session import AUTH_COOKIE
-from paskia.globals import db
+from paskia import db
 from paskia.util import (
     frontend,
     hostutil,
@@ -59,7 +59,7 @@ async def admin_list_orgs(request: Request, auth=AUTH_COOKIE):
         match=permutil.has_any,
         host=request.headers.get("host"),
     )
-    orgs = await db.instance.list_organizations()
+    orgs = await db.list_organizations()
     if "auth:admin" not in ctx.role.permissions:
         orgs = [o for o in orgs if f"auth:org:{o.uuid}" in ctx.role.permissions]
 
@@ -72,7 +72,7 @@ async def admin_list_orgs(request: Request, auth=AUTH_COOKIE):
         }
 
     async def org_to_dict(o):
-        users = await db.instance.get_organization_users(str(o.uuid))
+        users = await db.get_organization_users(str(o.uuid))
         return {
             "uuid": str(o.uuid),
             "display_name": o.display_name,
@@ -107,7 +107,7 @@ async def admin_create_org(
     display_name = payload.get("display_name") or "New Organization"
     permissions = payload.get("permissions") or []
     org = OrgDC(uuid=org_uuid, display_name=display_name, permissions=permissions)
-    await db.instance.create_organization(org)
+    await db.create_organization(org)
 
     # Automatically create Administration role with org admin permission
     role_uuid = uuid4()
@@ -117,7 +117,7 @@ async def admin_create_org(
         display_name="Administration",
         permissions=[f"auth:org:{org_uuid}"],
     )
-    await db.instance.create_role(admin_role)
+    await db.create_role(admin_role)
 
     return {"uuid": str(org_uuid)}
 
@@ -137,7 +137,7 @@ async def admin_update_org(
     )
     from ..db import Org as OrgDC  # local import to avoid cycles
 
-    current = await db.instance.get_organization(str(org_uuid))
+    current = await db.get_organization(str(org_uuid))
     display_name = payload.get("display_name") or current.display_name
     permissions = payload.get("permissions")
     if permissions is None:
@@ -157,7 +157,7 @@ async def admin_update_org(
             )
 
     org = OrgDC(uuid=org_uuid, display_name=display_name, permissions=permissions)
-    await db.instance.update_organization(org)
+    await db.update_organization(org)
     return {"status": "ok"}
 
 
@@ -175,7 +175,7 @@ async def admin_delete_org(org_uuid: UUID, request: Request, auth=AUTH_COOKIE):
 
     # Delete organization-specific permissions
     org_perm_pattern = f"org:{str(org_uuid).lower()}"
-    all_permissions = await db.instance.list_permissions()
+    all_permissions = await db.list_permissions()
     for perm in all_permissions:
         perm_id_lower = perm.id.lower()
         # Check if permission contains "org:{uuid}" separated by colons or at boundaries
@@ -185,9 +185,9 @@ async def admin_delete_org(org_uuid: UUID, request: Request, auth=AUTH_COOKIE):
             or perm_id_lower.endswith(f":{org_perm_pattern}")
             or perm_id_lower == org_perm_pattern
         ):
-            await db.instance.delete_permission(perm.id)
+            await db.delete_permission(perm.id)
 
-    await db.instance.delete_organization(org_uuid)
+    await db.delete_organization(org_uuid)
     return {"status": "ok"}
 
 
@@ -201,7 +201,7 @@ async def admin_add_org_permission(
     await authz.verify(
         auth, ["auth:admin"], host=request.headers.get("host"), match=permutil.has_all
     )
-    await db.instance.add_permission_to_organization(str(org_uuid), permission_id)
+    await db.add_permission_to_organization(str(org_uuid), permission_id)
     return {"status": "ok"}
 
 
@@ -215,7 +215,7 @@ async def admin_remove_org_permission(
     await authz.verify(
         auth, ["auth:admin"], host=request.headers.get("host"), match=permutil.has_all
     )
-    await db.instance.remove_permission_from_organization(str(org_uuid), permission_id)
+    await db.remove_permission_from_organization(str(org_uuid), permission_id)
     return {"status": "ok"}
 
 
@@ -240,10 +240,10 @@ async def admin_create_role(
     role_uuid = uuid4()
     display_name = payload.get("display_name") or "New Role"
     perms = payload.get("permissions") or []
-    org = await db.instance.get_organization(str(org_uuid))
+    org = await db.get_organization(str(org_uuid))
     grantable = set(org.permissions or [])
     for pid in perms:
-        await db.instance.get_permission(pid)
+        await db.get_permission(pid)
         if pid not in grantable:
             raise ValueError(f"Permission not grantable by org: {pid}")
     role = RoleDC(
@@ -252,7 +252,7 @@ async def admin_create_role(
         display_name=display_name,
         permissions=perms,
     )
-    await db.instance.create_role(role)
+    await db.create_role(role)
     return {"uuid": str(role_uuid)}
 
 
@@ -271,7 +271,7 @@ async def admin_update_role(
         match=permutil.has_any,
         host=request.headers.get("host"),
     )
-    role = await db.instance.get_role(role_uuid)
+    role = await db.get_role(role_uuid)
     if role.org_uuid != org_uuid:
         raise HTTPException(status_code=404, detail="Role not found in organization")
     from ..db import Role as RoleDC
@@ -280,11 +280,11 @@ async def admin_update_role(
     permissions = payload.get("permissions")
     if permissions is None:
         permissions = role.permissions
-    org = await db.instance.get_organization(str(org_uuid))
+    org = await db.get_organization(str(org_uuid))
     grantable = set(org.permissions or [])
     existing_permissions = set(role.permissions)
     for pid in permissions:
-        await db.instance.get_permission(pid)
+        await db.get_permission(pid)
         if pid not in existing_permissions and pid not in grantable:
             raise ValueError(f"Permission not grantable by org: {pid}")
 
@@ -302,7 +302,7 @@ async def admin_update_role(
         display_name=display_name,
         permissions=permissions,
     )
-    await db.instance.update_role(updated)
+    await db.update_role(updated)
     return {"status": "ok"}
 
 
@@ -320,7 +320,7 @@ async def admin_delete_role(
         host=request.headers.get("host"),
         max_age="5m",
     )
-    role = await db.instance.get_role(role_uuid)
+    role = await db.get_role(role_uuid)
     if role.org_uuid != org_uuid:
         raise HTTPException(status_code=404, detail="Role not found in organization")
 
@@ -328,7 +328,7 @@ async def admin_delete_role(
     if ctx.role.uuid == role_uuid:
         raise ValueError("Cannot delete your own role")
 
-    await db.instance.delete_role(role_uuid)
+    await db.delete_role(role_uuid)
     return {"status": "ok"}
 
 
@@ -354,7 +354,7 @@ async def admin_create_user(
         raise ValueError("display_name and role are required")
     from ..db import User as UserDC
 
-    roles = await db.instance.get_roles_by_organization(str(org_uuid))
+    roles = await db.get_roles_by_organization(str(org_uuid))
     role_obj = next((r for r in roles if r.display_name == role_name), None)
     if not role_obj:
         raise ValueError("Role not found in organization")
@@ -366,7 +366,7 @@ async def admin_create_user(
         visits=0,
         created_at=None,
     )
-    await db.instance.create_user(user)
+    await db.create_user(user)
     return {"uuid": str(user_uuid)}
 
 
@@ -388,12 +388,12 @@ async def admin_update_user_role(
     if not new_role:
         raise ValueError("role is required")
     try:
-        user_org, _current_role = await db.instance.get_user_organization(user_uuid)
+        user_org, _current_role = await db.get_user_organization(user_uuid)
     except ValueError:
         raise ValueError("User not found")
     if user_org.uuid != org_uuid:
         raise ValueError("User does not belong to this organization")
-    roles = await db.instance.get_roles_by_organization(str(org_uuid))
+    roles = await db.get_roles_by_organization(str(org_uuid))
     if not any(r.display_name == new_role for r in roles):
         raise ValueError("Role not found in organization")
 
@@ -410,7 +410,7 @@ async def admin_update_user_role(
                     "Cannot change your own role to one without admin permissions"
                 )
 
-    await db.instance.update_user_role_in_organization(user_uuid, new_role)
+    await db.update_user_role_in_organization(user_uuid, new_role)
     return {"status": "ok"}
 
 
@@ -422,7 +422,7 @@ async def admin_create_user_registration_link(
     auth=AUTH_COOKIE,
 ):
     try:
-        user_org, _role_name = await db.instance.get_user_organization(user_uuid)
+        user_org, _role_name = await db.get_user_organization(user_uuid)
     except ValueError:
         raise HTTPException(status_code=404, detail="User not found")
     if user_org.uuid != org_uuid:
@@ -443,12 +443,12 @@ async def admin_create_user_registration_link(
         )
 
     # Check if user has existing credentials
-    credentials = await db.instance.get_credentials_by_user_uuid(user_uuid)
+    credentials = await db.get_credentials_by_user_uuid(user_uuid)
     token_type = "user registration" if not credentials else "account recovery"
 
     token = passphrase.generate()
     expiry = reset_expires()
-    await db.instance.create_reset_token(
+    await db.create_reset_token(
         user_uuid=user_uuid,
         key=tokens.reset_key(token),
         expiry=expiry,
@@ -473,7 +473,7 @@ async def admin_get_user_detail(
     auth=AUTH_COOKIE,
 ):
     try:
-        user_org, role_name = await db.instance.get_user_organization(user_uuid)
+        user_org, role_name = await db.get_user_organization(user_uuid)
     except ValueError:
         raise HTTPException(status_code=404, detail="User not found")
     if user_org.uuid != org_uuid:
@@ -491,13 +491,13 @@ async def admin_get_user_detail(
         raise authz.AuthException(
             status_code=403, detail="Insufficient permissions", mode="forbidden"
         )
-    user = await db.instance.get_user_by_uuid(user_uuid)
-    cred_ids = await db.instance.get_credentials_by_user_uuid(user_uuid)
+    user = await db.get_user_by_uuid(user_uuid)
+    cred_ids = await db.get_credentials_by_user_uuid(user_uuid)
     creds: list[dict] = []
     aaguids: set[str] = set()
     for cid in cred_ids:
         try:
-            c = await db.instance.get_credential_by_id(cid)
+            c = await db.get_credential_by_id(cid)
         except ValueError:  # pragma: no cover - race condition handling
             continue
         aaguid_str = str(c.aaguid)
@@ -552,7 +552,7 @@ async def admin_get_user_detail(
 
     # Get sessions for the user
     normalized_request_host = hostutil.normalize_host(request.headers.get("host"))
-    session_records = await db.instance.list_sessions_for_user(user_uuid)
+    session_records = await db.list_sessions_for_user(user_uuid)
     current_session_key = session_key(auth)
     sessions_payload: list[dict] = []
     for entry in session_records:
@@ -623,7 +623,7 @@ async def admin_update_user_display_name(
     auth=AUTH_COOKIE,
 ):
     try:
-        user_org, _role_name = await db.instance.get_user_organization(user_uuid)
+        user_org, _role_name = await db.get_user_organization(user_uuid)
     except ValueError:
         raise HTTPException(status_code=404, detail="User not found")
     if user_org.uuid != org_uuid:
@@ -646,7 +646,7 @@ async def admin_update_user_display_name(
         raise HTTPException(status_code=400, detail="display_name required")
     if len(new_name) > 64:
         raise HTTPException(status_code=400, detail="display_name too long")
-    await db.instance.update_user_display_name(user_uuid, new_name)
+    await db.update_user_display_name(user_uuid, new_name)
     return {"status": "ok"}
 
 
@@ -659,7 +659,7 @@ async def admin_delete_user_credential(
     auth=AUTH_COOKIE,
 ):
     try:
-        user_org, _role_name = await db.instance.get_user_organization(user_uuid)
+        user_org, _role_name = await db.get_user_organization(user_uuid)
     except ValueError:
         raise HTTPException(status_code=404, detail="User not found")
     if user_org.uuid != org_uuid:
@@ -678,7 +678,7 @@ async def admin_delete_user_credential(
         raise authz.AuthException(
             status_code=403, detail="Insufficient permissions", mode="forbidden"
         )
-    await db.instance.delete_credential(credential_uuid, user_uuid)
+    await db.delete_credential(credential_uuid, user_uuid)
     return {"status": "ok"}
 
 
@@ -691,7 +691,7 @@ async def admin_delete_user_session(
     auth=AUTH_COOKIE,
 ):
     try:
-        user_org, _role_name = await db.instance.get_user_organization(user_uuid)
+        user_org, _role_name = await db.get_user_organization(user_uuid)
     except ValueError:
         raise HTTPException(status_code=404, detail="User not found")
     if user_org.uuid != org_uuid:
@@ -717,11 +717,11 @@ async def admin_delete_user_session(
             status_code=400, detail="Invalid session identifier"
         ) from exc
 
-    target_session = await db.instance.get_session(target_key)
+    target_session = await db.get_session(target_key)
     if not target_session or target_session.user_uuid != user_uuid:
         raise HTTPException(status_code=404, detail="Session not found")
 
-    await db.instance.delete_session(target_key)
+    await db.delete_session(target_key)
 
     # Check if admin terminated their own session
     current_terminated = target_key == session_key(auth)
@@ -739,7 +739,7 @@ async def admin_list_permissions(request: Request, auth=AUTH_COOKIE):
         match=permutil.has_any,
         host=request.headers.get("host"),
     )
-    perms = await db.instance.list_permissions()
+    perms = await db.list_permissions()
 
     # Global admins see all permissions
     if "auth:admin" in ctx.role.permissions:
@@ -771,7 +771,7 @@ async def admin_create_permission(
     if not perm_id or not display_name:
         raise ValueError("id and display_name are required")
     querysafe.assert_safe(perm_id, field="id")
-    await db.instance.create_permission(PermDC(id=perm_id, display_name=display_name))
+    await db.create_permission(PermDC(id=perm_id, display_name=display_name))
     return {"status": "ok"}
 
 
@@ -790,7 +790,7 @@ async def admin_update_permission(
     if not display_name:
         raise ValueError("display_name is required")
     querysafe.assert_safe(permission_id, field="permission_id")
-    await db.instance.update_permission(
+    await db.update_permission(
         PermDC(id=permission_id, display_name=display_name)
     )
     return {"status": "ok"}
@@ -818,12 +818,10 @@ async def admin_rename_permission(
     querysafe.assert_safe(old_id, field="old_id")
     querysafe.assert_safe(new_id, field="new_id")
     if display_name is None:
-        perm = await db.instance.get_permission(old_id)
+        perm = await db.get_permission(old_id)
         display_name = perm.display_name
-    rename_fn = getattr(db.instance, "rename_permission", None)
-    if not rename_fn:  # pragma: no cover - all current backends support rename
-        raise ValueError("Permission renaming not supported by this backend")
-    await rename_fn(old_id, new_id, display_name)
+    # All current backends support rename_permission
+    await db.rename_permission(old_id, new_id, display_name)
     return {"status": "ok"}
 
 
@@ -846,5 +844,5 @@ async def admin_delete_permission(
     if permission_id == "auth:admin":
         raise ValueError("Cannot delete the master admin permission")
 
-    await db.instance.delete_permission(permission_id)
+    await db.delete_permission(permission_id)
     return {"status": "ok"}

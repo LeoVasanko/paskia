@@ -20,7 +20,7 @@ import pytest_asyncio
 import uuid7
 
 from paskia.db import Credential, Org, Permission, Role, User
-from paskia.db.sql import DB
+from paskia.db.json import DB
 from paskia.util.tokens import create_token, encode_session_key, session_key
 from tests.conftest import auth_headers
 

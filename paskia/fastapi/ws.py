@@ -6,7 +6,8 @@ from paskia.authsession import create_session, get_reset, get_session
 from paskia.fastapi import authz, remote
 from paskia.fastapi.session import AUTH_COOKIE, infodict
 from paskia.fastapi.wsutil import validate_origin, websocket_error_handler
-from paskia.globals import db, passkey
+from paskia import db
+from paskia.globals import passkey
 from paskia.util import passphrase
 from paskia.util.tokens import create_token, session_key
 
@@ -65,13 +66,13 @@ async def websocket_register_add(
         s = ctx.session
 
     # Get user information and determine effective user_name for this registration
-    user = await db.instance.get_user_by_uuid(user_uuid)
+    user = await db.get_user_by_uuid(user_uuid)
     user_name = user.display_name
     if name is not None:
         stripped = name.strip()
         if stripped:
             user_name = stripped
-    challenge_ids = await db.instance.get_credentials_by_user_uuid(user_uuid)
+    challenge_ids = await db.get_credentials_by_user_uuid(user_uuid)
 
     # WebAuthn registration
     credential = await register_chat(ws, user_uuid, user_name, origin, challenge_ids)
@@ -79,7 +80,7 @@ async def websocket_register_add(
     # Create a new session and store everything in database
     token = create_token()
     metadata = infodict(ws, "authenticated")
-    await db.instance.create_credential_session(  # type: ignore[attr-defined]
+    await db.create_credential_session(  # type: ignore[attr-defined]
         user_uuid=user_uuid,
         credential=credential,
         reset_key=(s.key if reset is not None else None),
@@ -115,7 +116,7 @@ async def websocket_authenticate(ws: WebSocket, auth=AUTH_COOKIE):
         try:
             session = await get_session(auth, host=host)
             session_user_uuid = session.user_uuid
-            credential_ids = await db.instance.get_credentials_by_user_uuid(
+            credential_ids = await db.get_credentials_by_user_uuid(
                 session_user_uuid
             )
         except ValueError:
@@ -129,7 +130,7 @@ async def websocket_authenticate(ws: WebSocket, auth=AUTH_COOKIE):
     credential = passkey.instance.auth_parse(await ws.receive_json())
     # Fetch from the database by credential ID
     try:
-        stored_cred = await db.instance.get_credential_by_id(credential.raw_id)
+        stored_cred = await db.get_credential_by_id(credential.raw_id)
     except ValueError:
         raise ValueError(
             f"This passkey is no longer registered with {passkey.instance.rp_name}"
@@ -142,7 +143,7 @@ async def websocket_authenticate(ws: WebSocket, auth=AUTH_COOKIE):
     # Verify the credential matches the stored data
     passkey.instance.auth_verify(credential, challenge, stored_cred, origin)
     # Update both credential and user's last_seen timestamp
-    await db.instance.login(stored_cred.user_uuid, stored_cred)
+    await db.login(stored_cred.user_uuid, stored_cred)
 
     # Create a session token for the authenticated user
     assert stored_cred.uuid is not None
