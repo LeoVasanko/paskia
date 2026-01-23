@@ -9,7 +9,6 @@ from paskia.fastapi.session import AUTH_COOKIE, infodict
 from paskia.fastapi.wsutil import validate_origin, websocket_error_handler
 from paskia.globals import passkey
 from paskia.util import hostutil, passphrase
-from paskia.util.tokens import create_token, session_key
 
 # Create a FastAPI subapp for WebSocket endpoints
 app = FastAPI()
@@ -78,13 +77,11 @@ async def websocket_register_add(
     credential = await register_chat(ws, user_uuid, user_name, origin, challenge_ids)
 
     # Create a new session and store everything in database
-    token = create_token()
     metadata = infodict(ws, "authenticated")
-    db.create_credential_session(  # type: ignore[attr-defined]
+    token = db.create_credential_session(  # type: ignore[attr-defined]
         user_uuid=user_uuid,
         credential=credential,
         reset_key=(s.key if reset is not None else None),
-        session_key=session_key(token),
         display_name=user_name,
         host=host,
         ip=metadata.get("ip"),
@@ -145,7 +142,6 @@ async def websocket_authenticate(ws: WebSocket, auth=AUTH_COOKIE):
     # Create session and update user/credential in a single transaction
     assert stored_cred.uuid is not None
     metadata = infodict(ws, "auth")
-    token = create_token()
     normalized_host = hostutil.normalize_host(host)
     if not normalized_host:
         raise ValueError("Host required for session creation")
@@ -154,10 +150,9 @@ async def websocket_authenticate(ws: WebSocket, auth=AUTH_COOKIE):
     if not (hostname == rp_id or hostname.endswith(f".{rp_id}")):
         raise ValueError(f"Host must be the same as or a subdomain of {rp_id}")
 
-    db.login(
+    token = db.login(
         user_uuid=stored_cred.user_uuid,
         credential=stored_cred,
-        session_key=session_key(token),
         host=normalized_host,
         ip=metadata.get("ip") or "",
         user_agent=metadata.get("user_agent") or "",

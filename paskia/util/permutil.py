@@ -5,7 +5,6 @@ from fnmatch import fnmatchcase
 
 from paskia import db
 from paskia.util.hostutil import normalize_host
-from paskia.util.tokens import session_key
 
 __all__ = ["has_any", "has_all", "session_context"]
 
@@ -41,4 +40,4 @@ async def session_context(auth: str | None, host: str | None = None):
     if not auth:
         return None
     normalized_host = normalize_host(host) if host else None
-    return db.get_session_context(session_key(auth), normalized_host)
+    return db.get_session_context(auth, normalized_host)

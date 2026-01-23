@@ -6,7 +6,9 @@ Context lookup: get_session_context() returns full SessionContext with effective
 Write operations: Functions that validate and commit, or raise ValueError.
 """
 
+import hashlib
 import os
+import secrets
 from collections import deque
 from contextlib import contextmanager
 from datetime import datetime, timezone
@@ -41,6 +43,7 @@ from paskia.db.structs import (
     _SessionData,
     _UserData,
 )
+from paskia.util.passphrase import is_well_formed as _is_passphrase
 
 # msgspec encoder/decoder
 _json_encoder = msgspec.json.Encoder()
@@ -174,7 +177,7 @@ def build_credential(uuid: UUID) -> Credential:
     )
 
 
-def build_session(key: bytes) -> Session:
+def build_session(key: str) -> Session:
     s = _db._data.sessions[key]
     return Session(
         key=key,
@@ -331,7 +334,7 @@ def get_credentials_by_user_uuid(user_uuid: str | UUID) -> list[Credential]:
     ]
 
 
-def get_session(key: bytes) -> Session | None:
+def get_session(key: str) -> Session | None:
     """Get session by key."""
     if key not in _db._data.sessions:
         return None
@@ -353,8 +356,20 @@ def list_sessions_for_user(user_uuid: str | UUID) -> list[Session]:
     ]
 
 
-def get_reset_token(key: bytes) -> ResetToken | None:
-    """Get reset token by key."""
+def _reset_key(passphrase: str) -> bytes:
+    """Hash a passphrase to bytes for reset token storage."""
+    if not _is_passphrase(passphrase):
+        raise ValueError(
+            "Trying to reset with a session token in place of a passphrase"
+            if len(passphrase) == 16
+            else "Invalid passphrase format"
+        )
+    return hashlib.sha512(passphrase.encode()).digest()[:9]
+
+
+def get_reset_token(passphrase: str) -> ResetToken | None:
+    """Get reset token by passphrase."""
+    key = _reset_key(passphrase)
     if key not in _db._data.reset_tokens:
         return None
     t = _db._data.reset_tokens[key]
@@ -369,12 +384,12 @@ def get_reset_token(key: bytes) -> ResetToken | None:
 
 
 def get_session_context(
-    session_key: bytes, host: str | None = None
+    session_key: str, host: str | None = None
 ) -> SessionContext | None:
     """Get full session context with effective permissions.
 
     Args:
-        session_key: The session key bytes
+        session_key: The session key string
         host: Optional host for binding/validation and domain-scoped permissions
 
     Returns:
@@ -832,7 +847,7 @@ def delete_credential(
 
 
 def create_session(
-    key: bytes,
+    key: str,
     user_uuid: UUID,
     credential_uuid: UUID,
     host: str | None,
@@ -860,7 +875,8 @@ def create_session(
 
 
 def update_session(
-    key: bytes,
+    key: str,
+    host: str | None = None,
     ip: str | None = None,
     user_agent: str | None = None,
     expiry: datetime | None = None,
@@ -871,6 +887,8 @@ def update_session(
         raise ValueError("Session not found")
     with _db.transaction(actor):
         s = _db._data.sessions[key]
+        if host is not None:
+            s.host = host
         if ip is not None:
             s.ip = ip
         if user_agent is not None:
@@ -879,7 +897,12 @@ def update_session(
             s.expiry = expiry
 
 
-def delete_session(key: bytes, actor: str = "system") -> None:
+def set_session_host(key: str, host: str, actor: str = "system") -> None:
+    """Set the host for a session (first-time binding)."""
+    update_session(key, host=host, actor=actor)
+
+
+def delete_session(key: str, actor: str = "system") -> None:
     """Delete a session."""
     if key not in _db._data.sessions:
         raise ValueError("Session not found")
@@ -898,13 +921,14 @@ def delete_sessions_for_user(user_uuid: str | UUID, actor: str = "system") -> No
 
 
 def create_reset_token(
-    key: bytes,
+    passphrase: str,
     user_uuid: UUID,
     expiry: datetime,
     token_type: str,
     actor: str = "system",
 ) -> None:
-    """Create a reset token."""
+    """Create a reset token from a passphrase."""
+    key = _reset_key(passphrase)
     if key in _db._data.reset_tokens:
         raise ValueError("Reset token already exists")
     if user_uuid not in _db._data.users:
@@ -951,15 +975,21 @@ def cleanup_expired(actor: str = "system") -> int:
 # -------------------------------------------------------------------------
 
 
+def _create_token() -> str:
+    """Generate a 16-character session token using standard base64."""
+    import base64
+
+    return base64.b64encode(secrets.token_bytes(12)).decode()
+
+
 def login(
     user_uuid: str | UUID,
     credential: Credential,
-    session_key: bytes,
     host: str | None,
     ip: str | None,
     user_agent: str | None,
     expiry: datetime,
-) -> None:
+) -> str:
     """Update user/credential on login and create session in a single transaction.
 
     Updates:
@@ -969,6 +999,7 @@ def login(
     - new session
 
     Actor is set to the user UUID being logged in.
+    Returns the generated session token.
     """
     if isinstance(user_uuid, str):
         user_uuid = UUID(user_uuid)
@@ -977,9 +1008,8 @@ def login(
         raise ValueError(f"User {user_uuid} not found")
     if credential.uuid not in _db._data.credentials:
         raise ValueError(f"Credential {credential.uuid} not found")
-    if session_key in _db._data.sessions:
-        raise ValueError("Session already exists")
 
+    session_key = _create_token()
     actor = str(user_uuid)
     with _db.transaction(actor):
         # Update user
@@ -997,19 +1027,19 @@ def login(
             user_agent=user_agent,
             expiry=expiry,
         )
+    return session_key
 
 
 def create_credential_session(
     user_uuid: UUID,
     credential: Credential,
-    session_key: bytes,
     host: str | None,
     ip: str | None,
     user_agent: str | None,
     display_name: str | None = None,
     reset_key: bytes | None = None,
     actor: str = "system",
-) -> None:
+) -> str:
     """Create a credential and session together, optionally consuming a reset token.
 
     Used during registration to atomically:
@@ -1017,11 +1047,14 @@ def create_credential_session(
     2. Create the credential
     3. Create the session
     4. Delete the reset token if provided
+
+    Returns the generated session token.
     """
     from paskia.config import SESSION_LIFETIME
 
     now = datetime.now(timezone.utc)
     expiry = now + SESSION_LIFETIME
+    session_key = _create_token()
 
     if user_uuid not in _db._data.users:
         raise ValueError(f"User {user_uuid} not found")
@@ -1057,3 +1090,4 @@ def create_credential_session(
         if reset_key:
             if reset_key in _db._data.reset_tokens:
                 del _db._data.reset_tokens[reset_key]
+    return session_key

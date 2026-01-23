@@ -3,8 +3,8 @@
 from datetime import timezone
 
 from paskia import aaguid, db
-from paskia.authsession import EXPIRES, session_key
-from paskia.util import hostutil, permutil, tokens, useragent
+from paskia.authsession import EXPIRES
+from paskia.util import hostutil, permutil, useragent
 
 
 def _format_datetime(dt):
@@ -87,13 +87,13 @@ async def format_user_info(
     # Format sessions
     normalized_request_host = hostutil.normalize_host(request_host)
     session_records = db.list_sessions_for_user(user_uuid)
-    current_session_key = session_key(auth)
+    current_session_key = auth
     sessions_payload: list[dict] = []
 
     for entry in session_records:
         sessions_payload.append(
             {
-                "id": tokens.encode_session_key(entry.key),
+                "id": entry.key,
                 "credential_uuid": str(entry.credential_uuid),
                 "host": entry.host,
                 "ip": entry.ip,
