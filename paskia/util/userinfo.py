@@ -41,17 +41,17 @@ async def format_user_info(
         - Sessions list
         - Permissions
     """
-    u = await db.get_user_by_uuid(user_uuid)
+    u = db.get_user_by_uuid(user_uuid)
     ctx = await permutil.session_context(auth, request_host)
 
     # Fetch and format credentials
-    credential_ids = await db.get_credentials_by_user_uuid(user_uuid)
+    credential_ids = db.get_credentials_by_user_uuid(user_uuid)
     credentials: list[dict] = []
     user_aaguids: set[str] = set()
 
     for cred_id in credential_ids:
         try:
-            c = await db.get_credential_by_id(cred_id)
+            c = db.get_credential_by_id(cred_id)
         except ValueError:
             continue
 
@@ -98,7 +98,7 @@ async def format_user_info(
 
     # Format sessions
     normalized_request_host = hostutil.normalize_host(request_host)
-    session_records = await db.list_sessions_for_user(user_uuid)
+    session_records = db.list_sessions_for_user(user_uuid)
     current_session_key = session_key(auth)
     sessions_payload: list[dict] = []
 
@@ -150,7 +150,7 @@ async def format_reset_user_info(user_uuid, reset_token) -> dict:
     Returns:
         Dictionary with minimal user info for password reset flow
     """
-    u = await db.get_user_by_uuid(user_uuid)
+    u = db.get_user_by_uuid(user_uuid)
 
     return {
         "authenticated": False,

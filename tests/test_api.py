@@ -525,7 +525,7 @@ class TestValidateSessionRefresh:
         # Create a session with an old renewed time to trigger refresh
         token = create_token()
         old_time = datetime.now(timezone.utc) - timedelta(minutes=10)
-        await test_db.create_session(
+        test_db.create_session(
             user_uuid=test_user.uuid,
             credential_uuid=test_credential.uuid,
             key=session_key(token),
@@ -536,7 +536,7 @@ class TestValidateSessionRefresh:
         )
 
         # Delete the session right before validate tries to refresh
-        await test_db.delete_session(session_key(token))
+        test_db.delete_session(session_key(token))
 
         response = await client.post(
             "/auth/api/validate",

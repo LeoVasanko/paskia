@@ -3,13 +3,14 @@ Database module for WebAuthn passkey authentication.
 
 This module re-exports the JSONL database types and implementation.
 All data types are msgspec Structs for efficient serialization.
+Database methods are synchronous (no await needed).
 
 Usage:
     from paskia import db
 
     # Access the database instance (after init)
-    await db.create_session(...)
-    user = await db.get_user_by_uuid(uuid)
+    db.create_session(...)
+    user = db.get_user_by_uuid(uuid)
 """
 
 from paskia.db.json import (
@@ -23,8 +24,11 @@ from paskia.db.json import (
     SessionContext,
     User,
     init,
+    start_background,
+    stop_background,
+    start_cleanup,
+    stop_cleanup,
 )
-from paskia.db.json import _db as _json_db
 import paskia.db.json as _json_module
 
 
@@ -63,4 +67,8 @@ __all__ = [
     "SessionContext",
     "User",
     "init",
+    "start_background",
+    "stop_background",
+    "start_cleanup",
+    "stop_cleanup",
 ]
