@@ -73,13 +73,22 @@ class DB:
         self._current_actor: str = "system"
 
     async def load(self, db_path: str | None = None) -> None:
-        """Load data from JSONL change log."""
+        """Load data from JSONL change log.
+
+        If file doesn't exist, keeps the initialized empty structure and
+        sets _previous_builtins to {} for creating a new database.
+        """
         if db_path is not None:
             self.db_path = Path(db_path)
-        empty = msgspec.to_builtins(self._data)
-        data_dict = await load_jsonl(self.db_path, empty)
-        self._data = _json_decoder.decode(_json_encoder.encode(data_dict))
-        self._previous_builtins = msgspec.to_builtins(self._data)
+        try:
+            data_dict = await load_jsonl(self.db_path)
+            self._data = _json_decoder.decode(_json_encoder.encode(data_dict))
+            # Track the JSONL file state directly - this is what we diff against
+            self._previous_builtins = data_dict
+        except ValueError:
+            if self.db_path.exists():
+                raise  # File exists but failed to load - re-raise
+            # File doesn't exist: keep initialized _data, _previous_builtins stays {}
 
     def _queue_change(self) -> None:
         current = msgspec.to_builtins(self._data)
