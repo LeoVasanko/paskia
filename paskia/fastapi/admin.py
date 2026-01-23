@@ -132,17 +132,18 @@ async def admin_list_orgs(request: Request, auth=AUTH_COOKIE):
 async def admin_create_org(
     request: Request, payload: dict = Body(...), auth=AUTH_COOKIE
 ):
-    await authz.verify(
+    ctx = await authz.verify(
         auth, ["auth:admin"], host=request.headers.get("host"), match=permutil.has_all
     )
     from ..db import Org as OrgDC  # local import to avoid cycles
     from ..db import Role as RoleDC  # local import to avoid cycles
 
+    actor = str(ctx.user.uuid)
     org_uuid = uuid4()
     display_name = payload.get("display_name") or "New Organization"
     permissions = payload.get("permissions") or []
     org = OrgDC(uuid=org_uuid, display_name=display_name, permissions=permissions)
-    db.create_organization(org)
+    db.create_organization(org, actor=actor)
 
     # Automatically create Administration role with org admin permission
     # The auth:org:admin permission is automatically created/enabled by create_organization
@@ -153,7 +154,7 @@ async def admin_create_org(
         display_name="Administration",
         permissions=["auth:org:admin"],
     )
-    db.create_role(admin_role)
+    db.create_role(admin_role, actor=actor)
 
     return {"uuid": str(org_uuid)}
 
@@ -180,7 +181,7 @@ async def admin_update_org_name(
     if not display_name:
         raise ValueError("display_name is required")
 
-    db.update_organization_name(org_uuid, display_name)
+    db.update_organization_name(org_uuid, display_name, actor=str(ctx.user.uuid))
     return {"status": "ok"}
 
 
@@ -212,9 +213,9 @@ async def admin_delete_org(org_uuid: UUID, request: Request, auth=AUTH_COOKIE):
             or perm_scope_lower.endswith(f":{org_perm_pattern}")
             or perm_scope_lower == org_perm_pattern
         ):
-            db.delete_permission(str(perm.uuid))
+            db.delete_permission(str(perm.uuid), actor=str(ctx.user.uuid))
 
-    db.delete_organization(org_uuid)
+    db.delete_organization(org_uuid, actor=str(ctx.user.uuid))
     return {"status": "ok"}
 
 
@@ -225,10 +226,10 @@ async def admin_add_org_permission(
     request: Request,
     auth=AUTH_COOKIE,
 ):
-    await authz.verify(
+    ctx = await authz.verify(
         auth, ["auth:admin"], host=request.headers.get("host"), match=permutil.has_all
     )
-    db.add_permission_to_organization(str(org_uuid), permission_id)
+    db.add_permission_to_organization(str(org_uuid), permission_id, actor=str(ctx.user.uuid))
     return {"status": "ok"}
 
 
@@ -252,7 +253,7 @@ async def admin_remove_org_permission(
             "This would lock you out of admin access."
         )
 
-    db.remove_permission_from_organization(str(org_uuid), permission_id)
+    db.remove_permission_from_organization(str(org_uuid), permission_id, actor=str(ctx.user.uuid))
     return {"status": "ok"}
 
 
@@ -293,7 +294,7 @@ async def admin_create_role(
         display_name=display_name,
         permissions=perms,
     )
-    db.create_role(role)
+    db.create_role(role, actor=str(ctx.user.uuid))
     return {"uuid": str(role_uuid)}
 
 
@@ -324,7 +325,7 @@ async def admin_update_role_name(
     if not display_name:
         raise ValueError("display_name is required")
 
-    db.update_role_name(role_uuid, display_name)
+    db.update_role_name(role_uuid, display_name, actor=str(ctx.user.uuid))
     return {"status": "ok"}
 
 
@@ -358,7 +359,7 @@ async def admin_add_role_permission(
     if permission_id not in org.permissions:
         raise ValueError("Permission not grantable by organization")
 
-    db.add_permission_to_role(role_uuid, permission_id)
+    db.add_permission_to_role(role_uuid, permission_id, actor=str(ctx.user.uuid))
     return {"status": "ok"}
 
 
@@ -397,7 +398,7 @@ async def admin_remove_role_permission(
             ):
                 raise ValueError("Cannot remove your own admin permissions")
 
-    db.remove_permission_from_role(role_uuid, permission_id)
+    db.remove_permission_from_role(role_uuid, permission_id, actor=str(ctx.user.uuid))
     return {"status": "ok"}
 
 
@@ -427,7 +428,7 @@ async def admin_delete_role(
     if ctx.role.uuid == role_uuid:
         raise ValueError("Cannot delete your own role")
 
-    db.delete_role(role_uuid)
+    db.delete_role(role_uuid, actor=str(ctx.user.uuid))
     return {"status": "ok"}
 
 
@@ -469,7 +470,7 @@ async def admin_create_user(
         visits=0,
         created_at=None,
     )
-    db.create_user(user)
+    db.create_user(user, actor=str(ctx.user.uuid))
     return {"uuid": str(user_uuid)}
 
 
@@ -517,7 +518,7 @@ async def admin_update_user_role(
                     "Cannot change your own role to one without admin permissions"
                 )
 
-    db.update_user_role_in_organization(user_uuid, new_role)
+    db.update_user_role_in_organization(user_uuid, new_role, actor=str(ctx.user.uuid))
     return {"status": "ok"}
 
 
@@ -557,6 +558,7 @@ async def admin_create_user_registration_link(
         key=tokens.reset_key(token),
         expiry=expiry,
         token_type=token_type,
+        actor=str(ctx.user.uuid),
     )
     url = hostutil.reset_link_url(token)
     return {
@@ -739,7 +741,7 @@ async def admin_update_user_display_name(
         raise HTTPException(status_code=400, detail="display_name required")
     if len(new_name) > 64:
         raise HTTPException(status_code=400, detail="display_name too long")
-    db.update_user_display_name(user_uuid, new_name)
+    db.update_user_display_name(user_uuid, new_name, actor=str(ctx.user.uuid))
     return {"status": "ok"}
 
 
@@ -768,7 +770,7 @@ async def admin_delete_user_credential(
         raise authz.AuthException(
             status_code=403, detail="Insufficient permissions", mode="forbidden"
         )
-    db.delete_credential(credential_uuid, user_uuid)
+    db.delete_credential(credential_uuid, user_uuid, actor=str(ctx.user.uuid))
     return {"status": "ok"}
 
 
@@ -808,7 +810,7 @@ async def admin_delete_user_session(
     if not target_session or target_session.user_uuid != user_uuid:
         raise HTTPException(status_code=404, detail="Session not found")
 
-    db.delete_session(target_key)
+    db.delete_session(target_key, actor=str(ctx.user.uuid))
 
     # Check if admin terminated their own session
     current_terminated = target_key == session_key(auth)
@@ -937,7 +939,7 @@ async def admin_create_permission(
     payload: dict = Body(...),
     auth=AUTH_COOKIE,
 ):
-    await authz.verify(
+    ctx = await authz.verify(
         auth,
         ["auth:admin"],
         host=request.headers.get("host"),
@@ -960,7 +962,8 @@ async def admin_create_permission(
     db.create_permission(
         PermDC(
             uuid=uuid7.create(), scope=scope, display_name=display_name, domain=domain
-        )
+        ),
+        actor=str(ctx.user.uuid),
     )
     return {"status": "ok"}
 
@@ -975,7 +978,7 @@ async def admin_update_permission(
     scope: str | None = None,
     domain: str | None = None,
 ):
-    await authz.verify(
+    ctx = await authz.verify(
         auth, ["auth:admin"], host=request.headers.get("host"), match=permutil.has_all
     )
 
@@ -1009,7 +1012,8 @@ async def admin_update_permission(
             scope=new_scope,
             display_name=new_display_name,
             domain=domain_value,
-        )
+        ),
+        actor=str(ctx.user.uuid),
     )
     return {"status": "ok"}
 
@@ -1020,7 +1024,7 @@ async def admin_rename_permission(
     payload: dict = Body(...),
     auth=AUTH_COOKIE,
 ):
-    await authz.verify(
+    ctx = await authz.verify(
         auth, ["auth:admin"], host=request.headers.get("host"), match=permutil.has_all
     )
     old_scope = payload.get("old_scope") or payload.get("old_id")  # Support both
@@ -1055,7 +1059,7 @@ async def admin_rename_permission(
         _check_admin_lockout(str(perm.uuid), domain_value, request.headers.get("host"))
 
     # All current backends support rename_permission
-    db.rename_permission(old_scope, new_scope, display_name, domain_value)
+    db.rename_permission(old_scope, new_scope, display_name, domain_value, actor=str(ctx.user.uuid))
     return {"status": "ok"}
 
 
@@ -1066,7 +1070,7 @@ async def admin_delete_permission(
     permission_uuid: str | None = None,
     permission_id: str | None = None,  # Backwards compat - treated as scope
 ):
-    await authz.verify(
+    ctx = await authz.verify(
         auth,
         ["auth:admin"],
         host=request.headers.get("host"),
@@ -1086,5 +1090,5 @@ async def admin_delete_permission(
     if perm.scope == "auth:admin":
         _check_admin_lockout_on_delete(str(perm.uuid), request.headers.get("host"))
 
-    db.delete_permission(str(perm.uuid))
+    db.delete_permission(str(perm.uuid), actor=str(ctx.user.uuid))
     return {"status": "ok"}
