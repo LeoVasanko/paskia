@@ -47,7 +47,7 @@ class Credential(msgspec.Struct):
 
 
 class Session(msgspec.Struct):
-    key: bytes
+    key: str
     user_uuid: UUID
     credential_uuid: UUID
     host: str | None
@@ -143,6 +143,6 @@ class _DatabaseData(msgspec.Struct, omit_defaults=True):
     roles: dict[UUID, _RoleData]
     users: dict[UUID, _UserData]
     credentials: dict[UUID, _CredentialData]
-    sessions: dict[bytes, _SessionData]
+    sessions: dict[str, _SessionData]
     reset_tokens: dict[bytes, _ResetTokenData]
     v: int = 0

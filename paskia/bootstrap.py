@@ -14,7 +14,7 @@ import uuid7
 
 from paskia import authsession, db
 from paskia.db import Org, Permission, Role, User
-from paskia.util import hostutil, passphrase, tokens
+from paskia.util import hostutil, passphrase
 
 
 def _init_logger() -> logging.Logger:
@@ -44,7 +44,7 @@ async def _create_and_log_admin_reset_link(user_uuid, message, session_type) -> 
     expiry = authsession.reset_expires()
     db.create_reset_token(
         user_uuid=user_uuid,
-        key=tokens.reset_key(token),
+        passphrase=token,
         expiry=expiry,
         token_type=session_type,
     )

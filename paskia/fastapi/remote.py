@@ -342,25 +342,23 @@ async def websocket_remote_auth_permit(ws: WebSocket):
                 if request.action == "register":
                     # For registration, create a reset token for device addition
                     from paskia.authsession import expires
-                    from paskia.util import hostutil, tokens
+                    from paskia.util import hostutil
 
                     token_str = passphrase.generate()
                     expiry = expires()
                     db.create_reset_token(
                         user_uuid=stored_cred.user_uuid,
-                        key=tokens.reset_key(token_str),
+                        passphrase=token_str,
                         expiry=expiry,
                         token_type="device addition",
                         actor=str(stored_cred.user_uuid),
                     )
                     reset_token = token_str
                     # Also create a session so the device is logged in
-                    session_token = passphrase.generate()
                     normalized_host = hostutil.normalize_host(request.host)
-                    db.login(
+                    session_token = db.login(
                         user_uuid=stored_cred.user_uuid,
                         credential=stored_cred,
-                        session_key=tokens.session_key(session_token),
                         host=normalized_host,
                         ip=request.ip,
                         user_agent=request.user_agent,
@@ -369,14 +367,12 @@ async def websocket_remote_auth_permit(ws: WebSocket):
                 else:
                     # Default login action
                     from paskia.authsession import expires
-                    from paskia.util import hostutil, tokens
+                    from paskia.util import hostutil
 
-                    session_token = passphrase.generate()
                     normalized_host = hostutil.normalize_host(request.host)
-                    db.login(
+                    session_token = db.login(
                         user_uuid=stored_cred.user_uuid,
                         credential=stored_cred,
-                        session_key=tokens.session_key(session_token),
                         host=normalized_host,
                         ip=request.ip,
                         user_agent=request.user_agent,

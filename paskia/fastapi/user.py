@@ -18,8 +18,7 @@ from paskia.authsession import (
 )
 from paskia.fastapi import authz, session
 from paskia.fastapi.session import AUTH_COOKIE
-from paskia.util import hostutil, passphrase, tokens
-from paskia.util.tokens import decode_session_key, session_key
+from paskia.util import hostutil, passphrase
 
 app = FastAPI()
 
@@ -92,19 +91,12 @@ async def api_delete_session(
             status_code=401, detail="Session expired", mode="login"
         ) from exc
 
-    try:
-        target_key = decode_session_key(session_id)
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=400, detail="Invalid session identifier"
-        ) from exc
-
-    target_session = db.get_session(target_key)
+    target_session = db.get_session(session_id)
     if not target_session or target_session.user_uuid != current_session.user_uuid:
         raise HTTPException(status_code=404, detail="Session not found")
 
-    db.delete_session(target_key, actor=str(current_session.user_uuid))
-    current_terminated = target_key == session_key(auth)
+    db.delete_session(session_id, actor=str(current_session.user_uuid))
+    current_terminated = session_id == auth
     if current_terminated:
         session.clear_session_cookie(response)  # explicit because 200
     return {"status": "ok", "current_session_terminated": current_terminated}
@@ -146,7 +138,7 @@ async def api_create_link(
     expiry = expires()
     db.create_reset_token(
         user_uuid=s.user_uuid,
-        key=tokens.reset_key(token),
+        passphrase=token,
         expiry=expiry,
         token_type="device addition",
         actor=str(s.user_uuid),

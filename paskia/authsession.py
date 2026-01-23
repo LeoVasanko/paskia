@@ -14,9 +14,7 @@ from uuid import UUID
 from paskia import db
 from paskia.config import SESSION_LIFETIME
 from paskia.db import ResetToken, Session
-from paskia.globals import passkey
 from paskia.util import hostutil
-from paskia.util.tokens import create_token, reset_key, session_key
 
 EXPIRES = SESSION_LIFETIME
 
@@ -33,7 +31,7 @@ def reset_expires() -> datetime:
 
 async def get_reset(token: str) -> ResetToken:
     """Validate a credential reset token."""
-    record = db.get_reset_token(reset_key(token))
+    record = db.get_reset_token(token)
     if record:
         return record
     raise ValueError("This authentication link is no longer valid.")
@@ -44,7 +42,7 @@ async def get_session(token: str, host: str | None = None) -> Session:
     host = hostutil.normalize_host(host)
     if not host:
         raise ValueError("Invalid host")
-    session = db.get_session(session_key(token))
+    session = db.get_session(token)
     if session:
         if session.host is None:
             # First time binding: store exact host:port (or IPv6 form) now.
@@ -58,11 +56,11 @@ async def get_session(token: str, host: str | None = None) -> Session:
 
 async def refresh_session_token(token: str, *, ip: str, user_agent: str):
     """Refresh a session extending its expiry."""
-    session_record = db.get_session(session_key(token))
+    session_record = db.get_session(token)
     if not session_record:
         raise ValueError("Session not found or expired")
     updated = db.update_session(
-        session_key(token),
+        token,
         ip=ip,
         user_agent=user_agent,
         expiry=expires(),

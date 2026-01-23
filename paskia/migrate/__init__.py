@@ -15,6 +15,8 @@ import asyncio
 from datetime import datetime, timezone
 from uuid import UUID
 
+import base64url
+
 from paskia.authsession import EXPIRES
 
 from .sql import (
@@ -194,12 +196,19 @@ async def migrate_from_sql(
         print(f"  Migrated {len(cred_models)} credentials")
 
     # Migrate sessions
+    # Old format: b"sess" + 12 bytes -> New format: base64url string (16 chars)
     async with sql_db.session() as session:
         result = await session.execute(select(SessionModel))
         session_models = result.scalars().all()
         for sm in session_models:
             sess = sm.as_dataclass()
-            session_key: bytes = sess.key
+            old_key: bytes = sess.key
+            # Strip b"sess" prefix and encode remaining 12 bytes as base64url
+            if old_key.startswith(b"sess"):
+                session_key = base64url.enc(old_key[4:])
+            else:
+                # Already in new format or unknown - try to use as-is
+                session_key = base64url.enc(old_key[:12])
             json_db._data.sessions[session_key] = _SessionData(
                 user=sess.user_uuid,
                 credential=sess.credential_uuid,
@@ -211,12 +220,19 @@ async def migrate_from_sql(
         print(f"  Migrated {len(session_models)} sessions")
 
     # Migrate reset tokens
+    # Old format: b"rset" + 16 bytes hash -> New format: 9 bytes (truncated hash)
     async with sql_db.session() as session:
         result = await session.execute(select(ResetTokenModel))
         token_models = result.scalars().all()
         for tm in token_models:
             token = tm.as_dataclass()
-            token_key: bytes = token.key
+            old_key: bytes = token.key
+            # Strip b"rset" prefix and take first 9 bytes of hash
+            if old_key.startswith(b"rset"):
+                token_key = old_key[4:13]  # 9 bytes after prefix
+            else:
+                # Already in new format or unknown - truncate to 9 bytes
+                token_key = old_key[:9]
             json_db._data.reset_tokens[token_key] = _ResetTokenData(
                 user=token.user_uuid,
                 expiry=token.expiry,

@@ -24,7 +24,6 @@ from paskia.fastapi import authz, session, user
 from paskia.fastapi.session import AUTH_COOKIE, AUTH_COOKIE_NAME
 from paskia.globals import passkey as global_passkey
 from paskia.util import frontend, hostutil, htmlutil, passphrase, userinfo
-from paskia.util.tokens import session_key
 
 bearer_auth = HTTPBearer(auto_error=True)
 
@@ -293,7 +292,7 @@ async def api_logout(request: Request, response: Response, auth=AUTH_COOKIE):
     except ValueError:
         return {"message": "Already logged out"}
     with suppress(Exception):
-        db.delete_session(session_key(auth), actor=str(s.user_uuid))
+        db.delete_session(auth, actor=str(s.user_uuid))
     session.clear_session_cookie(response)
     return {"message": "Logged out successfully"}
 

@@ -15,10 +15,8 @@ from paskia.util import (
     passphrase,
     permutil,
     querysafe,
-    tokens,
     useragent,
 )
-from paskia.util.tokens import encode_session_key, session_key
 
 app = FastAPI()
 
@@ -217,7 +215,9 @@ async def admin_add_org_permission(
     ctx = await authz.verify(
         auth, ["auth:admin"], host=request.headers.get("host"), match=permutil.has_all
     )
-    db.add_permission_to_organization(str(org_uuid), permission_id, actor=str(ctx.user.uuid))
+    db.add_permission_to_organization(
+        str(org_uuid), permission_id, actor=str(ctx.user.uuid)
+    )
     return {"status": "ok"}
 
 
@@ -241,7 +241,9 @@ async def admin_remove_org_permission(
             "This would lock you out of admin access."
         )
 
-    db.remove_permission_from_organization(str(org_uuid), permission_id, actor=str(ctx.user.uuid))
+    db.remove_permission_from_organization(
+        str(org_uuid), permission_id, actor=str(ctx.user.uuid)
+    )
     return {"status": "ok"}
 
 
@@ -543,7 +545,7 @@ async def admin_create_user_registration_link(
     expiry = reset_expires()
     db.create_reset_token(
         user_uuid=user_uuid,
-        key=tokens.reset_key(token),
+        passphrase=token,
         expiry=expiry,
         token_type=token_type,
         actor=str(ctx.user.uuid),
@@ -640,13 +642,13 @@ async def admin_get_user_detail(
     # Get sessions for the user
     normalized_request_host = hostutil.normalize_host(request.headers.get("host"))
     session_records = db.list_sessions_for_user(user_uuid)
-    current_session_key = session_key(auth)
+    current_session_key = auth
     sessions_payload: list[dict] = []
     for entry in session_records:
         renewed = entry.expiry - EXPIRES
         sessions_payload.append(
             {
-                "id": encode_session_key(entry.key),
+                "id": entry.key,
                 "credential_uuid": str(entry.credential_uuid),
                 "host": entry.host,
                 "ip": entry.ip,
@@ -787,21 +789,14 @@ async def admin_delete_user_session(
             status_code=403, detail="Insufficient permissions", mode="forbidden"
         )
 
-    try:
-        target_key = tokens.decode_session_key(session_id)
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=400, detail="Invalid session identifier"
-        ) from exc
-
-    target_session = db.get_session(target_key)
+    target_session = db.get_session(session_id)
     if not target_session or target_session.user_uuid != user_uuid:
         raise HTTPException(status_code=404, detail="Session not found")
 
-    db.delete_session(target_key, actor=str(ctx.user.uuid))
+    db.delete_session(session_id, actor=str(ctx.user.uuid))
 
     # Check if admin terminated their own session
-    current_terminated = target_key == session_key(auth)
+    current_terminated = session_id == auth
     return {"status": "ok", "current_session_terminated": current_terminated}
 
 
@@ -1047,7 +1042,9 @@ async def admin_rename_permission(
         _check_admin_lockout(str(perm.uuid), domain_value, request.headers.get("host"))
 
     # All current backends support rename_permission
-    db.rename_permission(old_scope, new_scope, display_name, domain_value, actor=str(ctx.user.uuid))
+    db.rename_permission(
+        old_scope, new_scope, display_name, domain_value, actor=str(ctx.user.uuid)
+    )
     return {"status": "ok"}
 
 
