@@ -21,6 +21,7 @@ dependencies = [
     "user-agents>=2.2.0",
     "jsondiff>=2.2.1",
     "msgspec>=0.20.0",
+    "aiofiles>=25.1.0",
 ]
 requires-python = ">=3.10"
 
