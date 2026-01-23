@@ -1,16 +1,21 @@
 """
-Async JSON database implementation for WebAuthn passkey authentication.
+JSON database implementation for WebAuthn passkey authentication.
 
 This module provides a JSON file-based database layer that maintains all data
 in memory and persists changes to disk as JSONL. Uses object keys by UUID
 instead of lists for efficient lookups.
 
 All public data types are msgspec Structs for efficient serialization.
+Database methods are synchronous since all data is in memory.
+A background task periodically flushes queued changes to disk.
 """
 
 import asyncio
+import logging
 import os
-from contextlib import asynccontextmanager
+import threading
+from collections import deque
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -23,6 +28,11 @@ import msgspec
 from paskia.config import SESSION_LIFETIME
 
 DB_PATH_DEFAULT = "paskia.jsonl"
+
+# Flush changes to disk every N seconds
+FLUSH_INTERVAL = 5
+# Cleanup expired items every N seconds (cheap when nothing to remove)
+CLEANUP_INTERVAL = 1
 
 
 # -------------------------------------------------------------------------
@@ -215,6 +225,9 @@ def _str_to_bytes(s: str | None) -> bytes | None:
 
 # Global database instance (set by init())
 _db: "DB | None" = None
+_background_task: asyncio.Task | None = None
+
+_logger = logging.getLogger(__name__)
 
 
 def get_db() -> "DB":
@@ -224,22 +237,81 @@ def get_db() -> "DB":
     return _db
 
 
+async def _background_loop():
+    """Background task that periodically flushes changes and cleans up."""
+    # Run cleanup immediately on startup to clear old expired items
+    if _db is not None:
+        _db.cleanup()
+        _db.flush()
+
+    last_cleanup = datetime.now(timezone.utc)
+
+    while True:
+        try:
+            await asyncio.sleep(FLUSH_INTERVAL)
+            if _db is not None:
+                # Flush pending changes to disk
+                _db.flush()
+
+                # Run cleanup less frequently
+                now = datetime.now(timezone.utc)
+                if (now - last_cleanup).total_seconds() >= CLEANUP_INTERVAL:
+                    _db.cleanup()
+                    _db.flush()  # Flush cleanup changes
+                    last_cleanup = now
+        except asyncio.CancelledError:
+            # Final flush before exit
+            if _db is not None:
+                _db.flush()
+            break
+        except Exception:
+            _logger.exception("Error in database background loop")
+
+
+async def start_background():
+    """Start the background flush/cleanup task."""
+    global _background_task
+    if _background_task is None:
+        _background_task = asyncio.create_task(_background_loop())
+
+
+async def stop_background():
+    """Stop the background task and flush any pending changes."""
+    global _background_task
+    if _background_task:
+        _background_task.cancel()
+        try:
+            await _background_task
+        except asyncio.CancelledError:
+            pass
+        _background_task = None
+
+
+# Aliases for backwards compatibility
+start_cleanup = start_background
+stop_cleanup = stop_background
+
+
 async def init(*args, **kwargs):
-    """Initialize the global database instance."""
+    """Initialize the global database instance and start background task."""
     global _db
     db_path = os.environ.get("PASKIA_DB", DB_PATH_DEFAULT)
     # Remove any prefix (for compatibility with SQL-style URIs)
     if db_path.startswith("json:"):
         db_path = db_path[5:]
     _db = DB(db_path)
-    await _db.init_db()
+    _db.load()
+    await start_background()
 
 
 class DB:
     """JSON-based database implementation.
 
-    Maintains data in memory and persists to disk on every change.
-    Uses nested dictionaries keyed by UUID strings for efficient lookup.
+    All methods are synchronous since data is maintained in memory.
+    Changes are queued and periodically flushed to disk by a background task.
+    Each change records the actor (user UUID or system identifier).
+
+    Thread-safety: Uses a lock for concurrent access to the data structure.
 
     Data structure:
         {
@@ -258,7 +330,9 @@ class DB:
         self.db_path = Path(db_path)
         self._data: _DatabaseData | None = None
         self._previous_builtins: dict[str, Any] = {}  # For diffing (JSON-compatible)
-        self._lock = asyncio.Lock()
+        self._pending_changes: deque[_ChangeRecord] = deque()
+        self._lock = threading.RLock()  # Reentrant for nested calls
+        self._current_actor: str = "system"  # Default actor for changes
 
     def _empty_data(self) -> _DatabaseData:
         """Return an empty database structure."""
@@ -272,40 +346,41 @@ class DB:
             reset_tokens={},
         )
 
-    async def _load(self) -> None:
+    def load(self) -> None:
         """Load data from disk by applying change log.
 
         Replays all changes from JSONL file using plain dicts (to handle
         schema evolution), then validates the final state against msgspec
         structs which become the working copy with proper datetime types.
         """
-        data_dict = msgspec.to_builtins(self._empty_data())
-        if self.db_path.exists():
-            try:
-                # Read JSONL file line by line and apply diffs
-                with open(self.db_path, encoding="utf-8") as f:
-                    for line_num, line in enumerate(f, 1):
-                        line = line.strip()
-                        if not line:
-                            continue
-                        try:
-                            change = msgspec.json.decode(line.encode("utf-8"))
-                            # Apply the diff to current state (marshal=True for $-prefixed keys)
-                            data_dict = jsondiff.patch(
-                                data_dict, change["diff"], marshal=True
-                            )
-                        except Exception as e:
-                            raise ValueError(f"Error parsing line {line_num}: {e}")
-            except (OSError, ValueError, msgspec.DecodeError) as e:
-                raise ValueError(f"Failed to load database: {e}")
+        with self._lock:
+            data_dict = msgspec.to_builtins(self._empty_data())
+            if self.db_path.exists():
+                try:
+                    # Read JSONL file line by line and apply diffs
+                    with open(self.db_path, encoding="utf-8") as f:
+                        for line_num, line in enumerate(f, 1):
+                            line = line.strip()
+                            if not line:
+                                continue
+                            try:
+                                change = msgspec.json.decode(line.encode("utf-8"))
+                                # Apply the diff to current state (marshal=True for $-prefixed keys)
+                                data_dict = jsondiff.patch(
+                                    data_dict, change["diff"], marshal=True
+                                )
+                            except Exception as e:
+                                raise ValueError(f"Error parsing line {line_num}: {e}")
+                except (OSError, ValueError, msgspec.DecodeError) as e:
+                    raise ValueError(f"Failed to load database: {e}")
 
-        # Validate and convert to msgspec struct (datetime strings -> datetime objects)
-        self._data = _json_decoder.decode(_json_encoder.encode(data_dict))
-        # Store builtins representation for diffing (to_builtins creates a copy)
-        self._previous_builtins = msgspec.to_builtins(self._data)
+            # Validate and convert to msgspec struct (datetime strings -> datetime objects)
+            self._data = _json_decoder.decode(_json_encoder.encode(data_dict))
+            # Store builtins representation for diffing (to_builtins creates a copy)
+            self._previous_builtins = msgspec.to_builtins(self._data)
 
-    async def _save(self, actor: str = "system") -> None:
-        """Append change record to JSONL file."""
+    def _queue_change(self) -> None:
+        """Queue a change record for later flush. Must hold lock."""
         if self._data is None:
             return
         # Convert current struct to builtins for diffing (datetime->str, bytes->base64)
@@ -314,75 +389,152 @@ class DB:
         # Calculate diff between previous and current state (marshal=True for JSON-serializable keys)
         diff = jsondiff.diff(self._previous_builtins, current_builtins, marshal=True)
 
-        # Only save if there are changes
+        # Only queue if there are changes
         if diff:
             change_record = _ChangeRecord(
                 ts=datetime.now(timezone.utc),
-                actor=actor,
+                actor=self._current_actor,
                 diff=diff,
             )
+            self._pending_changes.append(change_record)
+            # Update previous builtins for next diff
+            self._previous_builtins = current_builtins
 
-            # Encode and append to file
-            data = _json_encoder.encode(change_record)
-            line = data.decode("utf-8") + "\n"
+    def flush(self) -> None:
+        """Write all pending changes to disk."""
+        with self._lock:
+            if not self._pending_changes:
+                return
 
-            # Append atomically (create temp file, then append)
+            # Collect all pending changes
+            changes_to_write = list(self._pending_changes)
+            self._pending_changes.clear()
+
+        # Write outside the lock to avoid blocking other operations
+        try:
+            # Build lines to append
+            lines = []
+            for change in changes_to_write:
+                data = _json_encoder.encode(change)
+                lines.append(data.decode("utf-8"))
+
+            # Read existing content and append
+            existing_content = ""
+            if self.db_path.exists():
+                existing_content = self.db_path.read_text("utf-8")
+
+            new_content = existing_content + "\n".join(lines) + "\n"
+
+            # Write atomically via temp file
             tmp_path = self.db_path.with_suffix(".tmp")
+            tmp_path.write_text(new_content, "utf-8")
+            tmp_path.replace(self.db_path)
+        except OSError:
+            _logger.exception("Failed to flush database changes")
+            # Re-queue the changes on failure
+            with self._lock:
+                for change in reversed(changes_to_write):
+                    self._pending_changes.appendleft(change)
+
+    @contextmanager
+    def session(self, actor: str = "system"):
+        """Context manager for atomic operations with change queued on exit."""
+        with self._lock:
+            old_actor = self._current_actor
+            self._current_actor = actor
             try:
-                # Read existing content
-                existing_content = ""
-                if self.db_path.exists():
-                    existing_content = await asyncio.to_thread(
-                        self.db_path.read_text, "utf-8"
-                    )
+                yield
+                self._queue_change()
+            finally:
+                self._current_actor = old_actor
 
-                # Append new line
-                new_content = existing_content + line
+    # -------------------------------------------------------------------------
+    # Internal helpers (caller must hold lock)
+    # -------------------------------------------------------------------------
 
-                # Write to temp file and rename
-                await asyncio.to_thread(tmp_path.write_text, new_content, "utf-8")
-                await asyncio.to_thread(tmp_path.replace, self.db_path)
+    def _build_user(self, user_uuid: str) -> User:
+        """Build a User object from internal storage. Caller must hold lock."""
+        u = self._data.users[user_uuid]
+        return User(
+            uuid=UUID(user_uuid),
+            display_name=u.display_name,
+            role_uuid=UUID(u.role),
+            created_at=u.created_at,
+            last_seen=u.last_seen,
+            visits=u.visits,
+        )
 
-                # Update previous builtins for next diff (to_builtins creates a copy)
-                self._previous_builtins = current_builtins
-            except OSError:
-                # Clean up temp file on error
-                if tmp_path.exists():
-                    await asyncio.to_thread(tmp_path.unlink)
+    def _build_role(self, role_uuid: str) -> Role:
+        """Build a Role object from internal storage. Caller must hold lock."""
+        r = self._data.roles[role_uuid]
+        return Role(
+            uuid=UUID(role_uuid),
+            org_uuid=UUID(r.org),
+            display_name=r.display_name,
+            permissions=list(r.permissions),
+        )
 
-    @asynccontextmanager
-    async def session(self):
-        """Context manager for atomic operations with save on exit."""
-        async with self._lock:
-            yield
-            await self._save()
+    def _build_org(self, org_uuid: str, include_roles: bool = False) -> Org:
+        """Build an Org object from internal storage. Caller must hold lock."""
+        o = self._data.orgs[org_uuid]
+        # Get permissions this org can grant
+        perm_ids = [
+            pid for pid, p in self._data.permissions.items() if org_uuid in p.orgs
+        ]
+        org = Org(
+            uuid=UUID(org_uuid),
+            display_name=o.display_name,
+            permissions=perm_ids,
+        )
+        if include_roles:
+            org.roles = [
+                self._build_role(role_uuid)
+                for role_uuid, r in self._data.roles.items()
+                if r.org == org_uuid
+            ]
+        return org
 
-    async def init_db(self) -> None:
-        """Initialize database (load from disk)."""
-        async with self._lock:
-            await self._load()
+    def _build_credential(self, cred_uuid: str) -> Credential:
+        """Build a Credential object from internal storage. Caller must hold lock."""
+        c = self._data.credentials[cred_uuid]
+        return Credential(
+            uuid=UUID(cred_uuid),
+            credential_id=c.credential_id,
+            user_uuid=UUID(c.user),
+            aaguid=UUID(c.aaguid),
+            public_key=c.public_key,
+            sign_count=c.sign_count,
+            created_at=c.created_at,
+            last_used=c.last_used,
+            last_verified=c.last_verified,
+        )
+
+    def _build_session(self, sess_key_b64: str) -> Session:
+        """Build a Session object from internal storage. Caller must hold lock."""
+        s = self._data.sessions[sess_key_b64]
+        return Session(
+            key=_str_to_bytes(sess_key_b64),  # type: ignore[arg-type]
+            user_uuid=UUID(s.user),
+            credential_uuid=UUID(s.credential),
+            host=s.host,
+            ip=s.ip,
+            user_agent=s.user_agent,
+            renewed=s.renewed,
+        )
 
     # -------------------------------------------------------------------------
     # User operations
     # -------------------------------------------------------------------------
 
-    async def get_user_by_uuid(self, user_uuid: UUID) -> User:
-        async with self._lock:
+    def get_user_by_uuid(self, user_uuid: UUID) -> User:
+        with self._lock:
             key = str(user_uuid)
             if key not in self._data.users:
                 raise ValueError("User not found")
-            u = self._data.users[key]
-            return User(
-                uuid=user_uuid,  # Use the key directly
-                display_name=u.display_name,
-                role_uuid=UUID(u.role),
-                created_at=u.created_at,
-                last_seen=u.last_seen,
-                visits=u.visits,
-            )
+            return self._build_user(key)
 
-    async def create_user(self, user: User) -> None:
-        async with self.session():
+    def create_user(self, user: User, actor: str = "system") -> None:
+        with self.session(actor):
             key = str(user.uuid)
             self._data.users[key] = _UserData(
                 display_name=user.display_name,
@@ -392,10 +544,10 @@ class DB:
                 visits=user.visits,
             )
 
-    async def update_user_display_name(
-        self, user_uuid: UUID, display_name: str
+    def update_user_display_name(
+        self, user_uuid: UUID, display_name: str, actor: str = "system"
     ) -> None:
-        async with self.session():
+        with self.session(actor):
             key = str(user_uuid)
             if key not in self._data.users:
                 raise ValueError("User not found")
@@ -405,8 +557,8 @@ class DB:
     # Role operations
     # -------------------------------------------------------------------------
 
-    async def create_role(self, role: Role) -> None:
-        async with self.session():
+    def create_role(self, role: Role, actor: str = "system") -> None:
+        with self.session(actor):
             key = str(role.uuid)
             self._data.roles[key] = _RoleData(
                 org=str(role.org_uuid),
@@ -416,8 +568,8 @@ class DB:
                 else {},
             )
 
-    async def update_role(self, role: Role) -> None:
-        async with self.session():
+    def update_role(self, role: Role, actor: str = "system") -> None:
+        with self.session(actor):
             key = str(role.uuid)
             if key not in self._data.roles:
                 raise ValueError("Role not found")
@@ -426,8 +578,8 @@ class DB:
                 {p: True for p in role.permissions} if role.permissions else {}
             )
 
-    async def delete_role(self, role_uuid: UUID) -> None:
-        async with self.session():
+    def delete_role(self, role_uuid: UUID, actor: str = "system") -> None:
+        with self.session(actor):
             key = str(role_uuid)
             # Check for users with this role
             for u in self._data.users.values():
@@ -436,25 +588,19 @@ class DB:
             if key in self._data.roles:
                 del self._data.roles[key]
 
-    async def get_role(self, role_uuid: UUID) -> Role:
-        async with self._lock:
+    def get_role(self, role_uuid: UUID) -> Role:
+        with self._lock:
             key = str(role_uuid)
             if key not in self._data.roles:
                 raise ValueError("Role not found")
-            r = self._data.roles[key]
-            return Role(
-                uuid=role_uuid,  # Use the key directly
-                org_uuid=UUID(r.org),
-                display_name=r.display_name,
-                permissions=list(r.permissions),
-            )
+            return self._build_role(key)
 
     # -------------------------------------------------------------------------
     # Credential operations
     # -------------------------------------------------------------------------
 
-    async def create_credential(self, credential: Credential) -> None:
-        async with self.session():
+    def create_credential(self, credential: Credential, actor: str = "system") -> None:
+        with self.session(actor):
             key = str(credential.uuid)
             self._data.credentials[key] = _CredentialData(
                 credential_id=credential.credential_id,  # Store bytes directly
@@ -467,25 +613,15 @@ class DB:
                 last_verified=credential.last_verified,
             )
 
-    async def get_credential_by_id(self, credential_id: bytes) -> Credential:
-        async with self._lock:
+    def get_credential_by_id(self, credential_id: bytes) -> Credential:
+        with self._lock:
             for key, c in self._data.credentials.items():
                 if c.credential_id == credential_id:
-                    return Credential(
-                        uuid=UUID(key),  # Use the key directly
-                        credential_id=c.credential_id,  # Already bytes
-                        user_uuid=UUID(c.user),
-                        aaguid=UUID(c.aaguid),
-                        public_key=c.public_key,  # Already bytes
-                        sign_count=c.sign_count,
-                        created_at=c.created_at,  # Already datetime
-                        last_used=c.last_used,
-                        last_verified=c.last_verified,
-                    )
+                    return self._build_credential(key)
             raise ValueError("Credential not found")
 
-    async def get_credentials_by_user_uuid(self, user_uuid: UUID) -> list[bytes]:
-        async with self._lock:
+    def get_credentials_by_user_uuid(self, user_uuid: UUID) -> list[bytes]:
+        with self._lock:
             user_key = str(user_uuid)
             result: list[bytes] = []
             for c in self._data.credentials.values():
@@ -495,8 +631,8 @@ class DB:
                         result.append(cred_id)
             return result
 
-    async def update_credential(self, credential: Credential) -> None:
-        async with self.session():
+    def update_credential(self, credential: Credential, actor: str = "system") -> None:
+        with self.session(actor):
             for key, c in self._data.credentials.items():
                 if c.credential_id == credential.credential_id:
                     c.sign_count = credential.sign_count
@@ -506,8 +642,8 @@ class DB:
                     return
             raise ValueError("Credential not found")
 
-    async def delete_credential(self, uuid: UUID, user_uuid: UUID) -> None:
-        async with self.session():
+    def delete_credential(self, uuid: UUID, user_uuid: UUID, actor: str = "system") -> None:
+        with self.session(actor):
             key = str(uuid)
             if key not in self._data.credentials:
                 return
@@ -520,7 +656,7 @@ class DB:
     # Session operations
     # -------------------------------------------------------------------------
 
-    async def create_session(
+    def create_session(
         self,
         user_uuid: UUID,
         key: bytes,
@@ -529,8 +665,9 @@ class DB:
         ip: str,
         user_agent: str,
         renewed: datetime,
+        actor: str = "system",
     ) -> None:
-        async with self.session():
+        with self.session(actor):
             key_b64 = _bytes_to_str(key)
             self._data.sessions[key_b64] = _SessionData(
                 user=str(user_uuid),
@@ -541,37 +678,29 @@ class DB:
                 renewed=renewed,
             )
 
-    async def get_session(self, key: bytes) -> Session | None:
-        async with self._lock:
+    def get_session(self, key: bytes) -> Session | None:
+        with self._lock:
             key_b64 = _bytes_to_str(key)
             if key_b64 not in self._data.sessions:
                 return None
-            s = self._data.sessions[key_b64]
-            return Session(
-                key=_str_to_bytes(key_b64),  # type: ignore[arg-type]
-                user_uuid=UUID(s.user),
-                credential_uuid=UUID(s.credential),
-                host=s.host,
-                ip=s.ip,
-                user_agent=s.user_agent,
-                renewed=s.renewed,  # Already datetime
-            )
+            return self._build_session(key_b64)
 
-    async def delete_session(self, key: bytes) -> None:
-        async with self.session():
+    def delete_session(self, key: bytes, actor: str = "system") -> None:
+        with self.session(actor):
             key_b64 = _bytes_to_str(key)
             if key_b64 in self._data.sessions:
                 del self._data.sessions[key_b64]
 
-    async def update_session(
+    def update_session(
         self,
         key: bytes,
         *,
         ip: str,
         user_agent: str,
         renewed: datetime,
+        actor: str = "system",
     ) -> Session | None:
-        async with self.session():
+        with self.session(actor):
             key_b64 = _bytes_to_str(key)
             if key_b64 not in self._data.sessions:
                 return None
@@ -579,49 +708,31 @@ class DB:
             s.ip = ip
             s.user_agent = user_agent
             s.renewed = renewed
-            return Session(
-                key=_str_to_bytes(key_b64),  # type: ignore[arg-type]
-                user_uuid=UUID(s.user),
-                credential_uuid=UUID(s.credential),
-                host=s.host,
-                ip=s.ip,
-                user_agent=s.user_agent,
-                renewed=s.renewed,  # Already datetime
-            )
+            return self._build_session(key_b64)
 
-    async def set_session_host(self, key: bytes, host: str) -> None:
-        async with self.session():
+    def set_session_host(self, key: bytes, host: str, actor: str = "system") -> None:
+        with self.session(actor):
             key_b64 = _bytes_to_str(key)
             if key_b64 in self._data.sessions:
                 s = self._data.sessions[key_b64]
                 if s.host is None:
                     s.host = host
 
-    async def list_sessions_for_user(self, user_uuid: UUID) -> list[Session]:
-        async with self._lock:
+    def list_sessions_for_user(self, user_uuid: UUID) -> list[Session]:
+        with self._lock:
             user_key = str(user_uuid)
             sessions = []
             for key_b64, s in self._data.sessions.items():
                 if s.user == user_key:
                     key_bytes = _str_to_bytes(key_b64)
                     if key_bytes and key_bytes.startswith(b"sess"):
-                        sessions.append(
-                            Session(
-                                key=key_bytes,
-                                user_uuid=UUID(s.user),
-                                credential_uuid=UUID(s.credential),
-                                host=s.host,
-                                ip=s.ip,
-                                user_agent=s.user_agent,
-                                renewed=s.renewed,  # Already datetime
-                            )
-                        )
+                        sessions.append(self._build_session(key_b64))
             # Sort by renewed desc
             sessions.sort(key=lambda x: x.renewed, reverse=True)
             return sessions
 
-    async def delete_sessions_for_user(self, user_uuid: UUID) -> None:
-        async with self.session():
+    def delete_sessions_for_user(self, user_uuid: UUID, actor: str = "system") -> None:
+        with self.session(actor):
             user_key = str(user_uuid)
             to_delete = [
                 k for k, s in self._data.sessions.items() if s.user == user_key
@@ -633,14 +744,15 @@ class DB:
     # Reset token operations
     # -------------------------------------------------------------------------
 
-    async def create_reset_token(
+    def create_reset_token(
         self,
         user_uuid: UUID,
         key: bytes,
         expiry: datetime,
         token_type: str,
+        actor: str = "system",
     ) -> None:
-        async with self.session():
+        with self.session(actor):
             key_b64 = _bytes_to_str(key)
             self._data.reset_tokens[key_b64] = _ResetTokenData(
                 user=str(user_uuid),
@@ -648,8 +760,8 @@ class DB:
                 token_type=token_type,
             )
 
-    async def get_reset_token(self, key: bytes) -> ResetToken | None:
-        async with self._lock:
+    def get_reset_token(self, key: bytes) -> ResetToken | None:
+        with self._lock:
             key_b64 = _bytes_to_str(key)
             if key_b64 not in self._data.reset_tokens:
                 return None
@@ -661,8 +773,8 @@ class DB:
                 token_type=t.token_type,
             )
 
-    async def delete_reset_token(self, key: bytes) -> None:
-        async with self.session():
+    def delete_reset_token(self, key: bytes, actor: str = "system") -> None:
+        with self.session(actor):
             key_b64 = _bytes_to_str(key)
             if key_b64 in self._data.reset_tokens:
                 del self._data.reset_tokens[key_b64]
@@ -671,8 +783,8 @@ class DB:
     # Organization operations
     # -------------------------------------------------------------------------
 
-    async def create_organization(self, org: Org) -> None:
-        async with self.session():
+    def create_organization(self, org: Org, actor: str = "system") -> None:
+        with self.session(actor):
             key = str(org.uuid)
             self._data.orgs[key] = _OrgData(
                 display_name=org.display_name,
@@ -697,69 +809,21 @@ class DB:
             if auto_perm_id not in org.permissions:
                 org.permissions.append(auto_perm_id)
 
-    async def get_organization(self, org_id: str) -> Org:
-        async with self._lock:
-            # org_id is a UUID string
+    def get_organization(self, org_id: str) -> Org:
+        with self._lock:
             if org_id not in self._data.orgs:
                 raise ValueError("Organization not found")
-            o = self._data.orgs[org_id]
-            # Get permissions that this org can grant
-            permissions = []
-            for perm_id, p in self._data.permissions.items():
-                if org_id in p.orgs:
-                    permissions.append(perm_id)
-            org = Org(
-                uuid=UUID(org_id),  # Use the key directly
-                display_name=o.display_name,
-                permissions=permissions,
-            )
-            # Load roles for this org
-            roles = []
-            for role_uuid_str, r in self._data.roles.items():
-                if r.org == org_id:
-                    roles.append(
-                        Role(
-                            uuid=UUID(role_uuid_str),  # Use the key directly
-                            org_uuid=UUID(r.org),
-                            display_name=r.display_name,
-                            permissions=list(r.permissions),
-                        )
-                    )
-            org.roles = roles
-            return org
+            return self._build_org(org_id, include_roles=True)
 
-    async def list_organizations(self) -> list[Org]:
-        async with self._lock:
-            orgs = []
-            for org_uuid_str, o in self._data.orgs.items():
-                # Get permissions that this org can grant
-                permissions = []
-                for perm_id, p in self._data.permissions.items():
-                    if org_uuid_str in p.orgs:
-                        permissions.append(perm_id)
-                org = Org(
-                    uuid=UUID(org_uuid_str),  # Use the key directly
-                    display_name=o.display_name,
-                    permissions=permissions,
-                )
-                # Load roles for this org
-                roles = []
-                for role_uuid_str, r in self._data.roles.items():
-                    if r.org == org_uuid_str:
-                        roles.append(
-                            Role(
-                                uuid=UUID(role_uuid_str),  # Use the key directly
-                                org_uuid=UUID(r.org),
-                                display_name=r.display_name,
-                                permissions=list(r.permissions),
-                            )
-                        )
-                org.roles = roles
-                orgs.append(org)
-            return orgs
+    def list_organizations(self) -> list[Org]:
+        with self._lock:
+            return [
+                self._build_org(org_uuid, include_roles=True)
+                for org_uuid in self._data.orgs
+            ]
 
-    async def update_organization(self, org: Org) -> None:
-        async with self.session():
+    def update_organization(self, org: Org, actor: str = "system") -> None:
+        with self.session(actor):
             key = str(org.uuid)
             if key not in self._data.orgs:
                 raise ValueError("Organization not found")
@@ -774,8 +838,8 @@ class DB:
                 if perm_id in self._data.permissions:
                     self._data.permissions[perm_id].orgs[key] = True
 
-    async def delete_organization(self, org_uuid: UUID) -> None:
-        async with self.session():
+    def delete_organization(self, org_uuid: UUID, actor: str = "system") -> None:
+        with self.session(actor):
             key = str(org_uuid)
             if key in self._data.orgs:
                 del self._data.orgs[key]
@@ -784,10 +848,10 @@ class DB:
             for k in to_delete:
                 del self._data.roles[k]
 
-    async def add_user_to_organization(
-        self, user_uuid: UUID, org_id: str, role: str
+    def add_user_to_organization(
+        self, user_uuid: UUID, org_id: str, role: str, actor: str = "system"
     ) -> None:
-        async with self.session():
+        with self.session(actor):
             user_key = str(user_uuid)
             if user_key not in self._data.users:
                 raise ValueError("User not found")
@@ -803,13 +867,13 @@ class DB:
                 raise ValueError("Role not found in organization")
             self._data.users[user_key].role = role_uuid
 
-    async def transfer_user_to_organization(
+    def transfer_user_to_organization(
         self, user_uuid: UUID, new_org_id: str, new_role: str | None = None
     ) -> None:
         raise ValueError("Users cannot be transferred to a different organization")
 
-    async def get_user_organization(self, user_uuid: UUID) -> tuple[Org, str]:
-        async with self._lock:
+    def get_user_organization(self, user_uuid: UUID) -> tuple[Org, str]:
+        with self._lock:
             user_key = str(user_uuid)
             if user_key not in self._data.users:
                 raise ValueError("User not found")
@@ -817,59 +881,34 @@ class DB:
             if role_uuid not in self._data.roles:
                 raise ValueError("Role not found")
             r = self._data.roles[role_uuid]
-            org_uuid = r.org
-            if org_uuid not in self._data.orgs:
+            if r.org not in self._data.orgs:
                 raise ValueError("Organization not found")
-            o = self._data.orgs[org_uuid]
-            org = Org(
-                uuid=UUID(org_uuid),
-                display_name=o.display_name,
-                permissions=[],  # Could populate from permissions if needed
-            )
-            return org, r.display_name
+            return self._build_org(r.org), r.display_name
 
-    async def get_organization_users(self, org_id: str) -> list[tuple[User, str]]:
-        async with self._lock:
+    def get_organization_users(self, org_id: str) -> list[tuple[User, str]]:
+        with self._lock:
             # Get all roles for this org
             org_role_uuids = {
-                role_uuid_str
-                for role_uuid_str, r in self._data.roles.items()
-                if r.org == org_id
+                role_uuid for role_uuid, r in self._data.roles.items() if r.org == org_id
             }
-            results = []
-            for user_uuid_str, u in self._data.users.items():
-                if u.role in org_role_uuids:
-                    role_name = self._data.roles[u.role].display_name
-                    user = User(
-                        uuid=UUID(user_uuid_str),
-                        display_name=u.display_name,
-                        role_uuid=UUID(u.role),
-                        created_at=u.created_at,
-                        last_seen=u.last_seen,
-                        visits=u.visits,
-                    )
-                    results.append((user, role_name))
-            return results
+            return [
+                (self._build_user(user_uuid), self._data.roles[u.role].display_name)
+                for user_uuid, u in self._data.users.items()
+                if u.role in org_role_uuids
+            ]
 
-    async def get_roles_by_organization(self, org_id: str) -> list[Role]:
-        async with self._lock:
-            roles = []
-            for role_uuid_str, r in self._data.roles.items():
-                if r.org == org_id:
-                    roles.append(
-                        Role(
-                            uuid=UUID(role_uuid_str),  # Use the key directly
-                            org_uuid=UUID(r.org),
-                            display_name=r.display_name,
-                            permissions=list(r.permissions),
-                        )
-                    )
-            return roles
+    def get_roles_by_organization(self, org_id: str) -> list[Role]:
+        with self._lock:
+            return [
+                self._build_role(role_uuid)
+                for role_uuid, r in self._data.roles.items()
+                if r.org == org_id
+            ]
 
-    async def get_user_role_in_organization(
+    def get_user_role_in_organization(
         self, user_uuid: UUID, org_id: str
     ) -> str | None:
-        async with self._lock:
+        with self._lock:
             user_key = str(user_uuid)
             if user_key not in self._data.users:
                 return None
@@ -881,10 +920,10 @@ class DB:
                 return None
             return r.display_name
 
-    async def update_user_role_in_organization(
-        self, user_uuid: UUID, new_role: str
+    def update_user_role_in_organization(
+        self, user_uuid: UUID, new_role: str, actor: str = "system"
     ) -> None:
-        async with self.session():
+        with self.session(actor):
             user_key = str(user_uuid)
             if user_key not in self._data.users:
                 raise ValueError("User not found")
@@ -906,35 +945,35 @@ class DB:
     # Permission operations
     # -------------------------------------------------------------------------
 
-    async def create_permission(self, permission: Permission) -> None:
-        async with self.session():
+    def create_permission(self, permission: Permission, actor: str = "system") -> None:
+        with self.session(actor):
             self._data.permissions[permission.id] = _PermissionData(
                 display_name=permission.display_name,
                 orgs={},  # Will be populated when orgs are allowed to grant this permission
             )
 
-    async def get_permission(self, permission_id: str) -> Permission:
-        async with self._lock:
+    def get_permission(self, permission_id: str) -> Permission:
+        with self._lock:
             if permission_id not in self._data.permissions:
                 raise ValueError("Permission not found")
             p = self._data.permissions[permission_id]
             return Permission(id=permission_id, display_name=p.display_name)
 
-    async def list_permissions(self) -> list[Permission]:
-        async with self._lock:
+    def list_permissions(self) -> list[Permission]:
+        with self._lock:
             return [
                 Permission(id=pid, display_name=p.display_name)
                 for pid, p in self._data.permissions.items()
             ]
 
-    async def update_permission(self, permission: Permission) -> None:
-        async with self.session():
+    def update_permission(self, permission: Permission, actor: str = "system") -> None:
+        with self.session(actor):
             if permission.id not in self._data.permissions:
                 raise ValueError("Permission not found")
             self._data.permissions[permission.id].display_name = permission.display_name
 
-    async def delete_permission(self, permission_id: str) -> None:
-        async with self.session():
+    def delete_permission(self, permission_id: str, actor: str = "system") -> None:
+        with self.session(actor):
             if permission_id in self._data.permissions:
                 del self._data.permissions[permission_id]
             # Remove from roles (permissions is a dict)
@@ -942,10 +981,10 @@ class DB:
                 if permission_id in r.permissions:
                     del r.permissions[permission_id]
 
-    async def rename_permission(
-        self, old_id: str, new_id: str, display_name: str
+    def rename_permission(
+        self, old_id: str, new_id: str, display_name: str, actor: str = "system"
     ) -> None:
-        async with self.session():
+        with self.session(actor):
             if old_id == new_id:
                 if old_id in self._data.permissions:
                     self._data.permissions[old_id].display_name = display_name
@@ -969,27 +1008,27 @@ class DB:
             # Delete old permission
             del self._data.permissions[old_id]
 
-    async def add_permission_to_organization(
-        self, org_id: str, permission_id: str
+    def add_permission_to_organization(
+        self, org_id: str, permission_id: str, actor: str = "system"
     ) -> None:
-        async with self.session():
+        with self.session(actor):
             if org_id not in self._data.orgs:
                 raise ValueError("Organization not found")
             if permission_id not in self._data.permissions:
                 raise ValueError("Permission not found")
             self._data.permissions[permission_id].orgs[org_id] = True
 
-    async def remove_permission_from_organization(
-        self, org_id: str, permission_id: str
+    def remove_permission_from_organization(
+        self, org_id: str, permission_id: str, actor: str = "system"
     ) -> None:
-        async with self.session():
+        with self.session(actor):
             if permission_id in self._data.permissions:
                 orgs = self._data.permissions[permission_id].orgs
                 if org_id in orgs:
                     del orgs[org_id]
 
-    async def get_organization_permissions(self, org_id: str) -> list[Permission]:
-        async with self._lock:
+    def get_organization_permissions(self, org_id: str) -> list[Permission]:
+        with self._lock:
             if org_id not in self._data.orgs:
                 raise ValueError("Organization not found")
             permissions = []
@@ -998,35 +1037,25 @@ class DB:
                     permissions.append(Permission(id=pid, display_name=p.display_name))
             return permissions
 
-    async def get_permission_organizations(self, permission_id: str) -> list[Org]:
-        async with self._lock:
+    def get_permission_organizations(self, permission_id: str) -> list[Org]:
+        with self._lock:
             if permission_id not in self._data.permissions:
                 return []
             org_ids = self._data.permissions[permission_id].orgs
-            orgs = []
-            for org_id in org_ids:
-                if org_id in self._data.orgs:
-                    o = self._data.orgs[org_id]
-                    # Get permissions for this org
-                    permissions = []
-                    for pid, p in self._data.permissions.items():
-                        if org_id in p.orgs:
-                            permissions.append(pid)
-                    orgs.append(
-                        Org(
-                            uuid=UUID(org_id),
-                            display_name=o.display_name,
-                            permissions=permissions,
-                        )
-                    )
-            return orgs
+            return [
+                self._build_org(org_id)
+                for org_id in org_ids
+                if org_id in self._data.orgs
+            ]
 
     # -------------------------------------------------------------------------
     # Role-permission operations
     # -------------------------------------------------------------------------
 
-    async def add_permission_to_role(self, role_uuid: UUID, permission_id: str) -> None:
-        async with self.session():
+    def add_permission_to_role(
+        self, role_uuid: UUID, permission_id: str, actor: str = "system"
+    ) -> None:
+        with self.session(actor):
             key = str(role_uuid)
             if key not in self._data.roles:
                 raise ValueError("Role not found")
@@ -1034,17 +1063,17 @@ class DB:
                 raise ValueError("Permission not found")
             self._data.roles[key].permissions[permission_id] = True
 
-    async def remove_permission_from_role(
-        self, role_uuid: UUID, permission_id: str
+    def remove_permission_from_role(
+        self, role_uuid: UUID, permission_id: str, actor: str = "system"
     ) -> None:
-        async with self.session():
+        with self.session(actor):
             key = str(role_uuid)
             if key in self._data.roles:
                 if permission_id in self._data.roles[key].permissions:
                     del self._data.roles[key].permissions[permission_id]
 
-    async def get_role_permissions(self, role_uuid: UUID) -> list[Permission]:
-        async with self._lock:
+    def get_role_permissions(self, role_uuid: UUID) -> list[Permission]:
+        with self._lock:
             key = str(role_uuid)
             if key not in self._data.roles:
                 return []
@@ -1056,27 +1085,20 @@ class DB:
                     permissions.append(Permission(id=pid, display_name=p.display_name))
             return permissions
 
-    async def get_permission_roles(self, permission_id: str) -> list[Role]:
-        async with self._lock:
-            roles = []
-            for role_uuid_str, r in self._data.roles.items():
-                if permission_id in r.permissions:
-                    roles.append(
-                        Role(
-                            uuid=UUID(role_uuid_str),  # Use the key directly
-                            org_uuid=UUID(r.org),
-                            display_name=r.display_name,
-                            permissions=list(r.permissions),
-                        )
-                    )
-            return roles
+    def get_permission_roles(self, permission_id: str) -> list[Role]:
+        with self._lock:
+            return [
+                self._build_role(role_uuid)
+                for role_uuid, r in self._data.roles.items()
+                if permission_id in r.permissions
+            ]
 
     # -------------------------------------------------------------------------
     # Combined operations
     # -------------------------------------------------------------------------
 
-    async def login(self, user_uuid: UUID, credential: Credential) -> None:
-        async with self.session():
+    def login(self, user_uuid: UUID, credential: Credential, actor: str = "system") -> None:
+        with self.session(actor):
             # Update credential
             for key, c in self._data.credentials.items():
                 if c.credential_id == credential.credential_id:
@@ -1094,10 +1116,10 @@ class DB:
                     self._data.users[user_key].visits + 1
                 )
 
-    async def create_user_and_credential(
-        self, user: User, credential: Credential
+    def create_user_and_credential(
+        self, user: User, credential: Credential, actor: str = "system"
     ) -> None:
-        async with self.session():
+        with self.session(actor):
             # Create user
             user_key = str(user.uuid)
             self._data.users[user_key] = _UserData(
@@ -1120,7 +1142,7 @@ class DB:
                 last_verified=credential.last_verified,
             )
 
-    async def create_credential_session(
+    def create_credential_session(
         self,
         user_uuid: UUID,
         credential: Credential,
@@ -1131,8 +1153,9 @@ class DB:
         host: str | None = None,
         ip: str | None = None,
         user_agent: str | None = None,
+        actor: str = "system",
     ) -> None:
-        async with self.session():
+        with self.session(actor):
             user_key = str(user_uuid)
             # Ensure credential has last_used / last_verified
             if credential.last_used is None:
@@ -1181,8 +1204,9 @@ class DB:
                     self._data.users[user_key].visits + 1
                 )
 
-    async def cleanup(self) -> None:
-        async with self.session():
+    def cleanup(self) -> None:
+        """Remove expired sessions and reset tokens."""
+        with self.session("expiry"):
             current_time = datetime.now(timezone.utc)
             session_threshold = current_time - SESSION_LIFETIME
 
@@ -1204,11 +1228,15 @@ class DB:
             for k in to_delete_tokens:
                 del self._data.reset_tokens[k]
 
-    async def get_session_context(
+    def get_session_context(
         self, session_key: bytes, host: str | None = None
     ) -> SessionContext | None:
-        # Need to acquire session lock for potential write (host binding)
-        async with self._lock:
+        """Get full authentication context from a session key.
+
+        This is the primary method for validating sessions and getting all
+        associated user/org/role/credential data in a single call.
+        """
+        with self._lock:
             sess_key_b64 = _bytes_to_str(session_key)
             if sess_key_b64 not in self._data.sessions:
                 return None
@@ -1219,91 +1247,44 @@ class DB:
             if host is not None:
                 if s.host is None:
                     s.host = host
-                    # Mark for save
-                    await self._save()
+                    self._queue_change()  # Queue change for host binding
                 elif s.host != host:
                     return None
 
-            # Build session object
-            session_obj = Session(
-                key=_str_to_bytes(sess_key_b64),  # type: ignore[arg-type]
-                user_uuid=UUID(s.user),
-                credential_uuid=UUID(s.credential),
-                host=s.host,
-                ip=s.ip,
-                user_agent=s.user_agent,
-                renewed=s.renewed,  # Already datetime
-            )
-
-            # Get user
+            # Validate user exists
             user_key = s.user
             if user_key not in self._data.users:
                 return None
-            u = self._data.users[user_key]
-            user_obj = User(
-                uuid=UUID(user_key),
-                display_name=u.display_name,
-                role_uuid=UUID(u.role),
-                created_at=u.created_at,
-                last_seen=u.last_seen,
-                visits=u.visits,
-            )
 
-            # Get role
-            role_uuid = u.role
+            # Validate role exists
+            role_uuid = self._data.users[user_key].role
             if role_uuid not in self._data.roles:
                 return None
-            r = self._data.roles[role_uuid]
-            role_obj = Role(
-                uuid=UUID(role_uuid),
-                org_uuid=UUID(r.org),
-                display_name=r.display_name,
-                permissions=list(r.permissions),
-            )
 
-            # Get org
-            org_uuid = r.org
+            # Validate org exists
+            org_uuid = self._data.roles[role_uuid].org
             if org_uuid not in self._data.orgs:
                 return None
-            o = self._data.orgs[org_uuid]
-            org_obj = Org(
-                uuid=UUID(org_uuid),  # Use the key directly
-                display_name=o.display_name,
-                permissions=[],  # Could populate from permissions if needed
-            )
+
+            # Build objects using helpers
+            session_obj = self._build_session(sess_key_b64)
+            user_obj = self._build_user(user_key)
+            role_obj = self._build_role(role_uuid)
+            org_obj = self._build_org(org_uuid)
 
             # Get credential (optional)
             cred_uuid = s.credential
-            credential_obj = None
-            if cred_uuid in self._data.credentials:
-                c = self._data.credentials[cred_uuid]
-                credential_obj = Credential(
-                    uuid=UUID(cred_uuid),  # Use the key directly
-                    credential_id=c.credential_id,  # Already bytes
-                    user_uuid=UUID(c.user),
-                    aaguid=UUID(c.aaguid),
-                    public_key=c.public_key,  # Already bytes
-                    sign_count=c.sign_count,
-                    created_at=c.created_at,  # Already datetime
-                    last_used=c.last_used,
-                    last_verified=c.last_verified,
-                )
+            credential_obj = (
+                self._build_credential(cred_uuid)
+                if cred_uuid in self._data.credentials
+                else None
+            )
 
-            # Collect permissions for the role
-            permissions = []
-            for pid in role_obj.permissions:
-                if pid in self._data.permissions:
-                    p = self._data.permissions[pid]
-                    permissions.append(Permission(id=pid, display_name=p.display_name))
-
-            # Filter effective permissions: only include permissions that the org can grant
+            # Effective permissions: role permissions that the org can grant
             effective_permissions = [
-                p for p in permissions if p.id in org_obj.permissions
-            ]
-
-            # Filter effective permissions: only include permissions that the org can grant
-            effective_permissions = [
-                p for p in permissions if p.id in org_obj.permissions
+                Permission(id=pid, display_name=self._data.permissions[pid].display_name)
+                for pid in role_obj.permissions
+                if pid in self._data.permissions and pid in org_obj.permissions
             ]
 
             return SessionContext(
@@ -1312,5 +1293,5 @@ class DB:
                 org=org_obj,
                 role=role_obj,
                 credential=credential_obj,
-                permissions=effective_permissions if effective_permissions else None,
+                permissions=effective_permissions or None,
             )

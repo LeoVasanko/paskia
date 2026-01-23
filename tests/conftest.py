@@ -21,6 +21,7 @@ import pytest
 import pytest_asyncio
 import uuid7
 
+from paskia import globals as paskia_globals
 from paskia.db import Credential, Org, Permission, Role, User
 from paskia.db.json import DB
 from paskia.fastapi.session import AUTH_COOKIE_NAME
@@ -46,7 +47,7 @@ async def test_db() -> AsyncGenerator[DB, None]:
 
     with tempfile.NamedTemporaryFile(suffix=".jsonl", delete=True) as f:
         db = DB(f.name)
-        await db.init_db()
+        db.load()  # Synchronous now
         json_db._db = db
         yield db
         # Clean up
@@ -61,9 +62,9 @@ async def passkey_instance() -> Passkey:
         rp_name="Test RP",
         origins=["http://localhost:4401"],
     )
-    globals.passkey._instance = pk
+    paskia_globals.passkey._instance = pk
     yield pk
-    globals.passkey._instance = None
+    paskia_globals.passkey._instance = None
 
 
 @pytest_asyncio.fixture(scope="function")
@@ -74,7 +75,7 @@ async def test_org(test_db: DB, admin_permission: Permission) -> Org:
         display_name="Test Organization",
         permissions=["auth:admin"],  # Org can grant this permission
     )
-    await test_db.create_organization(org)
+    test_db.create_organization(org)
     return org
 
 
@@ -82,7 +83,7 @@ async def test_org(test_db: DB, admin_permission: Permission) -> Org:
 async def admin_permission(test_db: DB) -> Permission:
     """Create the auth:admin permission."""
     perm = Permission(id="auth:admin", display_name="Master Admin")
-    await test_db.create_permission(perm)
+    test_db.create_permission(perm)
     return perm
 
 
@@ -95,7 +96,7 @@ async def test_role(test_db: DB, test_org: Org, admin_permission: Permission) ->
         display_name="Test Admin Role",
         permissions=["auth:admin", f"auth:org:{test_org.uuid}"],
     )
-    await test_db.create_role(role)
+    test_db.create_role(role)
     return role
 
 
@@ -108,7 +109,7 @@ async def user_role(test_db: DB, test_org: Org) -> Role:
         display_name="User Role",
         permissions=[],
     )
-    await test_db.create_role(role)
+    test_db.create_role(role)
     return role
 
 
@@ -122,7 +123,7 @@ async def test_user(test_db: DB, test_role: Role) -> User:
         created_at=datetime.now(timezone.utc),
         visits=0,
     )
-    await test_db.create_user(user)
+    test_db.create_user(user)
     return user
 
 
@@ -136,7 +137,7 @@ async def regular_user(test_db: DB, user_role: Role) -> User:
         created_at=datetime.now(timezone.utc),
         visits=0,
     )
-    await test_db.create_user(user)
+    test_db.create_user(user)
     return user
 
 
@@ -154,7 +155,7 @@ async def test_credential(test_db: DB, test_user: User) -> Credential:
         last_used=None,
         last_verified=None,
     )
-    await test_db.create_credential(credential)
+    test_db.create_credential(credential)
     return credential
 
 
@@ -172,7 +173,7 @@ async def regular_credential(test_db: DB, regular_user: User) -> Credential:
         last_used=None,
         last_verified=None,
     )
-    await test_db.create_credential(credential)
+    test_db.create_credential(credential)
     return credential
 
 
@@ -182,7 +183,7 @@ async def session_token(
 ) -> str:
     """Create a session for the admin user and return the token."""
     token = create_token()
-    await test_db.create_session(
+    test_db.create_session(
         user_uuid=test_user.uuid,
         credential_uuid=test_credential.uuid,
         key=session_key(token),
@@ -200,7 +201,7 @@ async def regular_session_token(
 ) -> str:
     """Create a session for a regular user and return the token."""
     token = create_token()
-    await test_db.create_session(
+    test_db.create_session(
         user_uuid=regular_user.uuid,
         credential_uuid=regular_credential.uuid,
         key=session_key(token),
@@ -220,7 +221,7 @@ async def reset_token(test_db: DB, test_user: User, test_credential: Credential)
     from paskia.util.tokens import reset_key
 
     token = generate()
-    await test_db.create_reset_token(
+    test_db.create_reset_token(
         user_uuid=test_user.uuid,
         key=reset_key(token),
         expiry=reset_expires(),

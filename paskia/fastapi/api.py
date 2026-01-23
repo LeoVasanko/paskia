@@ -227,7 +227,7 @@ async def api_token_info(token: str):
     # Check if this is a reset token
     try:
         reset_token = await get_reset(token)
-        user = await db.get_user_by_uuid(reset_token.user_uuid)
+        user = db.get_user_by_uuid(reset_token.user_uuid)
         return {
             "type": "reset",
             "user_name": user.display_name,
@@ -297,7 +297,7 @@ async def api_logout(request: Request, response: Response, auth=AUTH_COOKIE):
     except ValueError:
         return {"message": "Already logged out"}
     with suppress(Exception):
-        await db.delete_session(session_key(auth))
+        db.delete_session(session_key(auth))
     session.clear_session_cookie(response)
     return {"message": "Logged out successfully"}
 
