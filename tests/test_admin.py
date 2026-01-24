@@ -61,7 +61,7 @@ async def second_org_role(
         uuid=uuid7.create(),
         org_uuid=second_org.uuid,
         display_name="Second Org Admin Role",
-        permissions=["auth:admin"],
+        permissions=[str(admin_permission.uuid)],
     )
     create_role(role)
     return role
@@ -120,13 +120,13 @@ async def second_org_session_token(
 
 
 @pytest_asyncio.fixture(scope="function")
-async def org_admin_role(test_db: DB, test_org: Org, org_admin_permission) -> Role:
+async def org_admin_role(test_db: DB, test_org: Org, org_admin_permission: Permission) -> Role:
     """Create a role with org admin permission only (no global admin)."""
     role = Role(
         uuid=uuid7.create(),
         org_uuid=test_org.uuid,
         display_name="Org Admin Role",
-        permissions=["auth:org:admin"],
+        permissions=[str(org_admin_permission.uuid)],
     )
     create_role(role)
     return role
@@ -666,7 +666,7 @@ class TestAdminRoles:
     ):
         """Admin should be able to add grantable permissions to role."""
         response = await client.post(
-            f"/auth/api/admin/orgs/{test_org.uuid}/roles/{user_role.uuid}/permissions/{grantable_permission.scope}",
+            f"/auth/api/admin/orgs/{test_org.uuid}/roles/{user_role.uuid}/permissions/{grantable_permission.uuid}",
             headers={**auth_headers(session_token), "Host": "localhost:4401"},
         )
         assert response.status_code == 200
@@ -691,7 +691,7 @@ class TestAdminRoles:
         create_permission(perm)
 
         response = await client.post(
-            f"/auth/api/admin/orgs/{test_org.uuid}/roles/{user_role.uuid}/permissions/test:not:grantable:update",
+            f"/auth/api/admin/orgs/{test_org.uuid}/roles/{user_role.uuid}/permissions/{perm.uuid}",
             headers={**auth_headers(session_token), "Host": "localhost:4401"},
         )
         assert response.status_code == 400
@@ -700,20 +700,26 @@ class TestAdminRoles:
 
     @pytest.mark.asyncio
     async def test_update_own_role_cannot_remove_admin(
-        self, client: httpx.AsyncClient, session_token: str, test_org, test_role
+        self,
+        client: httpx.AsyncClient,
+        session_token: str,
+        test_org,
+        test_role,
+        admin_permission,
+        org_admin_permission,
     ):
         """Admin cannot remove their own admin permissions."""
         # test_role has both auth:admin and auth:org:admin
         # Remove auth:admin first (should succeed since org:admin remains)
         response = await client.delete(
-            f"/auth/api/admin/orgs/{test_org.uuid}/roles/{test_role.uuid}/permissions/auth:admin",
+            f"/auth/api/admin/orgs/{test_org.uuid}/roles/{test_role.uuid}/permissions/{admin_permission.uuid}",
             headers={**auth_headers(session_token), "Host": "localhost:4401"},
         )
         assert response.status_code == 200
 
         # Now try to remove auth:org:admin (should fail - would leave no admin access)
         response = await client.delete(
-            f"/auth/api/admin/orgs/{test_org.uuid}/roles/{test_role.uuid}/permissions/auth:org:admin",
+            f"/auth/api/admin/orgs/{test_org.uuid}/roles/{test_role.uuid}/permissions/{org_admin_permission.uuid}",
             headers={**auth_headers(session_token), "Host": "localhost:4401"},
         )
         assert response.status_code == 400
@@ -1264,14 +1270,14 @@ class TestAdminSessions:
     async def test_delete_session_invalid_id(
         self, client: httpx.AsyncClient, session_token: str, test_org, test_user
     ):
-        """Deleting session with invalid ID format should fail."""
+        """Deleting session with invalid/non-existent ID should fail."""
         response = await client.delete(
             f"/auth/api/admin/orgs/{test_org.uuid}/users/{test_user.uuid}/sessions/invalid!!id",
             headers={**auth_headers(session_token), "Host": "localhost:4401"},
         )
-        assert response.status_code == 400
+        assert response.status_code == 404
         data = response.json()
-        assert "Invalid session identifier" in data["detail"]
+        assert "Session not found" in data["detail"]
 
     @pytest.mark.asyncio
     async def test_delete_session_not_found(

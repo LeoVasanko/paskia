@@ -100,7 +100,7 @@ class _OrgData(msgspec.Struct):
 class _RoleData(msgspec.Struct):
     org: UUID
     display_name: str
-    permissions: dict[UUID, bool]  # permission_uuid -> True
+    permissions: dict[UUID, bool] = {}  # permission_uuid -> True
 
 
 class _UserData(msgspec.Struct):

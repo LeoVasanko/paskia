@@ -273,15 +273,23 @@ async def admin_create_role(
     perms = payload.get("permissions") or []
     org = db.get_organization(str(org_uuid))
     grantable = set(org.permissions or [])
+    
+    # Normalize permission IDs to UUIDs
+    permission_uuids = []
     for pid in perms:
-        db.get_permission(pid)
-        if pid not in grantable:
+        perm = db.get_permission(pid)
+        if not perm:
+            raise ValueError(f"Permission {pid} not found")
+        perm_uuid_str = str(perm.uuid)
+        if perm_uuid_str not in grantable:
             raise ValueError(f"Permission not grantable by org: {pid}")
+        permission_uuids.append(perm_uuid_str)
+    
     role = RoleDC(
         uuid=role_uuid,
         org_uuid=org_uuid,
         display_name=display_name,
-        permissions=perms,
+        permissions=permission_uuids,
     )
     db.create_role(role, ctx=ctx)
     return {"uuid": str(role_uuid)}
@@ -506,10 +514,13 @@ async def admin_update_user_role(
     if ctx.user.uuid == user_uuid:
         new_role_obj = next((r for r in roles if r.display_name == new_role), None)
         if new_role_obj:  # pragma: no branch - always true, role validated above
-            has_admin_access = (
-                "auth:admin" in new_role_obj.permissions
-                or "auth:org:admin" in new_role_obj.permissions
-            )
+            # Check if any permission in the new role is an admin permission
+            has_admin_access = False
+            for perm_uuid in new_role_obj.permissions:
+                perm = db.get_permission(perm_uuid)
+                if perm and perm.scope in ["auth:admin", "auth:org:admin"]:
+                    has_admin_access = True
+                    break
             if not has_admin_access:
                 raise ValueError(
                     "Cannot change your own role to one without admin permissions"
@@ -917,9 +928,9 @@ async def admin_list_permissions(request: Request, auth=AUTH_COOKIE):
     if is_global_admin(ctx):
         return [_perm_to_dict(p) for p in perms]
 
-    # Org admins only see permissions their org can grant
+    # Org admins only see permissions their org can grant (by UUID)
     grantable = set(ctx.org.permissions or [])
-    filtered_perms = [p for p in perms if p.scope in grantable]
+    filtered_perms = [p for p in perms if str(p.uuid) in grantable]
     return [_perm_to_dict(p) for p in filtered_perms]
 
 
