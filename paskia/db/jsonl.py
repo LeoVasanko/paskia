@@ -84,7 +84,9 @@ def compute_diff(previous: dict, current: dict) -> dict | None:
     return diff if diff else None
 
 
-def create_change_record(action: str, diff: dict, user: str | None = None) -> _ChangeRecord:
+def create_change_record(
+    action: str, diff: dict, user: str | None = None
+) -> _ChangeRecord:
     """Create a change record for persistence."""
     return _ChangeRecord(
         ts=datetime.now(timezone.utc),
@@ -121,9 +123,6 @@ async def flush_changes(
         # Append all lines in a single write (binary mode for Windows compatibility)
         async with aiofiles.open(db_path, "ab") as f:
             await f.write(b"\n".join(lines) + b"\n")
-        _logger.debug(
-            "Flushed %d change(s) to %s", len(changes_to_write), db_path
-        )
         return True
     except OSError:
         _logger.exception("Failed to flush database changes")

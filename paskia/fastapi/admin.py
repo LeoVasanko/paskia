@@ -214,9 +214,7 @@ async def admin_add_org_permission(
     ctx = await authz.verify(
         auth, ["auth:admin"], host=request.headers.get("host"), match=permutil.has_all
     )
-    db.add_permission_to_organization(
-        str(org_uuid), permission_id, ctx=ctx
-    )
+    db.add_permission_to_organization(str(org_uuid), permission_id, ctx=ctx)
     return {"status": "ok"}
 
 
@@ -240,9 +238,7 @@ async def admin_remove_org_permission(
             "This would lock you out of admin access."
         )
 
-    db.remove_permission_from_organization(
-        str(org_uuid), permission_id, ctx=ctx
-    )
+    db.remove_permission_from_organization(str(org_uuid), permission_id, ctx=ctx)
     return {"status": "ok"}
 
 
@@ -273,7 +269,7 @@ async def admin_create_role(
     perms = payload.get("permissions") or []
     org = db.get_organization(str(org_uuid))
     grantable = set(org.permissions or [])
-    
+
     # Normalize permission IDs to UUIDs
     permission_uuids = []
     for pid in perms:
@@ -284,7 +280,7 @@ async def admin_create_role(
         if perm_uuid_str not in grantable:
             raise ValueError(f"Permission not grantable by org: {pid}")
         permission_uuids.append(perm_uuid_str)
-    
+
     role = RoleDC(
         uuid=role_uuid,
         org_uuid=org_uuid,
@@ -1060,9 +1056,7 @@ async def admin_rename_permission(
         _check_admin_lockout(str(perm.uuid), domain_value, request.headers.get("host"))
 
     # All current backends support rename_permission
-    db.rename_permission(
-        old_scope, new_scope, display_name, domain_value, ctx=ctx
-    )
+    db.rename_permission(old_scope, new_scope, display_name, domain_value, ctx=ctx)
     return {"status": "ok"}
 
 

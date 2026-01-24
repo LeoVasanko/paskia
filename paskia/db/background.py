@@ -57,7 +57,6 @@ async def flush() -> None:
 
 async def _background_loop():
     """Background task that periodically flushes changes and cleans up."""
-    _logger.info("Background loop starting")
     # Run cleanup immediately on startup to clear old expired items
     cleanup()
     await flush()
@@ -77,18 +76,17 @@ async def _background_loop():
                 await flush()  # Flush cleanup changes
                 last_cleanup = now
         except asyncio.CancelledError:
-            _logger.info("Background loop cancelled, final flush")
             # Final flush before exit
             await flush()
             break
         except Exception:
-            _logger.exception("Error in database background loop")
+            _logger.debug("Error in database background loop", exc_info=True)
 
 
 async def start_background():
     """Start the background flush/cleanup task."""
     global _background_task
-    
+
     # Check if task exists but is no longer running (e.g., after uvicorn reload)
     if _background_task is not None:
         if _background_task.done():
@@ -106,10 +104,9 @@ async def start_background():
             except Exception as e:
                 _logger.debug("Error checking background task loop: %s, restarting", e)
                 _background_task = None
-    
+
     if _background_task is None:
         _background_task = asyncio.create_task(_background_loop())
-        _logger.info("Database background task started")
     else:
         _logger.debug("Background task already running: %s", _background_task)
 
