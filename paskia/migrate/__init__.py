@@ -68,9 +68,9 @@ async def migrate_from_sql(
     sql_db = SQLDB(sql_db_path)
     await sql_db.init_db()
 
-    # Initialize destination JSON database
+    # Initialize destination JSON database (fresh, don't load existing)
     json_db = JSONDB(json_db_path)
-    await json_db.load()
+    # Don't call json_db.load() - we want a fresh database, not to load existing
 
     print(f"Migrating from {sql_db_path} to {json_db_path}...")
 
