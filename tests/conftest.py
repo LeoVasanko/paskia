@@ -87,7 +87,7 @@ async def test_org(test_db: DB, admin_permission: Permission) -> Org:
     org = Org(
         uuid=uuid7.create(),
         display_name="Test Organization",
-        permissions=["auth:admin"],  # Org can grant this permission
+        permissions=[str(admin_permission.uuid)],  # Org can grant this permission
     )
     create_organization(org)
     return org
@@ -131,7 +131,7 @@ async def test_role(
         uuid=uuid7.create(),
         org_uuid=test_org.uuid,
         display_name="Test Admin Role",
-        permissions=["auth:admin", "auth:org:admin"],
+        permissions=[str(admin_permission.uuid), str(org_admin_permission.uuid)],
     )
     create_role(role)
     return role

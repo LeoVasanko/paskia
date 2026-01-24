@@ -117,7 +117,7 @@ class TestUserSessionManagement:
             "/auth/api/user/session/invalid-session-id",
             headers={**auth_headers(session_token), "Host": "localhost:4401"},
         )
-        assert response.status_code == 400
+        assert response.status_code == 404  # Not found (no format validation)
 
     @pytest.mark.asyncio
     async def test_delete_nonexistent_session_returns_404(
