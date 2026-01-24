@@ -34,8 +34,7 @@ from paskia.db import (
     create_session,
     create_user,
 )
-from paskia.db.operations import DB
-from paskia.util.tokens import create_token, encode_session_key, session_key
+from paskia.db.operations import DB, _create_token
 from tests.conftest import auth_headers
 
 # -------------------- Additional Fixtures --------------------
@@ -107,11 +106,11 @@ async def second_org_session_token(
     test_db: DB, second_org_user: User, second_org_credential: Credential
 ) -> str:
     """Create a session for the second org admin user."""
-    token = create_token()
+    token = _create_token()
     create_session(
         user_uuid=second_org_user.uuid,
         credential_uuid=second_org_credential.uuid,
-        key=session_key(token),
+        key=token,
         host="localhost:4401",
         ip="127.0.0.1",
         user_agent="pytest",
@@ -173,11 +172,11 @@ async def org_admin_session_token(
     test_db: DB, org_admin_user: User, org_admin_credential: Credential
 ) -> str:
     """Create a session for the org admin user."""
-    token = create_token()
+    token = _create_token()
     create_session(
         user_uuid=org_admin_user.uuid,
         credential_uuid=org_admin_credential.uuid,
-        key=session_key(token),
+        key=token,
         host="localhost:4401",
         ip="127.0.0.1",
         user_agent="pytest",
@@ -1195,21 +1194,19 @@ class TestAdminSessions:
     ):
         """Admin should be able to delete a user's session."""
         # Create an additional session to delete
-        extra_token = create_token()
-        extra_key = session_key(extra_token)
+        extra_token = _create_token()
         create_session(
             user_uuid=test_user.uuid,
             credential_uuid=test_credential.uuid,
-            key=extra_key,
+            key=extra_token,
             host="other.host:4401",
             ip="192.168.1.1",
             user_agent="other-agent",
             expiry=expires(),
         )
 
-        encoded_key = encode_session_key(extra_key)
         response = await client.delete(
-            f"/auth/api/admin/orgs/{test_org.uuid}/users/{test_user.uuid}/sessions/{encoded_key}",
+            f"/auth/api/admin/orgs/{test_org.uuid}/users/{test_user.uuid}/sessions/{extra_token}",
             headers={**auth_headers(session_token), "Host": "localhost:4401"},
         )
         assert response.status_code == 200
@@ -1226,9 +1223,8 @@ class TestAdminSessions:
         test_user,
     ):
         """Admin can delete their own current session."""
-        encoded_key = encode_session_key(session_key(session_token))
         response = await client.delete(
-            f"/auth/api/admin/orgs/{test_org.uuid}/users/{test_user.uuid}/sessions/{encoded_key}",
+            f"/auth/api/admin/orgs/{test_org.uuid}/users/{test_user.uuid}/sessions/{session_token}",
             headers={**auth_headers(session_token), "Host": "localhost:4401"},
         )
         assert response.status_code == 200
@@ -1283,10 +1279,9 @@ class TestAdminSessions:
     ):
         """Deleting non-existent session should fail."""
         # Use a valid format but non-existent key
-        fake_key = session_key(create_token())
-        encoded_key = encode_session_key(fake_key)
+        fake_token = _create_token()
         response = await client.delete(
-            f"/auth/api/admin/orgs/{test_org.uuid}/users/{test_user.uuid}/sessions/{encoded_key}",
+            f"/auth/api/admin/orgs/{test_org.uuid}/users/{test_user.uuid}/sessions/{fake_token}",
             headers={**auth_headers(session_token), "Host": "localhost:4401"},
         )
         assert response.status_code == 404

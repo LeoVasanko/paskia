@@ -499,10 +499,10 @@ class TestValidateSessionRefresh:
         self, client: httpx.AsyncClient, test_db
     ):
         """Validate should handle session expiry during refresh attempt."""
-        from paskia.util.tokens import create_token
+        from paskia.db.operations import _create_token
 
         # Create a token but don't create a session for it
-        token = create_token()
+        token = _create_token()
         response = await client.post(
             "/auth/api/validate",
             headers={**auth_headers(token), "Host": "localhost:4401"},
@@ -522,15 +522,15 @@ class TestValidateSessionRefresh:
         from datetime import timedelta
 
         from paskia.authsession import EXPIRES
-        from paskia.util.tokens import create_token, session_key
+        from paskia.db.operations import _create_token
 
         # Create a session with an old expiry time to trigger refresh
-        token = create_token()
+        token = _create_token()
         old_expiry = datetime.now(timezone.utc) + EXPIRES - timedelta(minutes=10)
         create_session(
             user_uuid=test_user.uuid,
             credential_uuid=test_credential.uuid,
-            key=session_key(token),
+            key=token,
             host="localhost:4401",
             ip="127.0.0.1",
             user_agent="pytest",
@@ -538,7 +538,7 @@ class TestValidateSessionRefresh:
         )
 
         # Delete the session right before validate tries to refresh
-        delete_session(session_key(token))
+        delete_session(token)
 
         response = await client.post(
             "/auth/api/validate",

@@ -38,10 +38,9 @@ from paskia.db import (
     create_session,
     create_user,
 )
-from paskia.db.operations import DB
+from paskia.db.operations import DB, _create_token
 from paskia.fastapi.session import AUTH_COOKIE_NAME
 from paskia.sansio import Passkey
-from paskia.util.tokens import create_token, session_key
 
 
 @pytest.fixture(scope="session")
@@ -220,11 +219,11 @@ async def session_token(
     test_db: DB, test_user: User, test_credential: Credential
 ) -> str:
     """Create a session for the admin user and return the token."""
-    token = create_token()
+    token = _create_token()
     create_session(
         user_uuid=test_user.uuid,
         credential_uuid=test_credential.uuid,
-        key=session_key(token),
+        key=token,
         host="localhost:4401",
         ip="127.0.0.1",
         user_agent="pytest",
@@ -238,11 +237,11 @@ async def regular_session_token(
     test_db: DB, regular_user: User, regular_credential: Credential
 ) -> str:
     """Create a session for a regular user and return the token."""
-    token = create_token()
+    token = _create_token()
     create_session(
         user_uuid=regular_user.uuid,
         credential_uuid=regular_credential.uuid,
-        key=session_key(token),
+        key=token,
         host="localhost:4401",
         ip="127.0.0.1",
         user_agent="pytest",
@@ -256,12 +255,11 @@ async def reset_token(test_db: DB, test_user: User, test_credential: Credential)
     """Create a reset token for the test user."""
     from paskia.authsession import reset_expires
     from paskia.util.passphrase import generate
-    from paskia.util.tokens import reset_key
 
     token = generate()
     create_reset_token(
         user_uuid=test_user.uuid,
-        key=reset_key(token),
+        passphrase=token,
         expiry=reset_expires(),
         token_type="reset",
     )
