@@ -299,13 +299,13 @@ async function performPermissionDeletion(permissionScope) {
 }
 
 function deletePermission(p) {
-  const userCount = permissionSummary.value[p.scope]?.userCount || 0
+  const userCount = permissionSummary.value[p.uuid]?.userCount || 0
 
   // Count roles that have this permission
   let roleCount = 0
   for (const org of orgs.value) {
     for (const role of org.roles) {
-      if (role.permissions.includes(p.scope)) {
+      if (role.permissions.includes(p.uuid)) {
         roleCount++
       }
     }

@@ -26,6 +26,12 @@ const sortedRoles = computed(() => {
   })
 })
 
+// Get org's grantable permissions as full permission objects (with UUIDs)
+const orgPermissions = computed(() => {
+  const uuidSet = new Set(props.selectedOrg.permissions || [])
+  return props.permissions.filter(p => uuidSet.has(p.uuid))
+})
+
 function permissionDisplayName(scope) {
   return props.permissions.find(p => p.scope === scope)?.display_name || scope
 }
@@ -302,17 +308,17 @@ defineExpose({ focusFirstElement })
           </div>
           <div class="grid-head role-head add-role-head" title="Add role" @click="$emit('createRole', selectedOrg)" role="button" tabindex="0" @keydown.enter="$emit('createRole', selectedOrg)">➕</div>
 
-          <template v-for="pid in selectedOrg.permissions" :key="pid">
-            <div class="perm-name" :title="pid">{{ permissionDisplayName(pid) }}</div>
+          <template v-for="p in orgPermissions" :key="p.uuid">
+            <div class="perm-name" :title="p.scope">{{ p.display_name }}</div>
             <div
               v-for="r in sortedRoles"
-              :key="r.uuid + '-' + pid"
+              :key="r.uuid + '-' + p.uuid"
               class="matrix-cell"
             >
               <input
                 type="checkbox"
-                :checked="r.permissions.includes(pid)"
-                @change="e => toggleRolePermission(r, pid, e.target.checked)"
+                :checked="r.permissions.includes(p.uuid)"
+                @change="e => toggleRolePermission(r, p.uuid, e.target.checked)"
               />
             </div>
             <div class="matrix-cell add-role-cell" />

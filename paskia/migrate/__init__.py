@@ -96,19 +96,19 @@ async def migrate_from_sql(
         orgs={},
     )
 
-    # Mapping from old permission ID to new scope
-    perm_id_to_scope: dict[str, str] = {}
+    # Mapping from old permission ID to new permission UUID
+    perm_id_to_uuid: dict[str, UUID] = {}
 
     for perm in permissions:
         # Skip old org-specific admin permissions (auth:org:{uuid}) - they map to auth:org:admin
         match = old_org_admin_pattern.match(perm.id)
         if match:
-            perm_id_to_scope[perm.id] = "auth:org:admin"
+            perm_id_to_uuid[perm.id] = org_admin_perm_uuid
             continue
 
         # Skip if this is already auth:org:admin - we created one above
         if perm.id == "auth:org:admin":
-            perm_id_to_scope[perm.id] = "auth:org:admin"
+            perm_id_to_uuid[perm.id] = org_admin_perm_uuid
             continue
 
         # Regular permission - create with UUID key
@@ -118,7 +118,7 @@ async def migrate_from_sql(
             display_name=perm.display_name,
             orgs={},
         )
-        perm_id_to_scope[perm.id] = perm.id  # Scope same as old ID
+        perm_id_to_uuid[perm.id] = perm_uuid
     print(
         f"  Migrated {len(permissions)} permissions (with {len(org_admin_uuids)} org-specific admins consolidated to auth:org:admin)"
     )
@@ -130,28 +130,26 @@ async def migrate_from_sql(
         json_db._data.orgs[org_key] = _OrgData(
             display_name=org.display_name,
         )
-        # Update permissions to allow this org to grant them (by scope)
+        # Update permissions to allow this org to grant them (by UUID)
         for old_perm_id in org.permissions:
-            new_scope = perm_id_to_scope.get(old_perm_id, old_perm_id)
-            # Find permission with this scope and add org
-            for pid, p in json_db._data.permissions.items():
-                if p.scope == new_scope:
-                    p.orgs[org_key] = True
-                    break
+            perm_uuid = perm_id_to_uuid.get(old_perm_id)
+            if perm_uuid and perm_uuid in json_db._data.permissions:
+                json_db._data.permissions[perm_uuid].orgs[org_key] = True
         # Ensure every org can grant auth:org:admin
         json_db._data.permissions[org_admin_perm_uuid].orgs[org_key] = True
     print(f"  Migrated {len(orgs)} organizations")
 
-    # Migrate roles - convert old permission IDs to scopes
+    # Migrate roles - convert old permission IDs to UUIDs
     role_count = 0
     for org in orgs:
         for role in org.roles:
             role_key: UUID = role.uuid
-            # Convert old permission IDs to scopes
-            new_permissions = {}
+            # Convert old permission IDs to UUIDs
+            new_permissions: dict[UUID, bool] = {}
             for old_perm_id in role.permissions or []:
-                new_scope = perm_id_to_scope.get(old_perm_id, old_perm_id)
-                new_permissions[new_scope] = True
+                perm_uuid = perm_id_to_uuid.get(old_perm_id)
+                if perm_uuid:
+                    new_permissions[perm_uuid] = True
             json_db._data.roles[role_key] = _RoleData(
                 org=role.org_uuid,
                 display_name=role.display_name,
