@@ -7,9 +7,11 @@ Write operations: Functions that validate and commit, or raise ValueError.
 """
 
 import hashlib
+import json
 import logging
 import os
 import secrets
+import sys
 from collections import deque
 from contextlib import contextmanager
 from datetime import datetime, timezone
@@ -113,19 +115,15 @@ class DB:
                         user_display = self._data.users[user_uuid].display_name
                 except (ValueError, KeyError):
                     user_display = self._current_user
-            import json
 
+            diff_json = json.dumps(diff, default=str)
             if user_display:
-                _logger.info(
-                    "DB %s by %s: %s",
-                    self._current_action,
-                    user_display,
-                    json.dumps(diff, default=str),
+                print(
+                    f"{self._current_action} by {user_display}: {diff_json}",
+                    file=sys.stderr,
                 )
             else:
-                _logger.info(
-                    "DB %s: %s", self._current_action, json.dumps(diff, default=str)
-                )
+                print(f"{self._current_action}: {diff_json}", file=sys.stderr)
 
     @contextmanager
     def transaction(
@@ -527,9 +525,7 @@ def get_session_context(
 # -------------------------------------------------------------------------
 
 
-def create_permission(
-    perm: Permission, *, ctx: SessionContext | None = None
-) -> None:
+def create_permission(perm: Permission, *, ctx: SessionContext | None = None) -> None:
     """Create a new permission."""
     if perm.uuid in _db._data.permissions:
         raise ValueError(f"Permission {perm.uuid} already exists")
@@ -542,9 +538,7 @@ def create_permission(
         )
 
 
-def update_permission(
-    perm: Permission, *, ctx: SessionContext | None = None
-) -> None:
+def update_permission(perm: Permission, *, ctx: SessionContext | None = None) -> None:
     """Update a permission's scope, display_name, and domain."""
     if perm.uuid not in _db._data.permissions:
         raise ValueError(f"Permission {perm.uuid} not found")
@@ -583,9 +577,7 @@ def rename_permission(
         _db._data.permissions[key].domain = domain
 
 
-def delete_permission(
-    uuid: str | UUID, *, ctx: SessionContext | None = None
-) -> None:
+def delete_permission(uuid: str | UUID, *, ctx: SessionContext | None = None) -> None:
     """Delete a permission and remove it from all roles."""
     if isinstance(uuid, str):
         uuid = UUID(uuid)
@@ -598,9 +590,7 @@ def delete_permission(
         del _db._data.permissions[uuid]
 
 
-def create_organization(
-    org: Org, *, ctx: SessionContext | None = None
-) -> None:
+def create_organization(org: Org, *, ctx: SessionContext | None = None) -> None:
     """Create a new organization with an Administration role.
 
     Automatically creates an 'Administration' role with auth:org:admin permission.
@@ -651,9 +641,7 @@ def update_organization_name(
         _db._data.orgs[uuid].display_name = display_name
 
 
-def delete_organization(
-    uuid: str | UUID, *, ctx: SessionContext | None = None
-) -> None:
+def delete_organization(uuid: str | UUID, *, ctx: SessionContext | None = None) -> None:
     """Delete organization and all its roles/users."""
     if isinstance(uuid, str):
         uuid = UUID(uuid)
@@ -742,9 +730,7 @@ def remove_permission_from_organization(
         _db._data.permissions[permission_uuid].orgs.pop(org_uuid, None)
 
 
-def create_role(
-    role: Role, *, ctx: SessionContext | None = None
-) -> None:
+def create_role(role: Role, *, ctx: SessionContext | None = None) -> None:
     """Create a new role."""
     if role.uuid in _db._data.roles:
         raise ValueError(f"Role {role.uuid} already exists")
@@ -809,9 +795,7 @@ def remove_permission_from_role(
         _db._data.roles[role_uuid].permissions.pop(permission_uuid, None)
 
 
-def delete_role(
-    uuid: str | UUID, *, ctx: SessionContext | None = None
-) -> None:
+def delete_role(uuid: str | UUID, *, ctx: SessionContext | None = None) -> None:
     """Delete a role."""
     if isinstance(uuid, str):
         uuid = UUID(uuid)
@@ -824,9 +808,7 @@ def delete_role(
         del _db._data.roles[uuid]
 
 
-def create_user(
-    new_user: User, *, ctx: SessionContext | None = None
-) -> None:
+def create_user(new_user: User, *, ctx: SessionContext | None = None) -> None:
     """Create a new user."""
     if new_user.uuid in _db._data.users:
         raise ValueError(f"User {new_user.uuid} already exists")
@@ -849,7 +831,7 @@ def update_user_display_name(
     ctx: SessionContext | None = None,
 ) -> None:
     """Update user display name.
-    
+
     For self-service (user updating own name), ctx can be None and user is derived from uuid.
     For admin operations, ctx should be provided.
     """
@@ -909,9 +891,7 @@ def update_user_role_in_organization(
         _db._data.users[user_uuid].role = new_role_uuid
 
 
-def delete_user(
-    uuid: str | UUID, *, ctx: SessionContext | None = None
-) -> None:
+def delete_user(uuid: str | UUID, *, ctx: SessionContext | None = None) -> None:
     """Delete user and their credentials/sessions."""
     if isinstance(uuid, str):
         uuid = UUID(uuid)
@@ -933,9 +913,7 @@ def delete_user(
         del _db._data.users[uuid]
 
 
-def create_credential(
-    cred: Credential, *, ctx: SessionContext | None = None
-) -> None:
+def create_credential(cred: Credential, *, ctx: SessionContext | None = None) -> None:
     """Create a new credential."""
     if cred.uuid in _db._data.credentials:
         raise ValueError(f"Credential {cred.uuid} already exists")
@@ -1056,7 +1034,7 @@ def set_session_host(key: str, host: str, *, ctx: SessionContext | None = None) 
 
 def delete_session(key: str, *, ctx: SessionContext | None = None) -> None:
     """Delete a session.
-    
+
     For logout (user deleting own session), ctx can be None and user is derived from session.
     For admin operations, ctx should be provided.
     """
@@ -1068,9 +1046,11 @@ def delete_session(key: str, *, ctx: SessionContext | None = None) -> None:
         del _db._data.sessions[key]
 
 
-def delete_sessions_for_user(user_uuid: str | UUID, *, ctx: SessionContext | None = None) -> None:
+def delete_sessions_for_user(
+    user_uuid: str | UUID, *, ctx: SessionContext | None = None
+) -> None:
     """Delete all sessions for a user.
-    
+
     For logout-all (user deleting own sessions), ctx can be None and user is derived from user_uuid.
     For admin operations, ctx should be provided.
     """
@@ -1093,7 +1073,7 @@ def create_reset_token(
     ctx: SessionContext | None = None,
 ) -> None:
     """Create a reset token from a passphrase.
-    
+
     For self-service (user creating own recovery link), ctx can be None and user is derived from user_uuid.
     For admin operations, ctx should be provided.
     """

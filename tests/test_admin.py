@@ -120,7 +120,9 @@ async def second_org_session_token(
 
 
 @pytest_asyncio.fixture(scope="function")
-async def org_admin_role(test_db: DB, test_org: Org, org_admin_permission: Permission) -> Role:
+async def org_admin_role(
+    test_db: DB, test_org: Org, org_admin_permission: Permission
+) -> Role:
     """Create a role with org admin permission only (no global admin)."""
     role = Role(
         uuid=uuid7.create(),
