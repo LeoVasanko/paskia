@@ -86,7 +86,6 @@ async def websocket_register_add(
         host=host,
         ip=metadata.get("ip"),
         user_agent=metadata.get("user_agent"),
-        actor=str(user_uuid),
     )
     auth = token
 

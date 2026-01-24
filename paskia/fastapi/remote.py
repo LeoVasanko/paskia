@@ -351,7 +351,6 @@ async def websocket_remote_auth_permit(ws: WebSocket):
                         passphrase=token_str,
                         expiry=expiry,
                         token_type="device addition",
-                        actor=str(stored_cred.user_uuid),
                     )
                     reset_token = token_str
                     # Also create a session so the device is logged in

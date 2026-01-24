@@ -54,7 +54,7 @@ async def user_update_display_name(
         raise HTTPException(status_code=400, detail="display_name required")
     if len(new_name) > 64:
         raise HTTPException(status_code=400, detail="display_name too long")
-    db.update_user_display_name(s.user_uuid, new_name, actor=str(s.user_uuid))
+    db.update_user_display_name(s.user_uuid, new_name)
     return {"status": "ok"}
 
 
@@ -68,7 +68,7 @@ async def api_logout_all(request: Request, response: Response, auth=AUTH_COOKIE)
         raise authz.AuthException(
             status_code=401, detail="Session expired", mode="login"
         )
-    db.delete_sessions_for_user(s.user_uuid, actor=str(s.user_uuid))
+    db.delete_sessions_for_user(s.user_uuid)
     session.clear_session_cookie(response)
     return {"message": "Logged out from all hosts"}
 
@@ -95,7 +95,7 @@ async def api_delete_session(
     if not target_session or target_session.user_uuid != current_session.user_uuid:
         raise HTTPException(status_code=404, detail="Session not found")
 
-    db.delete_session(session_id, actor=str(current_session.user_uuid))
+    db.delete_session(session_id)
     current_terminated = session_id == auth
     if current_terminated:
         session.clear_session_cookie(response)  # explicit because 200
@@ -141,7 +141,6 @@ async def api_create_link(
         passphrase=token,
         expiry=expiry,
         token_type="device addition",
-        actor=str(s.user_uuid),
     )
     url = hostutil.reset_link_url(token)
     return {

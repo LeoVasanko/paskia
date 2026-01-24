@@ -20,12 +20,13 @@ _logger = logging.getLogger(__name__)
 DB_PATH_DEFAULT = "paskia.jsonl"
 
 
-class _ChangeRecord(msgspec.Struct):
+class _ChangeRecord(msgspec.Struct, omit_defaults=True):
     """A single change record in the JSONL file."""
 
     ts: datetime
-    actor: str
-    diff: dict
+    a: str  # action - describes the operation (e.g., "migrate", "login", "create_user")
+    u: str | None = None  # user UUID who performed the action (None for system)
+    diff: dict = {}
 
 
 # msgspec encoder for change records
@@ -83,11 +84,12 @@ def compute_diff(previous: dict, current: dict) -> dict | None:
     return diff if diff else None
 
 
-def create_change_record(actor: str, diff: dict) -> _ChangeRecord:
+def create_change_record(action: str, diff: dict, user: str | None = None) -> _ChangeRecord:
     """Create a change record for persistence."""
     return _ChangeRecord(
         ts=datetime.now(timezone.utc),
-        actor=actor,
+        a=action,
+        u=user,
         diff=diff,
     )
 
