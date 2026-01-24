@@ -296,19 +296,19 @@ defineExpose({ focusFirstElement })
             <span>{{ o.display_name }}</span>
           </div>
 
-          <template v-for="p in sortedPermissions" :key="p.scope">
+          <template v-for="p in sortedPermissions" :key="p.uuid">
             <div class="perm-name" :title="p.scope">
               <span class="display-text">{{ p.display_name }}</span>
             </div>
             <div
               v-for="o in sortedOrgs"
-              :key="o.uuid + '-' + p.scope"
+              :key="o.uuid + '-' + p.uuid"
               class="matrix-cell"
             >
               <input
                 type="checkbox"
-                :checked="o.permissions.includes(p.scope)"
-                @change="e => $emit('toggleOrgPermission', o, p.scope, e.target.checked)"
+                :checked="o.permissions.includes(p.uuid)"
+                @change="e => $emit('toggleOrgPermission', o, p.uuid, e.target.checked)"
               />
             </div>
           </template>
@@ -329,7 +329,7 @@ defineExpose({ focusFirstElement })
           </tr>
         </thead>
         <tbody>
-          <tr v-for="p in sortedPermissions" :key="p.scope">
+          <tr v-for="p in sortedPermissions" :key="p.uuid">
             <td class="perm-name-cell">
               <div class="perm-title">
                 <span class="display-text">{{ p.display_name }}</span>
@@ -340,7 +340,7 @@ defineExpose({ focusFirstElement })
               </div>
             </td>
             <td class="perm-domain">{{ p.domain || '—' }}</td>
-            <td class="perm-members center">{{ permissionSummary[p.scope]?.userCount || 0 }}</td>
+            <td class="perm-members center">{{ permissionSummary[p.uuid]?.userCount || 0 }}</td>
             <td class="perm-actions center">
               <button @click="$emit('deletePermission', p)" class="icon-btn delete-icon" aria-label="Delete permission" title="Delete permission">❌</button>
             </td>

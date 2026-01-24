@@ -319,11 +319,11 @@ async def admin_update_role_name(
     return {"status": "ok"}
 
 
-@app.post("/orgs/{org_uuid}/roles/{role_uuid}/permissions/{permission_id}")
+@app.post("/orgs/{org_uuid}/roles/{role_uuid}/permissions/{permission_uuid}")
 async def admin_add_role_permission(
     org_uuid: UUID,
     role_uuid: UUID,
-    permission_id: str,
+    permission_uuid: UUID,
     request: Request,
     auth=AUTH_COOKIE,
 ):
@@ -344,20 +344,22 @@ async def admin_add_role_permission(
         raise HTTPException(status_code=404, detail="Role not found in organization")
 
     # Verify permission exists and org can grant it
-    db.get_permission(permission_id)
+    perm = db.get_permission(permission_uuid)
+    if not perm:
+        raise HTTPException(status_code=404, detail="Permission not found")
     org = db.get_organization(str(org_uuid))
-    if permission_id not in org.permissions:
+    if str(permission_uuid) not in org.permissions:
         raise ValueError("Permission not grantable by organization")
 
-    db.add_permission_to_role(role_uuid, permission_id, actor=str(ctx.user.uuid))
+    db.add_permission_to_role(role_uuid, permission_uuid, actor=str(ctx.user.uuid))
     return {"status": "ok"}
 
 
-@app.delete("/orgs/{org_uuid}/roles/{role_uuid}/permissions/{permission_id}")
+@app.delete("/orgs/{org_uuid}/roles/{role_uuid}/permissions/{permission_uuid}")
 async def admin_remove_role_permission(
     org_uuid: UUID,
     role_uuid: UUID,
-    permission_id: str,
+    permission_uuid: UUID,
     request: Request,
     auth=AUTH_COOKIE,
 ):
@@ -378,17 +380,23 @@ async def admin_remove_role_permission(
         raise HTTPException(status_code=404, detail="Role not found in organization")
 
     # Sanity check: prevent admin from removing their own access
+    # Find auth:admin and auth:org:admin permission UUIDs
+    perm_uuid_str = str(permission_uuid)
+    perm = db.get_permission(permission_uuid)
     if ctx.org.uuid == org_uuid and ctx.role.uuid == role_uuid:
-        if permission_id in ["auth:admin", "auth:org:admin"]:
+        if perm and perm.scope in ["auth:admin", "auth:org:admin"]:
             # Check if removing this permission would leave no admin access
-            remaining_perms = set(role.permissions) - {permission_id}
-            if (
-                "auth:admin" not in remaining_perms
-                and "auth:org:admin" not in remaining_perms
-            ):
+            remaining_perms = set(role.permissions) - {perm_uuid_str}
+            has_admin = False
+            for rp_uuid in remaining_perms:
+                rp = db.get_permission(rp_uuid)
+                if rp and rp.scope in ["auth:admin", "auth:org:admin"]:
+                    has_admin = True
+                    break
+            if not has_admin:
                 raise ValueError("Cannot remove your own admin permissions")
 
-    db.remove_permission_from_role(role_uuid, permission_id, actor=str(ctx.user.uuid))
+    db.remove_permission_from_role(role_uuid, permission_uuid, actor=str(ctx.user.uuid))
     return {"status": "ok"}
 
 

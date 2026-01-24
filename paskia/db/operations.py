@@ -170,14 +170,14 @@ def build_role(uuid: UUID) -> Role:
         uuid=uuid,
         org_uuid=r.org,
         display_name=r.display_name,
-        permissions=list(r.permissions.keys()),
+        permissions=[str(pid) for pid in r.permissions.keys()],
     )
 
 
 def build_org(uuid: UUID, include_roles: bool = False) -> Org:
     o = _db._data.orgs[uuid]
-    perm_scopes = [p.scope for p in _db._data.permissions.values() if uuid in p.orgs]
-    org = Org(uuid=uuid, display_name=o.display_name, permissions=perm_scopes)
+    perm_uuids = [str(pid) for pid, p in _db._data.permissions.items() if uuid in p.orgs]
+    org = Org(uuid=uuid, display_name=o.display_name, permissions=perm_uuids)
     if include_roles:
         org.roles = [
             build_role(rid) for rid, r in _db._data.roles.items() if r.org == uuid
@@ -461,24 +461,24 @@ def get_session_context(
         else None
     )
 
-    # Effective permissions: role's permission scopes that the org can grant
+    # Effective permissions: role's permissions that the org can grant
     # Also filter by domain if host is provided
-    org_scopes = set(org.permissions)
+    org_perm_uuids = set(org.permissions)  # Set of permission UUID strings
     normalized_host = normalize_host(host)
     host_without_port = normalized_host.rsplit(":", 1)[0] if normalized_host else None
 
     effective_perms = []
-    for scope in role.permissions:
-        if scope not in org_scopes:
+    for perm_uuid_str in role.permissions:
+        if perm_uuid_str not in org_perm_uuids:
             continue
-        # Find permission by scope
-        for pid, p in _db._data.permissions.items():
-            if p.scope == scope:
-                # Check domain restriction
-                if p.domain is not None and p.domain != host_without_port:
-                    continue
-                effective_perms.append(build_permission(pid))
-                break
+        perm_uuid = UUID(perm_uuid_str)
+        if perm_uuid not in _db._data.permissions:
+            continue
+        p = _db._data.permissions[perm_uuid]
+        # Check domain restriction
+        if p.domain is not None and p.domain != host_without_port:
+            continue
+        effective_perms.append(build_permission(perm_uuid))
 
     return SessionContext(
         session=session,
@@ -527,7 +527,7 @@ def rename_permission(
 ) -> None:
     """Rename a permission's scope. The UUID remains the same.
 
-    Also updates all role references to use the new scope.
+    Since roles reference permissions by UUID, no role updates are needed.
     Note: Scopes do not need to be unique (same scope with different domains is valid).
     """
     # Find permission by old scope
@@ -545,21 +545,17 @@ def rename_permission(
         _db._data.permissions[key].display_name = display_name
         _db._data.permissions[key].domain = domain
 
-        # Update role references if scope changed
-        if old_scope != new_scope:
-            for r in _db._data.roles.values():
-                if old_scope in r.permissions:
-                    del r.permissions[old_scope]
-                    r.permissions[new_scope] = True
-
 
 def delete_permission(uuid: str | UUID, actor: str = "system") -> None:
-    """Delete a permission."""
+    """Delete a permission and remove it from all roles."""
     if isinstance(uuid, str):
         uuid = UUID(uuid)
     if uuid not in _db._data.permissions:
         raise ValueError(f"Permission {uuid} not found")
     with _db.transaction(actor):
+        # Remove this permission from all roles
+        for role in _db._data.roles.values():
+            role.permissions.pop(uuid, None)
         del _db._data.permissions[uuid]
 
 
@@ -574,19 +570,26 @@ def create_organization(org: Org, actor: str = "system") -> None:
         _db._data.orgs[org.uuid] = _OrgData(
             display_name=org.display_name, created_at=datetime.now(timezone.utc)
         )
-        # Grant listed permissions to this org
-        for scope in org.permissions:
-            for pid, p in _db._data.permissions.items():
-                if p.scope == scope:
-                    p.orgs[org.uuid] = True
+        # Grant listed permissions to this org (org.permissions contains UUIDs now)
+        for perm_uuid_str in org.permissions:
+            perm_uuid = UUID(perm_uuid_str) if isinstance(perm_uuid_str, str) else perm_uuid_str
+            if perm_uuid in _db._data.permissions:
+                _db._data.permissions[perm_uuid].orgs[org.uuid] = True
         # Create Administration role with org admin permission
         import uuid7
 
         admin_role_uuid = uuid7.create()
+        # Find the auth:org:admin permission UUID
+        org_admin_perm_uuid = None
+        for pid, p in _db._data.permissions.items():
+            if p.scope == "auth:org:admin":
+                org_admin_perm_uuid = pid
+                break
+        role_permissions = {org_admin_perm_uuid: True} if org_admin_perm_uuid else {}
         _db._data.roles[admin_role_uuid] = _RoleData(
             org=org.uuid,
             display_name="Administration",
-            permissions={"auth:org:admin": True},
+            permissions=role_permissions,
         )
 
 
@@ -624,35 +627,65 @@ def delete_organization(uuid: str | UUID, actor: str = "system") -> None:
 
 
 def add_permission_to_organization(
-    org_uuid: str | UUID, permission_scope: str, actor: str = "system"
+    org_uuid: str | UUID, permission_id: str | UUID, actor: str = "system"
 ) -> None:
-    """Grant a permission scope to an organization."""
+    """Grant a permission to an organization by UUID."""
     if isinstance(org_uuid, str):
         org_uuid = UUID(org_uuid)
     if org_uuid not in _db._data.orgs:
         raise ValueError(f"Organization {org_uuid} not found")
-    found = False
+
+    # Convert permission_id to UUID
+    if isinstance(permission_id, str):
+        try:
+            permission_uuid = UUID(permission_id)
+        except ValueError:
+            # It's a scope - look up the UUID (backwards compat)
+            for pid, p in _db._data.permissions.items():
+                if p.scope == permission_id:
+                    permission_uuid = pid
+                    break
+            else:
+                raise ValueError(f"Permission {permission_id} not found")
+    else:
+        permission_uuid = permission_id
+
+    if permission_uuid not in _db._data.permissions:
+        raise ValueError(f"Permission {permission_uuid} not found")
+
     with _db.transaction(actor):
-        for p in _db._data.permissions.values():
-            if p.scope == permission_scope:
-                p.orgs[org_uuid] = True
-                found = True
-    if not found:
-        raise ValueError(f"Permission scope {permission_scope} not found")
+        _db._data.permissions[permission_uuid].orgs[org_uuid] = True
 
 
 def remove_permission_from_organization(
-    org_uuid: str | UUID, permission_scope: str, actor: str = "system"
+    org_uuid: str | UUID, permission_id: str | UUID, actor: str = "system"
 ) -> None:
-    """Remove a permission scope from an organization."""
+    """Remove a permission from an organization by UUID."""
     if isinstance(org_uuid, str):
         org_uuid = UUID(org_uuid)
     if org_uuid not in _db._data.orgs:
         raise ValueError(f"Organization {org_uuid} not found")
+
+    # Convert permission_id to UUID
+    if isinstance(permission_id, str):
+        try:
+            permission_uuid = UUID(permission_id)
+        except ValueError:
+            # It's a scope - look up the UUID (backwards compat)
+            for pid, p in _db._data.permissions.items():
+                if p.scope == permission_id:
+                    permission_uuid = pid
+                    break
+            else:
+                return  # Permission not found, silently return
+    else:
+        permission_uuid = permission_id
+
+    if permission_uuid not in _db._data.permissions:
+        return  # Permission not found, silently return
+
     with _db.transaction(actor):
-        for p in _db._data.permissions.values():
-            if p.scope == permission_scope:
-                p.orgs.pop(org_uuid, None)
+        _db._data.permissions[permission_uuid].orgs.pop(org_uuid, None)
 
 
 def create_role(role: Role, actor: str = "system") -> None:
@@ -665,7 +698,7 @@ def create_role(role: Role, actor: str = "system") -> None:
         _db._data.roles[role.uuid] = _RoleData(
             org=role.org_uuid,
             display_name=role.display_name,
-            permissions={scope: True for scope in role.permissions},
+            permissions={UUID(pid): True for pid in role.permissions},
         )
 
 
@@ -682,27 +715,33 @@ def update_role_name(
 
 
 def add_permission_to_role(
-    role_uuid: str | UUID, permission_scope: str, actor: str = "system"
+    role_uuid: str | UUID, permission_uuid: str | UUID, actor: str = "system"
 ) -> None:
-    """Add permission scope to role."""
+    """Add permission to role by UUID."""
     if isinstance(role_uuid, str):
         role_uuid = UUID(role_uuid)
+    if isinstance(permission_uuid, str):
+        permission_uuid = UUID(permission_uuid)
     if role_uuid not in _db._data.roles:
         raise ValueError(f"Role {role_uuid} not found")
+    if permission_uuid not in _db._data.permissions:
+        raise ValueError(f"Permission {permission_uuid} not found")
     with _db.transaction(actor):
-        _db._data.roles[role_uuid].permissions[permission_scope] = True
+        _db._data.roles[role_uuid].permissions[permission_uuid] = True
 
 
 def remove_permission_from_role(
-    role_uuid: str | UUID, permission_scope: str, actor: str = "system"
+    role_uuid: str | UUID, permission_uuid: str | UUID, actor: str = "system"
 ) -> None:
-    """Remove permission scope from role."""
+    """Remove permission from role by UUID."""
     if isinstance(role_uuid, str):
         role_uuid = UUID(role_uuid)
+    if isinstance(permission_uuid, str):
+        permission_uuid = UUID(permission_uuid)
     if role_uuid not in _db._data.roles:
         raise ValueError(f"Role {role_uuid} not found")
     with _db.transaction(actor):
-        _db._data.roles[role_uuid].permissions.pop(permission_scope, None)
+        _db._data.roles[role_uuid].permissions.pop(permission_uuid, None)
 
 
 def delete_role(uuid: str | UUID, actor: str = "system") -> None:

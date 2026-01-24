@@ -15,13 +15,13 @@ class Role(msgspec.Struct):
     uuid: UUID
     org_uuid: UUID
     display_name: str
-    permissions: list[str] = []  # permission IDs this role grants
+    permissions: list[str] = []  # permission UUIDs this role grants
 
 
 class Org(msgspec.Struct):
     uuid: UUID
     display_name: str
-    permissions: list[str] = []  # permission IDs this org can grant
+    permissions: list[str] = []  # permission UUIDs this org can grant
     roles: list[Role] = []  # roles belonging to this org
 
 
@@ -100,7 +100,7 @@ class _OrgData(msgspec.Struct):
 class _RoleData(msgspec.Struct):
     org: UUID
     display_name: str
-    permissions: dict[str, bool]  # permission_id -> True
+    permissions: dict[UUID, bool]  # permission_uuid -> True
 
 
 class _UserData(msgspec.Struct):
