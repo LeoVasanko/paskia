@@ -6,11 +6,16 @@ not from the installed package. It starts both the Vite frontend dev server
 and the FastAPI backend with auto-reload enabled.
 
 Usage:
-    uv run scripts/dev.py [host:port] [options...]
+    uv run scripts/devserver.py [host:port] [options...]
 
 The optional host:port argument sets where the Vite frontend listens.
-All other options are forwarded to `paskia serve`.
+All other options are forwarded to `paskia`.
 Backend always listens on localhost:4402.
+
+Environment:
+    FASTAPI_VUE_FRONTEND_URL    Set by this script for the backend to know where Vite is.
+    FASTAPI_VUE_BACKEND_URL     Set by this script for Vite to know where to proxy API calls.
+    PASKIA_SITE_URL             User-facing URL for reset links (Caddy HTTPS or Vite HTTP).
 
 Options:
     --caddy         Run Caddy as HTTPS proxy on port 443 (requires sudo)
@@ -119,7 +124,11 @@ def parse_endpoint(
 
 
 def run_vite(
-    vite_url: str, vite_host: str | None, vite_port: int, auth_host: str | None = None
+    vite_url: str,
+    vite_host: str | None,
+    vite_port: int,
+    env: dict,
+    auth_host: str | None = None,
 ):
     """Spawn the frontend dev server (deno, npm, or bunx) as a background process."""
     devpath = Path(__file__).parent.parent / "frontend"
@@ -162,7 +171,7 @@ def run_vite(
 
             full_cmd = cmd + vite_args
             stderr.write(f">>> {' '.join([tool_name, *full_cmd[1:]])}\n")
-            vite_env = os.environ.copy()
+            vite_env = env.copy()
             if auth_host:
                 vite_env["PASKIA_AUTH_HOST"] = auth_host
             vite_process = subprocess.Popen(
@@ -391,7 +400,7 @@ def main():
     if all_ifaces:
         vite_host = "0.0.0.0"
 
-    # Build Vite URL for PASKIA_DEVMODE (always use localhost for URL)
+    # Build Vite URL for FASTAPI_VUE_FRONTEND_URL (always use localhost for URL)
     vite_url = f"http://localhost:{vite_port}"
 
     # Compute origins for Caddy (user-specified or auto-generated)
@@ -424,15 +433,21 @@ def main():
         if not run_caddy(caddy_origins, vite_port):
             raise SystemExit(1)
 
-    # Start Vite dev server
-    run_vite(vite_url, vite_host, vite_port, args.auth_host)
-
-    # Set dev mode with Vite URL in environment for subprocess
+    # Set dev mode env vars for subprocesses (fastapi-vue convention)
     env = os.environ.copy()
-    env["PASKIA_DEVMODE"] = vite_url
+    env["FASTAPI_VUE_FRONTEND_URL"] = vite_url
+    env["FASTAPI_VUE_BACKEND_URL"] = f"http://localhost:{BACKEND_PORT}"
+    # User-facing URL: Caddy HTTPS when running, else Vite HTTP
+    if args.caddy:
+        env["PASKIA_SITE_URL"] = caddy_origins[0]  # auth-host or https://{rp-id}
+    else:
+        env["PASKIA_SITE_URL"] = vite_url
 
-    # Build command with origin args
-    cmd = ["paskia", "serve", f"localhost:{BACKEND_PORT}"]
+    # Start Vite dev server
+    run_vite(vite_url, vite_host, vite_port, env, args.auth_host)
+
+    # Build command with origin args (no serve subcommand, host:port is first arg)
+    cmd = ["paskia", f"localhost:{BACKEND_PORT}"]
 
     # Pass through rp-id (always pass, has default)
     cmd.extend(["--rp-id", args.rp_id])

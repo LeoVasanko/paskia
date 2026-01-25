@@ -1,12 +1,20 @@
+"""Vite dev server proxy for fetching frontend files during development.
+
+In dev mode (FASTAPI_VUE_FRONTEND_URL set), fetches files from Vite.
+In production, reads from the static build directory.
+
+This complements fastapi_vue.Frontend which handles static file serving
+but doesn't provide server-side fetching of HTML content.
+"""
+
 import asyncio
 import mimetypes
 import os
-from importlib import resources
 from pathlib import Path
 
 import httpx
 
-__all__ = ["path", "file", "read", "is_dev_mode"]
+__all__ = ["read"]
 
 
 def _get_dev_server() -> str | None:
@@ -15,6 +23,9 @@ def _get_dev_server() -> str | None:
 
 
 def _resolve_static_dir() -> Path:
+    """Resolve the static files directory."""
+    from importlib import resources
+
     # Try packaged path via importlib.resources (works for wheel/installed).
     try:  # pragma: no cover - trivial path resolution
         pkg_dir = resources.files("paskia") / "frontend-build"
@@ -27,17 +38,7 @@ def _resolve_static_dir() -> Path:
     return Path(__file__).parent.parent / "frontend-build"
 
 
-path: Path = _resolve_static_dir()
-
-
-def file(*parts: str) -> Path:
-    """Return a child path under the static root."""
-    return path.joinpath(*parts)
-
-
-def is_dev_mode() -> bool:
-    """Check if we're running in dev mode (Vite frontend server)."""
-    return bool(_get_dev_server())
+_static_dir: Path = _resolve_static_dir()
 
 
 async def read(filepath: str) -> tuple[bytes, int, dict[str, str]]:
@@ -51,10 +52,10 @@ async def read(filepath: str) -> tuple[bytes, int, dict[str, str]]:
 
     Returns:
         Tuple of (content, status_code, headers) suitable for
-        FastAPI Response(*args) or Sanic raw response.
+        FastAPI Response(*args).
     """
-    if is_dev_mode():
-        dev_server = _get_dev_server()
+    dev_server = _get_dev_server()
+    if dev_server:
         async with httpx.AsyncClient() as client:
             resp = await client.get(f"{dev_server}{filepath}")
             resp.raise_for_status()
@@ -64,12 +65,7 @@ async def read(filepath: str) -> tuple[bytes, int, dict[str, str]]:
             return resp.content, resp.status_code, {"content-type": mime}
     else:
         # Production: read from static build
-        file_path = path / filepath.lstrip("/")
-        content = await _read_file_async(file_path)
+        file_path = _static_dir / filepath.lstrip("/")
+        content = await asyncio.to_thread(file_path.read_bytes)
         mime, _ = mimetypes.guess_type(str(file_path))
         return content, 200, {"content-type": mime or "application/octet-stream"}
-
-
-async def _read_file_async(file_path: Path) -> bytes:
-    """Read file asynchronously using asyncio.to_thread."""
-    return await asyncio.to_thread(file_path.read_bytes)

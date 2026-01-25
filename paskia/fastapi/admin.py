@@ -10,12 +10,12 @@ from paskia.authsession import EXPIRES, reset_expires
 from paskia.fastapi import authz
 from paskia.fastapi.session import AUTH_COOKIE
 from paskia.util import (
-    frontend,
     hostutil,
     passphrase,
     permutil,
     querysafe,
     useragent,
+    vitedev,
 )
 
 app = FastAPI()
@@ -77,7 +77,7 @@ async def general_exception_handler(_request, exc: Exception):  # pragma: no cov
 
 @app.get("/")
 async def adminapp(request: Request, auth=AUTH_COOKIE):
-    return Response(*await frontend.read("/auth/admin/index.html"))
+    return Response(*await vitedev.read("/auth/admin/index.html"))
 
 
 # -------------------- Organizations --------------------
