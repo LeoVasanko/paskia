@@ -4,6 +4,7 @@ import { resolve } from 'node:path'
 import vue from '@vitejs/plugin-vue'
 import { existsSync, renameSync, mkdirSync } from 'node:fs'
 import sirv from 'sirv'
+import fastapiVue from './vite-plugin-fastapi.js'
 
 // Auth host mode: when set, clients accessing the auth host get /auth/ at / and /auth/admin/ at /admin/
 const authHost = process.env.PASKIA_AUTH_HOST
@@ -12,6 +13,14 @@ export default defineConfig(({ command }) => ({
   appType: 'mpa',
   publicDir: 'public',
   plugins: [
+    fastapiVue({ paths: [
+      "/auth/api",
+      "/auth/ws",
+      // Passphrase links: /auth/word1.word2.word3.word4.word5
+      "^/auth/[a-z]+\\.[a-z]+\\.[a-z]+\\.[a-z]+\\.[a-z]+$",
+      // Passphrase links: /word1.word2.word3.word4.word5
+      "^/[a-z]+\\.[a-z]+\\.[a-z]+\\.[a-z]+\\.[a-z]+$",
+    ] }),
     vue(),
     // Auth host routing: rewrite paths when accessing dedicated auth host
     // Must run before serve-examples to handle / correctly
@@ -89,24 +98,6 @@ export default defineConfig(({ command }) => ({
     allowedHosts: true,
     fs: {
       allow: ['..']
-    },
-    proxy: {
-      // Only proxy these two specific backend API paths
-      '/auth/api': {
-        target: 'http://localhost:4402'
-      },
-      '/auth/ws': {
-        target: 'http://localhost:4402',
-        ws: true
-      },
-      // Passphrase links: /auth/word1.word2.word3.word4.word5
-      '^/auth/[a-z]+\\.[a-z]+\\.[a-z]+\\.[a-z]+\\.[a-z]+$': {
-        target: 'http://localhost:4402'
-      },
-      // Passphrase links: /word1.word2.word3.word4.word5
-      '^/[a-z]+\\.[a-z]+\\.[a-z]+\\.[a-z]+\\.[a-z]+$': {
-        target: 'http://localhost:4402'
-      }
     }
   },
   build: {

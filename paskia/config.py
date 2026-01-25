@@ -22,4 +22,3 @@ class PaskiaConfig:
     host: str | None = None
     port: int | None = None
     uds: str | None = None
-    devmode: bool = False

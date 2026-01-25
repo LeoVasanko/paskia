@@ -23,7 +23,7 @@ from paskia.authsession import (
 from paskia.fastapi import authz, session, user
 from paskia.fastapi.session import AUTH_COOKIE, AUTH_COOKIE_NAME
 from paskia.globals import passkey as global_passkey
-from paskia.util import frontend, hostutil, htmlutil, passphrase, userinfo
+from paskia.util import hostutil, htmlutil, passphrase, userinfo, vitedev
 
 bearer_auth = HTTPBearer(auto_error=True)
 
@@ -180,7 +180,7 @@ async def forward_authentication(
         if wants_html:
             # Browser request - return full-page HTML with metadata
             data_attrs = {"mode": e.mode, **e.metadata}
-            html = (await frontend.read("/int/forward/index.html"))[0]
+            html = (await vitedev.read("/int/forward/index.html"))[0]
             html = htmlutil.patch_html_data_attrs(html, **data_attrs)
             return Response(
                 html, status_code=e.status_code, media_type="text/html; charset=UTF-8"

@@ -5,11 +5,18 @@ from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import FileResponse, RedirectResponse
-from fastapi.staticfiles import StaticFiles
+from fastapi_vue import Frontend
 
 from paskia.fastapi import admin, api, auth_host, ws
 from paskia.fastapi.session import AUTH_COOKIE
-from paskia.util import frontend, hostutil, passphrase
+from paskia.util import hostutil, passphrase, vitedev
+
+# Vue Frontend static files
+frontend = Frontend(
+    Path(__file__).with_name("frontend-build"),
+    cached=["/auth/assets/"],
+)
+
 
 # Path to examples/index.html when running from source tree
 _EXAMPLES_DIR = Path(__file__).parent.parent.parent / "examples"
@@ -43,10 +50,11 @@ async def lifespan(app: FastAPI):  # pragma: no cover - startup path
         raise
 
     # Restore info level logging after startup (suppressed during uvicorn init in dev mode)
-    if frontend.is_dev_mode():
+    if frontend.devmode:
         logging.getLogger("uvicorn").setLevel(logging.INFO)
         logging.getLogger("uvicorn.access").setLevel(logging.INFO)
 
+    await frontend.load()
     yield
 
 
@@ -59,19 +67,11 @@ app.mount("/auth/api/admin/", admin.app)
 app.mount("/auth/api/", api.app)
 app.mount("/auth/ws/", ws.app)
 
-# In dev mode (PASKIA_DEVMODE=1), Vite serves assets directly; skip static files mount
-if not frontend.is_dev_mode():
-    app.mount(
-        "/auth/assets/",
-        StaticFiles(directory=frontend.file("auth", "assets")),
-        name="assets",
-    )
-
 
 @app.get("/auth/restricted/")
 async def restricted_view():
     """Serve the restricted/authentication UI for iframe embedding."""
-    return Response(*await frontend.read("/auth/restricted/index.html"))
+    return Response(*await vitedev.read("/auth/restricted/index.html"))
 
 
 # Navigable URLs are defined here. We support both / and /auth/ as the base path
@@ -86,7 +86,7 @@ async def frontapp(request: Request, response: Response, auth=AUTH_COOKIE):
     The frontend handles mode detection (host mode vs full profile) based on settings.
     Access control is handled via APIs.
     """
-    return Response(*await frontend.read("/auth/index.html"))
+    return Response(*await vitedev.read("/auth/index.html"))
 
 
 @app.get("/admin", include_in_schema=False)
@@ -128,4 +128,8 @@ async def token_link(token: str):
     if not passphrase.is_well_formed(token):
         raise HTTPException(status_code=404)
 
-    return Response(*await frontend.read("/int/reset/index.html"))
+    return Response(*await vitedev.read("/int/reset/index.html"))
+
+
+# Final catch-all route for frontend files (keep at end of file)
+frontend.route(app, "/")

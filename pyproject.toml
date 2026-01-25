@@ -22,8 +22,9 @@ dependencies = [
     "jsondiff>=2.2.1",
     "msgspec>=0.20.0",
     "aiofiles>=25.1.0",
+    "fastapi-vue>=0.3.0",
 ]
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 
 [project.urls]
 Homepage = "https://git.zi.fi/LeoVasanko/paskia"
@@ -99,3 +100,5 @@ paskia-migrate = "paskia.migrate:main"
 [tool.hatch.build]
 artifacts = ["paskia/frontend-build"]
 targets.sdist.hooks.custom.path = "scripts/build-frontend.py"
+packages = ["paskia"]
+only-packages = true
