@@ -293,12 +293,12 @@ class TestSetSessionEndpoint:
     """Tests for POST /auth/api/set-session"""
 
     @pytest.mark.asyncio
-    async def test_set_session_without_bearer_returns_403(
+    async def test_set_session_without_bearer_returns_401(
         self, client: httpx.AsyncClient
     ):
-        """Set session without bearer token should return 403."""
+        """Set session without bearer token should return 401."""
         response = await client.post("/auth/api/set-session")
-        assert response.status_code == 403
+        assert response.status_code == 401
 
     @pytest.mark.asyncio
     async def test_set_session_with_valid_bearer_token(
