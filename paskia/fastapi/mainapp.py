@@ -13,7 +13,7 @@ from paskia.util import hostutil, passphrase, vitedev
 
 # Vue Frontend static files
 frontend = Frontend(
-    Path(__file__).with_name("frontend-build"),
+    Path(__file__).parent.parent / "frontend-build",
     cached=["/auth/assets/"],
 )
 
