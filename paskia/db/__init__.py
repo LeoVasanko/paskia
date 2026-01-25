@@ -166,6 +166,7 @@ __all__ = [
     "remove_permission_from_organization",
     "remove_permission_from_role",
     "rename_permission",
+    "set_session_host",
     "update_credential_sign_count",
     "update_organization_name",
     "update_permission",
