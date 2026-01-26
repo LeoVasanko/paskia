@@ -4,6 +4,7 @@ from datetime import timezone
 
 from paskia import aaguid, db
 from paskia.authsession import EXPIRES
+from paskia.db import SessionContext
 from paskia.util import hostutil, permutil, useragent
 
 
@@ -17,6 +18,25 @@ def _format_datetime(dt):
         return dt.replace(tzinfo=timezone.utc).isoformat().replace("+00:00", "Z")
 
 
+def format_session_context(ctx: SessionContext) -> dict:
+    """Format SessionContext for JSON response."""
+    return {
+        "user": {
+            "uuid": str(ctx.user.uuid),
+            "display_name": ctx.user.display_name,
+        },
+        "org": {
+            "uuid": str(ctx.org.uuid),
+            "display_name": ctx.org.display_name,
+        },
+        "role": {
+            "uuid": str(ctx.role.uuid),
+            "display_name": ctx.role.display_name,
+        },
+        "permissions": [p.scope for p in ctx.permissions],
+    }
+
+
 async def format_user_info(
     *,
     user_uuid,
@@ -24,23 +44,7 @@ async def format_user_info(
     session_record,
     request_host: str | None,
 ) -> dict:
-    """Format complete user information for authenticated users.
-
-    Args:
-        user_uuid: UUID of the user to fetch information for
-        auth: Authentication token
-        session_record: Current session record
-        request_host: Host header from the request
-
-    Returns:
-        Dictionary containing formatted user information including:
-        - User details
-        - Organization and role information
-        - Credentials list
-        - Sessions list
-        - Permissions
-    """
-    u = db.get_user_by_uuid(user_uuid)
+    """Format complete user information for authenticated users."""
     ctx = await permutil.session_context(auth, request_host)
 
     # Fetch and format credentials
@@ -65,24 +69,6 @@ async def format_user_info(
 
     credentials.sort(key=lambda cred: cred["created_at"])
     aaguid_info = aaguid.filter(user_aaguids)
-
-    # Format role and org information
-    role_info = None
-    org_info = None
-    effective_permissions: list[str] = []
-
-    if ctx:
-        role_info = {
-            "uuid": str(ctx.role.uuid),
-            "display_name": ctx.role.display_name,
-            "permissions": ctx.role.permissions,
-        }
-        org_info = {
-            "uuid": str(ctx.org.uuid),
-            "display_name": ctx.org.display_name,
-            "permissions": ctx.org.permissions,
-        }
-        effective_permissions = [p.scope for p in (ctx.permissions or [])]
 
     # Format sessions
     normalized_request_host = hostutil.normalize_host(request_host)
@@ -109,37 +95,11 @@ async def format_user_info(
         )
 
     return {
-        "authenticated": True,
-        "user": {
-            "user_uuid": str(u.uuid),
-            "user_name": u.display_name,
-            "created_at": _format_datetime(u.created_at),
-            "last_seen": _format_datetime(u.last_seen),
-            "visits": u.visits,
-        },
-        "org": org_info,
-        "role": role_info,
-        "permissions": effective_permissions,
+        "ctx": format_session_context(ctx),
+        "created_at": _format_datetime(ctx.user.created_at),
+        "last_seen": _format_datetime(ctx.user.last_seen),
+        "visits": ctx.user.visits,
         "credentials": credentials,
         "aaguid_info": aaguid_info,
         "sessions": sessions_payload,
-    }
-
-
-async def format_reset_user_info(user_uuid, reset_token) -> dict:
-    """Format minimal user information for reset token requests.
-
-    Args:
-        user_uuid: UUID of the user
-        reset_token: Reset token record
-
-    Returns:
-        Dictionary with minimal user info for password reset flow
-    """
-    u = db.get_user_by_uuid(user_uuid)
-
-    return {
-        "authenticated": False,
-        "session_type": reset_token.token_type,
-        "user": {"user_uuid": str(u.uuid), "user_name": u.display_name},
     }

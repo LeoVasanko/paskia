@@ -485,11 +485,11 @@ def get_session_context(
     user = build_user(s.user)
     role = build_role(role_uuid)
     org = build_org(org_uuid)
-    credential = (
-        build_credential(s.credential)
-        if s.credential in _db._data.credentials
-        else None
-    )
+
+    # Credential must exist (sessions are cascade-deleted when credential is deleted)
+    if s.credential not in _db._data.credentials:
+        return None
+    credential = build_credential(s.credential)
 
     # Effective permissions: role's permissions that the org can grant
     # Also filter by domain if host is provided
@@ -516,7 +516,7 @@ def get_session_context(
         org=org,
         role=role,
         credential=credential,
-        permissions=effective_perms or None,
+        permissions=effective_perms,
     )
 
 
@@ -956,7 +956,7 @@ def delete_credential(
     *,
     ctx: SessionContext | None = None,
 ) -> None:
-    """Delete a credential.
+    """Delete a credential and all sessions using it.
 
     If user_uuid is provided, validates that the credential belongs to that user.
     """
@@ -971,6 +971,10 @@ def delete_credential(
         if cred_user != user_uuid:
             raise ValueError(f"Credential {uuid} does not belong to user {user_uuid}")
     with _db.transaction("Deleted credential", ctx):
+        # Delete all sessions using this credential
+        keys = [k for k, s in _db._data.sessions.items() if s.credential == uuid]
+        for k in keys:
+            del _db._data.sessions[k]
         del _db._data.credentials[uuid]
 
 

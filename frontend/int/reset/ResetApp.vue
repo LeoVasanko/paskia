@@ -71,12 +71,12 @@ const initializing = ref(true)
 const loading = ref(false)
 const token = ref('')
 const settings = ref(null)
-const userInfo = ref(null)
+const tokenInfo = ref(null)
 const displayName = ref('')
 const errorMessage = ref('')
 let statusTimer = null
 
-const sessionDescriptor = computed(() => userInfo.value?.session_type || 'your enrollment')
+const sessionDescriptor = computed(() => tokenInfo.value?.token_type || 'your enrollment')
 const subtitleMessage = computed(() => {
   if (initializing.value) return 'Preparing your secure enrollment…'
   if (!canRegister.value) return 'This authentication link is no longer valid.'
@@ -85,7 +85,7 @@ const subtitleMessage = computed(() => {
 
 const basePath = computed(() => uiBasePath())
 
-const canRegister = computed(() => !!(token.value && userInfo.value))
+const canRegister = computed(() => !!(token.value && tokenInfo.value))
 
 function showMessage(message, type = 'info', duration = 3000) {
   status.show = true
@@ -109,15 +109,16 @@ async function fetchSettings() {
   }
 }
 
-async function fetchUserInfo() {
+async function fetchTokenInfo() {
   if (!token.value) return
   try {
-    userInfo.value = await apiJson(`/auth/api/user-info?reset=${encodeURIComponent(token.value)}`, {
-      method: 'POST'
+    tokenInfo.value = await apiJson('/auth/api/token-info', {
+      method: 'GET',
+      headers: { 'Authorization': `Bearer ${token.value}` },
     })
-    displayName.value = userInfo.value?.user?.user_name || ''
+    displayName.value = tokenInfo.value.display_name
   } catch (error) {
-    console.error('Failed to load user info', error)
+    console.error('Failed to load token info', error)
     const message = error instanceof ApiError
       ? (error.data?.detail || 'The authentication link is invalid or expired.')
       : getUserFriendlyErrorMessage(error)
@@ -196,7 +197,7 @@ onMounted(async () => {
     initializing.value = false
     return
   }
-  await fetchUserInfo()
+  await fetchTokenInfo()
   initializing.value = false
 })
 </script>

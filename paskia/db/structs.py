@@ -76,8 +76,8 @@ class SessionContext(msgspec.Struct):
     user: User
     org: Org
     role: Role
-    credential: Credential | None = None
-    permissions: list[Permission] | None = None
+    credential: Credential
+    permissions: list[Permission] = []
 
 
 # -------------------------------------------------------------------------

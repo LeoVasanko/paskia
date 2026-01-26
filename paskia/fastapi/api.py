@@ -78,12 +78,7 @@ async def validate_token(
     max_age: str | None = Query(None),
     auth=AUTH_COOKIE,
 ):
-    """Validate the current session and extend its expiry.
-
-    Always refreshes the session (sliding expiration) and re-sets the cookie with a
-    renewed max-age. This keeps active users logged in without needing a separate
-    refresh endpoint.
-    """
+    """Validate session and return context. Refreshes session expiry."""
     try:
         ctx = await authz.verify(
             auth,
@@ -113,8 +108,26 @@ async def validate_token(
                 )
     return {
         "valid": True,
-        "user_uuid": str(ctx.session.user_uuid),
         "renewed": renewed,
+        "ctx": userinfo.format_session_context(ctx),
+    }
+
+
+@app.get("/token-info")
+async def token_info(credentials=Depends(bearer_auth)):
+    """Get reset/device-add token info. Pass token via Bearer header."""
+    token = credentials.credentials
+    if not passphrase.is_well_formed(token):
+        raise HTTPException(400, "Invalid token format")
+    try:
+        reset_token = await get_reset(token)
+    except ValueError as e:
+        raise HTTPException(401, str(e))
+
+    u = db.get_user_by_uuid(reset_token.user_uuid)
+    return {
+        "token_type": reset_token.token_type,
+        "display_name": u.display_name,
     }
 
 
@@ -236,47 +249,22 @@ async def api_token_info(token: str):
 async def api_user_info(
     request: Request,
     response: Response,
-    reset: str | None = None,
     auth=AUTH_COOKIE,
 ):
-    """Get user information including credentials, sessions, and permissions.
-
-    Can be called with either:
-    - A session cookie (auth) for authenticated users
-    - A reset token for users in password reset flow
-    """
-    authenticated = False
-    session_record = None
-    reset_token = None
+    """Get full user profile including credentials and sessions."""
+    if auth is None:
+        raise authz.AuthException(
+            status_code=401,
+            detail="Authentication required",
+            mode="login",
+        )
     try:
-        if reset:
-            if not passphrase.is_well_formed(reset):
-                raise ValueError("Invalid reset token")
-            reset_token = await get_reset(reset)
-            target_user_uuid = reset_token.user_uuid
-        else:
-            if auth is None:
-                raise authz.AuthException(
-                    status_code=401,
-                    detail="Authentication required",
-                    mode="login",
-                )
-            session_record = await get_session(auth, host=request.headers.get("host"))
-            authenticated = True
-            target_user_uuid = session_record.user_uuid
+        session_record = await get_session(auth, host=request.headers.get("host"))
     except ValueError as e:
         raise HTTPException(401, str(e))
 
-    # Return minimal response for reset tokens
-    if not authenticated and reset_token:
-        return await userinfo.format_reset_user_info(target_user_uuid, reset_token)
-
-    # Return full user info for authenticated users
-    assert auth is not None
-    assert session_record is not None
-
     return await userinfo.format_user_info(
-        user_uuid=target_user_uuid,
+        user_uuid=session_record.user_uuid,
         auth=auth,
         session_record=session_record,
         request_host=request.headers.get("host"),
