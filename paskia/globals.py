@@ -63,6 +63,11 @@ async def init(
 
         await bootstrap_if_needed()
 
+    # Start background flush/cleanup task after bootstrap
+    from .db import start_background
+
+    await start_background()
+
 
 # Global instances
 passkey = Manager[Passkey]("Passkey")

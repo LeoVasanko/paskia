@@ -96,6 +96,10 @@ def create_change_record(
     )
 
 
+# Actions that are allowed to create a new database file
+_BOOTSTRAP_ACTIONS = frozenset({"bootstrap", "migrate"})
+
+
 async def flush_changes(
     db_path: Path,
     pending_changes: deque[_ChangeRecord],
@@ -112,15 +116,25 @@ async def flush_changes(
     if not pending_changes:
         return True
 
-    # Collect all pending changes
+    if not db_path.exists():
+        first_action = pending_changes[0].a
+        if first_action not in _BOOTSTRAP_ACTIONS:
+            _logger.error(
+                "Refusing to create database file with action '%s' - "
+                "only bootstrap or migrate can create a new database",
+                first_action,
+            )
+            pending_changes.clear()
+            return False
+
     changes_to_write = list(pending_changes)
     pending_changes.clear()
 
     try:
-        # Build lines to append (keep as bytes, join with \n)
         lines = [_change_encoder.encode(change) for change in changes_to_write]
+        if not lines:
+            return True
 
-        # Append all lines in a single write (binary mode for Windows compatibility)
         async with aiofiles.open(db_path, "ab") as f:
             await f.write(b"\n".join(lines) + b"\n")
         return True

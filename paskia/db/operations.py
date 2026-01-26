@@ -158,14 +158,11 @@ _db = DB()
 
 
 async def init(*args, **kwargs):
-    """Load database and start background flush task."""
-    from paskia.db.background import start_background
-
+    """Load database from JSONL file."""
     db_path = os.environ.get("PASKIA_DB", DB_PATH_DEFAULT)
     if db_path.startswith("json:"):
         db_path = db_path[5:]
     await _db.load(db_path)
-    await start_background()
 
 
 # -------------------------------------------------------------------------
@@ -1243,3 +1240,118 @@ def create_credential_session(
             if reset_key in _db._data.reset_tokens:
                 del _db._data.reset_tokens[reset_key]
     return session_key
+
+
+# -------------------------------------------------------------------------
+# Bootstrap (single transaction for initial system setup)
+# -------------------------------------------------------------------------
+
+
+def bootstrap(
+    org_name: str = "Organization",
+    admin_name: str = "Admin",
+    reset_passphrase: str | None = None,
+    reset_expiry: datetime | None = None,
+) -> dict:
+    """Bootstrap the entire system in a single transaction.
+
+    Creates:
+    - auth:admin permission (Master Admin)
+    - auth:org:admin permission (Org Admin)
+    - Organization with Administration role
+    - Admin user with Administration role
+    - Reset token for admin registration
+
+    This is the only way to create a new database file (besides migrate).
+    All data is created atomically - if any step fails, nothing is written.
+
+    Args:
+        org_name: Display name for the organization (default: "Organization")
+        admin_name: Display name for the admin user (default: "Admin")
+        reset_passphrase: Passphrase for the reset token (generated if not provided)
+        reset_expiry: Expiry datetime for the reset token (default: 14 days)
+
+    Returns:
+        dict with keys: perm_admin, perm_org_admin, org, role, user, reset_passphrase
+    """
+    import uuid7
+
+    from paskia.authsession import reset_expires
+    from paskia.util.passphrase import generate as generate_passphrase
+
+    # Check if system is already bootstrapped
+    for p in _db._data.permissions.values():
+        if p.scope == "auth:admin":
+            raise ValueError(
+                "System already bootstrapped (auth:admin permission exists)"
+            )
+
+    # Generate UUIDs upfront
+    perm_admin_uuid = uuid7.create()
+    perm_org_admin_uuid = uuid7.create()
+    org_uuid = uuid7.create()
+    role_uuid = uuid7.create()
+    user_uuid = uuid7.create()
+
+    # Generate reset token components
+    if reset_passphrase is None:
+        reset_passphrase = generate_passphrase()
+    if reset_expiry is None:
+        reset_expiry = reset_expires()
+    reset_key = _reset_key(reset_passphrase)
+
+    now = datetime.now(timezone.utc)
+
+    with _db.transaction("bootstrap"):
+        # Create auth:admin permission
+        _db._data.permissions[perm_admin_uuid] = _PermissionData(
+            scope="auth:admin",
+            display_name="Master Admin",
+            orgs={org_uuid: True},  # Grant to org
+        )
+
+        # Create auth:org:admin permission
+        _db._data.permissions[perm_org_admin_uuid] = _PermissionData(
+            scope="auth:org:admin",
+            display_name="Org Admin",
+            orgs={org_uuid: True},  # Grant to org
+        )
+
+        # Create organization
+        _db._data.orgs[org_uuid] = _OrgData(
+            display_name=org_name,
+            created_at=now,
+        )
+
+        # Create Administration role with both permissions
+        _db._data.roles[role_uuid] = _RoleData(
+            org=org_uuid,
+            display_name="Administration",
+            permissions={perm_admin_uuid: True, perm_org_admin_uuid: True},
+        )
+
+        # Create admin user
+        _db._data.users[user_uuid] = _UserData(
+            display_name=admin_name,
+            role=role_uuid,
+            created_at=now,
+            last_seen=None,
+            visits=0,
+        )
+
+        # Create reset token
+        _db._data.reset_tokens[reset_key] = _ResetTokenData(
+            user=user_uuid,
+            expiry=reset_expiry,
+            token_type="admin bootstrap",
+        )
+
+    # Return info about what was created (for logging by caller)
+    return {
+        "perm_admin": build_permission(perm_admin_uuid),
+        "perm_org_admin": build_permission(perm_org_admin_uuid),
+        "org": build_org(org_uuid),
+        "role": build_role(role_uuid),
+        "user": build_user(user_uuid),
+        "reset_passphrase": reset_passphrase,
+    }

@@ -71,10 +71,11 @@ async def websocket_register_add(
         stripped = name.strip()
         if stripped:
             user_name = stripped
-    challenge_ids = db.get_credentials_by_user_uuid(user_uuid)
+    credentials = db.get_credentials_by_user_uuid(user_uuid)
+    credential_ids = [c.credential_id for c in credentials] if credentials else None
 
     # WebAuthn registration
-    credential = await register_chat(ws, user_uuid, user_name, origin, challenge_ids)
+    credential = await register_chat(ws, user_uuid, user_name, origin, credential_ids)
 
     # Create a new session and store everything in database
     metadata = infodict(ws, "authenticated")
@@ -113,7 +114,10 @@ async def websocket_authenticate(ws: WebSocket, auth=AUTH_COOKIE):
         try:
             session = await get_session(auth, host=host)
             session_user_uuid = session.user_uuid
-            credential_ids = db.get_credentials_by_user_uuid(session_user_uuid)
+            credentials = db.get_credentials_by_user_uuid(session_user_uuid)
+            credential_ids = (
+                [c.credential_id for c in credentials] if credentials else None
+            )
         except ValueError:
             pass  # Invalid/expired session - allow normal authentication
 
