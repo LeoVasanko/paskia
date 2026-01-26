@@ -2,10 +2,10 @@
   <div class="app-shell">
     <StatusMessage />
     <main class="app-main">
-      <HostProfileView v-if="authenticated && isHostMode" :initializing="loading" />
-      <ProfileView v-else-if="authenticated" />
-      <LoadingView v-else-if="loading" :message="loadingMessage" />
-      <AuthRequiredMessage v-else-if="showBackMessage" @reload="reloadPage" />
+      <HostProfileView v-if="viewState === 'profile' && isHostMode" />
+      <ProfileView v-else-if="viewState === 'profile'" />
+      <LoadingView v-else-if="viewState === 'loading'" :message="loadingMessage" />
+      <AccessDenied v-else-if="viewState === 'terminal'" />
     </main>
   </div>
 </template>
@@ -18,13 +18,11 @@ import StatusMessage from '@/components/StatusMessage.vue'
 import ProfileView from '@/components/ProfileView.vue'
 import HostProfileView from '@/components/HostProfileView.vue'
 import LoadingView from '@/components/LoadingView.vue'
-import AuthRequiredMessage from '@/components/AccessDenied.vue'
+import AccessDenied from '@/components/AccessDenied.vue'
 
 const store = useAuthStore()
-const loading = ref(true)
+const viewState = ref('loading')  // 'loading' | 'profile' | 'terminal'
 const loadingMessage = ref('Loading...')
-const authenticated = ref(false)
-const showBackMessage = ref(false)
 
 /**
  * Normalize a host string for comparison (lowercase, strip default ports).
@@ -51,14 +49,19 @@ const isHostMode = computed(() => {
 let validationTimer = null
 let authIframe = null
 
+function terminateSession() {
+  store.userInfo = null
+  viewState.value = 'terminal'
+}
+
 async function loadUserInfo() {
   try {
     store.userInfo = await apiJson('/auth/api/user-info', { method: 'POST' })
-    authenticated.value = true
-    loading.value = false
+    viewState.value = 'profile'
     startSessionValidation()
     return true
-  } catch (e) {
+  } catch {
+    store.userInfo = null
     return false
   }
 }
@@ -85,10 +88,6 @@ function hideAuthIframe() {
   }
 }
 
-function reloadPage() {
-  window.location.reload()
-}
-
 function handleAuthMessage(event) {
   const data = event.data
   if (!data?.type) return
@@ -97,7 +96,7 @@ function handleAuthMessage(event) {
     case 'auth-success':
       // Authentication successful - reload user info
       hideAuthIframe()
-      loading.value = true
+      viewState.value = 'loading'
       loadingMessage.value = 'Loading user profile...'
       loadUserInfo()
       break
@@ -117,11 +116,9 @@ function handleAuthMessage(event) {
       break
 
     case 'auth-back':
-      // User clicked Back - show message with reload option
+      // User clicked Back - show terminal state
       hideAuthIframe()
-      loading.value = false
-      showBackMessage.value = true
-      store.showMessage('Authentication cancelled', 'info', 3000)
+      terminateSession()
       break
 
     case 'auth-close-request':
@@ -133,23 +130,10 @@ function handleAuthMessage(event) {
 
 async function validateSession() {
   try {
-    await apiJson('/auth/api/validate', {
-      method: 'POST',
-      credentials: 'include'
-    })
-    // If successful, session was renewed automatically
-  } catch (error) {
-    if (error.status === 401) {
-      // Session expired - need to re-authenticate
-      console.log('Session expired, requiring re-authentication')
-      authenticated.value = false
-      loading.value = true
-      stopSessionValidation()
-      showAuthIframe()
-    } else {
-      console.error('Session validation error:', error)
-      // Don't treat network errors as session expiry
-    }
+    await apiJson('/auth/api/validate', { method: 'POST' })
+  } catch {
+    stopSessionValidation()
+    terminateSession()
   }
 }
 

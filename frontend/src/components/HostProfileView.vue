@@ -8,11 +8,11 @@
     <section class="section-block" ref="userInfoSection">
       <div class="section-body">
         <UserBasicInfo
-          v-if="user"
-          :name="user.user_name"
-          :visits="user.visits || 0"
-          :created-at="user.created_at"
-          :last-seen="user.last_seen"
+          v-if="ctx"
+          :name="ctx.user.display_name"
+          :visits="authStore.userInfo?.visits || 0"
+          :created-at="authStore.userInfo?.created_at"
+          :last-seen="authStore.userInfo?.last_seen"
           :org-display-name="orgDisplayName"
           :role-name="roleDisplayName"
           :can-edit="false"
@@ -78,9 +78,9 @@ const currentHost = window.location.host
 const userInfoSection = ref(null)
 const buttonRow = ref(null)
 
-const user = computed(() => authStore.userInfo?.user || null)
-const orgDisplayName = computed(() => authStore.userInfo?.org?.display_name || '')
-const roleDisplayName = computed(() => authStore.userInfo?.role?.display_name || '')
+const ctx = computed(() => authStore.userInfo?.ctx || null)
+const orgDisplayName = computed(() => ctx.value?.org.display_name ?? '')
+const roleDisplayName = computed(() => ctx.value?.role.display_name ?? '')
 
 const headingTitle = computed(() => {
   const service = authStore.settings?.rp_name

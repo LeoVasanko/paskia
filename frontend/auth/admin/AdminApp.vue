@@ -5,7 +5,7 @@ import CredentialList from '@/components/CredentialList.vue'
 import UserBasicInfo from '@/components/UserBasicInfo.vue'
 import StatusMessage from '@/components/StatusMessage.vue'
 import LoadingView from '@/components/LoadingView.vue'
-import AuthRequiredMessage from '@/components/AccessDenied.vue'
+import AccessDenied from '@/components/AccessDenied.vue'
 import AdminOverview from '@/admin/AdminOverview.vue'
 import AdminOrgDetail from '@/admin/AdminOrgDetail.vue'
 import AdminUserDetail from '@/admin/AdminUserDetail.vue'
@@ -48,8 +48,8 @@ const adminUserDetailRef = ref(null)
 const hasActiveModal = computed(() => dialog.value.type !== null || showRegModal.value)
 
 // Derive admin status from permissions
-const isGlobalAdmin = computed(() => info.value?.permissions?.includes('auth:admin') ?? false)
-const isOrgAdmin = computed(() => info.value?.permissions?.includes('auth:org:admin') ?? false)
+const isMasterAdmin = computed(() => info.value?.ctx.permissions.includes('auth:admin'))
+const isOrgAdmin = computed(() => info.value?.ctx.permissions.includes('auth:org:admin'))
 
 function sanitizeRenameId() { if (renameIdValue.value) renameIdValue.value = renameIdValue.value.replace(safeIdRegex, '') }
 
@@ -144,8 +144,17 @@ async function loadPermissions() {
 }
 
 async function loadUserInfo() {
-  info.value = await apiJson('/auth/api/user-info', { method: 'POST' })
+  const data = await apiJson('/auth/api/validate', { method: 'POST' })
+  info.value = data
   authenticated.value = true
+}
+
+function clearSensitiveState() {
+  info.value = null
+  orgs.value = []
+  permissions.value = []
+  userDetail.value = null
+  authenticated.value = false
 }
 
 async function load() {
@@ -158,7 +167,7 @@ async function load() {
     // If we get here, user has admin access - now fetch user info for display
     await loadUserInfo()
 
-    if (!isGlobalAdmin.value && isOrgAdmin.value && orgs.value.length === 1) {
+    if (!isMasterAdmin.value && isOrgAdmin.value && orgs.value.length === 1) {
       if (!window.location.hash || window.location.hash === '#overview') {
         currentOrgId.value = orgs.value[0].uuid
         window.location.hash = `#org/${currentOrgId.value}`
@@ -168,6 +177,7 @@ async function load() {
       }
     } else parseHash()
   } catch (e) {
+    clearSensitiveState()
     if (e.name === 'AuthCancelledError') {
       showBackMessage.value = true
     } else {
@@ -191,8 +201,6 @@ async function performOrgDeletion(orgUuid) {
 }
 
 function deleteOrg(org) {
-  if (!isGlobalAdmin.value) { authStore.showMessage('Global admin only'); return }
-
   const userCount = org.roles.reduce((acc, r) => acc + r.users.length, 0)
 
   if (userCount === 0) {
@@ -333,10 +341,6 @@ function deletePermission(p) {
   } })
 }
 
-function reloadPage() {
-  window.location.reload()
-}
-
 const selectedOrg = computed(() => orgs.value.find(o => o.uuid === currentOrgId.value) || null)
 
 function openOrg(o) {
@@ -384,7 +388,7 @@ const breadcrumbEntries = computed(() => {
     entries.push({ label: orgToShow.display_name, href: `#org/${orgToShow.uuid}` })
   }
   if (selectedUser.value) {
-    entries.push({ label: selectedUser.value.display_name || 'User', href: `#user/${selectedUser.value.uuid}` })
+    entries.push({ label: selectedUser.value.display_name, href: `#user/${selectedUser.value.uuid}` })
   }
   return entries
 })
@@ -703,23 +707,19 @@ async function submitDialog() {
     <StatusMessage />
     <main class="app-main">
       <LoadingView v-if="loading" :message="loadingMessage" />
-      <AuthRequiredMessage
-        v-else-if="showBackMessage"
-        @reload="reloadPage"
+      <AccessDenied v-else-if="showBackMessage" />
+      <AccessDenied
+        v-else-if="error"
+        icon="⚠️"
+        title="Error"
+        :message="error"
       />
-      <!-- Access denied: authenticated but not admin, or error occurred -->
-      <div v-else-if="error || (authenticated && !isGlobalAdmin && !isOrgAdmin)" class="access-denied-container">
-        <div class="access-denied-content">
-          <h2>⛔ Access Denied</h2>
-          <p v-if="error" class="error-detail">{{ error }}</p>
-          <p v-else class="error-detail">You do not have admin permissions for this application.</p>
-          <div class="button-row">
-            <button class="btn-secondary" @click="goBack">Back</button>
-            <button class="btn-primary" @click="reloadPage">Reload Page</button>
-          </div>
-        </div>
-      </div>
-      <section v-else-if="authenticated && (isGlobalAdmin || isOrgAdmin)" class="view-root view-root--wide view-admin">
+      <AccessDenied
+        v-else-if="authenticated && !isMasterAdmin && !isOrgAdmin"
+        icon="⛔"
+        message="You do not have admin permissions for this application."
+      />
+      <section v-else-if="authenticated && (isMasterAdmin || isOrgAdmin)" class="view-root view-root--wide view-admin">
         <header class="view-header">
           <h1>{{ pageHeading }}</h1>
           <Breadcrumbs ref="breadcrumbsRef" :entries="breadcrumbEntries" @keydown="handleBreadcrumbKeydown" />
@@ -729,7 +729,7 @@ async function submitDialog() {
           <div class="section-body admin-section-body">
             <div class="admin-panels">
                                   <AdminOverview
-                  v-if="!selectedUser && !selectedOrg && (isGlobalAdmin || isOrgAdmin)"
+                  v-if="!selectedUser && !selectedOrg && (isMasterAdmin || isOrgAdmin)"
                   ref="adminOverviewRef"
                   :info="info"
                   :orgs="orgs"
@@ -805,9 +805,4 @@ async function submitDialog() {
 .admin-section { margin-top: var(--space-xl); }
 .admin-section-body { display: flex; flex-direction: column; gap: var(--space-xl); }
 .admin-panels { display: flex; flex-direction: column; gap: var(--space-xl); }
-.access-denied-container { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 60vh; padding: 2rem; }
-.access-denied-content { text-align: center; max-width: 480px; }
-.access-denied-content h2 { margin: 0 0 1rem; color: var(--color-heading); font-size: 1.5rem; }
-.access-denied-content .error-detail { margin: 0 0 1.5rem; color: var(--color-text-muted); }
-.access-denied-content .button-row { display: flex; gap: 0.75rem; justify-content: center; }
 </style>

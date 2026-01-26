@@ -76,13 +76,13 @@ const status = reactive({ show: false, message: '', type: 'info' })
 const initializing = ref(true)
 const loading = ref(false)
 const settings = ref(null)
-const userInfo = ref(null)
+const session = ref(null)
 const currentView = ref('initial') // 'initial', 'login', 'forbidden'
 const authView = ref('local') // 'local' or 'remote'
 const buttonRow = ref(null)
 let statusTimer = null
 
-const isAuthenticated = computed(() => !!userInfo.value?.authenticated)
+const isAuthenticated = computed(() => !!session.value)
 
 const canAuthenticate = computed(() => {
   if (initializing.value) return false
@@ -115,7 +115,7 @@ const headerMessage = computed(() => {
   return 'Please sign in with your passkey.'
 })
 
-const userDisplayName = computed(() => userInfo.value?.user?.user_name || 'User')
+const userDisplayName = computed(() => session.value?.ctx.user.display_name || 'User')
 
 function showMessage(message, type = 'info', duration = 3000) {
   status.show = true
@@ -140,22 +140,21 @@ async function fetchSettings() {
   }
 }
 
-async function fetchUserInfo() {
+async function validateSession() {
   try {
-    userInfo.value = await fetchJson('/auth/api/user-info', { method: 'POST' })
+    session.value = await fetchJson('/auth/api/validate', { method: 'POST' })
     if (isAuthenticated.value && props.mode !== 'reauth') {
       currentView.value = 'forbidden'
-      emit('forbidden', userInfo.value)
+      emit('forbidden', session.value)
     } else {
       currentView.value = 'login'
     }
   } catch (error) {
-    console.error('Failed to load user info', error)
+    session.value = null
+    currentView.value = 'login'
     if (error.status !== 401 && error.status !== 403) {
       showMessage(getUserFriendlyErrorMessage(error), 'error', 4000)
     }
-    userInfo.value = null
-    currentView.value = 'login'
   }
 }
 
@@ -188,7 +187,7 @@ async function logoutUser() {
   loading.value = true
   try {
     await fetchJson('/auth/api/logout', { method: 'POST' })
-    userInfo.value = null
+    session.value = null
     currentView.value = 'login'
     showMessage('Logged out. You can sign in with a different account.', 'info', 3000)
   } catch (error) {
@@ -266,7 +265,7 @@ watch(initializing, (newVal) => {
 
 onMounted(async () => {
   await fetchSettings()
-  await fetchUserInfo()
+  await validateSession()
   initializing.value = false
 
   // Add click handler for inline links

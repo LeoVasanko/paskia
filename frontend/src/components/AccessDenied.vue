@@ -1,10 +1,11 @@
 <template>
   <div class="message-container">
     <div class="message-content">
-      <h2>🔒 Access Denied</h2>
+      <h2>{{ icon }} {{ title }}</h2>
+      <p v-if="message" class="error-detail">{{ message }}</p>
       <div class="button-row">
         <button class="btn-secondary" @click="goBack">Back</button>
-        <button class="btn-primary" @click="$emit('reload')">Reload Page</button>
+        <button class="btn-primary" @click="reload">Reload Page</button>
       </div>
     </div>
   </div>
@@ -13,7 +14,15 @@
 <script setup>
 import { goBack } from '@/utils/helpers'
 
-defineEmits(['reload'])
+const props = defineProps({
+  title: { type: String, default: 'Access Denied' },
+  icon: { type: String, default: '🔒' },
+  message: { type: String, default: null },
+})
+
+function reload() {
+  window.location.reload()
+}
 </script>
 
 <style scoped>
@@ -32,8 +41,13 @@ defineEmits(['reload'])
 }
 
 .message-content h2 {
-  margin: 0 0 1.5rem;
+  margin: 0 0 1rem;
   color: var(--color-heading);
+}
+
+.message-content .error-detail {
+  margin: 0 0 1.5rem;
+  color: var(--color-text-muted);
 }
 
 .message-content .button-row {

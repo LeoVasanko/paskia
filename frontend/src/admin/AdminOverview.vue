@@ -26,9 +26,9 @@ const sortedOrgs = computed(() => [...props.orgs].sort((a,b)=> {
 }))
 const sortedPermissions = computed(() => [...props.permissions].sort((a,b)=> a.scope.localeCompare(b.scope)))
 
-// Derive admin status from permissions
-const isGlobalAdmin = computed(() => props.info?.permissions?.includes('auth:admin') ?? false)
-const isOrgAdmin = computed(() => props.info?.permissions?.includes('auth:org:admin') ?? false)
+// Derive admin status from permissions (info contains ctx from validate response)
+const isMasterAdmin = computed(() => props.info?.ctx.permissions.includes('auth:admin'))
+const isOrgAdmin = computed(() => props.info?.ctx.permissions.includes('auth:org:admin'))
 
 function permissionDisplayName(scope) {
   return props.permissions.find(p => p.scope === scope)?.display_name || scope
@@ -93,7 +93,7 @@ function handleTableKeydown(event, tableType) {
   } else if (direction === 'down' && currentIndex === rows.length - 1) {
     // At bottom of org table, navigate to permissions section
     event.preventDefault()
-    if (tableType === 'org' && isGlobalAdmin.value) {
+    if (tableType === 'org' && isMasterAdmin.value) {
       // Navigate to permissions matrix or actions
       if (permMatrixRef.value) {
         const firstCheckbox = permMatrixRef.value.querySelector('input[type="checkbox"]')
@@ -236,7 +236,7 @@ function handlePermActionsKeydown(event) {
 
 // Focus helper for external navigation
 function focusFirstElement() {
-  if (isGlobalAdmin.value) {
+  if (isMasterAdmin.value) {
     focusPreferred(orgActionsRef.value, { itemSelector: 'button' })
   } else {
     const firstFocusable = orgTableRef.value?.querySelector('tbody tr a, tbody tr button:not([disabled])')
@@ -249,9 +249,9 @@ defineExpose({ focusFirstElement })
 
 <template>
   <div class="permissions-section" ref="orgSection">
-    <h2>{{ isGlobalAdmin ? 'Organizations' : 'Your Organizations' }}</h2>
+    <h2>{{ isMasterAdmin ? 'Organizations' : 'Your Organizations' }}</h2>
     <div class="actions" ref="orgActionsRef" @keydown="handleOrgActionsKeydown">
-      <button v-if="isGlobalAdmin" @click="$emit('createOrg')">+ Create Org</button>
+      <button v-if="isMasterAdmin" @click="$emit('createOrg')">+ Create Org</button>
     </div>
     <table class="org-table" ref="orgTableRef" @keydown="e => handleTableKeydown(e, 'org')">
       <thead>
@@ -259,18 +259,18 @@ defineExpose({ focusFirstElement })
           <th>Name</th>
           <th>Roles</th>
           <th>Members</th>
-          <th v-if="isGlobalAdmin">Actions</th>
+          <th v-if="isMasterAdmin">Actions</th>
         </tr>
       </thead>
       <tbody>
         <tr v-for="o in sortedOrgs" :key="o.uuid">
           <td>
             <a href="#org/{{o.uuid}}" @click.prevent="$emit('openOrg', o)">{{ o.display_name }}</a>
-            <button v-if="isGlobalAdmin || isOrgAdmin" @click="$emit('updateOrg', o)" class="icon-btn edit-org-btn" aria-label="Rename organization" title="Rename organization">✏️</button>
+            <button v-if="isMasterAdmin || isOrgAdmin" @click="$emit('updateOrg', o)" class="icon-btn edit-org-btn" aria-label="Rename organization" title="Rename organization">✏️</button>
           </td>
           <td class="role-names">{{ getRoleNames(o) }}</td>
           <td class="center">{{ o.roles.reduce((acc,r)=>acc + r.users.length,0) }}</td>
-          <td v-if="isGlobalAdmin" class="center">
+          <td v-if="isMasterAdmin" class="center">
             <button @click="$emit('deleteOrg', o)" class="icon-btn delete-icon" aria-label="Delete organization" title="Delete organization">❌</button>
           </td>
         </tr>
@@ -278,7 +278,7 @@ defineExpose({ focusFirstElement })
     </table>
   </div>
 
-  <div v-if="isGlobalAdmin" class="permissions-section">
+  <div v-if="isMasterAdmin" class="permissions-section">
     <h2>Permissions</h2>
     <div class="matrix-wrapper" ref="permMatrixRef" @keydown="handleMatrixKeydown">
       <div class="matrix-scroll">
@@ -317,7 +317,7 @@ defineExpose({ focusFirstElement })
       <p class="matrix-hint muted">Toggle which permissions each organization can grant to its members.</p>
     </div>
     <div class="actions" ref="permActionsRef" @keydown="handlePermActionsKeydown">
-      <button v-if="isGlobalAdmin" @click="$emit('openDialog', 'perm-create', { display_name: '', scope: '', domain: '' })">+ Create Permission</button>
+      <button v-if="isMasterAdmin" @click="$emit('openDialog', 'perm-create', { display_name: '', scope: '', domain: '' })">+ Create Permission</button>
     </div>
     <table class="org-table" ref="permTableRef" @keydown="e => handleTableKeydown(e, 'perm')">
         <thead>

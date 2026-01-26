@@ -8,12 +8,12 @@
 
     <section class="section-block" ref="userInfoSection">
       <UserBasicInfo
-        v-if="authStore.userInfo?.user"
+        v-if="authStore.userInfo?.ctx"
         ref="userBasicInfo"
-        :name="authStore.userInfo.user.user_name"
-        :visits="authStore.userInfo.user.visits || 0"
-        :created-at="authStore.userInfo.user.created_at"
-        :last-seen="authStore.userInfo.user.last_seen"
+        :name="authStore.userInfo.ctx.user.display_name"
+        :visits="authStore.userInfo.visits"
+        :created-at="authStore.userInfo.created_at"
+        :last-seen="authStore.userInfo.last_seen"
         :loading="authStore.isLoading"
         update-endpoint="/auth/api/user/display-name"
         @saved="authStore.loadUserInfo()"
@@ -151,7 +151,7 @@ const userInfoSection = ref(null)
 // Check if any modal/dialog is open (blocks arrow key navigation)
 const hasActiveModal = computed(() => showNameDialog.value || showRegLink.value)
 
-watch(showNameDialog, (newVal) => { if (newVal) newName.value = authStore.userInfo?.user?.user_name || '' })
+watch(showNameDialog, (newVal) => { if (newVal) newName.value = authStore.userInfo?.ctx.user.display_name ?? '' })
 
 onMounted(() => {
   updateInterval.value = setInterval(() => { if (authStore.userInfo) authStore.userInfo = { ...authStore.userInfo } }, 60000)
@@ -323,9 +323,9 @@ const terminateSession = async (session) => {
 
 const logoutEverywhere = async () => { await authStore.logoutEverywhere() }
 const logout = async () => { await authStore.logout() }
-const openNameDialog = () => { newName.value = authStore.userInfo?.user?.user_name || ''; showNameDialog.value = true }
+const openNameDialog = () => { newName.value = authStore.userInfo?.ctx.user.display_name ?? ''; showNameDialog.value = true }
 const isAdmin = computed(() => {
-  const perms = authStore.userInfo?.permissions ?? []
+  const perms = authStore.userInfo?.ctx.permissions
   return perms.includes('auth:admin') || perms.includes('auth:org:admin')
 })
 const hasMultipleSessions = computed(() => sessions.value.length > 1)
