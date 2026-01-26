@@ -8,26 +8,11 @@ generating a reset link for initial admin setup.
 
 import asyncio
 import logging
-from datetime import datetime, timezone
 
-import uuid7
+from paskia import db
+from paskia.util import hostutil
 
-from paskia import authsession, db
-from paskia.db import Org, Permission, Role, User
-from paskia.util import hostutil, passphrase
-
-
-def _init_logger() -> logging.Logger:
-    logger = logging.getLogger(__name__)
-    if not logger.handlers and not logging.getLogger().handlers:
-        h = logging.StreamHandler()
-        h.setFormatter(logging.Formatter("%(message)s"))
-        logger.addHandler(h)
-        logger.setLevel(logging.INFO)
-    return logger
-
-
-logger = _init_logger()
+logger = logging.getLogger(__name__)
 
 # Shared log message template for admin reset links
 ADMIN_RESET_MESSAGE = """\
@@ -38,17 +23,9 @@ ADMIN_RESET_MESSAGE = """\
 """
 
 
-async def _create_and_log_admin_reset_link(user_uuid, message, session_type) -> str:
-    """Create an admin reset link and log it with the provided message."""
-    token = passphrase.generate()
-    expiry = authsession.reset_expires()
-    db.create_reset_token(
-        user_uuid=user_uuid,
-        passphrase=token,
-        expiry=expiry,
-        token_type=session_type,
-    )
-    reset_link = hostutil.reset_link_url(token)
+def _log_reset_link(message: str, passphrase: str) -> str:
+    """Log a reset link message and return the URL."""
+    reset_link = hostutil.reset_link_url(passphrase)
     logger.info(ADMIN_RESET_MESSAGE, message, reset_link)
     return reset_link
 
@@ -57,63 +34,23 @@ async def bootstrap_system() -> dict:
     """
     Bootstrap the entire system with default data.
 
+    Uses db.bootstrap() which performs all operations in a single transaction.
+    The transaction log will show a single "bootstrap" action with all changes.
+
     Returns:
         dict: Contains information about created entities and reset link
     """
-    # Create permission first - will fail if already exists
-    perm0 = Permission(
-        uuid=uuid7.create(), scope="auth:admin", display_name="Master Admin"
-    )
-    db.create_permission(perm0)
+    # Call the single-transaction bootstrap function
+    result = db.bootstrap()
 
-    # Create org admin permission - allows managing users within an org
-    perm_org_admin = Permission(
-        uuid=uuid7.create(), scope="auth:org:admin", display_name="Org Admin"
-    )
-    db.create_permission(perm_org_admin)
-
-    org = Org(uuid7.create(), "Organization")
-    db.create_organization(org)
-
-    # Allow this org to grant global admin and org admin permissions
-    db.add_permission_to_organization(str(org.uuid), perm0.scope)
-    db.add_permission_to_organization(str(org.uuid), perm_org_admin.scope)
-
-    # Create an Administration role granting both org and global admin
-    role = Role(
-        uuid7.create(),
-        org.uuid,
-        "Administration",
-        permissions=[perm0.scope, perm_org_admin.scope],
-    )
-    db.create_role(role)
-
-    user = User(
-        uuid=uuid7.create(),
-        display_name="Admin",
-        role_uuid=role.uuid,
-        created_at=datetime.now(timezone.utc),
-        visits=0,
-    )
-    db.create_user(user)
-
-    # Generate reset link and log it
-    reset_link = await _create_and_log_admin_reset_link(
-        user.uuid, "✅ Bootstrap completed!", "admin bootstrap"
-    )
+    # Log the reset link (this is separate from the transaction log)
+    reset_link = _log_reset_link("✅ Bootstrap completed!", result["reset_passphrase"])
 
     return {
-        "user": user,
-        "org": org,
-        "role": role,
-        "permissions": [
-            perm0,
-            *[
-                db.get_permission_by_scope(p)
-                for p in org.permissions
-                if db.get_permission_by_scope(p)
-            ],
-        ],
+        "user": result["user"],
+        "org": result["org"],
+        "role": result["role"],
+        "permissions": [result["perm_admin"], result["perm_org_admin"]],
         "reset_link": reset_link,
     }
 
@@ -145,11 +82,18 @@ async def check_admin_credentials() -> bool:
 
         if not credentials:
             # Admin exists but has no credentials, create reset link
-            await _create_and_log_admin_reset_link(
-                admin_user.uuid,
-                "⚠️  Admin user has no credentials!",
-                "admin registration",
+            from paskia import authsession
+            from paskia.util import passphrase
+
+            token = passphrase.generate()
+            expiry = authsession.reset_expires()
+            db.create_reset_token(
+                user_uuid=admin_user.uuid,
+                passphrase=token,
+                expiry=expiry,
+                token_type="admin registration",
             )
+            _log_reset_link("⚠️  Admin user has no credentials!", token)
             return True
 
         return False
@@ -165,16 +109,12 @@ async def bootstrap_if_needed() -> bool:
     Returns:
         bool: True if bootstrapping was performed, False if system was already set up
     """
-    try:
-        # Check if the admin permission exists - if it does, system is already bootstrapped
-        db.get_permission("auth:admin")
+    # Check if the admin permission exists - if it does, system is already bootstrapped
+    if db.get_permission_by_scope("auth:admin"):
         # Permission exists, system is already bootstrapped
         # Check if admin needs credentials (only for already-bootstrapped systems)
         await check_admin_credentials()
         return False
-    except Exception:
-        # Permission doesn't exist, need to bootstrap
-        pass
 
     # No admin permission found, need to bootstrap
     # Bootstrap creates the admin user AND the reset link, so no need to check credentials after
@@ -187,6 +127,8 @@ async def main():
     """Main CLI entry point for bootstrapping."""
     # Configure logging for CLI usage
     logging.basicConfig(level=logging.INFO, format="%(message)s", force=True)
+
+    from paskia import globals
 
     await globals.init()
 

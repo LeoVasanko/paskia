@@ -5,13 +5,14 @@ import logging
 import os
 from urllib.parse import urlparse
 
-import uvicorn
 from fastapi_vue.hostutil import parse_endpoint
 from uvicorn import Config, Server
 
 from paskia import globals as _globals
 from paskia.bootstrap import bootstrap_if_needed
 from paskia.config import PaskiaConfig
+from paskia.db import start_background
+from paskia.db.background import flush
 from paskia.fastapi import app as fastapi_app
 from paskia.fastapi import reset as reset_cmd
 from paskia.util import startupbox
@@ -183,28 +184,8 @@ def main():
     }
     os.environ["PASKIA_CONFIG"] = json.dumps(config_json)
 
-    # Initialize globals (without bootstrap yet)
-    asyncio.run(
-        _globals.init(
-            rp_id=config.rp_id,
-            rp_name=config.rp_name,
-            origins=config.origins,
-            bootstrap=False,
-        )
-    )
-
-    # Print startup configuration
     startupbox.print_startup_config(config)
 
-    # Bootstrap after startup box is printed
-    asyncio.run(bootstrap_if_needed())
-
-    # Handle reset command (no server start)
-    if is_reset:
-        exit_code = reset_cmd.run(args.reset_query)
-        raise SystemExit(exit_code)
-
-    # Dev mode: enable reload when FASTAPI_VUE_FRONTEND_URL is set
     devmode = bool(os.environ.get("FASTAPI_VUE_FRONTEND_URL"))
 
     run_kwargs: dict = {
@@ -221,18 +202,36 @@ def main():
         # Suppress uvicorn startup messages in dev mode
         run_kwargs["log_level"] = "warning"
 
-    if len(endpoints) > 1:
-        # Run separate servers for multiple endpoints (e.g. IPv4 + IPv6)
-        async def serve_all():
+    async def async_main():
+        await _globals.init(
+            rp_id=config.rp_id,
+            rp_name=config.rp_name,
+            origins=config.origins,
+            bootstrap=False,
+        )
+        await bootstrap_if_needed()
+        await flush()
+
+        if is_reset:
+            exit_code = reset_cmd.run(args.reset_query)
+            raise SystemExit(exit_code)
+
+        await start_background()
+
+        if len(endpoints) > 1:
             async with asyncio.TaskGroup() as tg:
                 for ep in endpoints:
                     tg.create_task(
                         Server(Config(app=fastapi_app, **run_kwargs, **ep)).serve()
                     )
+        else:
+            server = Server(Config(app=fastapi_app, **run_kwargs, **endpoints[0]))
+            await server.serve()
 
-        asyncio.run(serve_all())
-    else:
-        uvicorn.run("paskia.fastapi:app", **run_kwargs, **endpoints[0])
+    try:
+        asyncio.run(async_main())
+    except KeyboardInterrupt:
+        pass
 
 
 if __name__ == "__main__":

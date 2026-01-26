@@ -30,6 +30,7 @@ from paskia.db.operations import (
     _db,
     add_permission_to_organization,
     add_permission_to_role,
+    bootstrap,
     build_credential,
     build_org,
     build_permission,
@@ -145,6 +146,7 @@ __all__ = [
     # Write ops
     "add_permission_to_organization",
     "add_permission_to_role",
+    "bootstrap",
     "cleanup_expired",
     "create_credential",
     "create_credential_session",
