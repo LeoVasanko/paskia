@@ -2,6 +2,7 @@ from datetime import datetime
 from uuid import UUID
 
 import msgspec
+import uuid7
 
 
 class Permission(msgspec.Struct, omit_defaults=True):
@@ -25,13 +26,33 @@ class Org(msgspec.Struct):
     roles: list[Role] = []  # roles belonging to this org
 
 
-class User(msgspec.Struct):
-    uuid: UUID
+class User(msgspec.Struct, dict=True):
     display_name: str
-    role_uuid: UUID
-    created_at: datetime | None = None
+    role: UUID
+    created_at: datetime
     last_seen: datetime | None = None
     visits: int = 0
+
+    def __post_init__(self):
+        self.uuid: UUID | None = None  # Convenience field, not serialized
+
+    @classmethod
+    def create(
+        cls,
+        display_name: str,
+        role: UUID,
+        created_at: datetime | None = None,
+    ) -> "User":
+        """Create a new User with auto-generated uuid7."""
+        from datetime import timezone
+
+        user = cls(
+            display_name=display_name,
+            role=role,
+            created_at=created_at or datetime.now(timezone.utc),
+        )
+        user.uuid = uuid7.create(user.created_at)
+        return user
 
 
 class Credential(msgspec.Struct):
@@ -103,14 +124,6 @@ class _RoleData(msgspec.Struct):
     permissions: dict[UUID, bool] = {}  # permission_uuid -> True
 
 
-class _UserData(msgspec.Struct):
-    display_name: str
-    role: UUID
-    created_at: datetime
-    last_seen: datetime | None
-    visits: int
-
-
 class _CredentialData(msgspec.Struct):
     credential_id: bytes
     user: UUID
@@ -141,7 +154,7 @@ class _DatabaseData(msgspec.Struct, omit_defaults=True):
     permissions: dict[UUID, _PermissionData]
     orgs: dict[UUID, _OrgData]
     roles: dict[UUID, _RoleData]
-    users: dict[UUID, _UserData]
+    users: dict[UUID, User]
     credentials: dict[UUID, _CredentialData]
     sessions: dict[str, _SessionData]
     reset_tokens: dict[bytes, _ResetTokenData]

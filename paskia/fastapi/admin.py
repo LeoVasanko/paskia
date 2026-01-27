@@ -463,16 +463,12 @@ async def admin_create_user(
     role_obj = next((r for r in roles if r.display_name == role_name), None)
     if not role_obj:
         raise ValueError("Role not found in organization")
-    user_uuid = uuid4()
-    user = UserDC(
-        uuid=user_uuid,
+    user = UserDC.create(
         display_name=display_name,
-        role_uuid=role_obj.uuid,
-        visits=0,
-        created_at=None,
+        role=role_obj.uuid,
     )
     db.create_user(user, ctx=ctx)
-    return {"uuid": str(user_uuid)}
+    return {"uuid": str(user.uuid)}
 
 
 @app.patch("/orgs/{org_uuid}/users/{user_uuid}/role")
