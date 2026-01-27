@@ -84,7 +84,7 @@ async function makeApiCall(page: Page, url: string, method = 'GET'): Promise<{ s
           // Wait a tick for the page's handler to retry, then make our own call
           setTimeout(async () => {
             try {
-              const response = await fetch(url, { method, credentials: 'include' });
+              const response = await fetch(url, { method });
               if (response.status === 204) {
                 resolve({ status: 204 });
               } else if (response.ok) {
@@ -111,7 +111,7 @@ async function makeApiCall(page: Page, url: string, method = 'GET'): Promise<{ s
       setTimeout(async () => {
         if (resolved) return;
         try {
-          const response = await fetch(url, { method, credentials: 'include' });
+          const response = await fetch(url, { method });
           // Only resolve if this is a success or non-auth error
           if (response.status !== 401 && response.status !== 403) {
             if (resolved) return;

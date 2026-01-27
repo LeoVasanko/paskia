@@ -88,7 +88,7 @@ export async function getAuthIframeUrl(mode = 'login') {
   }
 
   // Fetch from forward endpoint - it returns URL in auth.iframe on 401/403
-  const response = await fetch('/auth/api/forward', { credentials: 'include' })
+  const response = await fetch('/auth/api/forward')
   if (response.status === 401 || response.status === 403) {
     const data = await response.json()
     if (data.auth?.iframe) {
@@ -321,7 +321,6 @@ export async function apiJson(url, options = {}) {
  */
 export async function fetchJson(url, options = {}) {
   const fetchOptions = {
-    credentials: 'include',
     ...options,
     headers: {
       'Accept': 'application/json',
