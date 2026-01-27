@@ -823,7 +823,7 @@ async def admin_delete_user_session(
             status_code=403, detail="Insufficient permissions", mode="forbidden"
         )
 
-    target_session = db.get_session(session_id)
+    target_session = db.data().sessions.get(session_id)
     if not target_session or target_session.user != user_uuid:
         raise HTTPException(status_code=404, detail="Session not found")
 
