@@ -72,4 +72,4 @@ async def refresh_session_token(token: str, *, ip: str, user_agent: str):
 async def delete_credential(credential_uuid: UUID, auth: str, host: str | None = None):
     """Delete a specific credential for the current user."""
     s = await get_session(auth, host=host)
-    db.delete_credential(credential_uuid, s.user_uuid)
+    db.delete_credential(credential_uuid, s.user)

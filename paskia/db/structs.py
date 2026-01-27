@@ -55,11 +55,6 @@ class Role(msgspec.Struct, dict=True):
         role.uuid = uuid7.create()
         return role
 
-    # Legacy alias for org field
-    @property
-    def org_uuid(self) -> UUID:
-        return self.org
-
 
 class Org(msgspec.Struct, dict=True):
     display_name: str
@@ -165,15 +160,6 @@ class Session(msgspec.Struct, dict=True):
     def __post_init__(self):
         self.key: str | None = None  # Convenience field, not serialized
 
-    # Legacy aliases
-    @property
-    def user_uuid(self) -> UUID:
-        return self.user
-
-    @property
-    def credential_uuid(self) -> UUID:
-        return self.credential
-
     def metadata(self) -> dict:
         """Return session metadata for backwards compatibility."""
         return {
@@ -190,11 +176,6 @@ class ResetToken(msgspec.Struct, dict=True):
 
     def __post_init__(self):
         self.key: bytes | None = None  # Convenience field, not serialized
-
-    # Legacy alias
-    @property
-    def user_uuid(self) -> UUID:
-        return self.user
 
 
 class SessionContext(msgspec.Struct):

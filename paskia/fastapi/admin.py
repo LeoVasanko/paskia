@@ -1,6 +1,6 @@
 import logging
 from datetime import timezone
-from uuid import UUID, uuid4
+from uuid import UUID
 
 from fastapi import Body, FastAPI, HTTPException, Request, Response
 from fastapi.responses import JSONResponse
@@ -308,7 +308,7 @@ async def admin_update_role_name(
             status_code=403, detail="Insufficient permissions", mode="forbidden"
         )
     role = db.get_role(role_uuid)
-    if role.org_uuid != org_uuid:
+    if role.org != org_uuid:
         raise HTTPException(status_code=404, detail="Role not found in organization")
 
     display_name = payload.get("display_name")
@@ -340,7 +340,7 @@ async def admin_add_role_permission(
         )
 
     role = db.get_role(role_uuid)
-    if role.org_uuid != org_uuid:
+    if role.org != org_uuid:
         raise HTTPException(status_code=404, detail="Role not found in organization")
 
     # Verify permission exists and org can grant it
@@ -376,7 +376,7 @@ async def admin_remove_role_permission(
         )
 
     role = db.get_role(role_uuid)
-    if role.org_uuid != org_uuid:
+    if role.org != org_uuid:
         raise HTTPException(status_code=404, detail="Role not found in organization")
 
     # Sanity check: prevent admin from removing their own access
@@ -419,7 +419,7 @@ async def admin_delete_role(
             status_code=403, detail="Insufficient permissions", mode="forbidden"
         )
     role = db.get_role(role_uuid)
-    if role.org_uuid != org_uuid:
+    if role.org != org_uuid:
         raise HTTPException(status_code=404, detail="Role not found in organization")
 
     # Sanity check: prevent admin from deleting their own role
@@ -797,7 +797,7 @@ async def admin_delete_user_session(
         )
 
     target_session = db.get_session(session_id)
-    if not target_session or target_session.user_uuid != user_uuid:
+    if not target_session or target_session.user != user_uuid:
         raise HTTPException(status_code=404, detail="Session not found")
 
     db.delete_session(session_id, ctx=ctx)
