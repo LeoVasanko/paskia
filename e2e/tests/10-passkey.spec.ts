@@ -97,14 +97,14 @@ test.describe('Passkey Authentication E2E', () => {
     // Verify registration result
     expect(result.session_token).toBeDefined()
     expect(result.session_token).toHaveLength(16)
-    expect(result.user_uuid).toBeDefined()
-    expect(result.credential_uuid).toBeDefined()
+    expect(result.user).toBeDefined()
+    expect(result.credential).toBeDefined()
     expect(result.message).toContain('successfully')
 
     // Store for subsequent tests
     sessionToken = result.session_token
-    userUuid = result.user_uuid
-    credentialUuid = result.credential_uuid
+    userUuid = result.user
+    credentialUuid = result.credential
 
     // Save session token for other test groups to use
     saveSessionToken(sessionToken)
@@ -190,7 +190,7 @@ test.describe('Passkey Authentication E2E', () => {
       displayName: 'Admin User (test device)'
     })
 
-    console.log(`✓ Added test credential: ${regResult.credential_uuid}`)
+    console.log(`✓ Added test credential: ${regResult.credential}`)
 
     // Now logout and authenticate with the fresh credential
     await logout(page, baseUrl, regResult.session_token)
@@ -201,7 +201,7 @@ test.describe('Passkey Authentication E2E', () => {
 
     expect(result.session_token).toBeDefined()
     expect(result.session_token).toHaveLength(16)
-    expect(result.user_uuid).toBe(userUuid)
+    expect(result.user).toBe(userUuid)
 
     // Update session token for subsequent tests
     sessionToken = result.session_token
@@ -209,7 +209,7 @@ test.describe('Passkey Authentication E2E', () => {
     // Save session token for other test groups to use
     saveSessionToken(sessionToken)
 
-    console.log(`✓ Authenticated as user: ${result.user_uuid}`)
+    console.log(`✓ Authenticated as user: ${result.user}`)
     console.log(`✓ New session token: ${sessionToken.substring(0, 4)}...`)
   })
 

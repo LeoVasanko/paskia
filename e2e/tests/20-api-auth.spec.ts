@@ -242,7 +242,7 @@ test.describe('API Mode - 401 Login Flow', () => {
       resetToken: deviceToken,
       displayName: 'API Test Device',
     })
-    console.log(`✓ Registered credential: ${regResult.credential_uuid}`)
+    console.log(`✓ Registered credential: ${regResult.credential}`)
 
     // Logout to clear session (but keep the passkey in virtual authenticator)
     await logout(page, baseUrl, regResult.session_token)
