@@ -1,7 +1,7 @@
 """
 Database module for WebAuthn passkey authentication.
 
-Read: Access db() directly, use build_* to convert to public structs.
+Read: Access data() directly, use build_* to convert to public structs.
 CTX: get_session_context(key) returns SessionContext with effective permissions.
 Write: Functions validate and commit, or raise ValueError.
 
@@ -9,7 +9,7 @@ Usage:
     from paskia import db
 
     # Read (after init)
-    user_data = db.db().users[user_uuid]
+    user_data = db.data().users[user_uuid]
     user = db.build_user(user_uuid)
 
     # Context
@@ -29,7 +29,6 @@ from paskia.db.operations import (
     add_permission_to_organization,
     add_permission_to_role,
     bootstrap,
-    build_org,
     cleanup_expired,
     create_credential,
     create_credential_session,
@@ -53,7 +52,6 @@ from paskia.db.operations import (
     get_organization_users,
     get_permission,
     get_permission_by_scope,
-    get_permission_organizations,
     get_reset_token,
     get_role,
     get_roles_by_organization,
@@ -92,7 +90,7 @@ from paskia.db.structs import (
 )
 
 
-def db() -> DB:
+def data() -> DB:
     """Get the database instance for direct read access."""
     from paskia.db.operations import _db
 
@@ -111,7 +109,7 @@ __all__ = [
     "SessionContext",
     "User",
     # Instance
-    "db",
+    "data",
     "init",
     # Background
     "start_background",
@@ -120,7 +118,6 @@ __all__ = [
     "stop_cleanup",
     # Builders
     "build_credential",
-    "build_org",
     "build_permission",
     "build_reset_token",
     "build_role",
@@ -133,7 +130,6 @@ __all__ = [
     "get_organization_users",
     "get_permission",
     "get_permission_by_scope",
-    "get_permission_organizations",
     "get_reset_token",
     "get_role",
     "get_roles_by_organization",

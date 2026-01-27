@@ -109,8 +109,12 @@ async def admin_list_orgs(request: Request, auth=AUTH_COOKIE):
         return {
             "uuid": str(o.uuid),
             "display_name": o.display_name,
-            "permissions": o.permissions,
-            "roles": [role_to_dict(r) for r in o.roles],
+            "permissions": {
+                pid for pid, p in db.data().permissions.items() if o.uuid in p.orgs
+            },
+            "roles": [
+                role_to_dict(r) for r in db.data().roles.values() if r.org == o.uuid
+            ],
             "users": [
                 {
                     "uuid": str(u.uuid),
@@ -291,7 +295,9 @@ async def admin_create_role(
     display_name = payload.get("display_name") or "New Role"
     perms = payload.get("permissions") or []
     org = db.get_organization(org_uuid)
-    grantable = org.permissions  # set[UUID] computed by build_org
+    if not org:
+        raise HTTPException(status_code=404, detail="Organization not found")
+    grantable = {pid for pid, p in db.data().permissions.items() if org_uuid in p.orgs}
 
     # Normalize permission IDs to UUIDs
     permission_uuids: set[UUID] = set()
@@ -371,8 +377,7 @@ async def admin_add_role_permission(
     perm = db.get_permission(permission_uuid)
     if not perm:
         raise HTTPException(status_code=404, detail="Permission not found")
-    org = db.get_organization(org_uuid)
-    if permission_uuid not in org.permissions:
+    if org_uuid not in perm.orgs:
         raise ValueError("Permission not grantable by organization")
 
     db.add_permission_to_role(role_uuid, permission_uuid, ctx=ctx)
@@ -940,7 +945,9 @@ async def admin_list_permissions(request: Request, auth=AUTH_COOKIE):
         return [_perm_to_dict(p) for p in perms]
 
     # Org admins only see permissions their org can grant (by UUID)
-    grantable = ctx.org.permissions  # set[UUID]
+    grantable = {
+        pid for pid, p in db.data().permissions.items() if ctx.org.uuid in p.orgs
+    }
     filtered_perms = [p for p in perms if p.uuid in grantable]
     return [_perm_to_dict(p) for p in filtered_perms]
 

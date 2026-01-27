@@ -53,13 +53,15 @@ async def check_admin_credentials() -> bool:
     """
     try:
         # Get permission organizations to find admin users
-        permission_orgs = db.get_permission_organizations("auth:admin")
-
-        if not permission_orgs:
+        p = next(
+            (p for p in db.data().permissions.values() if p.scope == "auth:admin"), None
+        )
+        if not p or not p.orgs:
             return False
 
         # Get users from the first organization with admin permission
-        org_users = db.get_organization_users(str(permission_orgs[0].uuid))
+        first_org_uuid = next(iter(p.orgs))
+        org_users = db.get_organization_users(first_org_uuid)
         admin_users = [user for user, role in org_users if role == "Administration"]
 
         if not admin_users:

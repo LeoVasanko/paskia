@@ -49,19 +49,6 @@ async def init(*args, **kwargs):
 
 
 # -------------------------------------------------------------------------
-# Builders: Convert internal _*Data to public structs
-# -------------------------------------------------------------------------
-
-
-def build_org(uuid: UUID, include_roles: bool = False) -> Org:
-    o = _db.orgs[uuid]
-    o.permissions = {pid for pid, p in _db.permissions.items() if uuid in p.orgs}
-    if include_roles:
-        o.roles = [_db.roles[rid] for rid, r in _db.roles.items() if r.org == uuid]
-    return o
-
-
-# -------------------------------------------------------------------------
 # Read/lookup functions
 # -------------------------------------------------------------------------
 
@@ -116,19 +103,6 @@ def list_permissions() -> list[Permission]:
     return list(_db.permissions.values())
 
 
-def get_permission_organizations(scope: str) -> list[Org]:
-    """Get organizations that can grant a permission scope.
-
-    Call sites:
-    - Get organizations that can grant auth:admin to find admin users (bootstrap.py:67)
-    - Get organizations with auth:admin permission to find admin users for reset targets (reset.py:29,40,55)
-    """
-    for p in _db.permissions.values():
-        if p.scope == scope:
-            return [build_org(org_uuid) for org_uuid in p.orgs]
-    return []
-
-
 def get_organization(uuid: UUID) -> Org | None:
     """Get organization by UUID.
 
@@ -136,7 +110,7 @@ def get_organization(uuid: UUID) -> Org | None:
     - Get organization when creating a role to check grantable permissions (admin.py:271)
     - Get organization when adding permission to role to check if org can grant it (admin.py:352)
     """
-    return build_org(uuid, include_roles=True) if uuid in _db.orgs else None
+    return _db.orgs.get(uuid)
 
 
 def list_organizations() -> list[Org]:
@@ -146,7 +120,7 @@ def list_organizations() -> list[Org]:
     - List organizations during migration (migrate/__init__.py:131)
     - Admin API endpoint to list organizations (admin.py:94)
     """
-    return [build_org(uuid, include_roles=True) for uuid in _db.orgs]
+    return list(_db.orgs.values())
 
 
 def get_organization_users(org_uuid: UUID) -> list[tuple[User, str]]:
@@ -216,7 +190,7 @@ def get_user_organization(user_uuid: UUID) -> tuple[Org, str]:
         raise ValueError(f"Role {role_uuid} not found")
     role_data = _db.roles[role_uuid]
     org_uuid = role_data.org
-    return build_org(org_uuid, include_roles=True), role_data.display_name
+    return _db.orgs[org_uuid], role_data.display_name
 
 
 def get_credential_by_id(credential_id: bytes) -> Credential | None:
@@ -346,7 +320,7 @@ def get_session_context(
     session = _db.sessions[session_key]
     user = _db.users[s.user]
     role = _db.roles[role_uuid]
-    org = build_org(org_uuid)
+    org = _db.orgs[org_uuid]
 
     # Credential must exist (sessions are cascade-deleted when credential is deleted)
     if s.credential not in _db.credentials:
@@ -355,7 +329,7 @@ def get_session_context(
 
     # Effective permissions: role's permissions that the org can grant
     # Also filter by domain if host is provided
-    org_perm_uuids = org.permissions  # set[UUID] computed by build_org
+    org_perm_uuids = {pid for pid, p in _db.permissions.items() if org_uuid in p.orgs}
     normalized_host = normalize_host(host)
     host_without_port = normalized_host.rsplit(":", 1)[0] if normalized_host else None
 
