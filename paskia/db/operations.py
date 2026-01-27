@@ -848,7 +848,7 @@ def bootstrap(
     if reset_passphrase is None:
         reset_passphrase = generate_passphrase()
     if reset_expiry is None:
-        from paskia.util.timeutil import reset_expires  # noqa: PLC0415
+        from paskia.authsession import reset_expires  # noqa: PLC0415
 
         reset_expiry = reset_expires()
     reset_key = _reset_key(reset_passphrase)
