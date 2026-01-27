@@ -11,7 +11,6 @@ from uvicorn import Config, Server
 from paskia import globals as _globals
 from paskia.bootstrap import bootstrap_if_needed
 from paskia.config import PaskiaConfig
-from paskia.db import start_background
 from paskia.db.background import flush
 from paskia.fastapi import app as fastapi_app
 from paskia.fastapi import reset as reset_cmd
@@ -215,8 +214,6 @@ def main():
         if is_reset:
             exit_code = reset_cmd.run(args.reset_query)
             raise SystemExit(exit_code)
-
-        await start_background()
 
         if len(endpoints) > 1:
             async with asyncio.TaskGroup() as tg:

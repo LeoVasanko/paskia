@@ -24,7 +24,7 @@ const rpId = computed(() => props.settings?.rp_id || 'the configured domain')
         <template v-else-if="dialog.type==='role-update'">Edit Role</template>
         <template v-else-if="dialog.type==='user-create'">Add User To Role</template>
         <template v-else-if="dialog.type==='user-update-name'">Edit User Name</template>
-        <template v-else-if="dialog.type==='perm-create' || dialog.type==='perm-display'">{{ dialog.type === 'perm-create' ? 'Create Permission' : 'Edit Permission Display' }}</template>
+        <template v-else-if="dialog.type==='perm-create' || dialog.type==='perm-display'">{{ dialog.type === 'perm-create' ? 'Create Permission' : 'Edit Permission' }}</template>
         <template v-else-if="dialog.type==='confirm'">Confirm</template>
       </h3>
       <form @submit.prevent="$emit('submitDialog')" class="modal-form">
