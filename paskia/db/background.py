@@ -8,40 +8,14 @@ import asyncio
 import logging
 from datetime import datetime, timezone
 
-from paskia.db.operations import _db, _store
+from paskia.db.operations import _store, cleanup_expired
 
-# Flush changes to disk every N seconds
-FLUSH_INTERVAL = 1
-# Cleanup expired items every N seconds (cheap when nothing to remove)
-CLEANUP_INTERVAL = 1
+FLUSH_INTERVAL = 0.1  # Flush to disk
+CLEANUP_INTERVAL = 1  # Expired item cleanup
 
 
 _logger = logging.getLogger(__name__)
 _background_task: asyncio.Task | None = None
-
-
-def cleanup() -> None:
-    """Remove expired sessions and reset tokens from the database."""
-
-    if _db is None:
-        return
-
-    with _db.transaction("expiry"):
-        current_time = datetime.now(timezone.utc)
-
-        # Clean expired sessions
-        to_delete_sessions = [
-            k for k, s in _db.sessions.items() if s.expiry < current_time
-        ]
-        for k in to_delete_sessions:
-            del _db.sessions[k]
-
-        # Clean expired reset tokens
-        to_delete_tokens = [
-            k for k, t in _db.reset_tokens.items() if t.expiry < current_time
-        ]
-        for k in to_delete_tokens:
-            del _db.reset_tokens[k]
 
 
 async def flush() -> None:
@@ -56,7 +30,7 @@ async def flush() -> None:
 async def _background_loop():
     """Background task that periodically flushes changes and cleans up."""
     # Run cleanup immediately on startup to clear old expired items
-    cleanup()
+    cleanup_expired()
     await flush()
 
     last_cleanup = datetime.now(timezone.utc)
@@ -67,10 +41,10 @@ async def _background_loop():
             # Flush pending changes to disk
             await flush()
 
-            # Run cleanup less frequently
+            # Run cleanup periodically
             now = datetime.now(timezone.utc)
             if (now - last_cleanup).total_seconds() >= CLEANUP_INTERVAL:
-                cleanup()
+                cleanup_expired()
                 await flush()  # Flush cleanup changes
                 last_cleanup = now
         except asyncio.CancelledError:

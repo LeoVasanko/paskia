@@ -675,7 +675,7 @@ def cleanup_expired() -> int:
     """Remove expired sessions and reset tokens. Returns count removed."""
     now = datetime.now(timezone.utc)
     count = 0
-    with _db.transaction("admin:cleanup_expired"):
+    with _db.transaction("expiry"):
         expired_sessions = [k for k, s in _db.sessions.items() if s.expiry < now]
         for k in expired_sessions:
             del _db.sessions[k]
