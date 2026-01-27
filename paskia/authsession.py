@@ -9,12 +9,15 @@ independent of any web framework:
 """
 
 from datetime import datetime, timezone
+from typing import TYPE_CHECKING
 from uuid import UUID
 
 from paskia import db
-from paskia.config import SESSION_LIFETIME
-from paskia.db import ResetToken, Session
+from paskia.config import RESET_LIFETIME, SESSION_LIFETIME
 from paskia.util import hostutil
+
+if TYPE_CHECKING:
+    from paskia.db import ResetToken, Session
 
 EXPIRES = SESSION_LIFETIME
 
@@ -24,21 +27,21 @@ def expires() -> datetime:
 
 
 def reset_expires() -> datetime:
-    from .config import RESET_LIFETIME
-
     return datetime.now(timezone.utc) + RESET_LIFETIME
 
 
-async def get_reset(token: str) -> ResetToken:
+async def get_reset(token: str) -> "ResetToken":
     """Validate a credential reset token."""
+
     record = db.get_reset_token(token)
     if record:
         return record
     raise ValueError("This authentication link is no longer valid.")
 
 
-async def get_session(token: str, host: str | None = None) -> Session:
+async def get_session(token: str, host: str | None = None) -> "Session":
     """Validate a session token and return session data if valid."""
+
     host = hostutil.normalize_host(host)
     if not host:
         raise ValueError("Invalid host")

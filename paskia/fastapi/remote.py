@@ -16,10 +16,11 @@ import base64url
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 
 from paskia import db, remoteauth
+from paskia.authsession import expires
 from paskia.fastapi.session import infodict
 from paskia.fastapi.wschat import authenticate_chat
 from paskia.fastapi.wsutil import validate_origin, websocket_error_handler
-from paskia.util import passphrase, pow
+from paskia.util import hostutil, passphrase, pow, useragent
 
 # Create a FastAPI subapp for remote auth WebSocket endpoints
 app = FastAPI()
@@ -268,7 +269,6 @@ async def websocket_remote_auth_permit(ws: WebSocket):
     6. Client sends WebAuthn response
     7. Server sends {status: "success", message: "..."}
     """
-    from paskia.util import useragent
 
     origin = validate_origin(ws)
 
@@ -289,7 +289,6 @@ async def websocket_remote_auth_permit(ws: WebSocket):
     )
 
     request = None
-    webauthn_challenge = None
     explicitly_denied = False
 
     try:
@@ -321,8 +320,6 @@ async def websocket_remote_auth_permit(ws: WebSocket):
 
                 if request.action == "register":
                     # For registration, create a reset token for device addition
-                    from paskia.authsession import expires
-                    from paskia.util import hostutil
 
                     token_str = passphrase.generate()
                     expiry = expires()
@@ -345,8 +342,6 @@ async def websocket_remote_auth_permit(ws: WebSocket):
                     )
                 else:
                     # Default login action
-                    from paskia.authsession import expires
-                    from paskia.util import hostutil
 
                     normalized_host = hostutil.normalize_host(request.host)
                     session_token = db.login(

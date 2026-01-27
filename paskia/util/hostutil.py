@@ -3,7 +3,7 @@
 import json
 import os
 from functools import lru_cache
-from urllib.parse import urlsplit
+from urllib.parse import urlparse, urlsplit
 
 
 @lru_cache(maxsize=1)
@@ -24,7 +24,6 @@ def dedicated_auth_host() -> str | None:
     auth_host = _load_config().get("auth_host")
     if not auth_host:
         return None
-    from urllib.parse import urlparse
 
     parsed = urlparse(auth_host if "://" in auth_host else f"//{auth_host}")
     return parsed.netloc or parsed.path or None

@@ -10,6 +10,7 @@ but doesn't provide server-side fetching of HTML content.
 import asyncio
 import mimetypes
 import os
+from importlib import resources
 from pathlib import Path
 
 import httpx
@@ -24,7 +25,6 @@ def _get_dev_server() -> str | None:
 
 def _resolve_static_dir() -> Path:
     """Resolve the static files directory."""
-    from importlib import resources
 
     # Try packaged path via importlib.resources (works for wheel/installed).
     try:  # pragma: no cover - trivial path resolution

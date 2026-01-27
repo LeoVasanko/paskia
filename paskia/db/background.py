@@ -8,6 +8,8 @@ import asyncio
 import logging
 from datetime import datetime, timezone
 
+from paskia.db.operations import _db, _store
+
 # Flush changes to disk every N seconds
 FLUSH_INTERVAL = 1
 # Cleanup expired items every N seconds (cheap when nothing to remove)
@@ -20,7 +22,6 @@ _background_task: asyncio.Task | None = None
 
 def cleanup() -> None:
     """Remove expired sessions and reset tokens from the database."""
-    from paskia.db.operations import _db
 
     if _db is None:
         return
@@ -45,7 +46,6 @@ def cleanup() -> None:
 
 async def flush() -> None:
     """Write all pending database changes to disk."""
-    from paskia.db.operations import _store
 
     if _store is None:
         _logger.warning("flush() called but _store is None")
