@@ -91,7 +91,7 @@ async def admin_list_orgs(request: Request, auth=AUTH_COOKIE):
         match=permutil.has_any,
         host=request.headers.get("host"),
     )
-    orgs = db.list_organizations()
+    orgs = list(db.data().orgs.values())
     if not is_global_admin(ctx):
         # Org admins can only see their own organization
         orgs = [o for o in orgs if o.uuid == ctx.org.uuid]
@@ -194,7 +194,7 @@ async def admin_delete_org(org_uuid: UUID, request: Request, auth=AUTH_COOKIE):
 
     # Delete organization-specific permissions
     org_perm_pattern = f"org:{str(org_uuid).lower()}"
-    all_permissions = db.list_permissions()
+    all_permissions = list(db.data().permissions.values())
     for perm in all_permissions:
         perm_scope_lower = perm.scope.lower()
         # Check if permission contains "org:{uuid}" separated by colons or at boundaries
@@ -226,7 +226,10 @@ async def admin_add_org_permission(
         permission_uuid = UUID(permission_id)
     except ValueError:
         # It's a scope - look up the UUID
-        perm = db.get_permission_by_scope(permission_id)
+        perm = next(
+            (p for p in db.data().permissions.values() if p.scope == permission_id),
+            None,
+        )
         if not perm:
             raise HTTPException(status_code=404, detail="Permission not found")
         permission_uuid = perm.uuid
@@ -251,13 +254,16 @@ async def admin_remove_org_permission(
         permission_uuid = UUID(permission_id)
     except ValueError:
         # It's a scope - look up the UUID
-        perm = db.get_permission_by_scope(permission_id)
+        perm = next(
+            (p for p in db.data().permissions.values() if p.scope == permission_id),
+            None,
+        )
         if not perm:
             raise HTTPException(status_code=404, detail="Permission not found")
         permission_uuid = perm.uuid
 
     # Guard rail: prevent removing auth:admin from your own org if it would lock you out
-    perm = db.get_permission(permission_uuid)
+    perm = db.data().permissions.get(permission_uuid)
     if perm and perm.scope == "auth:admin" and ctx.org.uuid == org_uuid:
         # Check if any other org grants auth:admin that we're a member of
         # (we only know our current org, so this effectively means we can't remove it from our own org)
@@ -294,15 +300,14 @@ async def admin_create_role(
 
     display_name = payload.get("display_name") or "New Role"
     perms = payload.get("permissions") or []
-    org = db.get_organization(org_uuid)
-    if not org:
+    if org_uuid not in db.data().orgs:
         raise HTTPException(status_code=404, detail="Organization not found")
     grantable = {pid for pid, p in db.data().permissions.items() if org_uuid in p.orgs}
 
     # Normalize permission IDs to UUIDs
     permission_uuids: set[UUID] = set()
     for pid in perms:
-        perm = db.get_permission(UUID(pid))
+        perm = db.data().permissions.get(UUID(pid))
         if not perm:
             raise ValueError(f"Permission {pid} not found")
         if perm.uuid not in grantable:
@@ -337,8 +342,8 @@ async def admin_update_role_name(
         raise authz.AuthException(
             status_code=403, detail="Insufficient permissions", mode="forbidden"
         )
-    role = db.get_role(role_uuid)
-    if role.org != org_uuid:
+    role = db.data().roles.get(role_uuid)
+    if not role or role.org != org_uuid:
         raise HTTPException(status_code=404, detail="Role not found in organization")
 
     display_name = payload.get("display_name")
@@ -369,12 +374,12 @@ async def admin_add_role_permission(
             status_code=403, detail="Insufficient permissions", mode="forbidden"
         )
 
-    role = db.get_role(role_uuid)
-    if role.org != org_uuid:
+    role = db.data().roles.get(role_uuid)
+    if not role or role.org != org_uuid:
         raise HTTPException(status_code=404, detail="Role not found in organization")
 
     # Verify permission exists and org can grant it
-    perm = db.get_permission(permission_uuid)
+    perm = db.data().permissions.get(permission_uuid)
     if not perm:
         raise HTTPException(status_code=404, detail="Permission not found")
     if org_uuid not in perm.orgs:
@@ -404,19 +409,19 @@ async def admin_remove_role_permission(
             status_code=403, detail="Insufficient permissions", mode="forbidden"
         )
 
-    role = db.get_role(role_uuid)
-    if role.org != org_uuid:
+    role = db.data().roles.get(role_uuid)
+    if not role or role.org != org_uuid:
         raise HTTPException(status_code=404, detail="Role not found in organization")
 
     # Sanity check: prevent admin from removing their own access
-    perm = db.get_permission(permission_uuid)
+    perm = db.data().permissions.get(permission_uuid)
     if ctx.org.uuid == org_uuid and ctx.role.uuid == role_uuid:
         if perm and perm.scope in ["auth:admin", "auth:org:admin"]:
             # Check if removing this permission would leave no admin access
             remaining_perms = role.permission_set - {permission_uuid}
             has_admin = False
             for rp_uuid in remaining_perms:
-                rp = db.get_permission(rp_uuid)
+                rp = db.data().permissions.get(rp_uuid)
                 if rp and rp.scope in ["auth:admin", "auth:org:admin"]:
                     has_admin = True
                     break
@@ -445,8 +450,8 @@ async def admin_delete_role(
         raise authz.AuthException(
             status_code=403, detail="Insufficient permissions", mode="forbidden"
         )
-    role = db.get_role(role_uuid)
-    if role.org != org_uuid:
+    role = db.data().roles.get(role_uuid)
+    if not role or role.org != org_uuid:
         raise HTTPException(status_code=404, detail="Role not found in organization")
 
     # Sanity check: prevent admin from deleting their own role
@@ -483,7 +488,7 @@ async def admin_create_user(
         raise ValueError("display_name and role are required")
     from ..db import User as UserDC
 
-    roles = db.get_roles_by_organization(org_uuid)
+    roles = [r for r in db.data().roles.values() if r.org == org_uuid]
     role_obj = next((r for r in roles if r.display_name == role_name), None)
     if not role_obj:
         raise ValueError("Role not found in organization")
@@ -522,7 +527,7 @@ async def admin_update_user_role(
         raise ValueError("User not found")
     if user_org.uuid != org_uuid:
         raise ValueError("User does not belong to this organization")
-    roles = db.get_roles_by_organization(org_uuid)
+    roles = [r for r in db.data().roles.values() if r.org == org_uuid]
     if not any(r.display_name == new_role for r in roles):
         raise ValueError("Role not found in organization")
 
@@ -533,7 +538,7 @@ async def admin_update_user_role(
             # Check if any permission in the new role is an admin permission
             has_admin_access = False
             for perm_uuid in new_role_obj.permissions:
-                perm = db.get_permission(perm_uuid)
+                perm = db.data().permissions.get(perm_uuid)
                 if perm and perm.scope in ["auth:admin", "auth:org:admin"]:
                     has_admin_access = True
                     break
@@ -572,8 +577,8 @@ async def admin_create_user_registration_link(
         )
 
     # Check if user has existing credentials
-    credentials = db.get_credentials_by_user_uuid(user_uuid)
-    token_type = "user registration" if not credentials else "account recovery"
+    has_credentials = db.get_user_credential_ids(user_uuid)
+    token_type = "user registration" if not has_credentials else "account recovery"
 
     token = passphrase.generate()
     expiry = reset_expires()
@@ -618,8 +623,8 @@ async def admin_get_user_detail(
         raise authz.AuthException(
             status_code=403, detail="Insufficient permissions", mode="forbidden"
         )
-    user = db.get_user_by_uuid(user_uuid)
-    user_creds = db.get_credentials_by_user_uuid(user_uuid)
+    user = db.data().users.get(user_uuid)
+    user_creds = [c for c in db.data().credentials.values() if c.user == user_uuid]
     creds: list[dict] = []
     aaguids: set[str] = set()
     for c in user_creds:
@@ -871,7 +876,7 @@ def _check_admin_lockout(
     host_without_port = normalized_host.rsplit(":", 1)[0] if normalized_host else None
 
     # Get all auth:admin permissions
-    all_perms = db.list_permissions()
+    all_perms = list(db.data().permissions.values())
     admin_perms = [p for p in all_perms if p.scope == "auth:admin"]
 
     # Check if at least one auth:admin would remain accessible
@@ -906,7 +911,7 @@ def _check_admin_lockout_on_delete(perm_uuid: str, current_host: str | None) -> 
     host_without_port = normalized_host.rsplit(":", 1)[0] if normalized_host else None
 
     # Get all auth:admin permissions
-    all_perms = db.list_permissions()
+    all_perms = list(db.data().permissions.values())
     admin_perms = [p for p in all_perms if p.scope == "auth:admin"]
 
     # Check if at least one auth:admin would remain accessible after deletion
@@ -938,7 +943,7 @@ async def admin_list_permissions(request: Request, auth=AUTH_COOKIE):
         match=permutil.has_any,
         host=request.headers.get("host"),
     )
-    perms = db.list_permissions()
+    perms = list(db.data().permissions.values())
 
     # Global admins see all permissions
     if is_global_admin(ctx):
@@ -997,7 +1002,7 @@ async def admin_update_permission(
     )
 
     # Get existing permission
-    perm = db.get_permission(permission_uuid)
+    perm = db.data().permissions.get(permission_uuid)
 
     # Update fields that were provided
     new_scope = scope if scope is not None else perm.scope
@@ -1045,7 +1050,7 @@ async def admin_rename_permission(
         raise ValueError("new_scope required")
 
     # Sanity check: prevent renaming critical permissions
-    perm = db.get_permission(permission_uuid)
+    perm = db.data().permissions.get(permission_uuid)
     if perm.scope == "auth:admin":
         raise ValueError("Cannot rename the master admin permission")
 
@@ -1086,7 +1091,7 @@ async def admin_delete_permission(
     )
 
     # Get the permission to check its scope
-    perm = db.get_permission(permission_uuid)
+    perm = db.data().permissions.get(permission_uuid)
 
     # Sanity check: prevent deleting critical permissions if it would lock out admin
     if perm.scope == "auth:admin":

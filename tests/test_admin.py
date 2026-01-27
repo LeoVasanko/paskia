@@ -1423,9 +1423,9 @@ class TestAdminPermissions:
     ):
         """Cannot rename the auth:admin permission."""
         # Get the auth:admin permission
-        from paskia.db import list_permissions
+        from paskia import db
 
-        perms = list_permissions()
+        perms = list(db.data().permissions.values())
         admin_perm = next(p for p in perms if p.scope == "auth:admin")
 
         response = await client.post(
@@ -1478,9 +1478,9 @@ class TestAdminPermissions:
     ):
         """Cannot delete the only auth:admin permission (would lock out admin)."""
         # Get the auth:admin permission
-        from paskia.db import list_permissions
+        from paskia import db
 
-        perms = list_permissions()
+        perms = list(db.data().permissions.values())
         admin_perm = next(p for p in perms if p.scope == "auth:admin")
 
         response = await client.delete(
@@ -1503,9 +1503,9 @@ class TestAdminPermissions:
         create_permission(perm2)
 
         # Get the original auth:admin permission (the one created in setup)
-        from paskia.db import list_permissions
+        from paskia import db
 
-        perms = list_permissions()
+        perms = list(db.data().permissions.values())
         admin_perms = [p for p in perms if p.scope == "auth:admin"]
         # Delete the first one (not the one we just created)
         original_admin_perm = next(p for p in admin_perms if p.uuid != perm2.uuid)
@@ -1536,9 +1536,9 @@ class TestAdminPermissions:
 
         # Cannot delete the original one because the remaining one is not accessible
         # Get the original auth:admin permission
-        from paskia.db import list_permissions
+        from paskia import db
 
-        perms = list_permissions()
+        perms = list(db.data().permissions.values())
         admin_perms = [p for p in perms if p.scope == "auth:admin" and p.domain is None]
         original_admin_perm = admin_perms[0]  # The one without domain
 

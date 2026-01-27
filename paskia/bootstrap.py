@@ -69,9 +69,8 @@ async def check_admin_credentials() -> bool:
 
         # Check first admin user for credentials
         admin_user = admin_users[0]
-        credentials = db.get_credentials_by_user_uuid(admin_user.uuid)
 
-        if not credentials:
+        if not db.get_user_credential_ids(admin_user.uuid):
             # Admin exists but has no credentials, create reset link
             from paskia import authsession
             from paskia.util import passphrase
@@ -101,7 +100,7 @@ async def bootstrap_if_needed() -> bool:
         bool: True if bootstrapping was performed, False if system was already set up
     """
     # Check if the admin permission exists - if it does, system is already bootstrapped
-    if db.get_permission_by_scope("auth:admin"):
+    if any(p.scope == "auth:admin" for p in db.data().permissions.values()):
         # Permission exists, system is already bootstrapped
         # Check if admin needs credentials (only for already-bootstrapped systems)
         await check_admin_credentials()

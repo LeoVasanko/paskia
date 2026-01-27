@@ -48,7 +48,9 @@ async def format_user_info(
     ctx = await permutil.session_context(auth, request_host)
 
     # Fetch and format credentials
-    user_credentials = db.get_credentials_by_user_uuid(user_uuid)
+    user_credentials = [
+        c for c in db.data().credentials.values() if c.user == user_uuid
+    ]
     credentials: list[dict] = []
     user_aaguids: set[str] = set()
 
