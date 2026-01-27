@@ -23,7 +23,7 @@ from paskia.fastapi.wsutil import validate_origin, websocket_error_handler
 from paskia.util import hostutil, passphrase, pow, useragent
 
 # Create a FastAPI subapp for remote auth WebSocket endpoints
-app = FastAPI()
+app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
 
 
 @app.websocket("/request")

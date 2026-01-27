@@ -10,7 +10,7 @@ from paskia.globals import passkey
 from paskia.util import hostutil, passphrase
 
 # Create a FastAPI subapp for WebSocket endpoints
-app = FastAPI()
+app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
 
 # Mount the remote auth WebSocket endpoints
 app.mount("/remote-auth", remote.app)

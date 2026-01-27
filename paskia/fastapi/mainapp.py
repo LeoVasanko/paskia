@@ -59,7 +59,13 @@ async def lifespan(app: FastAPI):  # pragma: no cover - startup path
     await stop_background()
 
 
-app = FastAPI(lifespan=lifespan, redirect_slashes=False)
+app = FastAPI(
+    lifespan=lifespan,
+    redirect_slashes=False,
+    docs_url=None,
+    redoc_url=None,
+    openapi_url=None,
+)
 
 # Apply redirections to auth-host if configured (deny access to restricted endpoints, remove /auth/)
 app.middleware("http")(auth_host.redirect_middleware)
