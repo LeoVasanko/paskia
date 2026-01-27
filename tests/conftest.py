@@ -85,7 +85,7 @@ async def test_org(test_db: DB, admin_permission: Permission) -> Org:
     org = Org.create(display_name="Test Organization")
     create_organization(org)
     # Grant admin permission to this org
-    add_permission_to_organization(str(org.uuid), str(admin_permission.uuid))
+    add_permission_to_organization(org.uuid, admin_permission.uuid)
     return org
 
 
@@ -103,7 +103,7 @@ async def org_admin_permission(test_db: DB, test_org: Org) -> Permission:
     perm = Permission.create(scope="auth:org:admin", display_name="Organization Admin")
     create_permission(perm)
     # Make it grantable by the org
-    add_permission_to_organization(str(test_org.uuid), "auth:org:admin")
+    add_permission_to_organization(test_org.uuid, perm.uuid)
     return perm
 
 

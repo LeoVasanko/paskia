@@ -105,7 +105,7 @@ async def admin_list_orgs(request: Request, auth=AUTH_COOKIE):
         }
 
     async def org_to_dict(o):
-        users = db.get_organization_users(str(o.uuid))
+        users = db.get_organization_users(o.uuid)
         return {
             "uuid": str(o.uuid),
             "display_name": o.display_name,
@@ -209,30 +209,52 @@ async def admin_delete_org(org_uuid: UUID, request: Request, auth=AUTH_COOKIE):
 @app.post("/orgs/{org_uuid}/permission")
 async def admin_add_org_permission(
     org_uuid: UUID,
-    permission_id: str,
     request: Request,
+    permission_id: str = Query(...),
     auth=AUTH_COOKIE,
 ):
     ctx = await authz.verify(
         auth, ["auth:admin"], host=request.headers.get("host"), match=permutil.has_all
     )
-    db.add_permission_to_organization(str(org_uuid), permission_id, ctx=ctx)
+
+    # Convert permission_id to UUID
+    try:
+        permission_uuid = UUID(permission_id)
+    except ValueError:
+        # It's a scope - look up the UUID
+        perm = db.get_permission_by_scope(permission_id)
+        if not perm:
+            raise HTTPException(status_code=404, detail="Permission not found")
+        permission_uuid = perm.uuid
+
+    db.add_permission_to_organization(org_uuid, permission_uuid, ctx=ctx)
     return {"status": "ok"}
 
 
 @app.delete("/orgs/{org_uuid}/permission")
 async def admin_remove_org_permission(
     org_uuid: UUID,
-    permission_id: str,
     request: Request,
+    permission_id: str = Query(...),
     auth=AUTH_COOKIE,
 ):
     ctx = await authz.verify(
         auth, ["auth:admin"], host=request.headers.get("host"), match=permutil.has_all
     )
 
+    # Convert permission_id to UUID
+    try:
+        permission_uuid = UUID(permission_id)
+    except ValueError:
+        # It's a scope - look up the UUID
+        perm = db.get_permission_by_scope(permission_id)
+        if not perm:
+            raise HTTPException(status_code=404, detail="Permission not found")
+        permission_uuid = perm.uuid
+
     # Guard rail: prevent removing auth:admin from your own org if it would lock you out
-    if permission_id == "auth:admin" and ctx.org.uuid == org_uuid:
+    perm = db.get_permission(permission_uuid)
+    if perm and perm.scope == "auth:admin" and ctx.org.uuid == org_uuid:
         # Check if any other org grants auth:admin that we're a member of
         # (we only know our current org, so this effectively means we can't remove it from our own org)
         raise ValueError(
@@ -240,7 +262,7 @@ async def admin_remove_org_permission(
             "This would lock you out of admin access."
         )
 
-    db.remove_permission_from_organization(str(org_uuid), permission_id, ctx=ctx)
+    db.remove_permission_from_organization(org_uuid, permission_uuid, ctx=ctx)
     return {"status": "ok"}
 
 
@@ -268,7 +290,7 @@ async def admin_create_role(
 
     display_name = payload.get("display_name") or "New Role"
     perms = payload.get("permissions") or []
-    org = db.get_organization(str(org_uuid))
+    org = db.get_organization(org_uuid)
     grantable = org.permissions  # set[UUID] computed by build_org
 
     # Normalize permission IDs to UUIDs
@@ -349,7 +371,7 @@ async def admin_add_role_permission(
     perm = db.get_permission(permission_uuid)
     if not perm:
         raise HTTPException(status_code=404, detail="Permission not found")
-    org = db.get_organization(str(org_uuid))
+    org = db.get_organization(org_uuid)
     if permission_uuid not in org.permissions:
         raise ValueError("Permission not grantable by organization")
 
@@ -456,7 +478,7 @@ async def admin_create_user(
         raise ValueError("display_name and role are required")
     from ..db import User as UserDC
 
-    roles = db.get_roles_by_organization(str(org_uuid))
+    roles = db.get_roles_by_organization(org_uuid)
     role_obj = next((r for r in roles if r.display_name == role_name), None)
     if not role_obj:
         raise ValueError("Role not found in organization")
@@ -495,7 +517,7 @@ async def admin_update_user_role(
         raise ValueError("User not found")
     if user_org.uuid != org_uuid:
         raise ValueError("User does not belong to this organization")
-    roles = db.get_roles_by_organization(str(org_uuid))
+    roles = db.get_roles_by_organization(org_uuid)
     if not any(r.display_name == new_role for r in roles):
         raise ValueError("Role not found in organization")
 
