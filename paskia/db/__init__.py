@@ -62,7 +62,6 @@ from paskia.db.operations import (
     init,
     list_organizations,
     list_permissions,
-    list_sessions_for_user,
     login,
     remove_permission_from_organization,
     remove_permission_from_role,
@@ -139,7 +138,7 @@ __all__ = [
     "get_user_organization",
     "list_organizations",
     "list_permissions",
-    "list_sessions_for_user",
+    "list_permissions",
     # Write ops
     "add_permission_to_organization",
     "add_permission_to_role",

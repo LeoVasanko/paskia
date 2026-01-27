@@ -72,7 +72,7 @@ async def format_user_info(
 
     # Format sessions
     normalized_request_host = hostutil.normalize_host(request_host)
-    session_records = db.list_sessions_for_user(user_uuid)
+    session_records = [s for s in db.data().sessions.values() if s.user == user_uuid]
     current_session_key = auth
     sessions_payload: list[dict] = []
 
