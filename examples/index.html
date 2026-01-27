@@ -96,7 +96,7 @@
         async function apiCall(url, method = 'GET') {
             log(`${method} ${url}...`);
 
-            const response = await fetch(url, { method, credentials: 'include' });
+            const response = await fetch(url, { method });
 
             // Server returns 401 (login/reauth) or 403 (missing permissions)
             // with a JSON body containing the iframe URL for authentication
@@ -131,7 +131,7 @@
         }
 
         async function logout() {
-            await fetch('/auth/api/logout', { method: 'POST', credentials: 'include' });
+            await fetch('/auth/api/logout', { method: 'POST' });
             log('Logged out');
         }
 
