@@ -1,18 +1,24 @@
 """
 JSONL persistence layer for the database.
-
-Handles file I/O, JSON diffs, and persistence. Works with plain JSON/dict data.
-Uses aiofiles for async I/O operations.
 """
 
+from __future__ import annotations
+
+import json
 import logging
+import sys
 from collections import deque
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
+from uuid import UUID
 
 import aiofiles
 import jsondiff
 import msgspec
+
+from paskia.db.structs import DB, SessionContext
 
 _logger = logging.getLogger(__name__)
 
@@ -144,3 +150,88 @@ async def flush_changes(
         for change in reversed(changes_to_write):
             pending_changes.appendleft(change)
         return False
+
+
+class JsonlStore:
+    """JSONL persistence layer for a DB instance."""
+
+    def __init__(self, db: DB, db_path: str = DB_PATH_DEFAULT):
+        self.db: DB = db
+        self.db_path = Path(db_path)
+        self._previous_builtins: dict[str, Any] = {}
+        self._pending_changes: deque[_ChangeRecord] = deque()
+        self._current_action: str = "system"
+        self._current_user: str | None = None
+
+    async def load(self, db_path: str | None = None) -> None:
+        """Load data from JSONL change log."""
+        if db_path is not None:
+            self.db_path = Path(db_path)
+        try:
+            data_dict = await load_jsonl(self.db_path)
+            if data_dict:
+                decoder = msgspec.json.Decoder(DB)
+                self.db = decoder.decode(msgspec.json.encode(data_dict))
+                self.db._store = self
+                self._previous_builtins = data_dict
+        except ValueError:
+            if self.db_path.exists():
+                raise
+
+    def _queue_change(self) -> None:
+        current = msgspec.to_builtins(self.db)
+        diff = compute_diff(self._previous_builtins, current)
+        if diff:
+            self._pending_changes.append(
+                create_change_record(self._current_action, diff, self._current_user)
+            )
+            self._previous_builtins = current
+            # Log the change with user display name if available
+            user_display = None
+            if self._current_user:
+                try:
+                    user_uuid = UUID(self._current_user)
+                    if user_uuid in self.db.users:
+                        user_display = self.db.users[user_uuid].display_name
+                except (ValueError, KeyError):
+                    user_display = self._current_user
+
+            diff_json = json.dumps(diff, default=str)
+            if user_display:
+                print(
+                    f"{self._current_action} by {user_display}: {diff_json}",
+                    file=sys.stderr,
+                )
+            else:
+                print(f"{self._current_action}: {diff_json}", file=sys.stderr)
+
+    @contextmanager
+    def transaction(
+        self,
+        action: str,
+        ctx: SessionContext | None = None,
+        *,
+        user: str | None = None,
+    ):
+        """Wrap writes in transaction. Queues change on successful exit.
+
+        Args:
+            action: Describes the operation (e.g., "Created user", "Login")
+            ctx: Session context of user performing the action (None for system operations)
+            user: User UUID string (alternative to ctx when full context unavailable)
+        """
+        old_action = self._current_action
+        old_user = self._current_user
+        self._current_action = action
+        # Prefer ctx.user.uuid if ctx provided, otherwise use user param
+        self._current_user = str(ctx.user.uuid) if ctx else user
+        try:
+            yield
+            self._queue_change()
+        finally:
+            self._current_action = old_action
+            self._current_user = old_user
+
+    async def flush(self) -> bool:
+        """Write all pending changes to disk."""
+        return await flush_changes(self.db_path, self._pending_changes)

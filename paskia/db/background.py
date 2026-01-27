@@ -8,8 +8,6 @@ import asyncio
 import logging
 from datetime import datetime, timezone
 
-from paskia.db.jsonl import flush_changes
-
 # Flush changes to disk every N seconds
 FLUSH_INTERVAL = 1
 # Cleanup expired items every N seconds (cheap when nothing to remove)
@@ -24,7 +22,7 @@ def cleanup() -> None:
     """Remove expired sessions and reset tokens from the database."""
     from paskia.db.operations import _db
 
-    if _db is None or _db._data is None:
+    if _db is None:
         return
 
     with _db.transaction("expiry"):
@@ -32,27 +30,27 @@ def cleanup() -> None:
 
         # Clean expired sessions
         to_delete_sessions = [
-            k for k, s in _db._data.sessions.items() if s.expiry < current_time
+            k for k, s in _db.sessions.items() if s.expiry < current_time
         ]
         for k in to_delete_sessions:
-            del _db._data.sessions[k]
+            del _db.sessions[k]
 
         # Clean expired reset tokens
         to_delete_tokens = [
-            k for k, t in _db._data.reset_tokens.items() if t.expiry < current_time
+            k for k, t in _db.reset_tokens.items() if t.expiry < current_time
         ]
         for k in to_delete_tokens:
-            del _db._data.reset_tokens[k]
+            del _db.reset_tokens[k]
 
 
 async def flush() -> None:
     """Write all pending database changes to disk."""
-    from paskia.db.operations import _db
+    from paskia.db.operations import _store
 
-    if _db is None:
-        _logger.warning("flush() called but _db is None")
+    if _store is None:
+        _logger.warning("flush() called but _store is None")
         return
-    await flush_changes(_db.db_path, _db._pending_changes)
+    await _store.flush()
 
 
 async def _background_loop():

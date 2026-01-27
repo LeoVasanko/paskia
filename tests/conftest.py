@@ -51,19 +51,20 @@ def event_loop():
 
 @pytest_asyncio.fixture(scope="function")
 async def test_db() -> AsyncGenerator[DB, None]:
-    """Create an in-memory JSON database for testing.
-
-    Uses a temp file that gets cleaned up after each test.
-    """
+    """Create an in-memory JSON database for testing."""
     import paskia.db.operations as ops_db
+    from paskia.db.jsonl import JsonlStore
 
     with tempfile.NamedTemporaryFile(suffix=".jsonl", delete=True) as f:
-        db = DB(f.name)
-        await db.load()
+        db = DB()
+        store = JsonlStore(db, f.name)
+        db._store = store
+        await store.load()
         ops_db._db = db
+        ops_db._store = store
         yield db
-        # Clean up
         ops_db._db = None
+        ops_db._store = None
 
 
 @pytest_asyncio.fixture(scope="function")
