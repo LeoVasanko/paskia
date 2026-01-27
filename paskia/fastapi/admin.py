@@ -108,7 +108,7 @@ async def admin_list_orgs(request: Request, auth=AUTH_COOKIE):
             "uuid": str(r.uuid),
             "org": str(r.org),
             "display_name": r.display_name,
-            "permissions": r.permissions,
+            "permissions": list(r.permissions.keys()),
         }
 
     async def org_to_dict(o):

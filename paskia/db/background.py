@@ -73,6 +73,14 @@ async def start_background():
                 if loop is not task_loop:
                     _logger.debug("Background task in different event loop, restarting")
                     _background_task = None
+                else:
+                    # Task is running in the same event loop - this is an error
+                    raise RuntimeError(
+                        "Background task is already running. "
+                        "start_background() must not be called multiple times in the same event loop."
+                    )
+            except RuntimeError:
+                raise  # Re-raise RuntimeError from above
             except Exception as e:
                 _logger.debug("Error checking background task loop: %s, restarting", e)
                 _background_task = None
