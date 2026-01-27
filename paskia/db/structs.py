@@ -4,6 +4,9 @@ from uuid import UUID
 import msgspec
 import uuid7
 
+# Sentinel for uuid fields before they are set by create() or DB post init
+_UUID_UNSET = UUID(int=0)
+
 
 class Permission(msgspec.Struct, dict=True, omit_defaults=True):
     scope: str  # Permission scope identifier (e.g. "auth:admin", "myapp:write")
@@ -12,7 +15,7 @@ class Permission(msgspec.Struct, dict=True, omit_defaults=True):
     orgs: dict[UUID, bool] = {}  # org_uuid -> True (which orgs can grant this)
 
     def __post_init__(self):
-        self.uuid: UUID | None = None  # Convenience field, not serialized
+        self.uuid: UUID = _UUID_UNSET  # Convenience field, not serialized
 
     @property
     def org_set(self) -> set[UUID]:
@@ -42,7 +45,7 @@ class Role(msgspec.Struct, dict=True, omit_defaults=True):
     permissions: dict[UUID, bool] = {}  # permission_uuid -> True
 
     def __post_init__(self):
-        self.uuid: UUID | None = None  # Convenience field, not serialized
+        self.uuid: UUID = _UUID_UNSET  # Convenience field, not serialized
 
     @property
     def permission_set(self) -> set[UUID]:
@@ -71,7 +74,7 @@ class Org(msgspec.Struct, dict=True, omit_defaults=True):
     created_at: datetime | None = None
 
     def __post_init__(self):
-        self.uuid: UUID | None = None  # Convenience field, not serialized
+        self.uuid: UUID = _UUID_UNSET  # Convenience field, not serialized
 
     @classmethod
     def create(cls, display_name: str) -> "Org":
@@ -92,7 +95,7 @@ class User(msgspec.Struct, dict=True):
     visits: int = 0
 
     def __post_init__(self):
-        self.uuid: UUID | None = None  # Convenience field, not serialized
+        self.uuid: UUID = _UUID_UNSET  # Convenience field, not serialized
 
     @classmethod
     def create(
@@ -123,7 +126,7 @@ class Credential(msgspec.Struct, dict=True):
     last_verified: datetime | None = None
 
     def __post_init__(self):
-        self.uuid: UUID | None = None  # Convenience field, not serialized
+        self.uuid: UUID = _UUID_UNSET  # Convenience field, not serialized
 
     @classmethod
     def create(
@@ -160,7 +163,7 @@ class Session(msgspec.Struct, dict=True):
     expiry: datetime
 
     def __post_init__(self):
-        self.key: str | None = None  # Convenience field, not serialized
+        self.key: str = ""  # Convenience field, not serialized
 
     def metadata(self) -> dict:
         """Return session metadata for backwards compatibility."""
@@ -177,7 +180,7 @@ class ResetToken(msgspec.Struct, dict=True):
     token_type: str
 
     def __post_init__(self):
-        self.key: bytes | None = None  # Convenience field, not serialized
+        self.key: bytes = b""  # Convenience field, not serialized
 
 
 class SessionContext(msgspec.Struct):
