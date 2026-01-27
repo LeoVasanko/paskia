@@ -5,16 +5,16 @@
     <template v-else>
       <div
         v-for="credential in credentials"
-        :key="credential.credential_uuid"
+        :key="credential.credential"
         :class="['credential-item', {
           'current-session': credential.is_current_session && !hoveredCredentialUuid && !hoveredSessionCredentialUuid,
-          'is-hovered': hoveredCredentialUuid === credential.credential_uuid,
-          'is-linked-session': hoveredSessionCredentialUuid === credential.credential_uuid
+          'is-hovered': hoveredCredentialUuid === credential.credential,
+          'is-linked-session': hoveredSessionCredentialUuid === credential.credential
         }]"
         tabindex="-1"
         @mousedown.prevent
         @click.capture="handleCardClick"
-        @focusin="handleCredentialFocus(credential.credential_uuid)"
+        @focusin="handleCredentialFocus(credential.credential)"
         @focusout="handleCredentialBlur($event)"
         @keydown="handleItemKeydown($event, credential)"
       >
@@ -33,8 +33,8 @@
           <h4 class="item-title">{{ getCredentialAuthName(credential) }}</h4>
           <div class="item-actions">
             <span v-if="credential.is_current_session && !hoveredCredentialUuid && !hoveredSessionCredentialUuid" class="badge badge-current">Current</span>
-            <span v-else-if="hoveredCredentialUuid === credential.credential_uuid" class="badge badge-current">Selected</span>
-            <span v-else-if="hoveredSessionCredentialUuid === credential.credential_uuid" class="badge badge-current">Linked</span>
+            <span v-else-if="hoveredCredentialUuid === credential.credential" class="badge badge-current">Selected</span>
+            <span v-else-if="hoveredSessionCredentialUuid === credential.credential" class="badge badge-current">Linked</span>
             <button
               v-if="allowDelete"
               @click="$emit('delete', credential)"

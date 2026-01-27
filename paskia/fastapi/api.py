@@ -268,5 +268,5 @@ async def api_set_session(
     session.set_session_cookie(response, auth.credentials)
     return {
         "message": "Session cookie set successfully",
-        "user_uuid": str(user.user_uuid),
+        "user": str(user.user),
     }
