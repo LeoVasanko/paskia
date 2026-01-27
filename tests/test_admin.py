@@ -564,7 +564,7 @@ class TestAdminRoles:
             f"/auth/api/admin/orgs/{test_org.uuid}/roles",
             json={
                 "display_name": "Role With Perms",
-                "permissions": [grantable_permission.scope],
+                "permissions": [str(grantable_permission.uuid)],
             },
             headers={**auth_headers(session_token), "Host": "localhost:4401"},
         )
@@ -592,7 +592,7 @@ class TestAdminRoles:
             f"/auth/api/admin/orgs/{test_org.uuid}/roles",
             json={
                 "display_name": "Bad Role",
-                "permissions": ["test:not:grantable"],
+                "permissions": [str(perm.uuid)],
             },
             headers={**auth_headers(session_token), "Host": "localhost:4401"},
         )
@@ -1360,7 +1360,7 @@ class TestAdminPermissions:
         create_permission(perm)
 
         response = await client.patch(
-            "/auth/api/admin/permission?permission_id=test:updateable&display_name=Updated%20Name",
+            f"/auth/api/admin/permission?permission_uuid={perm.uuid}&display_name=Updated%20Name",
             headers={**auth_headers(session_token), "Host": "localhost:4401"},
         )
         assert response.status_code == 200
@@ -1377,7 +1377,7 @@ class TestAdminPermissions:
         create_permission(perm)
 
         response = await client.patch(
-            "/auth/api/admin/permission?permission_id=test:perm&display_name=",
+            f"/auth/api/admin/permission?permission_uuid={perm.uuid}&display_name=",
             headers={**auth_headers(session_token), "Host": "localhost:4401"},
         )
         assert response.status_code == 400
@@ -1394,8 +1394,8 @@ class TestAdminPermissions:
         create_permission(perm)
 
         response = await client.post(
-            "/auth/api/admin/permission/rename",
-            json={"old_scope": "test:renameable2", "new_scope": "test:renamed2"},
+            f"/auth/api/admin/permission/rename?permission_uuid={perm.uuid}",
+            json={"new_scope": "test:renamed2"},
             headers={**auth_headers(session_token), "Host": "localhost:4401"},
         )
         assert response.status_code == 200
@@ -1410,18 +1410,27 @@ class TestAdminPermissions:
             json={},
             headers={**auth_headers(session_token), "Host": "localhost:4401"},
         )
-        assert response.status_code == 400
+        assert response.status_code == 422
         data = response.json()
-        assert "required" in data["detail"]
+        assert any(
+            "required" in str(error) or "Field required" in str(error)
+            for error in data["detail"]
+        )
 
     @pytest.mark.asyncio
     async def test_rename_permission_auth_admin_fails(
         self, client: httpx.AsyncClient, session_token: str
     ):
         """Cannot rename the auth:admin permission."""
+        # Get the auth:admin permission
+        from paskia.db import list_permissions
+
+        perms = list_permissions()
+        admin_perm = next(p for p in perms if p.scope == "auth:admin")
+
         response = await client.post(
-            "/auth/api/admin/permission/rename",
-            json={"old_id": "auth:admin", "new_id": "auth:superadmin"},
+            f"/auth/api/admin/permission/rename?permission_uuid={admin_perm.uuid}",
+            json={"new_scope": "auth:superadmin"},
             headers={**auth_headers(session_token), "Host": "localhost:4401"},
         )
         assert response.status_code == 400
@@ -1437,9 +1446,8 @@ class TestAdminPermissions:
         create_permission(perm)
 
         response = await client.post(
-            "/auth/api/admin/permission/rename",
+            f"/auth/api/admin/permission/rename?permission_uuid={perm.uuid}",
             json={
-                "old_scope": "test:rename:withname",
                 "new_scope": "test:renamed:withname",
                 "display_name": "New Display Name",
             },
@@ -1457,7 +1465,7 @@ class TestAdminPermissions:
         create_permission(perm)
 
         response = await client.delete(
-            "/auth/api/admin/permission?permission_id=test:deleteable",
+            f"/auth/api/admin/permission?permission_uuid={perm.uuid}",
             headers={**auth_headers(session_token), "Host": "localhost:4401"},
         )
         assert response.status_code == 200
@@ -1469,8 +1477,14 @@ class TestAdminPermissions:
         self, client: httpx.AsyncClient, session_token: str
     ):
         """Cannot delete the only auth:admin permission (would lock out admin)."""
+        # Get the auth:admin permission
+        from paskia.db import list_permissions
+
+        perms = list_permissions()
+        admin_perm = next(p for p in perms if p.scope == "auth:admin")
+
         response = await client.delete(
-            "/auth/api/admin/permission?permission_id=auth:admin",
+            f"/auth/api/admin/permission?permission_uuid={admin_perm.uuid}",
             headers={**auth_headers(session_token), "Host": "localhost:4401"},
         )
         assert response.status_code == 400
@@ -1488,9 +1502,17 @@ class TestAdminPermissions:
         perm2 = Permission.create(scope="auth:admin", display_name="Secondary Admin")
         create_permission(perm2)
 
+        # Get the original auth:admin permission (the one created in setup)
+        from paskia.db import list_permissions
+
+        perms = list_permissions()
+        admin_perms = [p for p in perms if p.scope == "auth:admin"]
+        # Delete the first one (not the one we just created)
+        original_admin_perm = next(p for p in admin_perms if p.uuid != perm2.uuid)
+
         # Now we can delete the original one
         response = await client.delete(
-            "/auth/api/admin/permission?permission_id=auth:admin",
+            f"/auth/api/admin/permission?permission_uuid={original_admin_perm.uuid}",
             headers={**auth_headers(session_token), "Host": "localhost:4401"},
         )
         assert response.status_code == 200
@@ -1513,8 +1535,15 @@ class TestAdminPermissions:
         create_permission(perm2)
 
         # Cannot delete the original one because the remaining one is not accessible
+        # Get the original auth:admin permission
+        from paskia.db import list_permissions
+
+        perms = list_permissions()
+        admin_perms = [p for p in perms if p.scope == "auth:admin" and p.domain is None]
+        original_admin_perm = admin_perms[0]  # The one without domain
+
         response = await client.delete(
-            "/auth/api/admin/permission?permission_id=auth:admin",
+            f"/auth/api/admin/permission?permission_uuid={original_admin_perm.uuid}",
             headers={**auth_headers(session_token), "Host": "localhost:4401"},
         )
         assert response.status_code == 400

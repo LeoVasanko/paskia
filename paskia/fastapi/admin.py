@@ -2,7 +2,7 @@ import logging
 from datetime import timezone
 from uuid import UUID
 
-from fastapi import Body, FastAPI, HTTPException, Request, Response
+from fastapi import Body, FastAPI, HTTPException, Query, Request, Response
 from fastapi.responses import JSONResponse
 
 from paskia import db
@@ -200,7 +200,7 @@ async def admin_delete_org(org_uuid: UUID, request: Request, auth=AUTH_COOKIE):
             or perm_scope_lower.endswith(f":{org_perm_pattern}")
             or perm_scope_lower == org_perm_pattern
         ):
-            db.delete_permission(str(perm.uuid), ctx=ctx)
+            db.delete_permission(perm.uuid, ctx=ctx)
 
     db.delete_organization(org_uuid, ctx=ctx)
     return {"status": "ok"}
@@ -274,7 +274,7 @@ async def admin_create_role(
     # Normalize permission IDs to UUIDs
     permission_uuids: set[UUID] = set()
     for pid in perms:
-        perm = db.get_permission(pid)
+        perm = db.get_permission(UUID(pid))
         if not perm:
             raise ValueError(f"Permission {pid} not found")
         if perm.uuid not in grantable:
@@ -958,23 +958,17 @@ async def admin_create_permission(
 async def admin_update_permission(
     request: Request,
     auth=AUTH_COOKIE,
-    permission_uuid: str | None = None,
-    permission_id: str | None = None,  # Backwards compat - treated as scope
-    display_name: str | None = None,
-    scope: str | None = None,
-    domain: str | None = None,
+    permission_uuid: UUID = Query(...),
+    display_name: str | None = Query(None),
+    scope: str | None = Query(None),
+    domain: str | None = Query(None),
 ):
     ctx = await authz.verify(
         auth, ["auth:admin"], host=request.headers.get("host"), match=permutil.has_all
     )
 
-    # permission_uuid or permission_id (scope) to identify the permission
-    perm_identifier = permission_uuid or permission_id
-    if not perm_identifier:
-        raise ValueError("permission_uuid or permission_id required")
-
     # Get existing permission
-    perm = db.get_permission(perm_identifier)
+    perm = db.get_permission(permission_uuid)
 
     # Update fields that were provided
     new_scope = scope if scope is not None else perm.scope
@@ -1003,32 +997,31 @@ async def admin_update_permission(
 
 
 @app.post("/permission/rename")
+@app.put("/permission/rename")
 async def admin_rename_permission(
     request: Request,
+    permission_uuid: UUID = Query(...),
     payload: dict = Body(...),
     auth=AUTH_COOKIE,
 ):
     ctx = await authz.verify(
         auth, ["auth:admin"], host=request.headers.get("host"), match=permutil.has_all
     )
-    old_scope = payload.get("old_scope") or payload.get("old_id")  # Support both
     new_scope = payload.get("new_scope") or payload.get("new_id")  # Support both
     display_name = payload.get("display_name")
     domain = payload.get(
         "domain"
     )  # Can be None (not provided), empty string (clear), or value
-    if not old_scope or not new_scope:
-        raise ValueError("old_scope and new_scope required")
+    if not new_scope:
+        raise ValueError("new_scope required")
 
     # Sanity check: prevent renaming critical permissions
-    if old_scope == "auth:admin":
+    perm = db.get_permission(permission_uuid)
+    if perm.scope == "auth:admin":
         raise ValueError("Cannot rename the master admin permission")
 
-    querysafe.assert_safe(old_scope, field="old_scope")
     querysafe.assert_safe(new_scope, field="new_scope")
 
-    # Get existing permission to preserve values not being changed
-    perm = db.get_permission(old_scope)
     if display_name is None:
         display_name = perm.display_name
     # domain=None means "not provided, keep existing", domain="" means "clear it"
@@ -1043,16 +1036,17 @@ async def admin_rename_permission(
         _check_admin_lockout(str(perm.uuid), domain_value, request.headers.get("host"))
 
     # All current backends support rename_permission
-    db.rename_permission(old_scope, new_scope, display_name, domain_value, ctx=ctx)
+    db.rename_permission(
+        permission_uuid, new_scope, display_name, domain_value, ctx=ctx
+    )
     return {"status": "ok"}
 
 
 @app.delete("/permission")
 async def admin_delete_permission(
     request: Request,
+    permission_uuid: UUID = Query(...),
     auth=AUTH_COOKIE,
-    permission_uuid: str | None = None,
-    permission_id: str | None = None,  # Backwards compat - treated as scope
 ):
     ctx = await authz.verify(
         auth,
@@ -1062,17 +1056,12 @@ async def admin_delete_permission(
         max_age="5m",
     )
 
-    perm_identifier = permission_uuid or permission_id
-    if not perm_identifier:
-        raise ValueError("permission_uuid or permission_id required")
-    querysafe.assert_safe(perm_identifier, field="permission_id")
-
     # Get the permission to check its scope
-    perm = db.get_permission(perm_identifier)
+    perm = db.get_permission(permission_uuid)
 
     # Sanity check: prevent deleting critical permissions if it would lock out admin
     if perm.scope == "auth:admin":
         _check_admin_lockout_on_delete(str(perm.uuid), request.headers.get("host"))
 
-    db.delete_permission(str(perm.uuid), ctx=ctx)
+    db.delete_permission(permission_uuid, ctx=ctx)
     return {"status": "ok"}
