@@ -37,7 +37,7 @@ async def websocket_register_add(
             raise ValueError(
                 f"The reset link for {passkey.instance.rp_name} is invalid or has expired"
             )
-        s = await get_reset(reset)
+        s = get_reset(reset)
         user_uuid = s.user
     else:
         # Require recent authentication for adding a new passkey

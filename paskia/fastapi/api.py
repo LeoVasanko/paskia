@@ -93,7 +93,7 @@ async def validate_token(
         consumed = EXPIRES - (ctx.session.expiry - datetime.now(timezone.utc))
         if not timedelta(0) < consumed < _REFRESH_INTERVAL:
             try:
-                await refresh_session_token(
+                refresh_session_token(
                     auth,
                     ip=request.client.host if request.client else "",
                     user_agent=request.headers.get("user-agent") or "",
@@ -119,7 +119,7 @@ async def token_info(credentials=Depends(bearer_auth)):
     if not passphrase.is_well_formed(token):
         raise HTTPException(400, "Invalid token format")
     try:
-        reset_token = await get_reset(token)
+        reset_token = get_reset(token)
     except ValueError as e:
         raise HTTPException(401, str(e))
 

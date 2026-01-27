@@ -30,7 +30,7 @@ def reset_expires() -> datetime:
     return datetime.now(timezone.utc) + RESET_LIFETIME
 
 
-async def get_reset(token: str) -> "ResetToken":
+def get_reset(token: str) -> "ResetToken":
     """Validate a credential reset token."""
 
     record = db.get_reset_token(token)
@@ -39,7 +39,7 @@ async def get_reset(token: str) -> "ResetToken":
     raise ValueError("This authentication link is no longer valid.")
 
 
-async def refresh_session_token(token: str, *, ip: str, user_agent: str):
+def refresh_session_token(token: str, *, ip: str, user_agent: str):
     """Refresh a session extending its expiry."""
     session_record = db.data().sessions.get(token)
     if not session_record:
@@ -54,7 +54,7 @@ async def refresh_session_token(token: str, *, ip: str, user_agent: str):
         raise ValueError("Session not found or expired")
 
 
-async def delete_credential(credential_uuid: UUID, auth: str, host: str | None = None):
+def delete_credential(credential_uuid: UUID, auth: str, host: str | None = None):
     """Delete a specific credential for the current user."""
     ctx = db.get_session_context(auth, hostutil.normalize_host(host))
     if not ctx:
