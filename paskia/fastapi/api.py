@@ -124,7 +124,7 @@ async def token_info(credentials=Depends(bearer_auth)):
     except ValueError as e:
         raise HTTPException(401, str(e))
 
-    u = db.get_user_by_uuid(reset_token.user_uuid)
+    u = db.get_user_by_uuid(reset_token.user)
     return {
         "token_type": reset_token.token_type,
         "display_name": u.display_name,
@@ -178,7 +178,7 @@ async def forward_authentication(
                 .isoformat()
                 .replace("+00:00", "Z")
             ),
-            "Remote-Credential": str(ctx.session.credential_uuid),
+            "Remote-Credential": str(ctx.session.credential),
         }
         return Response(status_code=204, headers=remote_headers)
     except authz.AuthException as e:
@@ -239,7 +239,7 @@ async def api_user_info(
         raise HTTPException(401, str(e))
 
     return await userinfo.format_user_info(
-        user_uuid=session_record.user_uuid,
+        user_uuid=session_record.user,
         auth=auth,
         session_record=session_record,
         request_host=request.headers.get("host"),
