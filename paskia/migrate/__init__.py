@@ -12,12 +12,26 @@ Or via the CLI entry point (if installed):
 """
 
 import asyncio
+import re
 from datetime import datetime, timezone
 from uuid import UUID
 
 import base64url
+import uuid7
+from sqlalchemy import select
 
 from paskia.authsession import EXPIRES
+from paskia.db.jsonl import JsonlStore
+from paskia.db.structs import (
+    DB,
+    Credential,
+    Org,
+    Permission,
+    ResetToken,
+    Role,
+    Session,
+    User,
+)
 
 from .sql import (
     DB as SQLDB,
@@ -47,30 +61,14 @@ async def migrate_from_sql(
         sql_db_path: SQLAlchemy connection string for the source SQL database
         json_db_path: Path for the destination JSONL file
     """
-    # Import here to avoid circular imports and to not require JSON db at import time
-    import re
-
-    import uuid7
-    from sqlalchemy import select
-
-    from paskia.db.operations import DB as JSONDB
-    from paskia.db.structs import (
-        Credential,
-        Org,
-        Permission,
-        ResetToken,
-        Role,
-        Session,
-        User,
-    )
-
     # Initialize source SQL database
     sql_db = SQLDB(sql_db_path)
     await sql_db.init_db()
 
     # Initialize destination JSON database (fresh, don't load existing)
-    json_db = JSONDB(json_db_path)
-    # Don't call json_db.load() - we want a fresh database, not to load existing
+    db = DB()
+    store = JsonlStore(db, json_db_path)
+    db._store = store
 
     print(f"Migrating from {sql_db_path} to {json_db_path}...")
 
@@ -96,7 +94,7 @@ async def migrate_from_sql(
         orgs={},
     )
     org_admin_perm.uuid = org_admin_perm_uuid
-    json_db._data.permissions[org_admin_perm_uuid] = org_admin_perm
+    db.permissions[org_admin_perm_uuid] = org_admin_perm
 
     # Mapping from old permission ID to new permission UUID
     perm_id_to_uuid: dict[str, UUID] = {}
@@ -121,7 +119,7 @@ async def migrate_from_sql(
             orgs={},
         )
         new_perm.uuid = perm_uuid
-        json_db._data.permissions[perm_uuid] = new_perm
+        db.permissions[perm_uuid] = new_perm
         perm_id_to_uuid[perm.id] = perm_uuid
     print(
         f"  Migrated {len(permissions)} permissions (with {len(org_admin_uuids)} org-specific admins consolidated to auth:org:admin)"
@@ -133,14 +131,14 @@ async def migrate_from_sql(
         org_key: UUID = org.uuid
         new_org = Org(display_name=org.display_name)
         new_org.uuid = org_key
-        json_db._data.orgs[org_key] = new_org
+        db.orgs[org_key] = new_org
         # Update permissions to allow this org to grant them (by UUID)
         for old_perm_id in org.permissions:
             perm_uuid = perm_id_to_uuid.get(old_perm_id)
-            if perm_uuid and perm_uuid in json_db._data.permissions:
-                json_db._data.permissions[perm_uuid].orgs[org_key] = True
+            if perm_uuid and perm_uuid in db.permissions:
+                db.permissions[perm_uuid].orgs[org_key] = True
         # Ensure every org can grant auth:org:admin
-        json_db._data.permissions[org_admin_perm_uuid].orgs[org_key] = True
+        db.permissions[org_admin_perm_uuid].orgs[org_key] = True
     print(f"  Migrated {len(orgs)} organizations")
 
     # Migrate roles - convert old permission IDs to UUIDs
@@ -160,7 +158,7 @@ async def migrate_from_sql(
                 permissions=new_permissions,
             )
             new_role.uuid = role_key
-            json_db._data.roles[role_key] = new_role
+            db.roles[role_key] = new_role
             role_count += 1
     print(f"  Migrated {role_count} roles")
 
@@ -179,7 +177,7 @@ async def migrate_from_sql(
                 visits=legacy_user.visits,
             )
             new_user.uuid = user_key
-            json_db._data.users[user_key] = new_user
+            db.users[user_key] = new_user
         print(f"  Migrated {len(user_models)} users")
 
     # Migrate credentials
@@ -200,7 +198,7 @@ async def migrate_from_sql(
                 last_verified=legacy_cred.last_verified,
             )
             new_cred.uuid = cred_key
-            json_db._data.credentials[cred_key] = new_cred
+            db.credentials[cred_key] = new_cred
         print(f"  Migrated {len(cred_models)} credentials")
 
     # Migrate sessions
@@ -217,7 +215,7 @@ async def migrate_from_sql(
             else:
                 # Already in new format or unknown - try to use as-is
                 session_key = base64url.enc(old_key[:12])
-            json_db._data.sessions[session_key] = Session(
+            db.sessions[session_key] = Session(
                 user=sess.user_uuid,
                 credential=sess.credential_uuid,
                 host=sess.host,
@@ -241,7 +239,7 @@ async def migrate_from_sql(
             else:
                 # Already in new format or unknown - truncate to 9 bytes
                 token_key = old_key[:9]
-            json_db._data.reset_tokens[token_key] = ResetToken(
+            db.reset_tokens[token_key] = ResetToken(
                 user=token.user_uuid,
                 expiry=token.expiry,
                 token_type=token.token_type,
@@ -249,11 +247,10 @@ async def migrate_from_sql(
         print(f"  Migrated {len(token_models)} reset tokens")
 
     # Queue and flush all changes using the transaction mechanism
-    with json_db.transaction("migrate"):
+    with db.transaction("migrate"):
         pass  # All data already added to _data, transaction commits on exit
-    from paskia.db.jsonl import flush_changes
 
-    await flush_changes(json_db.db_path, json_db._pending_changes)
+    await store.flush()
 
     print("Migration complete!")
 

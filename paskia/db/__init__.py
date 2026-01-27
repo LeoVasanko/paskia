@@ -1,7 +1,7 @@
 """
 Database module for WebAuthn passkey authentication.
 
-Read: Access _db._data directly, use build_* to convert to public structs.
+Read: Access db() directly, use build_* to convert to public structs.
 CTX: get_session_context(key) returns SessionContext with effective permissions.
 Write: Functions validate and commit, or raise ValueError.
 
@@ -9,7 +9,7 @@ Usage:
     from paskia import db
 
     # Read (after init)
-    user_data = db._db._data.users[user_uuid]
+    user_data = db.db().users[user_uuid]
     user = db.build_user(user_uuid)
 
     # Context
@@ -26,8 +26,6 @@ from paskia.db.background import (
     stop_cleanup,
 )
 from paskia.db.operations import (
-    DB,
-    _db,
     add_permission_to_organization,
     add_permission_to_role,
     bootstrap,
@@ -82,6 +80,7 @@ from paskia.db.operations import (
     update_user_role_in_organization,
 )
 from paskia.db.structs import (
+    DB,
     Credential,
     Org,
     Permission,
@@ -91,6 +90,14 @@ from paskia.db.structs import (
     SessionContext,
     User,
 )
+
+
+def db() -> DB:
+    """Get the database instance for direct read access."""
+    from paskia.db.operations import _db
+
+    return _db
+
 
 __all__ = [
     # Types
@@ -104,7 +111,7 @@ __all__ = [
     "SessionContext",
     "User",
     # Instance
-    "_db",
+    "db",
     "init",
     # Background
     "start_background",

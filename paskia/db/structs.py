@@ -199,17 +199,21 @@ class SessionContext(msgspec.Struct):
 # -------------------------------------------------------------------------
 
 
-class DatabaseData(msgspec.Struct, omit_defaults=True):
-    permissions: dict[UUID, Permission]
-    orgs: dict[UUID, Org]
-    roles: dict[UUID, Role]
-    users: dict[UUID, User]
-    credentials: dict[UUID, Credential]
-    sessions: dict[str, Session]
-    reset_tokens: dict[bytes, ResetToken]
+class DB(msgspec.Struct, dict=True, omit_defaults=False):
+    """In-memory database. Access fields directly for reads."""
+
+    permissions: dict[UUID, Permission] = {}
+    orgs: dict[UUID, Org] = {}
+    roles: dict[UUID, Role] = {}
+    users: dict[UUID, User] = {}
+    credentials: dict[UUID, Credential] = {}
+    sessions: dict[str, Session] = {}
+    reset_tokens: dict[bytes, ResetToken] = {}
     v: int = 0
 
     def __post_init__(self):
+        # Store reference for persistence (not serialized)
+        self._store = None
         # Set the key fields on all stored objects
         for uuid, perm in self.permissions.items():
             perm.uuid = uuid
@@ -225,3 +229,7 @@ class DatabaseData(msgspec.Struct, omit_defaults=True):
             session.key = key
         for key, token in self.reset_tokens.items():
             token.key = key
+
+    def transaction(self, action, ctx=None, *, user=None):
+        """Wrap writes in transaction. Delegates to JsonlStore."""
+        return self._store.transaction(action, ctx, user=user)
