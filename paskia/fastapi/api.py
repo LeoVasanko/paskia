@@ -17,7 +17,6 @@ from paskia import db
 from paskia.authsession import (
     EXPIRES,
     get_reset,
-    get_session,
     refresh_session_token,
 )
 from paskia.fastapi import authz, session, user
@@ -234,15 +233,14 @@ async def api_user_info(
             detail="Authentication required",
             mode="login",
         )
-    try:
-        session_record = await get_session(auth, host=request.headers.get("host"))
-    except ValueError as e:
-        raise HTTPException(401, str(e))
+    ctx = db.get_session_context(auth, request.headers.get("host"))
+    if not ctx:
+        raise HTTPException(401, "Session expired")
 
     return await userinfo.format_user_info(
-        user_uuid=session_record.user,
+        user_uuid=ctx.user.uuid,
         auth=auth,
-        session_record=session_record,
+        session_record=ctx.session,
         request_host=request.headers.get("host"),
     )
 
@@ -251,12 +249,12 @@ async def api_user_info(
 async def api_logout(request: Request, response: Response, auth=AUTH_COOKIE):
     if not auth:
         return {"message": "Already logged out"}
-    try:
-        _s = await get_session(auth, host=request.headers.get("host"))
-    except ValueError:
+    host = request.headers.get("host")
+    ctx = db.get_session_context(auth, host)
+    if not ctx:
         return {"message": "Already logged out"}
     with suppress(Exception):
-        db.delete_session(auth)
+        db.delete_session(auth, ctx=ctx)
     session.clear_session_cookie(response)
     return {"message": "Logged out successfully"}
 
@@ -265,9 +263,11 @@ async def api_logout(request: Request, response: Response, auth=AUTH_COOKIE):
 async def api_set_session(
     request: Request, response: Response, auth=Depends(bearer_auth)
 ):
-    user = await get_session(auth.credentials, host=request.headers.get("host"))
+    ctx = db.get_session_context(auth.credentials, request.headers.get("host"))
+    if not ctx:
+        raise HTTPException(401, "Session expired")
     session.set_session_cookie(response, auth.credentials)
     return {
         "message": "Session cookie set successfully",
-        "user": str(user.user),
+        "user": str(ctx.user.uuid),
     }

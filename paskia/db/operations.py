@@ -154,7 +154,7 @@ def get_session_context(
     if host is not None:
         if s.host is None:
             # Bind session to this host
-            with _db.transaction("host_binding"):
+            with _db.transaction("bind_session_host"):
                 s.host = host
         elif s.host != host:
             # Session bound to different host
@@ -221,7 +221,7 @@ def create_permission(perm: Permission, *, ctx: SessionContext | None = None) ->
     """Create a new permission."""
     if perm.uuid in _db.permissions:
         raise ValueError(f"Permission {perm.uuid} already exists")
-    with _db.transaction("Created permission", ctx):
+    with _db.transaction("admin:create_permission", ctx):
         _db.permissions[perm.uuid] = perm
 
 
@@ -229,54 +229,31 @@ def update_permission(perm: Permission, *, ctx: SessionContext | None = None) ->
     """Update a permission's scope, display_name, and domain."""
     if perm.uuid not in _db.permissions:
         raise ValueError(f"Permission {perm.uuid} not found")
-    with _db.transaction("Updated permission", ctx):
+    with _db.transaction("admin:update_permission", ctx):
         _db.permissions[perm.uuid].scope = perm.scope
         _db.permissions[perm.uuid].display_name = perm.display_name
         _db.permissions[perm.uuid].domain = perm.domain
-
-
-def rename_permission(
-    uuid: UUID,
-    new_scope: str,
-    display_name: str,
-    domain: str | None = None,
-    *,
-    ctx: SessionContext | None = None,
-) -> None:
-    """Rename a permission's scope. The UUID remains the same.
-
-    Since roles reference permissions by UUID, no role updates are needed.
-    Note: Scopes do not need to be unique (same scope with different domains is valid).
-    """
-    if uuid not in _db.permissions:
-        raise ValueError(f"Permission {uuid} not found")
-
-    with _db.transaction("Renamed permission", ctx):
-        # Update the permission
-        _db.permissions[uuid].scope = new_scope
-        _db.permissions[uuid].display_name = display_name
-        _db.permissions[uuid].domain = domain
 
 
 def delete_permission(uuid: UUID, *, ctx: SessionContext | None = None) -> None:
     """Delete a permission and remove it from all roles."""
     if uuid not in _db.permissions:
         raise ValueError(f"Permission {uuid} not found")
-    with _db.transaction("Deleted permission", ctx):
+    with _db.transaction("admin:delete_permission", ctx):
         # Remove this permission from all roles
         for role in _db.roles.values():
             role.permissions.pop(uuid, None)
         del _db.permissions[uuid]
 
 
-def create_organization(org: Org, *, ctx: SessionContext | None = None) -> None:
+def create_org(org: Org, *, ctx: SessionContext | None = None) -> None:
     """Create a new organization with an Administration role.
 
     Automatically creates an 'Administration' role with auth:org:admin permission.
     """
     if org.uuid in _db.orgs:
         raise ValueError(f"Organization {org.uuid} already exists")
-    with _db.transaction("Created organization", ctx):
+    with _db.transaction("admin:create_org", ctx):
         new_org = Org(
             display_name=org.display_name, created_at=datetime.now(timezone.utc)
         )
@@ -301,7 +278,7 @@ def create_organization(org: Org, *, ctx: SessionContext | None = None) -> None:
         _db.roles[admin_role_uuid] = admin_role
 
 
-def update_organization_name(
+def update_org_name(
     uuid: UUID,
     display_name: str,
     *,
@@ -310,15 +287,15 @@ def update_organization_name(
     """Update organization display name."""
     if uuid not in _db.orgs:
         raise ValueError(f"Organization {uuid} not found")
-    with _db.transaction("Renamed organization", ctx):
+    with _db.transaction("admin:update_org_name", ctx):
         _db.orgs[uuid].display_name = display_name
 
 
-def delete_organization(uuid: UUID, *, ctx: SessionContext | None = None) -> None:
+def delete_org(uuid: UUID, *, ctx: SessionContext | None = None) -> None:
     """Delete organization and all its roles/users."""
     if uuid not in _db.orgs:
         raise ValueError(f"Organization {uuid} not found")
-    with _db.transaction("Deleted organization", ctx):
+    with _db.transaction("admin:delete_org", ctx):
         # Remove org from all permissions
         for p in _db.permissions.values():
             p.orgs.pop(uuid, None)
@@ -333,7 +310,7 @@ def delete_organization(uuid: UUID, *, ctx: SessionContext | None = None) -> Non
         del _db.orgs[uuid]
 
 
-def add_permission_to_organization(
+def add_permission_to_org(
     org_uuid: UUID,
     permission_uuid: UUID,
     *,
@@ -346,11 +323,11 @@ def add_permission_to_organization(
     if permission_uuid not in _db.permissions:
         raise ValueError(f"Permission {permission_uuid} not found")
 
-    with _db.transaction("Granted org permission", ctx):
+    with _db.transaction("admin:add_permission_to_org", ctx):
         _db.permissions[permission_uuid].orgs[org_uuid] = True
 
 
-def remove_permission_from_organization(
+def remove_permission_from_org(
     org_uuid: UUID,
     permission_uuid: UUID,
     *,
@@ -363,7 +340,7 @@ def remove_permission_from_organization(
     if permission_uuid not in _db.permissions:
         return  # Permission not found, silently return
 
-    with _db.transaction("Revoked org permission", ctx):
+    with _db.transaction("admin:remove_permission_from_org", ctx):
         _db.permissions[permission_uuid].orgs.pop(org_uuid, None)
 
 
@@ -373,7 +350,7 @@ def create_role(role: Role, *, ctx: SessionContext | None = None) -> None:
         raise ValueError(f"Role {role.uuid} already exists")
     if role.org not in _db.orgs:
         raise ValueError(f"Organization {role.org} not found")
-    with _db.transaction("Created role", ctx):
+    with _db.transaction("admin:create_role", ctx):
         _db.roles[role.uuid] = role
 
 
@@ -386,7 +363,7 @@ def update_role_name(
     """Update role display name."""
     if uuid not in _db.roles:
         raise ValueError(f"Role {uuid} not found")
-    with _db.transaction("Renamed role", ctx):
+    with _db.transaction("admin:update_role_name", ctx):
         _db.roles[uuid].display_name = display_name
 
 
@@ -401,7 +378,7 @@ def add_permission_to_role(
         raise ValueError(f"Role {role_uuid} not found")
     if permission_uuid not in _db.permissions:
         raise ValueError(f"Permission {permission_uuid} not found")
-    with _db.transaction("Granted role permission", ctx):
+    with _db.transaction("admin:add_permission_to_role", ctx):
         _db.roles[role_uuid].permissions[permission_uuid] = True
 
 
@@ -414,7 +391,7 @@ def remove_permission_from_role(
     """Remove permission from role by UUID."""
     if role_uuid not in _db.roles:
         raise ValueError(f"Role {role_uuid} not found")
-    with _db.transaction("Revoked role permission", ctx):
+    with _db.transaction("admin:remove_permission_from_role", ctx):
         _db.roles[role_uuid].permissions.pop(permission_uuid, None)
 
 
@@ -425,7 +402,7 @@ def delete_role(uuid: UUID, *, ctx: SessionContext | None = None) -> None:
     # Check no users have this role
     if any(u.role == uuid for u in _db.users.values()):
         raise ValueError(f"Cannot delete role {uuid}: users still assigned")
-    with _db.transaction("Deleted role", ctx):
+    with _db.transaction("admin:delete_role", ctx):
         del _db.roles[uuid]
 
 
@@ -435,7 +412,7 @@ def create_user(new_user: User, *, ctx: SessionContext | None = None) -> None:
         raise ValueError(f"User {new_user.uuid} already exists")
     if new_user.role not in _db.roles:
         raise ValueError(f"Role {new_user.role} not found")
-    with _db.transaction("Created user", ctx):
+    with _db.transaction("admin:create_user", ctx):
         _db.users[new_user.uuid] = new_user
 
 
@@ -447,16 +424,15 @@ def update_user_display_name(
 ) -> None:
     """Update user display name.
 
-    For self-service (user updating own name), ctx can be None and user is derived from uuid.
-    For admin operations, ctx should be provided.
+    The acting user should be logged via ctx.
+    For self-service (user updating own name), pass user's ctx.
+    For admin operations, pass admin's ctx.
     """
     if isinstance(uuid, str):
         uuid = UUID(uuid)
     if uuid not in _db.users:
         raise ValueError(f"User {uuid} not found")
-    # For self-service, derive user from the uuid being modified
-    user_str = str(uuid) if not ctx else None
-    with _db.transaction("Renamed user", ctx, user=user_str):
+    with _db.transaction("update_user_display_name", ctx):
         _db.users[uuid].display_name = display_name
 
 
@@ -471,7 +447,7 @@ def update_user_role(
         raise ValueError(f"User {uuid} not found")
     if role_uuid not in _db.roles:
         raise ValueError(f"Role {role_uuid} not found")
-    with _db.transaction("Changed user role", ctx):
+    with _db.transaction("admin:update_user_role", ctx):
         _db.users[uuid].role = role_uuid
 
 
@@ -496,7 +472,7 @@ def update_user_role_in_organization(
             break
     if new_role_uuid is None:
         raise ValueError(f"Role '{role_name}' not found in organization")
-    with _db.transaction("Changed user role", ctx):
+    with _db.transaction("admin:update_user_role", ctx):
         _db.users[user_uuid].role = new_role_uuid
 
 
@@ -504,7 +480,7 @@ def delete_user(uuid: UUID, *, ctx: SessionContext | None = None) -> None:
     """Delete user and their credentials/sessions."""
     if uuid not in _db.users:
         raise ValueError(f"User {uuid} not found")
-    with _db.transaction("Deleted user", ctx):
+    with _db.transaction("admin:delete_user", ctx):
         # Delete credentials
         cred_uuids = [cid for cid, c in _db.credentials.items() if c.user == uuid]
         for cid in cred_uuids:
@@ -526,7 +502,7 @@ def create_credential(cred: Credential, *, ctx: SessionContext | None = None) ->
         raise ValueError(f"Credential {cred.uuid} already exists")
     if cred.user not in _db.users:
         raise ValueError(f"User {cred.user} not found")
-    with _db.transaction("Added credential", ctx):
+    with _db.transaction("create_credential", ctx):
         _db.credentials[cred.uuid] = cred
 
 
@@ -540,7 +516,7 @@ def update_credential_sign_count(
     """Update credential sign count and last_used."""
     if uuid not in _db.credentials:
         raise ValueError(f"Credential {uuid} not found")
-    with _db.transaction("Updated credential", ctx):
+    with _db.transaction("update_credential_sign_count", ctx):
         _db.credentials[uuid].sign_count = sign_count
         if last_used:
             _db.credentials[uuid].last_used = last_used
@@ -562,7 +538,7 @@ def delete_credential(
         cred_user = _db.credentials[uuid].user
         if cred_user != user_uuid:
             raise ValueError(f"Credential {uuid} does not belong to user {user_uuid}")
-    with _db.transaction("Deleted credential", ctx):
+    with _db.transaction("delete_credential", ctx):
         # Delete all sessions using this credential
         keys = [k for k, s in _db.sessions.items() if s.credential == uuid]
         for k in keys:
@@ -588,7 +564,7 @@ def create_session(
         raise ValueError(f"User {user_uuid} not found")
     if credential_uuid not in _db.credentials:
         raise ValueError(f"Credential {credential_uuid} not found")
-    with _db.transaction("Created session", ctx):
+    with _db.transaction("create_session", ctx):
         _db.sessions[key] = Session(
             user=user_uuid,
             credential=credential_uuid,
@@ -611,7 +587,7 @@ def update_session(
     """Update session metadata."""
     if key not in _db.sessions:
         raise ValueError("Session not found")
-    with _db.transaction("Updated session", ctx):
+    with _db.transaction("update_session", ctx):
         s = _db.sessions[key]
         if host is not None:
             s.host = host
@@ -631,14 +607,13 @@ def set_session_host(key: str, host: str, *, ctx: SessionContext | None = None) 
 def delete_session(key: str, *, ctx: SessionContext | None = None) -> None:
     """Delete a session.
 
-    For logout (user deleting own session), ctx can be None and user is derived from session.
-    For admin operations, ctx should be provided.
+    The acting user should be logged via ctx.
+    For user logout, pass ctx of the user's session.
+    For admin terminating a session, pass admin's ctx.
     """
     if key not in _db.sessions:
         raise ValueError("Session not found")
-    # For self-service logout, derive user from the session being deleted
-    user_str = str(_db.sessions[key].user) if not ctx else None
-    with _db.transaction("Deleted session", ctx, user=user_str):
+    with _db.transaction("delete_session", ctx):
         del _db.sessions[key]
 
 
@@ -647,12 +622,11 @@ def delete_sessions_for_user(
 ) -> None:
     """Delete all sessions for a user.
 
-    For logout-all (user deleting own sessions), ctx can be None and user is derived from user_uuid.
-    For admin operations, ctx should be provided.
+    The acting user should be logged via ctx.
+    For user logout-all, pass ctx of the user's session.
+    For admin bulk termination, pass admin's ctx.
     """
-    # For self-service, derive user from the user_uuid param
-    user_str = str(user_uuid) if not ctx else None
-    with _db.transaction("Deleted user sessions", ctx, user=user_str):
+    with _db.transaction("admin:delete_sessions_for_user", ctx):
         keys = [k for k, s in _db.sessions.items() if s.user == user_uuid]
         for k in keys:
             del _db.sessions[k]
@@ -668,17 +642,17 @@ def create_reset_token(
 ) -> None:
     """Create a reset token from a passphrase.
 
-    For self-service (user creating own recovery link), ctx can be None and user is derived from user_uuid.
-    For admin operations, ctx should be provided.
+    The acting user should be logged via ctx.
+    For self-service (user creating own recovery link), pass user's ctx.
+    For admin operations, pass admin's ctx.
+    For system operations (bootstrap), pass neither to log no user.
     """
     key = _reset_key(passphrase)
     if key in _db.reset_tokens:
         raise ValueError("Reset token already exists")
     if user_uuid not in _db.users:
         raise ValueError(f"User {user_uuid} not found")
-    # For self-service, derive user from the user_uuid param
-    user_str = str(user_uuid) if not ctx else None
-    with _db.transaction("Created reset token", ctx, user=user_str):
+    with _db.transaction("create_reset_token", ctx):
         _db.reset_tokens[key] = ResetToken(
             user=user_uuid, expiry=expiry, token_type=token_type
         )
@@ -688,7 +662,7 @@ def delete_reset_token(key: bytes, *, ctx: SessionContext | None = None) -> None
     """Delete a reset token."""
     if key not in _db.reset_tokens:
         raise ValueError("Reset token not found")
-    with _db.transaction("Deleted reset token", ctx):
+    with _db.transaction("delete_reset_token", ctx):
         del _db.reset_tokens[key]
 
 
@@ -701,7 +675,7 @@ def cleanup_expired() -> int:
     """Remove expired sessions and reset tokens. Returns count removed."""
     now = datetime.now(timezone.utc)
     count = 0
-    with _db.transaction("Cleaned up expired"):
+    with _db.transaction("admin:cleanup_expired"):
         expired_sessions = [k for k, s in _db.sessions.items() if s.expiry < now]
         for k in expired_sessions:
             del _db.sessions[k]
@@ -751,7 +725,7 @@ def login(
 
     session_key = _create_token()
     user_str = str(user_uuid)
-    with _db.transaction("User logged in", user=user_str):
+    with _db.transaction("login", user=user_str):
         # Update user
         _db.users[user_uuid].last_seen = now
         _db.users[user_uuid].visits += 1
@@ -798,7 +772,7 @@ def create_credential_session(
         raise ValueError(f"User {user_uuid} not found")
 
     user_str = str(user_uuid)
-    with _db.transaction("Registered credential", user=user_str):
+    with _db.transaction("create_credential_session", user=user_str):
         # Update display name if provided
         if display_name:
             _db.users[user_uuid].display_name = display_name
@@ -875,6 +849,7 @@ def bootstrap(
         reset_passphrase = generate_passphrase()
     if reset_expiry is None:
         from paskia.util.timeutil import reset_expires  # noqa: PLC0415
+
         reset_expiry = reset_expires()
     reset_key = _reset_key(reset_passphrase)
 

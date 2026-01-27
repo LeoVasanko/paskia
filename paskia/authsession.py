@@ -17,7 +17,7 @@ from paskia.config import RESET_LIFETIME, SESSION_LIFETIME
 from paskia.util import hostutil
 
 if TYPE_CHECKING:
-    from paskia.db import ResetToken, Session
+    from paskia.db import ResetToken
 
 EXPIRES = SESSION_LIFETIME
 
@@ -39,24 +39,6 @@ async def get_reset(token: str) -> "ResetToken":
     raise ValueError("This authentication link is no longer valid.")
 
 
-async def get_session(token: str, host: str | None = None) -> "Session":
-    """Validate a session token and return session data if valid."""
-
-    host = hostutil.normalize_host(host)
-    if not host:
-        raise ValueError("Invalid host")
-    session = db.data().sessions.get(token)
-    if session:
-        if session.host is None:
-            # First time binding: store exact host:port (or IPv6 form) now.
-            db.set_session_host(session.key, host)
-            session.host = host
-        elif session.host != host:
-            raise ValueError("Session host mismatch")
-        return session
-    raise ValueError("Your session has expired. Please sign in again!")
-
-
 async def refresh_session_token(token: str, *, ip: str, user_agent: str):
     """Refresh a session extending its expiry."""
     session_record = db.data().sessions.get(token)
@@ -74,5 +56,7 @@ async def refresh_session_token(token: str, *, ip: str, user_agent: str):
 
 async def delete_credential(credential_uuid: UUID, auth: str, host: str | None = None):
     """Delete a specific credential for the current user."""
-    s = await get_session(auth, host=host)
-    db.delete_credential(credential_uuid, s.user)
+    ctx = db.get_session_context(auth, hostutil.normalize_host(host))
+    if not ctx:
+        raise ValueError("Session expired")
+    db.delete_credential(credential_uuid, ctx.user.uuid)

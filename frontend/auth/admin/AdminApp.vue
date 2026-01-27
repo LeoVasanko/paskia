@@ -300,8 +300,8 @@ async function toggleRolePermission(role, pid, checked) {
 }
 
 // Permission actions
-async function performPermissionDeletion(permissionScope) {
-  const params = new URLSearchParams({ permission_id: permissionScope })
+async function performPermissionDeletion(permissionUuid) {
+  const params = new URLSearchParams({ permission_uuid: permissionUuid })
   await apiJson(`/auth/api/admin/permission?${params.toString()}`, { method: 'DELETE' })
   await loadPermissions()
 }
@@ -321,7 +321,7 @@ function deletePermission(p) {
 
   if (roleCount === 0) {
     // No roles have this permission, safe to delete directly
-    performPermissionDeletion(p.scope)
+    performPermissionDeletion(p.uuid)
       .then(() => {
         authStore.showMessage(`Permission "${p.display_name}" deleted.`, 'success', 2500)
       })
@@ -337,7 +337,7 @@ function deletePermission(p) {
   const affects = parts.join(', ')
 
   openDialog('confirm', { message: `Delete permission "${p.display_name}" (${affects})?`, action: async () => {
-    await performPermissionDeletion(p.scope)
+    await performPermissionDeletion(p.uuid)
   } })
 }
 
@@ -417,7 +417,7 @@ async function toggleOrgPermission(org, permId, checked) {
   const prev = [...org.permissions]
   org.permissions = next
   try {
-    const params = new URLSearchParams({ permission_id: permId })
+    const params = new URLSearchParams({ permission_uuid: permId })
     await apiJson(`/auth/api/admin/orgs/${org.uuid}/permission?${params.toString()}`, { method: checked ? 'POST' : 'DELETE' })
     await loadOrgs()
   } catch (e) {
@@ -633,31 +633,28 @@ async function submitDialog() {
       return // Don't call closeDialog() again
     } else if (t === 'perm-display') {
       const { permission } = dialog.value.data
-      const newId = dialog.value.data.scope?.trim()
+      const newScope = dialog.value.data.scope?.trim()
       const newDisplay = dialog.value.data.display_name?.trim()
       const newDomain = dialog.value.data.domain?.trim() || ''
       if (!newDisplay) throw new Error('Display name required')
-      if (!newId) throw new Error('Scope required')
+      if (!newScope) throw new Error('Scope required')
 
       // Close dialog immediately, then perform async operation
       closeDialog()
 
       const oldDomain = permission.domain || ''
-      let apiCall;
-      if (newId !== permission.scope) {
-        // Scope changed, use rename endpoint (also update domain)
-        apiCall = apiJson('/auth/api/admin/permission/rename', { method: 'POST', body: { old_scope: permission.scope, new_scope: newId, display_name: newDisplay, domain: newDomain } })
-      } else if (newDisplay !== permission.display_name || newDomain !== oldDomain) {
-        // Display name or domain changed
-        const params = new URLSearchParams({ permission_id: permission.scope, display_name: newDisplay })
-        if (newDomain) params.set('domain', newDomain)
-        apiCall = apiJson(`/auth/api/admin/permission?${params.toString()}`, { method: 'PATCH' })
-      } else {
-        // No changes
-        return
+      // Check if anything changed
+      if (newScope === permission.scope && newDisplay === permission.display_name && newDomain === oldDomain) {
+        return // No changes
       }
 
-      apiCall
+      // Always use PATCH with permission_uuid
+      const params = new URLSearchParams({ permission_uuid: permission.uuid })
+      if (newScope !== permission.scope) params.set('scope', newScope)
+      if (newDisplay !== permission.display_name) params.set('display_name', newDisplay)
+      if (newDomain !== oldDomain) params.set('domain', newDomain || '')
+
+      apiJson(`/auth/api/admin/permission?${params.toString()}`, { method: 'PATCH' })
         .then(() => {
           authStore.showMessage(`Permission "${newDisplay}" updated.`, 'success', 2500)
           loadPermissions()

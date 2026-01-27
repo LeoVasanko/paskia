@@ -148,10 +148,10 @@ async def admin_create_org(
     display_name = payload.get("display_name") or "New Organization"
     permissions = payload.get("permissions") or []
     org = OrgDC.create(display_name=display_name)
-    db.create_organization(org, ctx=ctx)
+    db.create_org(org, ctx=ctx)
     # Grant requested permissions to the new org
     for perm in permissions:
-        db.add_permission_to_organization(str(org.uuid), perm)
+        db.add_permission_to_org(str(org.uuid), perm)
 
     return {"uuid": str(org.uuid)}
 
@@ -178,7 +178,7 @@ async def admin_update_org_name(
     if not display_name:
         raise ValueError("display_name is required")
 
-    db.update_organization_name(org_uuid, display_name, ctx=ctx)
+    db.update_org_name(org_uuid, display_name, ctx=ctx)
     return {"status": "ok"}
 
 
@@ -212,7 +212,7 @@ async def admin_delete_org(org_uuid: UUID, request: Request, auth=AUTH_COOKIE):
         ):
             db.delete_permission(perm.uuid, ctx=ctx)
 
-    db.delete_organization(org_uuid, ctx=ctx)
+    db.delete_org(org_uuid, ctx=ctx)
     return {"status": "ok"}
 
 
@@ -220,27 +220,14 @@ async def admin_delete_org(org_uuid: UUID, request: Request, auth=AUTH_COOKIE):
 async def admin_add_org_permission(
     org_uuid: UUID,
     request: Request,
-    permission_id: str = Query(...),
+    permission_uuid: UUID = Query(...),
     auth=AUTH_COOKIE,
 ):
     ctx = await authz.verify(
         auth, ["auth:admin"], host=request.headers.get("host"), match=permutil.has_all
     )
 
-    # Convert permission_id to UUID
-    try:
-        permission_uuid = UUID(permission_id)
-    except ValueError:
-        # It's a scope - look up the UUID
-        perm = next(
-            (p for p in db.data().permissions.values() if p.scope == permission_id),
-            None,
-        )
-        if not perm:
-            raise HTTPException(status_code=404, detail="Permission not found")
-        permission_uuid = perm.uuid
-
-    db.add_permission_to_organization(org_uuid, permission_uuid, ctx=ctx)
+    db.add_permission_to_org(org_uuid, permission_uuid, ctx=ctx)
     return {"status": "ok"}
 
 
@@ -248,25 +235,14 @@ async def admin_add_org_permission(
 async def admin_remove_org_permission(
     org_uuid: UUID,
     request: Request,
-    permission_id: str = Query(...),
+    permission_uuid: UUID = Query(...),
     auth=AUTH_COOKIE,
 ):
     ctx = await authz.verify(
         auth, ["auth:admin"], host=request.headers.get("host"), match=permutil.has_all
     )
 
-    # Convert permission_id to UUID
-    try:
-        permission_uuid = UUID(permission_id)
-    except ValueError:
-        # It's a scope - look up the UUID
-        perm = next(
-            (p for p in db.data().permissions.values() if p.scope == permission_id),
-            None,
-        )
-        if not perm:
-            raise HTTPException(status_code=404, detail="Permission not found")
-        permission_uuid = perm.uuid
+    db.remove_permission_from_org(org_uuid, permission_uuid, ctx=ctx)
 
     # Guard rail: prevent removing auth:admin from your own org if it would lock you out
     perm = db.data().permissions.get(permission_uuid)
@@ -278,7 +254,7 @@ async def admin_remove_org_permission(
             "This would lock you out of admin access."
         )
 
-    db.remove_permission_from_organization(org_uuid, permission_uuid, ctx=ctx)
+    db.remove_permission_from_org(org_uuid, permission_uuid, ctx=ctx)
     return {"status": "ok"}
 
 
@@ -1008,6 +984,10 @@ async def admin_update_permission(
     new_display_name = display_name if display_name is not None else perm.display_name
     domain_value = domain if domain else None
 
+    # Sanity check: prevent changing the auth:admin permission scope
+    if perm.scope == "auth:admin" and new_scope != "auth:admin":
+        raise ValueError("Cannot rename the master admin permission")
+
     if not new_display_name:
         raise ValueError("display_name is required")
     querysafe.assert_safe(new_scope, field="scope")
@@ -1024,52 +1004,6 @@ async def admin_update_permission(
     )
     updated_perm.uuid = perm.uuid
     db.update_permission(updated_perm, ctx=ctx)
-    return {"status": "ok"}
-
-
-@app.post("/permission/rename")
-@app.put("/permission/rename")
-async def admin_rename_permission(
-    request: Request,
-    permission_uuid: UUID = Query(...),
-    payload: dict = Body(...),
-    auth=AUTH_COOKIE,
-):
-    ctx = await authz.verify(
-        auth, ["auth:admin"], host=request.headers.get("host"), match=permutil.has_all
-    )
-    new_scope = payload.get("new_scope") or payload.get("new_id")  # Support both
-    display_name = payload.get("display_name")
-    domain = payload.get(
-        "domain"
-    )  # Can be None (not provided), empty string (clear), or value
-    if not new_scope:
-        raise ValueError("new_scope required")
-
-    # Sanity check: prevent renaming critical permissions
-    perm = db.data().permissions.get(permission_uuid)
-    if perm.scope == "auth:admin":
-        raise ValueError("Cannot rename the master admin permission")
-
-    querysafe.assert_safe(new_scope, field="new_scope")
-
-    if display_name is None:
-        display_name = perm.display_name
-    # domain=None means "not provided, keep existing", domain="" means "clear it"
-    if domain is None:
-        domain_value = perm.domain
-    else:
-        domain_value = domain if domain else None
-    _validate_permission_domain(domain_value)
-
-    # Safety check: prevent admin lockout when setting domain on auth:admin
-    if perm.scope == "auth:admin" or new_scope == "auth:admin":
-        _check_admin_lockout(str(perm.uuid), domain_value, request.headers.get("host"))
-
-    # All current backends support rename_permission
-    db.rename_permission(
-        permission_uuid, new_scope, display_name, domain_value, ctx=ctx
-    )
     return {"status": "ok"}
 
 

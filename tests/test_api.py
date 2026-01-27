@@ -444,7 +444,7 @@ class TestSetSessionErrors:
     async def test_set_session_with_invalid_bearer_token(
         self, client: httpx.AsyncClient
     ):
-        """Set session with invalid (malformed) bearer token should return 400."""
+        """Set session with invalid (malformed) bearer token should return 401."""
         response = await client.post(
             "/auth/api/set-session",
             headers={
@@ -452,8 +452,8 @@ class TestSetSessionErrors:
                 "Host": "localhost:4401",
             },
         )
-        # Invalid token format returns 400
-        assert response.status_code == 400
+        # Invalid token returns 401 (session not found)
+        assert response.status_code == 401
 
     @pytest.mark.asyncio
     async def test_set_session_with_nonexistent_token(self, client: httpx.AsyncClient):
@@ -467,8 +467,8 @@ class TestSetSessionErrors:
                 "Host": "localhost:4401",
             },
         )
-        # Non-existent session returns 400 (ValueError -> 400)
-        assert response.status_code == 400
+        # Non-existent session returns 401 (session expired)
+        assert response.status_code == 401
 
 
 class TestValidateSessionRefresh:
