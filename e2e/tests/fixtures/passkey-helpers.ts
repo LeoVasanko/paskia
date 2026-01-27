@@ -12,14 +12,14 @@ const stateFile = join(__dirname, '..', '..', 'test-data', 'test-state.json')
  */
 
 export interface RegistrationResult {
-  user_uuid: string
-  credential_uuid: string
+  user: string
+  credential: string
   session_token: string
   message: string
 }
 
 export interface AuthenticationResult {
-  user_uuid: string
+  user: string
   session_token: string
 }
 
@@ -36,7 +36,7 @@ export interface UserInfo {
   last_seen: string
   visits: number
   credentials: Array<{
-    credential_uuid: string
+    credential: string
     aaguid: string
     created_at: string
     last_used: string | null
@@ -47,7 +47,7 @@ export interface UserInfo {
   aaguid_info: Record<string, { name: string; icon_light?: string; icon_dark?: string }>
   sessions: Array<{
     id: string
-    credential_uuid: string
+    credential: string
     host: string
     ip: string
     user_agent: string
