@@ -27,6 +27,7 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 from paskia.db import (
     Org,
+    Role,
 )
 
 
