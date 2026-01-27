@@ -220,18 +220,6 @@ def get_credentials_by_user_uuid(user_uuid: UUID) -> list[Credential]:
     return [c for c in _db.credentials.values() if c.user == user_uuid]
 
 
-def get_session(key: str) -> Session | None:
-    """Get session by key.
-
-    Call sites:
-    - Get session to delete it (admin.py:799)
-    - Get session to validate token (authsession.py:45)
-    - Get session to refresh it (authsession.py:59)
-    - Get session to delete it in user API (user.py:94)
-    """
-    return _db.sessions.get(key)
-
-
 def _reset_key(passphrase: str) -> bytes:
     """Hash a passphrase to bytes for reset token storage."""
     if not _is_passphrase(passphrase):

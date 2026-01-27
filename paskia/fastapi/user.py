@@ -91,7 +91,7 @@ async def api_delete_session(
             status_code=401, detail="Session expired", mode="login"
         ) from exc
 
-    target_session = db.get_session(session_id)
+    target_session = db.data().sessions.get(session_id)
     if not target_session or target_session.user != current_session.user:
         raise HTTPException(status_code=404, detail="Session not found")
 

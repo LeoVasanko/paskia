@@ -42,7 +42,7 @@ async def get_session(token: str, host: str | None = None) -> Session:
     host = hostutil.normalize_host(host)
     if not host:
         raise ValueError("Invalid host")
-    session = db.get_session(token)
+    session = db.data().sessions.get(token)
     if session:
         if session.host is None:
             # First time binding: store exact host:port (or IPv6 form) now.
@@ -56,7 +56,7 @@ async def get_session(token: str, host: str | None = None) -> Session:
 
 async def refresh_session_token(token: str, *, ip: str, user_agent: str):
     """Refresh a session extending its expiry."""
-    session_record = db.get_session(token)
+    session_record = db.data().sessions.get(token)
     if not session_record:
         raise ValueError("Session not found or expired")
     updated = db.update_session(
