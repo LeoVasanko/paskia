@@ -371,12 +371,7 @@ def get_session(key: str) -> Session | None:
     - Get session to refresh it (authsession.py:59)
     - Get session to delete it in user API (user.py:94)
     """
-    if key not in _db._data.sessions:
-        return None
-    s = _db._data.sessions[key]
-    if s.expiry < datetime.now(timezone.utc):
-        return None
-    return s
+    return _db._data.sessions.get(key)
 
 
 def list_sessions_for_user(user_uuid: UUID) -> list[Session]:
@@ -386,8 +381,7 @@ def list_sessions_for_user(user_uuid: UUID) -> list[Session]:
     - List sessions for user info (userinfo.py:75)
     - List sessions for user details API (admin.py:651)
     """
-    now = datetime.now(timezone.utc)
-    return [s for s in _db._data.sessions.values() if s.user == user_uuid and s.expiry >= now]
+    return [s for s in _db._data.sessions.values() if s.user == user_uuid]
 
 
 def _reset_key(passphrase: str) -> bytes:
@@ -408,12 +402,7 @@ def get_reset_token(passphrase: str) -> ResetToken | None:
     - Get reset token to validate it (authsession.py:34)
     """
     key = _reset_key(passphrase)
-    if key not in _db._data.reset_tokens:
-        return None
-    t = _db._data.reset_tokens[key]
-    if t.expiry < datetime.now(timezone.utc):
-        return None
-    return t
+    return _db._data.reset_tokens.get(key)
 
 
 # -------------------------------------------------------------------------
