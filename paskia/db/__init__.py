@@ -19,6 +19,7 @@ Usage:
     db.create_user(user)
 """
 
+import paskia.db.operations as operations
 from paskia.db.background import (
     start_background,
     start_cleanup,
@@ -81,9 +82,7 @@ from paskia.db.structs import (
 
 def data() -> DB:
     """Get the database instance for direct read access."""
-    from paskia.db.operations import _db
-
-    return _db
+    return operations._db
 
 
 __all__ = [

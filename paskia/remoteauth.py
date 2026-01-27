@@ -24,7 +24,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Callable
 from uuid import UUID
 
-from paskia.util import passphrase
+from paskia.util import passphrase, pow
 
 # Remote auth requests expire after this duration
 REMOTE_AUTH_LIFETIME = timedelta(minutes=5)
@@ -319,7 +319,6 @@ class RemoteAuthManager:
         Returns:
             PoW work units (pow.NORMAL or pow.HARD)
         """
-        from paskia.util import pow
 
         count = self.get_connection_count()
         return pow.HARD if count >= 10 else pow.NORMAL

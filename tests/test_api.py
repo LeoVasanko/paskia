@@ -10,12 +10,15 @@ These tests cover:
 - /auth/api/set-session - Set session from bearer token
 """
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import httpx
 import pytest
 
+from paskia.authsession import EXPIRES
 from paskia.db import create_session, delete_session
+from paskia.db.operations import _create_token
+from paskia.util.passphrase import generate
 from tests.conftest import auth_headers
 
 
@@ -410,7 +413,6 @@ class TestTokenInfoEndpoint:
     @pytest.mark.asyncio
     async def test_token_info_with_nonexistent_token(self, client: httpx.AsyncClient):
         """Token info with well-formed but non-existent token should return 401."""
-        from paskia.util.passphrase import generate
 
         fake_token = generate()
         response = await client.get(
@@ -499,7 +501,6 @@ class TestValidateSessionRefresh:
         self, client: httpx.AsyncClient, test_db
     ):
         """Validate should handle session expiry during refresh attempt."""
-        from paskia.db.operations import _create_token
 
         # Create a token but don't create a session for it
         token = _create_token()
@@ -519,10 +520,6 @@ class TestValidateSessionRefresh:
         test_credential,
     ):
         """Validate should return 401 if session disappears during refresh."""
-        from datetime import timedelta
-
-        from paskia.authsession import EXPIRES
-        from paskia.db.operations import _create_token
 
         # Create a session with an old expiry time to trigger refresh
         token = _create_token()

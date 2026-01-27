@@ -11,6 +11,7 @@ These tests cover:
 - Credential management
 """
 
+import os
 from datetime import datetime, timezone
 from uuid import UUID
 
@@ -19,6 +20,7 @@ import pytest
 import pytest_asyncio
 import uuid7
 
+from paskia import db
 from paskia.authsession import expires
 from paskia.db import (
     Credential,
@@ -78,7 +80,6 @@ async def second_org_user(test_db: DB, second_org_role: Role) -> User:
 @pytest_asyncio.fixture(scope="function")
 async def second_org_credential(test_db: DB, second_org_user: User) -> Credential:
     """Create a credential for the second org user."""
-    import os
 
     credential = Credential.create(
         credential_id=os.urandom(32),
@@ -139,7 +140,6 @@ async def org_admin_user(test_db: DB, org_admin_role: Role) -> User:
 @pytest_asyncio.fixture(scope="function")
 async def org_admin_credential(test_db: DB, org_admin_user: User) -> Credential:
     """Create a credential for the org admin user."""
-    import os
 
     credential = Credential.create(
         credential_id=os.urandom(32),
@@ -1423,7 +1423,6 @@ class TestAdminPermissions:
     ):
         """Cannot rename the auth:admin permission."""
         # Get the auth:admin permission
-        from paskia import db
 
         perms = list(db.data().permissions.values())
         admin_perm = next(p for p in perms if p.scope == "auth:admin")
@@ -1478,7 +1477,6 @@ class TestAdminPermissions:
     ):
         """Cannot delete the only auth:admin permission (would lock out admin)."""
         # Get the auth:admin permission
-        from paskia import db
 
         perms = list(db.data().permissions.values())
         admin_perm = next(p for p in perms if p.scope == "auth:admin")
@@ -1496,14 +1494,12 @@ class TestAdminPermissions:
         self, client: httpx.AsyncClient, session_token: str, test_db: DB
     ):
         """Can delete an auth:admin permission if another accessible one exists."""
-        from paskia.db import Permission
 
         # Create a second auth:admin permission (no domain restriction)
         perm2 = Permission.create(scope="auth:admin", display_name="Secondary Admin")
         create_permission(perm2)
 
         # Get the original auth:admin permission (the one created in setup)
-        from paskia import db
 
         perms = list(db.data().permissions.values())
         admin_perms = [p for p in perms if p.scope == "auth:admin"]
@@ -1524,7 +1520,6 @@ class TestAdminPermissions:
         self, client: httpx.AsyncClient, session_token: str, test_db: DB
     ):
         """Cannot delete auth:admin if remaining one has mismatched domain."""
-        from paskia.db import Permission
 
         # Create a second auth:admin permission with a different domain
         perm2 = Permission.create(
@@ -1536,7 +1531,6 @@ class TestAdminPermissions:
 
         # Cannot delete the original one because the remaining one is not accessible
         # Get the original auth:admin permission
-        from paskia import db
 
         perms = list(db.data().permissions.values())
         admin_perms = [p for p in perms if p.scope == "auth:admin" and p.domain is None]

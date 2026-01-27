@@ -5,10 +5,16 @@ from uuid import UUID
 from fastapi import Body, FastAPI, HTTPException, Query, Request, Response
 from fastapi.responses import JSONResponse
 
+from paskia import aaguid as aaguid_mod
 from paskia import db
 from paskia.authsession import EXPIRES, reset_expires
+from paskia.db import Org as OrgDC
+from paskia.db import Permission as PermDC
+from paskia.db import Role as RoleDC
+from paskia.db import User as UserDC
 from paskia.fastapi import authz
 from paskia.fastapi.session import AUTH_COOKIE
+from paskia.globals import passkey
 from paskia.util import (
     hostutil,
     passphrase,
@@ -17,6 +23,7 @@ from paskia.util import (
     useragent,
     vitedev,
 )
+from paskia.util.hostutil import normalize_host
 
 app = FastAPI()
 
@@ -137,7 +144,6 @@ async def admin_create_org(
     ctx = await authz.verify(
         auth, ["auth:admin"], host=request.headers.get("host"), match=permutil.has_all
     )
-    from ..db import Org as OrgDC  # local import to avoid cycles
 
     display_name = payload.get("display_name") or "New Organization"
     permissions = payload.get("permissions") or []
@@ -296,7 +302,6 @@ async def admin_create_role(
         raise authz.AuthException(
             status_code=403, detail="Insufficient permissions", mode="forbidden"
         )
-    from ..db import Role as RoleDC
 
     display_name = payload.get("display_name") or "New Role"
     perms = payload.get("permissions") or []
@@ -486,7 +491,6 @@ async def admin_create_user(
     role_name = payload.get("role")
     if not display_name or not role_name:
         raise ValueError("display_name and role are required")
-    from ..db import User as UserDC
 
     roles = [r for r in db.data().roles.values() if r.org == org_uuid]
     role_obj = next((r for r in roles if r.display_name == role_name), None)
@@ -674,7 +678,6 @@ async def admin_get_user_detail(
                 "sign_count": c.sign_count,
             }
         )
-    from .. import aaguid as aaguid_mod
 
     aaguid_info = aaguid_mod.filter(aaguids)
 
@@ -854,7 +857,6 @@ def _validate_permission_domain(domain: str | None) -> None:
     """Validate that domain is rp_id or a subdomain of it."""
     if domain is None:
         return
-    from paskia.globals import passkey
 
     rp_id = passkey.instance.rp_id
     if domain == rp_id or domain.endswith(f".{rp_id}"):
@@ -870,7 +872,6 @@ def _check_admin_lockout(
     Raises ValueError if this change would result in no auth:admin permissions
     being accessible from the current host.
     """
-    from paskia.util.hostutil import normalize_host
 
     normalized_host = normalize_host(current_host)
     host_without_port = normalized_host.rsplit(":", 1)[0] if normalized_host else None
@@ -905,7 +906,6 @@ def _check_admin_lockout_on_delete(perm_uuid: str, current_host: str | None) -> 
     Raises ValueError if this deletion would result in no auth:admin permissions
     being accessible from the current host.
     """
-    from paskia.util.hostutil import normalize_host
 
     normalized_host = normalize_host(current_host)
     host_without_port = normalized_host.rsplit(":", 1)[0] if normalized_host else None
@@ -970,7 +970,6 @@ async def admin_create_permission(
         match=permutil.has_all,
         max_age="5m",
     )
-    from ..db import Permission as PermDC
 
     scope = payload.get("scope") or payload.get(
         "id"
@@ -1017,8 +1016,6 @@ async def admin_update_permission(
     # Safety check: prevent admin lockout when setting domain on auth:admin
     if perm.scope == "auth:admin" or new_scope == "auth:admin":
         _check_admin_lockout(str(perm.uuid), domain_value, request.headers.get("host"))
-
-    from ..db import Permission as PermDC
 
     updated_perm = PermDC(
         scope=new_scope,

@@ -19,8 +19,9 @@ import httpx
 import pytest
 import pytest_asyncio
 
+import paskia.db.operations as ops_db
 from paskia import globals as paskia_globals
-from paskia.authsession import expires
+from paskia.authsession import expires, reset_expires
 from paskia.db import (
     Credential,
     Org,
@@ -36,9 +37,12 @@ from paskia.db import (
     create_session,
     create_user,
 )
+from paskia.db.jsonl import JsonlStore
 from paskia.db.operations import DB, _create_token
+from paskia.fastapi.mainapp import app
 from paskia.fastapi.session import AUTH_COOKIE_NAME
 from paskia.sansio import Passkey
+from paskia.util.passphrase import generate
 
 
 @pytest.fixture(scope="session")
@@ -52,8 +56,6 @@ def event_loop():
 @pytest_asyncio.fixture(scope="function")
 async def test_db() -> AsyncGenerator[DB, None]:
     """Create an in-memory JSON database for testing."""
-    import paskia.db.operations as ops_db
-    from paskia.db.jsonl import JsonlStore
 
     with tempfile.NamedTemporaryFile(suffix=".jsonl", delete=True) as f:
         db = DB()
@@ -225,8 +227,6 @@ async def regular_session_token(
 @pytest_asyncio.fixture(scope="function")
 async def reset_token(test_db: DB, test_user: User, test_credential: Credential) -> str:
     """Create a reset token for the test user."""
-    from paskia.authsession import reset_expires
-    from paskia.util.passphrase import generate
 
     token = generate()
     create_reset_token(
@@ -248,7 +248,6 @@ async def client(
     initialized first.
     """
     # Import app after globals are set
-    from paskia.fastapi.mainapp import app
 
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(

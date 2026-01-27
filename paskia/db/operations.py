@@ -13,6 +13,9 @@ import secrets
 from datetime import datetime, timezone
 from uuid import UUID
 
+import uuid7
+
+from paskia.config import SESSION_LIFETIME
 from paskia.db.jsonl import (
     DB_PATH_DEFAULT,
     JsonlStore,
@@ -28,6 +31,8 @@ from paskia.db.structs import (
     SessionContext,
     User,
 )
+from paskia.util.hostutil import normalize_host
+from paskia.util.passphrase import generate as generate_passphrase
 from paskia.util.passphrase import is_well_formed as _is_passphrase
 
 _logger = logging.getLogger(__name__)
@@ -137,7 +142,6 @@ def get_session_context(
     - Example usage in docstring (db/__init__.py:16)
     - Get session context from auth token (util/permutil.py:43)
     """
-    from paskia.util.hostutil import normalize_host
 
     if session_key not in _db.sessions:
         return None
@@ -279,7 +283,6 @@ def create_organization(org: Org, *, ctx: SessionContext | None = None) -> None:
         _db.orgs[org.uuid] = new_org
         new_org.uuid = org.uuid
         # Create Administration role with org admin permission
-        import uuid7
 
         admin_role_uuid = uuid7.create()
         # Find the auth:org:admin permission UUID
@@ -786,7 +789,6 @@ def create_credential_session(
 
     Returns the generated session token.
     """
-    from paskia.config import SESSION_LIFETIME
 
     now = datetime.now(timezone.utc)
     expiry = now + SESSION_LIFETIME
@@ -853,10 +855,6 @@ def bootstrap(
     Returns:
         The reset passphrase for admin registration.
     """
-    import uuid7
-
-    from paskia.authsession import reset_expires
-    from paskia.util.passphrase import generate as generate_passphrase
 
     # Check if system is already bootstrapped
     for p in _db.permissions.values():
@@ -876,6 +874,7 @@ def bootstrap(
     if reset_passphrase is None:
         reset_passphrase = generate_passphrase()
     if reset_expiry is None:
+        from paskia.util.timeutil import reset_expires  # noqa: PLC0415
         reset_expiry = reset_expires()
     reset_key = _reset_key(reset_passphrase)
 

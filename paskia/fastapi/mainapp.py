@@ -1,3 +1,4 @@
+import json
 import logging
 import os
 from contextlib import asynccontextmanager
@@ -7,6 +8,7 @@ from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import FileResponse, RedirectResponse
 from fastapi_vue import Frontend
 
+from paskia import globals
 from paskia.fastapi import admin, api, auth_host, ws
 from paskia.fastapi.session import AUTH_COOKIE
 from paskia.util import hostutil, passphrase, vitedev
@@ -30,9 +32,6 @@ async def lifespan(app: FastAPI):  # pragma: no cover - startup path
     so that uvicorn reload / multiprocess workers inherit the settings.
     All keys are guaranteed to exist; values are already normalized by __main__.py.
     """
-    import json
-
-    from paskia import globals
 
     config = json.loads(os.environ["PASKIA_CONFIG"])
 

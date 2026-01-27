@@ -11,6 +11,7 @@ Or via the CLI entry point (if installed):
     paskia-migrate --sql sqlite+aiosqlite:///paskia.sqlite --json paskia.jsonl
 """
 
+import argparse
 import asyncio
 import re
 from datetime import datetime, timezone
@@ -257,7 +258,6 @@ async def migrate_from_sql(
 
 def main():
     """CLI entry point for migration."""
-    import argparse
 
     parser = argparse.ArgumentParser(
         description="Migrate Paskia database from SQL to JSON"

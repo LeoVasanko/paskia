@@ -79,7 +79,7 @@ target-version = "py39"
 line-length = 88
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "N", "W", "UP"]
+select = ["E", "F", "I", "N", "W", "UP", "PLC0415"]
 ignore = ["E501"]  # Line too long
 isort.known-first-party = ["paskia"]
 

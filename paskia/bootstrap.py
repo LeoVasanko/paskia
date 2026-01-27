@@ -9,8 +9,8 @@ generating a reset link for initial admin setup.
 import asyncio
 import logging
 
-from paskia import db
-from paskia.util import hostutil
+from paskia import authsession, db, globals
+from paskia.util import hostutil, passphrase
 
 logger = logging.getLogger(__name__)
 
@@ -72,8 +72,6 @@ async def check_admin_credentials() -> bool:
 
         if not db.get_user_credential_ids(admin_user.uuid):
             # Admin exists but has no credentials, create reset link
-            from paskia import authsession
-            from paskia.util import passphrase
 
             token = passphrase.generate()
             expiry = authsession.reset_expires()
@@ -117,8 +115,6 @@ async def main():
     """Main CLI entry point for bootstrapping."""
     # Configure logging for CLI usage
     logging.basicConfig(level=logging.INFO, format="%(message)s", force=True)
-
-    from paskia import globals
 
     await globals.init()
 
