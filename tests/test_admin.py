@@ -43,10 +43,8 @@ from tests.conftest import auth_headers
 @pytest_asyncio.fixture(scope="function")
 async def second_org(test_db: DB) -> Org:
     """Create a second organization for deletion tests."""
-    org = Org(
-        uuid=uuid7.create(),
+    org = Org.create(
         display_name="Second Organization",
-        permissions=[],
     )
     create_organization(org)
     return org
@@ -57,9 +55,8 @@ async def second_org_role(
     test_db: DB, second_org: Org, admin_permission: Permission
 ) -> Role:
     """Create a role in the second org with admin permission."""
-    role = Role(
-        uuid=uuid7.create(),
-        org_uuid=second_org.uuid,
+    role = Role.create(
+        org=second_org.uuid,
         display_name="Second Org Admin Role",
         permissions=[str(admin_permission.uuid)],
     )
@@ -70,12 +67,9 @@ async def second_org_role(
 @pytest_asyncio.fixture(scope="function")
 async def second_org_user(test_db: DB, second_org_role: Role) -> User:
     """Create a user in the second org."""
-    user = User(
-        uuid=uuid7.create(),
+    user = User.create(
         display_name="Second Org User",
-        role_uuid=second_org_role.uuid,
-        created_at=datetime.now(timezone.utc),
-        visits=0,
+        role=second_org_role.uuid,
     )
     create_user(user)
     return user
@@ -86,16 +80,12 @@ async def second_org_credential(test_db: DB, second_org_user: User) -> Credentia
     """Create a credential for the second org user."""
     import os
 
-    credential = Credential(
-        uuid=uuid7.create(),
+    credential = Credential.create(
         credential_id=os.urandom(32),
-        user_uuid=second_org_user.uuid,
+        user=second_org_user.uuid,
         aaguid=UUID("00000000-0000-0000-0000-000000000000"),
         public_key=os.urandom(64),
         sign_count=0,
-        created_at=datetime.now(timezone.utc),
-        last_used=datetime.now(timezone.utc),
-        last_verified=datetime.now(timezone.utc),
     )
     create_credential(credential)
     return credential
@@ -124,9 +114,8 @@ async def org_admin_role(
     test_db: DB, test_org: Org, org_admin_permission: Permission
 ) -> Role:
     """Create a role with org admin permission only (no global admin)."""
-    role = Role(
-        uuid=uuid7.create(),
-        org_uuid=test_org.uuid,
+    role = Role.create(
+        org=test_org.uuid,
         display_name="Org Admin Role",
         permissions=[str(org_admin_permission.uuid)],
     )
@@ -137,14 +126,12 @@ async def org_admin_role(
 @pytest_asyncio.fixture(scope="function")
 async def org_admin_user(test_db: DB, org_admin_role: Role) -> User:
     """Create a user with org admin permission only."""
-    user = User(
-        uuid=uuid7.create(),
+    user = User.create(
         display_name="Org Admin User",
-        role_uuid=org_admin_role.uuid,
-        created_at=datetime.now(timezone.utc),
-        visits=5,
-        last_seen=datetime.now(timezone.utc),
+        role=org_admin_role.uuid,
     )
+    user.visits = 5
+    user.last_seen = datetime.now(timezone.utc)
     create_user(user)
     return user
 
@@ -154,16 +141,12 @@ async def org_admin_credential(test_db: DB, org_admin_user: User) -> Credential:
     """Create a credential for the org admin user."""
     import os
 
-    credential = Credential(
-        uuid=uuid7.create(),
+    credential = Credential.create(
         credential_id=os.urandom(32),
-        user_uuid=org_admin_user.uuid,
+        user=org_admin_user.uuid,
         aaguid=UUID("00000000-0000-0000-0000-000000000000"),
         public_key=os.urandom(64),
         sign_count=0,
-        created_at=datetime.now(timezone.utc),
-        last_used=datetime.now(timezone.utc),
-        last_verified=None,
     )
     create_credential(credential)
     return credential
@@ -190,11 +173,7 @@ async def org_admin_session_token(
 @pytest_asyncio.fixture(scope="function")
 async def grantable_permission(test_db: DB, test_org: Org) -> Permission:
     """Create a permission and add it to org's grantable permissions."""
-    import uuid7
-
-    perm = Permission(
-        uuid=uuid7.create(), scope="test:grantable:perm", display_name="Grantable Perm"
-    )
+    perm = Permission.create(scope="test:grantable:perm", display_name="Grantable Perm")
     create_permission(perm)
     # Add to org's grantable permissions
     add_permission_to_organization(str(test_org.uuid), perm.scope)
@@ -418,21 +397,16 @@ class TestAdminOrganizations:
         client: httpx.AsyncClient,
         session_token: str,
         test_db: DB,
-    ):
+    ):  
         """Admin should be able to delete another organization."""
-        import uuid7
-
         # Create org to delete
-        org_to_delete = Org(
-            uuid=uuid7.create(),
+        org_to_delete = Org.create(
             display_name="Org To Delete",
-            permissions=[],
         )
         create_organization(org_to_delete)
 
         # Create some org-specific permissions to test cleanup
-        org_perm = Permission(
-            uuid=uuid7.create(),
+        org_perm = Permission.create(
             scope=f"test:org:{org_to_delete.uuid}:feature",
             display_name="Org Feature",
         )
@@ -608,10 +582,7 @@ class TestAdminRoles:
     ):
         """Creating role with non-grantable permission should fail."""
         # Create permission but don't add to org
-        import uuid7
-
-        perm = Permission(
-            uuid=uuid7.create(),
+        perm = Permission.create(
             scope="test:not:grantable",
             display_name="Not Grantable",
         )
@@ -683,10 +654,7 @@ class TestAdminRoles:
         test_db: DB,
     ):
         """Adding non-grantable permission to role should fail."""
-        import uuid7
-
-        perm = Permission(
-            uuid=uuid7.create(),
+        perm = Permission.create(
             scope="test:not:grantable:update",
             display_name="Not Grantable",
         )
@@ -1110,12 +1078,9 @@ class TestAdminUsersInOrg:
     ):
         """Creating link for user without credentials should return registration link."""
         # Create user without credentials
-        user_no_cred = User(
-            uuid=uuid7.create(),
+        user_no_cred = User.create(
             display_name="User Without Creds",
-            role_uuid=user_role.uuid,
-            created_at=datetime.now(timezone.utc),
-            visits=0,
+            role=user_role.uuid,
         )
         create_user(user_no_cred)
 
@@ -1391,11 +1356,7 @@ class TestAdminPermissions:
     ):
         """Admin should be able to update a permission."""
         # Create permission first
-        import uuid7
-
-        perm = Permission(
-            uuid=uuid7.create(), scope="test:updateable", display_name="Updateable"
-        )
+        perm = Permission.create(scope="test:updateable", display_name="Updateable")
         create_permission(perm)
 
         response = await client.patch(
@@ -1412,11 +1373,7 @@ class TestAdminPermissions:
     ):
         """Updating permission with empty name should fail."""
         # Create permission first
-        import uuid7
-
-        perm = Permission(
-            uuid=uuid7.create(), scope="test:perm", display_name="Test Perm"
-        )
+        perm = Permission.create(scope="test:perm", display_name="Test Perm")
         create_permission(perm)
 
         response = await client.patch(
@@ -1433,11 +1390,7 @@ class TestAdminPermissions:
     ):
         """Admin should be able to rename a permission."""
         # Create permission first
-        import uuid7
-
-        perm = Permission(
-            uuid=uuid7.create(), scope="test:renameable2", display_name="Renameable"
-        )
+        perm = Permission.create(scope="test:renameable2", display_name="Renameable")
         create_permission(perm)
 
         response = await client.post(
@@ -1480,11 +1433,7 @@ class TestAdminPermissions:
         self, client: httpx.AsyncClient, session_token: str, test_db: DB
     ):
         """Renaming permission can also update display name."""
-        import uuid7
-
-        perm = Permission(
-            uuid=uuid7.create(), scope="test:rename:withname", display_name="Old Name"
-        )
+        perm = Permission.create(scope="test:rename:withname", display_name="Old Name")
         create_permission(perm)
 
         response = await client.post(
@@ -1504,11 +1453,7 @@ class TestAdminPermissions:
     ):
         """Admin should be able to delete a permission."""
         # Create permission first
-        import uuid7
-
-        perm = Permission(
-            uuid=uuid7.create(), scope="test:deleteable", display_name="Deleteable"
-        )
+        perm = Permission.create(scope="test:deleteable", display_name="Deleteable")
         create_permission(perm)
 
         response = await client.delete(
@@ -1537,14 +1482,10 @@ class TestAdminPermissions:
         self, client: httpx.AsyncClient, session_token: str, test_db: DB
     ):
         """Can delete an auth:admin permission if another accessible one exists."""
-        import uuid7
-
         from paskia.db import Permission
 
         # Create a second auth:admin permission (no domain restriction)
-        perm2 = Permission(
-            uuid=uuid7.create(), scope="auth:admin", display_name="Secondary Admin"
-        )
+        perm2 = Permission.create(scope="auth:admin", display_name="Secondary Admin")
         create_permission(perm2)
 
         # Now we can delete the original one
@@ -1561,13 +1502,10 @@ class TestAdminPermissions:
         self, client: httpx.AsyncClient, session_token: str, test_db: DB
     ):
         """Cannot delete auth:admin if remaining one has mismatched domain."""
-        import uuid7
-
         from paskia.db import Permission
 
         # Create a second auth:admin permission with a different domain
-        perm2 = Permission(
-            uuid=uuid7.create(),
+        perm2 = Permission.create(
             scope="auth:admin",
             display_name="Other Domain Admin",
             domain="other.example.com",

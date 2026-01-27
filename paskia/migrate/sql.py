@@ -26,10 +26,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 from paskia.db import (
-    Credential,
     Org,
-    ResetToken,
-    Role,
 )
 
 
@@ -46,6 +43,58 @@ class _LegacyUser:
     visits: int = 0
 
 
+# Legacy Credential class for SQL schema (uses 'user_uuid' not 'user')
+@dataclass
+class _LegacyCredential:
+    """Credential as stored in the old SQL schema with user_uuid field."""
+
+    uuid: UUID
+    credential_id: bytes
+    user_uuid: UUID
+    aaguid: UUID
+    public_key: bytes
+    sign_count: int
+    created_at: datetime
+    last_used: datetime | None = None
+    last_verified: datetime | None = None
+
+
+# Legacy Role class for SQL schema (uses 'org_uuid' not 'org')
+@dataclass
+class _LegacyRole:
+    """Role as stored in the old SQL schema with org_uuid field."""
+
+    uuid: UUID
+    org_uuid: UUID
+    display_name: str
+    permissions: list[str] | None = None
+
+
+# Legacy Session class for SQL schema (uses 'key' as field, 'user_uuid', 'credential_uuid')
+@dataclass
+class _LegacySession:
+    """Session as stored in the old SQL schema."""
+
+    key: bytes
+    user_uuid: UUID
+    credential_uuid: UUID
+    host: str
+    ip: str
+    user_agent: str
+    renewed: datetime
+
+
+# Legacy ResetToken class for SQL schema (uses 'key' as field, 'user_uuid')
+@dataclass
+class _LegacyResetToken:
+    """ResetToken as stored in the old SQL schema."""
+
+    key: bytes
+    user_uuid: UUID
+    token_type: str
+    expiry: datetime
+
+
 # Local Permission class for SQL schema (uses 'id' not 'uuid' + 'scope')
 @dataclass
 class SqlPermission:
@@ -56,20 +105,6 @@ class SqlPermission:
 
 
 DB_PATH_DEFAULT = "sqlite+aiosqlite:///paskia.sqlite"
-
-
-# Local Session class for SQL schema (uses 'renewed' not 'expiry')
-@dataclass
-class _SqlSession:
-    """Session as stored in the old SQL schema with renewed timestamp."""
-
-    key: bytes
-    user_uuid: UUID
-    credential_uuid: UUID
-    host: str
-    ip: str
-    user_agent: str
-    renewed: datetime
 
 
 def _normalize_dt(value: datetime | None) -> datetime | None:
@@ -92,7 +127,9 @@ class OrgModel(Base):
 
     def as_dataclass(self):
         # Base Org without permissions/roles (filled by data accessors)
-        return Org(UUID(bytes=self.uuid), self.display_name)
+        org = Org(display_name=self.display_name)
+        org.uuid = UUID(bytes=self.uuid)
+        return org
 
     @staticmethod
     def from_dataclass(org: Org):
@@ -110,14 +147,14 @@ class RoleModel(Base):
 
     def as_dataclass(self):
         # Base Role without permissions (filled by data accessors)
-        return Role(
+        return _LegacyRole(
             uuid=UUID(bytes=self.uuid),
             org_uuid=UUID(bytes=self.org_uuid),
             display_name=self.display_name,
         )
 
     @staticmethod
-    def from_dataclass(role: Role):
+    def from_dataclass(role: _LegacyRole):
         return RoleModel(
             uuid=role.uuid.bytes,
             org_uuid=role.org_uuid.bytes,
@@ -187,7 +224,7 @@ class CredentialModel(Base):
     )
 
     def as_dataclass(self):
-        return Credential(
+        return _LegacyCredential(
             uuid=UUID(bytes=self.uuid),
             credential_id=self.credential_id,
             user_uuid=UUID(bytes=self.user_uuid),
@@ -222,7 +259,7 @@ class SessionModel(Base):
     )
 
     def as_dataclass(self):
-        return _SqlSession(
+        return _LegacySession(
             key=self.key,
             user_uuid=UUID(bytes=self.user_uuid),
             credential_uuid=UUID(bytes=self.credential_uuid),
@@ -233,7 +270,7 @@ class SessionModel(Base):
         )
 
     @staticmethod
-    def from_dataclass(session: _SqlSession):
+    def from_dataclass(session: _LegacySession):
         return SessionModel(
             key=session.key,
             user_uuid=session.user_uuid.bytes,
@@ -255,8 +292,8 @@ class ResetTokenModel(Base):
     token_type: Mapped[str] = mapped_column(String, nullable=False)
     expiry: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
-    def as_dataclass(self) -> ResetToken:
-        return ResetToken(
+    def as_dataclass(self) -> _LegacyResetToken:
+        return _LegacyResetToken(
             key=self.key,
             user_uuid=UUID(bytes=self.user_uuid),
             token_type=self.token_type,

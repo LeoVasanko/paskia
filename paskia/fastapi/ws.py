@@ -136,7 +136,7 @@ async def websocket_authenticate(ws: WebSocket, auth=AUTH_COOKIE):
         )
 
     # If reauth mode, verify the credential belongs to the session's user
-    if session_user_uuid and stored_cred.user_uuid != session_user_uuid:
+    if session_user_uuid and stored_cred.user != session_user_uuid:
         raise ValueError("This passkey belongs to a different account")
 
     # Verify the credential matches the stored data
@@ -154,7 +154,7 @@ async def websocket_authenticate(ws: WebSocket, auth=AUTH_COOKIE):
         raise ValueError(f"Host must be the same as or a subdomain of {rp_id}")
 
     token = db.login(
-        user_uuid=stored_cred.user_uuid,
+        user_uuid=stored_cred.user,
         credential=stored_cred,
         host=normalized_host,
         ip=metadata.get("ip") or "",
@@ -164,7 +164,7 @@ async def websocket_authenticate(ws: WebSocket, auth=AUTH_COOKIE):
 
     await ws.send_json(
         {
-            "user_uuid": str(stored_cred.user_uuid),
+            "user_uuid": str(stored_cred.user),
             "session_token": token,
         }
     )

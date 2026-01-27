@@ -76,7 +76,9 @@ class TestValidateEndpoint:
         assert response.status_code == 200
         data = response.json()
         assert data["valid"] is True
-        assert "user_uuid" in data
+        assert "ctx" in data
+        assert "user" in data["ctx"]
+        assert "uuid" in data["ctx"]["user"]
 
     @pytest.mark.asyncio
     async def test_validate_with_permission_check(
@@ -243,9 +245,9 @@ class TestUserInfoEndpoint:
         )
         assert response.status_code == 200
         data = response.json()
-        assert "user" in data
-        assert data["user"]["user_uuid"] == str(test_user.uuid)
-        assert data["user"]["user_name"] == test_user.display_name
+        assert "ctx" in data
+        assert data["ctx"]["user"]["uuid"] == str(test_user.uuid)
+        assert data["ctx"]["user"]["display_name"] == test_user.display_name
 
     @pytest.mark.asyncio
     async def test_user_info_includes_credentials(
@@ -286,7 +288,8 @@ class TestUserInfoEndpoint:
         )
         assert response.status_code == 200
         data = response.json()
-        assert "permissions" in data
+        assert "ctx" in data
+        assert "permissions" in data["ctx"]
 
 
 class TestSetSessionEndpoint:
@@ -392,47 +395,44 @@ class TestForwardAuthHtmlResponse:
         assert data["auth"]["mode"] == "login"
 
 
-class TestUserInfoWithResetToken:
-    """Tests for user-info endpoint with reset tokens"""
+class TestTokenInfoEndpoint:
+    """Tests for token-info endpoint with reset tokens"""
 
     @pytest.mark.asyncio
-    async def test_user_info_with_invalid_reset_token(self, client: httpx.AsyncClient):
-        """User info with invalid reset token format should return 401."""
-        # Invalid format - not a well-formed passphrase (wrong separator)
-        response = await client.post(
-            "/auth/api/user-info?reset=invalid-token-format",
+    async def test_token_info_with_invalid_token(self, client: httpx.AsyncClient):
+        """Token info with invalid token format should return 400."""
+        response = await client.get(
+            "/auth/api/token-info",
+            headers={"Authorization": "Bearer invalid-token-format"},
         )
-        # Invalid format raises ValueError which gets converted to 401 HTTPException
-        assert response.status_code == 401
-        data = response.json()
-        assert "Invalid reset token" in data["detail"]
+        assert response.status_code == 400
 
     @pytest.mark.asyncio
-    async def test_user_info_with_nonexistent_reset_token(
-        self, client: httpx.AsyncClient
-    ):
-        """User info with well-formed but non-existent reset token should return 401."""
-        # We need a well-formed passphrase that doesn't exist in DB
+    async def test_token_info_with_nonexistent_token(self, client: httpx.AsyncClient):
+        """Token info with well-formed but non-existent token should return 401."""
         from paskia.util.passphrase import generate
 
-        fake_token = generate()  # Generates a well-formed token
-        response = await client.post(
-            f"/auth/api/user-info?reset={fake_token}",
+        fake_token = generate()
+        response = await client.get(
+            "/auth/api/token-info",
+            headers={"Authorization": f"Bearer {fake_token}"},
         )
-        # Should return 401 for non-existent token
         assert response.status_code == 401
 
     @pytest.mark.asyncio
-    async def test_user_info_with_valid_reset_token(
+    async def test_token_info_with_valid_token(
         self, client: httpx.AsyncClient, reset_token: str, test_user
     ):
-        """User info with valid reset token should return minimal user info."""
-        response = await client.post(
-            f"/auth/api/user-info?reset={reset_token}",
+        """Token info with valid reset token should return token type and display name."""
+        response = await client.get(
+            "/auth/api/token-info",
+            headers={"Authorization": f"Bearer {reset_token}"},
         )
         assert response.status_code == 200
         data = response.json()
-        assert "user" in data
+        assert "token_type" in data
+        assert "display_name" in data
+        assert data["display_name"] == test_user.display_name
 
 
 class TestSetSessionErrors:

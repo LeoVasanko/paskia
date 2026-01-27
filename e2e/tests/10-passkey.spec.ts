@@ -138,9 +138,9 @@ test.describe('Passkey Authentication E2E', () => {
     const validation = await validateSession(page, baseUrl, sessionToken)
 
     expect(validation.valid).toBe(true)
-    expect(validation.user_uuid).toBe(userUuid)
+    expect(validation.ctx.user.uuid).toBe(userUuid)
 
-    console.log(`✓ Session validated for user: ${validation.user_uuid}`)
+    console.log(`✓ Session validated for user: ${validation.ctx.user.uuid}`)
   })
 
   test('should retrieve user info', async ({ page }) => {
@@ -148,8 +148,8 @@ test.describe('Passkey Authentication E2E', () => {
 
     const userInfo = await getUserInfo(page, baseUrl, sessionToken)
 
-    expect(userInfo.user.user_uuid).toBe(userUuid)
-    expect(userInfo.user.user_name).toBe('Admin User')
+    expect(userInfo.ctx.user.uuid).toBe(userUuid)
+    expect(userInfo.ctx.user.display_name).toBe('Admin User')
     expect(userInfo.credentials).toBeDefined()
     expect(userInfo.credentials.length).toBeGreaterThanOrEqual(1)
 
@@ -169,7 +169,7 @@ test.describe('Passkey Authentication E2E', () => {
     await page.screenshot({ path: 'test-results/profile-view.png' })
     console.log('✓ Screenshot saved: test-results/profile-view.png')
 
-    console.log(`✓ User info retrieved: ${userInfo.user.user_name}`)
+    console.log(`✓ User info retrieved: ${userInfo.ctx.user.display_name}`)
     console.log(`✓ Credentials count: ${userInfo.credentials.length}`)
   })
 
@@ -219,7 +219,7 @@ test.describe('Passkey Authentication E2E', () => {
     const validation = await validateSession(page, baseUrl, sessionToken)
 
     expect(validation.valid).toBe(true)
-    expect(validation.user_uuid).toBe(userUuid)
+    expect(validation.ctx.user.uuid).toBe(userUuid)
 
     console.log(`✓ New session validated`)
   })
@@ -291,8 +291,8 @@ test.describe('Device Addition Dialog', () => {
     // Wait for the profile view to load
     await page.waitForSelector('[data-view="profile"]', { timeout: 5000 })
 
-    // Click the "Add Another Device" button
-    const addDeviceButton = page.getByRole('button', { name: 'Add Another Device' })
+    // Click the "Another Device" button
+    const addDeviceButton = page.getByRole('button', { name: 'Another Device' })
     await expect(addDeviceButton).toBeVisible()
     await addDeviceButton.click()
 
@@ -301,7 +301,7 @@ test.describe('Device Addition Dialog', () => {
     await expect(dialog).toBeVisible({ timeout: 5000 })
 
     // Verify dialog contains expected elements
-    await expect(dialog.locator('h2')).toContainText('Device Registration Link')
+    await expect(dialog.locator('h2')).toContainText('Add Another Device')
 
     // Wait for QR code to be generated (canvas should have content)
     const qrCanvas = dialog.locator('.qr-code')
@@ -318,16 +318,16 @@ test.describe('Device Addition Dialog', () => {
     expect(linkHref).toContain('http://localhost:4404/auth/')
     console.log(`✓ Device link displayed: ${linkText} (href: ${linkHref})`)
 
-    // Verify expiration warning is shown
-    await expect(dialog.locator('.reg-help')).toContainText('Expires')
+    // Verify help text is shown
+    await expect(dialog.locator('.reg-help')).toContainText('Scan this QR code')
 
     // Take screenshot of the dialog
     await dialog.screenshot({ path: 'test-results/device-addition-dialog.png' })
     console.log(`✓ Screenshot saved: test-results/device-addition-dialog.png`)
 
-    // Verify Copy Link button exists
-    const copyButton = dialog.getByRole('button', { name: 'Copy Link' })
-    await expect(copyButton).toBeVisible()
+    // Verify the QR link element is clickable (copy functionality is built into clicking it)
+    const qrLink = dialog.locator('a.qr-link')
+    await expect(qrLink).toBeVisible()
 
     // Close the dialog (use the text button, not the icon button)
     const closeButton = dialog.locator('button.btn-secondary', { hasText: 'Close' })
@@ -357,12 +357,12 @@ test.describe('Device Addition Dialog', () => {
     await page.waitForSelector('[data-view="profile"]', { timeout: 5000 })
 
     // Open the dialog
-    await page.getByRole('button', { name: 'Add Another Device' }).click()
+    await page.getByRole('button', { name: 'Another Device' }).click()
     const dialog = page.locator('.device-dialog')
     await expect(dialog).toBeVisible({ timeout: 5000 })
 
     // Extract the reset token from the displayed URL
-    const linkText = dialog.locator('.qr-link p')
+    const linkText = dialog.locator('.qr-link .link-text')
     const linkContent = await linkText.textContent()
 
     // URL format: localhost/auth/word1.word2.word3.word4.word5
@@ -405,7 +405,7 @@ test.describe('Device Addition Dialog', () => {
   })
 })
 
-test.describe('ProfileView - Add New Passkey', () => {
+test.describe('ProfileView - Register New', () => {
   const baseUrl = process.env.BASE_URL || 'http://localhost:4404'
 
   test('should show credentials list in profile', async ({ page }) => {
@@ -427,7 +427,7 @@ test.describe('ProfileView - Add New Passkey', () => {
     console.log(`✓ Profile shows ${credentialItems} credential(s) in list`)
   })
 
-  test('should add a new passkey using Add New Passkey button', async ({ page }) => {
+  test('should add a new passkey using Register New button', async ({ page }) => {
     const sessionToken = getSavedSessionToken()
     test.skip(!sessionToken, 'Requires saved session token')
 
@@ -444,8 +444,8 @@ test.describe('ProfileView - Add New Passkey', () => {
     const initialCredentialCount = await page.locator('.credential-item').count()
     console.log(`Initial credential count: ${initialCredentialCount}`)
 
-    // Click "Add New Passkey" button
-    const addPasskeyBtn = page.locator('button:has-text("Add New Passkey")')
+    // Click "Register New" button
+    const addPasskeyBtn = page.locator('button:has-text("Register New")')
     await expect(addPasskeyBtn).toBeVisible()
     await addPasskeyBtn.click()
 
@@ -490,7 +490,7 @@ test.describe('ProfileView - Add New Passkey', () => {
 
     // Try to add a passkey - with excludeCredentials the authenticator should
     // prevent re-registration of the same credential
-    const addPasskeyBtn = page.locator('button:has-text("Add New Passkey")')
+    const addPasskeyBtn = page.locator('button:has-text("Register New")')
     await expect(addPasskeyBtn).toBeVisible()
     await addPasskeyBtn.click()
 
@@ -541,8 +541,8 @@ test.describe('ProfileView - Multi-Authenticator', () => {
     await page.waitForSelector('.credential-list', { timeout: 10000 })
     const initialCredentialCount = await page.locator('.credential-item').count()
 
-    // Click "Add New Passkey" button
-    const addPasskeyBtn = page.locator('button:has-text("Add New Passkey")')
+    // Click "Register New" button
+    const addPasskeyBtn = page.locator('button:has-text("Register New")')
     await expect(addPasskeyBtn).toBeVisible()
     await addPasskeyBtn.click()
 

@@ -176,14 +176,12 @@ class Passkey:
             expected_origin=origin,
             expected_rp_id=self.rp_id,
         )
-        return Credential(
-            uuid=uuid7.create(),
+        return Credential.create(
             credential_id=credential.raw_id,
-            user_uuid=user_uuid,
+            user=user_uuid,
             aaguid=UUID(registration.aaguid),
             public_key=registration.credential_public_key,
             sign_count=registration.sign_count,
-            created_at=datetime.now(timezone.utc),
         )
 
     ### Authentication Methods ###

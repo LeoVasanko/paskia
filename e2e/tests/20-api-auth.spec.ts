@@ -268,7 +268,7 @@ test.describe('API Mode - 401 Login Flow', () => {
     // Wait for API call to complete and verify result
     const result = await apiCallPromise
     expect(result.status).toBe(200)
-    expect(result.data.user).toBeDefined()
+    expect(result.data.ctx).toBeDefined()
     console.log('✓ API call succeeded after authentication')
 
     // Save the session for other tests
