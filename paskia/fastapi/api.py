@@ -26,7 +26,7 @@ from paskia.util import hostutil, htmlutil, passphrase, userinfo, vitedev
 
 bearer_auth = HTTPBearer(auto_error=True)
 
-app = FastAPI()
+app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
 
 app.mount("/user", user.app)
 

@@ -19,7 +19,7 @@ from paskia.fastapi import authz, session
 from paskia.fastapi.session import AUTH_COOKIE
 from paskia.util import hostutil, passphrase
 
-app = FastAPI()
+app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
 
 
 @app.exception_handler(authz.AuthException)

@@ -25,7 +25,7 @@ from paskia.util import (
 )
 from paskia.util.hostutil import normalize_host
 
-app = FastAPI()
+app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
 
 
 def is_global_admin(ctx) -> bool:
