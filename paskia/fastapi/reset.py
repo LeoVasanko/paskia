@@ -16,7 +16,7 @@ import asyncio
 from uuid import UUID
 
 from paskia import authsession as _authsession
-from paskia import db as _db
+from paskia import db
 from paskia.util import hostutil, passphrase
 
 
@@ -26,23 +26,30 @@ async def _resolve_targets(query: str | None):
         targets: list[tuple] = []
         try:
             q_uuid = UUID(query)
-            perm_orgs = _db.get_permission_organizations("auth:admin")
-            for o in perm_orgs:
-                users = _db.get_organization_users(str(o.uuid))
-                for u, role_name in users:
-                    if u.uuid == q_uuid:
-                        return [(u, role_name)]
+            p = next(
+                (p for p in db.data().permissions.values() if p.scope == "auth:admin"),
+                None,
+            )
+            if p:
+                for org_uuid in p.orgs:
+                    users = db.get_organization_users(org_uuid)
+                    for u, role_name in users:
+                        if u.uuid == q_uuid:
+                            return [(u, role_name)]
             # UUID not found among admin orgs -> fall back to substring search (rare case)
         except ValueError:
             pass
         # Substring search
         needle = query.lower()
-        perm_orgs = _db.get_permission_organizations("auth:admin")
-        for o in perm_orgs:
-            users = _db.get_organization_users(str(o.uuid))
-            for u, role_name in users:
-                if needle in (u.display_name or "").lower():
-                    targets.append((u, role_name))
+        p = next(
+            (p for p in db.data().permissions.values() if p.scope == "auth:admin"), None
+        )
+        if p:
+            for org_uuid in p.orgs:
+                users = db.get_organization_users(org_uuid)
+                for u, role_name in users:
+                    if needle in (u.display_name or "").lower():
+                        targets.append((u, role_name))
         # De-duplicate
         seen = set()
         deduped = []
@@ -52,10 +59,13 @@ async def _resolve_targets(query: str | None):
                 deduped.append((u, role_name))
         return deduped
     # No query -> master admin
-    perm_orgs = _db.get_permission_organizations("auth:admin")
-    if not perm_orgs:
+    p = next(
+        (p for p in db.data().permissions.values() if p.scope == "auth:admin"), None
+    )
+    if not p or not p.orgs:
         return []
-    users = _db.get_organization_users(str(perm_orgs[0].uuid))
+    first_org_uuid = next(iter(p.orgs))
+    users = db.get_organization_users(first_org_uuid)
     admin_users = [pair for pair in users if pair[1] == "Administration"]
     return admin_users[:1]
 
@@ -63,7 +73,7 @@ async def _resolve_targets(query: str | None):
 async def _create_reset(user, role_name: str):
     token = passphrase.generate()
     expiry = _authsession.reset_expires()
-    _db.create_reset_token(
+    db.create_reset_token(
         passphrase=token,
         user_uuid=user.uuid,
         expiry=expiry,
