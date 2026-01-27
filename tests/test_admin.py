@@ -176,7 +176,7 @@ async def grantable_permission(test_db: DB, test_org: Org) -> Permission:
     perm = Permission.create(scope="test:grantable:perm", display_name="Grantable Perm")
     create_permission(perm)
     # Add to org's grantable permissions
-    add_permission_to_organization(str(test_org.uuid), perm.scope)
+    add_permission_to_organization(test_org.uuid, perm.uuid)
     return perm
 
 

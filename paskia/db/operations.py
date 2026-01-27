@@ -284,15 +284,13 @@ def get_permission_organizations(scope: str) -> list[Org]:
     return []
 
 
-def get_organization(uuid: str | UUID) -> Org | None:
+def get_organization(uuid: UUID) -> Org | None:
     """Get organization by UUID.
 
     Call sites:
     - Get organization when creating a role to check grantable permissions (admin.py:271)
     - Get organization when adding permission to role to check if org can grant it (admin.py:352)
     """
-    if isinstance(uuid, str):
-        uuid = UUID(uuid)
     return build_org(uuid, include_roles=True) if uuid in _db._data.orgs else None
 
 
@@ -306,7 +304,7 @@ def list_organizations() -> list[Org]:
     return [build_org(uuid, include_roles=True) for uuid in _db._data.orgs]
 
 
-def get_organization_users(org_uuid: str | UUID) -> list[tuple[User, str]]:
+def get_organization_users(org_uuid: UUID) -> list[tuple[User, str]]:
     """Get all users in an organization with their role names.
 
     Call sites:
@@ -314,8 +312,6 @@ def get_organization_users(org_uuid: str | UUID) -> list[tuple[User, str]]:
     - Get users from organizations with auth:admin for reset targets (reset.py:31,42,58)
     - Get users from organization to check if admin has credentials (bootstrap.py:73)
     """
-    if isinstance(org_uuid, str):
-        org_uuid = UUID(org_uuid)
     role_map = {
         rid: r.display_name for rid, r in _db._data.roles.items() if r.org == org_uuid
     }
@@ -326,7 +322,7 @@ def get_organization_users(org_uuid: str | UUID) -> list[tuple[User, str]]:
     ]
 
 
-def get_role(uuid: str | UUID) -> Role | None:
+def get_role(uuid: UUID) -> Role | None:
     """Get role by UUID.
 
     Call sites:
@@ -335,24 +331,20 @@ def get_role(uuid: str | UUID) -> Role | None:
     - Get role to remove permission from it (admin.py:380)
     - Get role to delete it (admin.py:421)
     """
-    if isinstance(uuid, str):
-        uuid = UUID(uuid)
     return build_role(uuid) if uuid in _db._data.roles else None
 
 
-def get_roles_by_organization(org_uuid: str | UUID) -> list[Role]:
+def get_roles_by_organization(org_uuid: UUID) -> list[Role]:
     """Get all roles in an organization.
 
     Call sites:
     - Get roles by organization when creating a user to find the role by name (admin.py:459)
     - Get roles by organization when updating user role to validate the new role name (admin.py:498)
     """
-    if isinstance(org_uuid, str):
-        org_uuid = UUID(org_uuid)
     return [build_role(rid) for rid, r in _db._data.roles.items() if r.org == org_uuid]
 
 
-def get_user_by_uuid(uuid: str | UUID) -> User | None:
+def get_user_by_uuid(uuid: UUID) -> User | None:
     """Get user by UUID.
 
     Call sites:
@@ -360,12 +352,10 @@ def get_user_by_uuid(uuid: str | UUID) -> User | None:
     - Get user from reset token for registration info (api.py:127)
     - Get user for listing user credentials in admin API (admin.py:594)
     """
-    if isinstance(uuid, str):
-        uuid = UUID(uuid)
     return build_user(uuid) if uuid in _db._data.users else None
 
 
-def get_user_organization(user_uuid: str | UUID) -> tuple[Org, str]:
+def get_user_organization(user_uuid: UUID) -> tuple[Org, str]:
     """Get the organization a user belongs to and their role name.
 
     Raises ValueError if user not found.
@@ -378,8 +368,6 @@ def get_user_organization(user_uuid: str | UUID) -> tuple[Org, str]:
     - Get user's organization for deleting user credential (admin.py:754)
     - Get user's organization for deleting user session (admin.py:783)
     """
-    if isinstance(user_uuid, str):
-        user_uuid = UUID(user_uuid)
     if user_uuid not in _db._data.users:
         raise ValueError(f"User {user_uuid} not found")
     role_uuid = _db._data.users[user_uuid].role
@@ -403,7 +391,7 @@ def get_credential_by_id(credential_id: bytes) -> Credential | None:
     return None
 
 
-def get_credentials_by_user_uuid(user_uuid: str | UUID) -> list[Credential]:
+def get_credentials_by_user_uuid(user_uuid: UUID) -> list[Credential]:
     """Get all credentials for a user.
 
     Call sites:
@@ -414,8 +402,6 @@ def get_credentials_by_user_uuid(user_uuid: str | UUID) -> list[Credential]:
     - Get credentials to check if admin user has credentials (bootstrap.py:81)
     - Get credentials for user info formatting (userinfo.py:51)
     """
-    if isinstance(user_uuid, str):
-        user_uuid = UUID(user_uuid)
     return [
         build_credential(cid)
         for cid, c in _db._data.credentials.items()
@@ -440,15 +426,13 @@ def get_session(key: str) -> Session | None:
     return build_session(key)
 
 
-def list_sessions_for_user(user_uuid: str | UUID) -> list[Session]:
+def list_sessions_for_user(user_uuid: UUID) -> list[Session]:
     """Get all active sessions for a user.
 
     Call sites:
     - List sessions for user info (userinfo.py:75)
     - List sessions for user details API (admin.py:651)
     """
-    if isinstance(user_uuid, str):
-        user_uuid = UUID(user_uuid)
     now = datetime.now(timezone.utc)
     return [
         build_session(key)
@@ -664,24 +648,20 @@ def create_organization(org: Org, *, ctx: SessionContext | None = None) -> None:
 
 
 def update_organization_name(
-    uuid: str | UUID,
+    uuid: UUID,
     display_name: str,
     *,
     ctx: SessionContext | None = None,
 ) -> None:
     """Update organization display name."""
-    if isinstance(uuid, str):
-        uuid = UUID(uuid)
     if uuid not in _db._data.orgs:
         raise ValueError(f"Organization {uuid} not found")
     with _db.transaction("Renamed organization", ctx):
         _db._data.orgs[uuid].display_name = display_name
 
 
-def delete_organization(uuid: str | UUID, *, ctx: SessionContext | None = None) -> None:
+def delete_organization(uuid: UUID, *, ctx: SessionContext | None = None) -> None:
     """Delete organization and all its roles/users."""
-    if isinstance(uuid, str):
-        uuid = UUID(uuid)
     if uuid not in _db._data.orgs:
         raise ValueError(f"Organization {uuid} not found")
     with _db.transaction("Deleted organization", ctx):
@@ -700,31 +680,14 @@ def delete_organization(uuid: str | UUID, *, ctx: SessionContext | None = None) 
 
 
 def add_permission_to_organization(
-    org_uuid: str | UUID,
-    permission_id: str | UUID,
+    org_uuid: UUID,
+    permission_uuid: UUID,
     *,
     ctx: SessionContext | None = None,
 ) -> None:
     """Grant a permission to an organization by UUID."""
-    if isinstance(org_uuid, str):
-        org_uuid = UUID(org_uuid)
     if org_uuid not in _db._data.orgs:
         raise ValueError(f"Organization {org_uuid} not found")
-
-    # Convert permission_id to UUID
-    if isinstance(permission_id, str):
-        try:
-            permission_uuid = UUID(permission_id)
-        except ValueError:
-            # It's a scope - look up the UUID (backwards compat)
-            for pid, p in _db._data.permissions.items():
-                if p.scope == permission_id:
-                    permission_uuid = pid
-                    break
-            else:
-                raise ValueError(f"Permission {permission_id} not found")
-    else:
-        permission_uuid = permission_id
 
     if permission_uuid not in _db._data.permissions:
         raise ValueError(f"Permission {permission_uuid} not found")
@@ -734,31 +697,14 @@ def add_permission_to_organization(
 
 
 def remove_permission_from_organization(
-    org_uuid: str | UUID,
-    permission_id: str | UUID,
+    org_uuid: UUID,
+    permission_uuid: UUID,
     *,
     ctx: SessionContext | None = None,
 ) -> None:
     """Remove a permission from an organization by UUID."""
-    if isinstance(org_uuid, str):
-        org_uuid = UUID(org_uuid)
     if org_uuid not in _db._data.orgs:
         raise ValueError(f"Organization {org_uuid} not found")
-
-    # Convert permission_id to UUID
-    if isinstance(permission_id, str):
-        try:
-            permission_uuid = UUID(permission_id)
-        except ValueError:
-            # It's a scope - look up the UUID (backwards compat)
-            for pid, p in _db._data.permissions.items():
-                if p.scope == permission_id:
-                    permission_uuid = pid
-                    break
-            else:
-                return  # Permission not found, silently return
-    else:
-        permission_uuid = permission_id
 
     if permission_uuid not in _db._data.permissions:
         return  # Permission not found, silently return
@@ -778,14 +724,12 @@ def create_role(role: Role, *, ctx: SessionContext | None = None) -> None:
 
 
 def update_role_name(
-    uuid: str | UUID,
+    uuid: UUID,
     display_name: str,
     *,
     ctx: SessionContext | None = None,
 ) -> None:
     """Update role display name."""
-    if isinstance(uuid, str):
-        uuid = UUID(uuid)
     if uuid not in _db._data.roles:
         raise ValueError(f"Role {uuid} not found")
     with _db.transaction("Renamed role", ctx):
@@ -793,16 +737,12 @@ def update_role_name(
 
 
 def add_permission_to_role(
-    role_uuid: str | UUID,
-    permission_uuid: str | UUID,
+    role_uuid: UUID,
+    permission_uuid: UUID,
     *,
     ctx: SessionContext | None = None,
 ) -> None:
     """Add permission to role by UUID."""
-    if isinstance(role_uuid, str):
-        role_uuid = UUID(role_uuid)
-    if isinstance(permission_uuid, str):
-        permission_uuid = UUID(permission_uuid)
     if role_uuid not in _db._data.roles:
         raise ValueError(f"Role {role_uuid} not found")
     if permission_uuid not in _db._data.permissions:
@@ -812,26 +752,20 @@ def add_permission_to_role(
 
 
 def remove_permission_from_role(
-    role_uuid: str | UUID,
-    permission_uuid: str | UUID,
+    role_uuid: UUID,
+    permission_uuid: UUID,
     *,
     ctx: SessionContext | None = None,
 ) -> None:
     """Remove permission from role by UUID."""
-    if isinstance(role_uuid, str):
-        role_uuid = UUID(role_uuid)
-    if isinstance(permission_uuid, str):
-        permission_uuid = UUID(permission_uuid)
     if role_uuid not in _db._data.roles:
         raise ValueError(f"Role {role_uuid} not found")
     with _db.transaction("Revoked role permission", ctx):
         _db._data.roles[role_uuid].permissions.pop(permission_uuid, None)
 
 
-def delete_role(uuid: str | UUID, *, ctx: SessionContext | None = None) -> None:
+def delete_role(uuid: UUID, *, ctx: SessionContext | None = None) -> None:
     """Delete a role."""
-    if isinstance(uuid, str):
-        uuid = UUID(uuid)
     if uuid not in _db._data.roles:
         raise ValueError(f"Role {uuid} not found")
     # Check no users have this role
@@ -852,7 +786,7 @@ def create_user(new_user: User, *, ctx: SessionContext | None = None) -> None:
 
 
 def update_user_display_name(
-    uuid: str | UUID,
+    uuid: UUID,
     display_name: str,
     *,
     ctx: SessionContext | None = None,
@@ -873,16 +807,12 @@ def update_user_display_name(
 
 
 def update_user_role(
-    uuid: str | UUID,
-    role_uuid: str | UUID,
+    uuid: UUID,
+    role_uuid: UUID,
     *,
     ctx: SessionContext | None = None,
 ) -> None:
     """Update user's role."""
-    if isinstance(uuid, str):
-        uuid = UUID(uuid)
-    if isinstance(role_uuid, str):
-        role_uuid = UUID(role_uuid)
     if uuid not in _db._data.users:
         raise ValueError(f"User {uuid} not found")
     if role_uuid not in _db._data.roles:
@@ -892,14 +822,12 @@ def update_user_role(
 
 
 def update_user_role_in_organization(
-    user_uuid: str | UUID,
+    user_uuid: UUID,
     role_name: str,
     *,
     ctx: SessionContext | None = None,
 ) -> None:
     """Update user's role by role name within their current organization."""
-    if isinstance(user_uuid, str):
-        user_uuid = UUID(user_uuid)
     if user_uuid not in _db._data.users:
         raise ValueError(f"User {user_uuid} not found")
     current_role_uuid = _db._data.users[user_uuid].role
@@ -918,10 +846,8 @@ def update_user_role_in_organization(
         _db._data.users[user_uuid].role = new_role_uuid
 
 
-def delete_user(uuid: str | UUID, *, ctx: SessionContext | None = None) -> None:
+def delete_user(uuid: UUID, *, ctx: SessionContext | None = None) -> None:
     """Delete user and their credentials/sessions."""
-    if isinstance(uuid, str):
-        uuid = UUID(uuid)
     if uuid not in _db._data.users:
         raise ValueError(f"User {uuid} not found")
     with _db.transaction("Deleted user", ctx):
@@ -951,15 +877,13 @@ def create_credential(cred: Credential, *, ctx: SessionContext | None = None) ->
 
 
 def update_credential_sign_count(
-    uuid: str | UUID,
+    uuid: UUID,
     sign_count: int,
     last_used: datetime | None = None,
     *,
     ctx: SessionContext | None = None,
 ) -> None:
     """Update credential sign count and last_used."""
-    if isinstance(uuid, str):
-        uuid = UUID(uuid)
     if uuid not in _db._data.credentials:
         raise ValueError(f"Credential {uuid} not found")
     with _db.transaction("Updated credential", ctx):
@@ -969,8 +893,8 @@ def update_credential_sign_count(
 
 
 def delete_credential(
-    uuid: str | UUID,
-    user_uuid: str | UUID | None = None,
+    uuid: UUID,
+    user_uuid: UUID | None = None,
     *,
     ctx: SessionContext | None = None,
 ) -> None:
@@ -978,13 +902,9 @@ def delete_credential(
 
     If user_uuid is provided, validates that the credential belongs to that user.
     """
-    if isinstance(uuid, str):
-        uuid = UUID(uuid)
     if uuid not in _db._data.credentials:
         raise ValueError(f"Credential {uuid} not found")
     if user_uuid is not None:
-        if isinstance(user_uuid, str):
-            user_uuid = UUID(user_uuid)
         cred_user = _db._data.credentials[uuid].user
         if cred_user != user_uuid:
             raise ValueError(f"Credential {uuid} does not belong to user {user_uuid}")
@@ -1069,15 +989,13 @@ def delete_session(key: str, *, ctx: SessionContext | None = None) -> None:
 
 
 def delete_sessions_for_user(
-    user_uuid: str | UUID, *, ctx: SessionContext | None = None
+    user_uuid: UUID, *, ctx: SessionContext | None = None
 ) -> None:
     """Delete all sessions for a user.
 
     For logout-all (user deleting own sessions), ctx can be None and user is derived from user_uuid.
     For admin operations, ctx should be provided.
     """
-    if isinstance(user_uuid, str):
-        user_uuid = UUID(user_uuid)
     # For self-service, derive user from the user_uuid param
     user_str = str(user_uuid) if not ctx else None
     with _db.transaction("Deleted user sessions", ctx, user=user_str):
@@ -1154,7 +1072,7 @@ def _create_token() -> str:
 
 
 def login(
-    user_uuid: str | UUID,
+    user_uuid: UUID,
     credential: Credential,
     host: str | None,
     ip: str | None,

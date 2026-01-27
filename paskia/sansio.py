@@ -12,7 +12,6 @@ from datetime import datetime, timezone
 from urllib.parse import urlparse
 from uuid import UUID
 
-import uuid7
 from webauthn import (
     generate_authentication_options,
     generate_registration_options,
