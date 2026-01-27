@@ -2,7 +2,6 @@ from typing import Generic, TypeVar
 
 from paskia import db, remoteauth
 from paskia.bootstrap import bootstrap_if_needed
-from paskia.db import start_background
 from paskia.sansio import Passkey
 
 T = TypeVar("T")
@@ -63,10 +62,6 @@ async def init(
         # Bootstrap system if needed
 
         await bootstrap_if_needed()
-
-    # Start background flush/cleanup task after bootstrap
-
-    await start_background()
 
 
 # Global instances

@@ -9,6 +9,7 @@ from fastapi.responses import FileResponse, RedirectResponse
 from fastapi_vue import Frontend
 
 from paskia import globals
+from paskia.db import start_background, stop_background
 from paskia.fastapi import admin, api, auth_host, ws
 from paskia.fastapi.session import AUTH_COOKIE
 from paskia.util import hostutil, passphrase, vitedev
@@ -32,7 +33,6 @@ async def lifespan(app: FastAPI):  # pragma: no cover - startup path
     so that uvicorn reload / multiprocess workers inherit the settings.
     All keys are guaranteed to exist; values are already normalized by __main__.py.
     """
-
     config = json.loads(os.environ["PASKIA_CONFIG"])
 
     try:
@@ -54,7 +54,9 @@ async def lifespan(app: FastAPI):  # pragma: no cover - startup path
         logging.getLogger("uvicorn.access").setLevel(logging.INFO)
 
     await frontend.load()
+    await start_background()
     yield
+    await stop_background()
 
 
 app = FastAPI(lifespan=lifespan, redirect_slashes=False)
