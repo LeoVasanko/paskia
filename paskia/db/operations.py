@@ -215,46 +215,69 @@ def build_reset_token(key: bytes) -> ResetToken:
 # -------------------------------------------------------------------------
 
 
-def get_permission(permission_id: str | UUID) -> Permission | None:
-    """Get permission by UUID or scope.
+def get_permission(uuid: UUID) -> Permission | None:
+    """Get permission by UUID.
 
-    For backwards compatibility, this accepts either:
-    - A UUID string (the primary key)
-    - A scope string (searches for matching scope)
+    Call sites:
+    - Normalize permission IDs to UUIDs when creating a role (admin.py:277)
+    - Verify permission exists when adding to role (admin.py:349)
+    - Check permission scope when removing from role to prevent losing admin access (admin.py:385)
+    - Get permission to check scope for admin access check (admin.py:392)
+    - Check if new role has admin permissions when user changes own role (admin.py:509)
+    - Get permission for updating its details (admin.py:977)
+    - Get permission for renaming its scope (admin.py:1031)
+    - Get permission to check scope before deleting (admin.py:1071)
     """
-    # First try as UUID key
-    if isinstance(permission_id, UUID):
-        if permission_id in _db._data.permissions:
-            return build_permission(permission_id)
-    else:
-        try:
-            uuid = UUID(permission_id)
-            if uuid in _db._data.permissions:
-                return build_permission(uuid)
-        except ValueError:
-            pass
-    # Fall back to scope search
-    for uuid, p in _db._data.permissions.items():
-        if p.scope == str(permission_id):
-            return build_permission(uuid)
+    if uuid in _db._data.permissions:
+        return build_permission(uuid)
     return None
 
 
 def get_permission_by_scope(scope: str) -> Permission | None:
-    """Get permission by scope identifier."""
+    """Get permission by scope identifier.
+
+    Call sites:
+    - Check if system is already bootstrapped by looking for auth:admin permission (bootstrap.py:113)
+    """
     for uuid, p in _db._data.permissions.items():
         if p.scope == scope:
             return build_permission(uuid)
     return None
 
 
+def get_permissions_by_scope(scope: str) -> list[Permission]:
+    """Get all permissions with the given scope.
+
+    Since scopes are not unique, this returns all matching permissions.
+    Use this for scope-based permission checking.
+    """
+    return [
+        build_permission(uuid)
+        for uuid, p in _db._data.permissions.items()
+        if p.scope == scope
+    ]
+
+
 def list_permissions() -> list[Permission]:
-    """List all permissions."""
+    """List all permissions.
+
+    Call sites:
+    - List permissions during migration to identify org-specific admin permissions (migrate/__init__.py:84)
+    - List permissions to delete organization-specific permissions when deleting org (admin.py:193)
+    - List permissions to check admin permissions when updating permission domain (admin.py:847)
+    - List permissions to check admin permissions when deleting permission (admin.py:882)
+    - Admin API endpoint to list permissions (admin.py:914)
+    """
     return [build_permission(uuid) for uuid in _db._data.permissions]
 
 
 def get_permission_organizations(scope: str) -> list[Org]:
-    """Get organizations that can grant a permission scope."""
+    """Get organizations that can grant a permission scope.
+
+    Call sites:
+    - Get organizations that can grant auth:admin to find admin users (bootstrap.py:67)
+    - Get organizations with auth:admin permission to find admin users for reset targets (reset.py:29,40,55)
+    """
     for p in _db._data.permissions.values():
         if p.scope == scope:
             return [build_org(org_uuid) for org_uuid in p.orgs]
@@ -262,19 +285,35 @@ def get_permission_organizations(scope: str) -> list[Org]:
 
 
 def get_organization(uuid: str | UUID) -> Org | None:
-    """Get organization by UUID."""
+    """Get organization by UUID.
+
+    Call sites:
+    - Get organization when creating a role to check grantable permissions (admin.py:271)
+    - Get organization when adding permission to role to check if org can grant it (admin.py:352)
+    """
     if isinstance(uuid, str):
         uuid = UUID(uuid)
     return build_org(uuid, include_roles=True) if uuid in _db._data.orgs else None
 
 
 def list_organizations() -> list[Org]:
-    """List all organizations."""
+    """List all organizations.
+
+    Call sites:
+    - List organizations during migration (migrate/__init__.py:131)
+    - Admin API endpoint to list organizations (admin.py:94)
+    """
     return [build_org(uuid, include_roles=True) for uuid in _db._data.orgs]
 
 
 def get_organization_users(org_uuid: str | UUID) -> list[tuple[User, str]]:
-    """Get all users in an organization with their role names."""
+    """Get all users in an organization with their role names.
+
+    Call sites:
+    - Get users for each organization in the admin list orgs API (admin.py:108)
+    - Get users from organizations with auth:admin for reset targets (reset.py:31,42,58)
+    - Get users from organization to check if admin has credentials (bootstrap.py:73)
+    """
     if isinstance(org_uuid, str):
         org_uuid = UUID(org_uuid)
     role_map = {
@@ -288,21 +327,39 @@ def get_organization_users(org_uuid: str | UUID) -> list[tuple[User, str]]:
 
 
 def get_role(uuid: str | UUID) -> Role | None:
-    """Get role by UUID."""
+    """Get role by UUID.
+
+    Call sites:
+    - Get role to update its display name (admin.py:312)
+    - Get role to add permission to it (admin.py:344)
+    - Get role to remove permission from it (admin.py:380)
+    - Get role to delete it (admin.py:421)
+    """
     if isinstance(uuid, str):
         uuid = UUID(uuid)
     return build_role(uuid) if uuid in _db._data.roles else None
 
 
 def get_roles_by_organization(org_uuid: str | UUID) -> list[Role]:
-    """Get all roles in an organization."""
+    """Get all roles in an organization.
+
+    Call sites:
+    - Get roles by organization when creating a user to find the role by name (admin.py:459)
+    - Get roles by organization when updating user role to validate the new role name (admin.py:498)
+    """
     if isinstance(org_uuid, str):
         org_uuid = UUID(org_uuid)
     return [build_role(rid) for rid, r in _db._data.roles.items() if r.org == org_uuid]
 
 
 def get_user_by_uuid(uuid: str | UUID) -> User | None:
-    """Get user by UUID."""
+    """Get user by UUID.
+
+    Call sites:
+    - Get user for WebAuthn credential registration (ws.py:68)
+    - Get user from reset token for registration info (api.py:127)
+    - Get user for listing user credentials in admin API (admin.py:594)
+    """
     if isinstance(uuid, str):
         uuid = UUID(uuid)
     return build_user(uuid) if uuid in _db._data.users else None
@@ -312,6 +369,14 @@ def get_user_organization(user_uuid: str | UUID) -> tuple[Org, str]:
     """Get the organization a user belongs to and their role name.
 
     Raises ValueError if user not found.
+
+    Call sites:
+    - Get user's organization when updating user role (admin.py:493)
+    - Get user's organization for user credential listing (admin.py:530)
+    - Get user's organization for user details API (admin.py:579)
+    - Get user's organization for updating user display name (admin.py:721)
+    - Get user's organization for deleting user credential (admin.py:754)
+    - Get user's organization for deleting user session (admin.py:783)
     """
     if isinstance(user_uuid, str):
         user_uuid = UUID(user_uuid)
@@ -326,7 +391,12 @@ def get_user_organization(user_uuid: str | UUID) -> tuple[Org, str]:
 
 
 def get_credential_by_id(credential_id: bytes) -> Credential | None:
-    """Get credential by credential_id (the authenticator's ID)."""
+    """Get credential by credential_id (the authenticator's ID).
+
+    Call sites:
+    - Get credential by ID for WebAuthn authentication (ws.py:132)
+    - Get credential by ID for remote authentication (remote.py:325)
+    """
     for uuid, c in _db._data.credentials.items():
         if c.credential_id == credential_id:
             return build_credential(uuid)
@@ -334,7 +404,16 @@ def get_credential_by_id(credential_id: bytes) -> Credential | None:
 
 
 def get_credentials_by_user_uuid(user_uuid: str | UUID) -> list[Credential]:
-    """Get all credentials for a user."""
+    """Get all credentials for a user.
+
+    Call sites:
+    - Get credentials for user during registration to exclude existing ones (ws.py:74)
+    - Get credentials for session user during reauth to restrict to user's credentials (ws.py:117)
+    - Get credentials to check if user has existing ones for reset token type (admin.py:548)
+    - Get credentials for user details API (admin.py:595)
+    - Get credentials to check if admin user has credentials (bootstrap.py:81)
+    - Get credentials for user info formatting (userinfo.py:51)
+    """
     if isinstance(user_uuid, str):
         user_uuid = UUID(user_uuid)
     return [
@@ -345,7 +424,14 @@ def get_credentials_by_user_uuid(user_uuid: str | UUID) -> list[Credential]:
 
 
 def get_session(key: str) -> Session | None:
-    """Get session by key."""
+    """Get session by key.
+
+    Call sites:
+    - Get session to delete it (admin.py:799)
+    - Get session to validate token (authsession.py:45)
+    - Get session to refresh it (authsession.py:59)
+    - Get session to delete it in user API (user.py:94)
+    """
     if key not in _db._data.sessions:
         return None
     s = _db._data.sessions[key]
@@ -355,7 +441,12 @@ def get_session(key: str) -> Session | None:
 
 
 def list_sessions_for_user(user_uuid: str | UUID) -> list[Session]:
-    """Get all active sessions for a user."""
+    """Get all active sessions for a user.
+
+    Call sites:
+    - List sessions for user info (userinfo.py:75)
+    - List sessions for user details API (admin.py:651)
+    """
     if isinstance(user_uuid, str):
         user_uuid = UUID(user_uuid)
     now = datetime.now(timezone.utc)
@@ -378,7 +469,11 @@ def _reset_key(passphrase: str) -> bytes:
 
 
 def get_reset_token(passphrase: str) -> ResetToken | None:
-    """Get reset token by passphrase."""
+    """Get reset token by passphrase.
+
+    Call sites:
+    - Get reset token to validate it (authsession.py:34)
+    """
     key = _reset_key(passphrase)
     if key not in _db._data.reset_tokens:
         return None
@@ -404,6 +499,10 @@ def get_session_context(
 
     Returns:
         SessionContext if valid, None if session not found, expired, or host mismatch
+
+    Call sites:
+    - Example usage in docstring (db/__init__.py:16)
+    - Get session context from auth token (util/permutil.py:43)
     """
     from paskia.util.hostutil import normalize_host
 
@@ -500,7 +599,7 @@ def update_permission(perm: Permission, *, ctx: SessionContext | None = None) ->
 
 
 def rename_permission(
-    old_scope: str,
+    uuid: UUID,
     new_scope: str,
     display_name: str,
     domain: str | None = None,
@@ -512,26 +611,18 @@ def rename_permission(
     Since roles reference permissions by UUID, no role updates are needed.
     Note: Scopes do not need to be unique (same scope with different domains is valid).
     """
-    # Find permission by old scope
-    key = None
-    for pid, p in _db._data.permissions.items():
-        if p.scope == old_scope:
-            key = pid
-            break
-    if not key:
-        raise ValueError(f"Permission with scope '{old_scope}' not found")
+    if uuid not in _db._data.permissions:
+        raise ValueError(f"Permission {uuid} not found")
 
     with _db.transaction("Renamed permission", ctx):
         # Update the permission
-        _db._data.permissions[key].scope = new_scope
-        _db._data.permissions[key].display_name = display_name
-        _db._data.permissions[key].domain = domain
+        _db._data.permissions[uuid].scope = new_scope
+        _db._data.permissions[uuid].display_name = display_name
+        _db._data.permissions[uuid].domain = domain
 
 
-def delete_permission(uuid: str | UUID, *, ctx: SessionContext | None = None) -> None:
+def delete_permission(uuid: UUID, *, ctx: SessionContext | None = None) -> None:
     """Delete a permission and remove it from all roles."""
-    if isinstance(uuid, str):
-        uuid = UUID(uuid)
     if uuid not in _db._data.permissions:
         raise ValueError(f"Permission {uuid} not found")
     with _db.transaction("Deleted permission", ctx):
