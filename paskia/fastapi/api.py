@@ -157,9 +157,10 @@ async def forward_authentication(
         ctx = await authz.verify(
             auth, perm, host=request.headers.get("host"), max_age=max_age
         )
-        role_permissions = set(ctx.role.permissions or [])
-        if ctx.permissions:
-            role_permissions.update(permission.scope for permission in ctx.permissions)
+        # Build permission scopes for Remote-Groups header
+        role_permissions = (
+            {p.scope for p in ctx.permissions} if ctx.permissions else set()
+        )
 
         remote_headers: dict[str, str] = {
             "Remote-User": str(ctx.user.uuid),

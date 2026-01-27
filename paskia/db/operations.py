@@ -30,6 +30,7 @@ from paskia.db.jsonl import (
 )
 from paskia.db.structs import (
     Credential,
+    DatabaseData,
     Org,
     Permission,
     ResetToken,
@@ -37,9 +38,6 @@ from paskia.db.structs import (
     Session,
     SessionContext,
     User,
-    _DatabaseData,
-    _OrgData,
-    _RoleData,
 )
 from paskia.util.passphrase import is_well_formed as _is_passphrase
 
@@ -47,7 +45,7 @@ _logger = logging.getLogger(__name__)
 
 # msgspec encoder/decoder
 _json_encoder = msgspec.json.Encoder()
-_json_decoder = msgspec.json.Decoder(_DatabaseData)
+_json_decoder = msgspec.json.Decoder(DatabaseData)
 
 
 class DB:
@@ -59,7 +57,7 @@ class DB:
 
     def __init__(self, db_path: str = DB_PATH_DEFAULT):
         self.db_path = Path(db_path)
-        self._data = _DatabaseData(
+        self._data = DatabaseData(
             permissions={},
             orgs={},
             roles={},
@@ -179,27 +177,19 @@ def build_user(uuid: UUID) -> User:
 
 def build_role(uuid: UUID) -> Role:
     r = _db._data.roles[uuid]
-    role = Role(
-        org=r.org,
-        display_name=r.display_name,
-        permissions=[str(pid) for pid in r.permissions.keys()],
-    )
-    role.uuid = uuid
-    return role
+    r.uuid = uuid
+    return r
 
 
 def build_org(uuid: UUID, include_roles: bool = False) -> Org:
     o = _db._data.orgs[uuid]
-    perm_uuids = [
-        str(pid) for pid, p in _db._data.permissions.items() if uuid in p.orgs
-    ]
-    org = Org(display_name=o.display_name, permissions=perm_uuids)
-    org.uuid = uuid
+    o.uuid = uuid
+    o.permissions = {pid for pid, p in _db._data.permissions.items() if uuid in p.orgs}
     if include_roles:
-        org.roles = [
+        o.roles = [
             build_role(rid) for rid, r in _db._data.roles.items() if r.org == uuid
         ]
-    return org
+    return o
 
 
 def build_credential(uuid: UUID) -> Credential:
@@ -460,15 +450,14 @@ def get_session_context(
 
     # Effective permissions: role's permissions that the org can grant
     # Also filter by domain if host is provided
-    org_perm_uuids = set(org.permissions)  # Set of permission UUID strings
+    org_perm_uuids = org.permissions  # set[UUID] computed by build_org
     normalized_host = normalize_host(host)
     host_without_port = normalized_host.rsplit(":", 1)[0] if normalized_host else None
 
     effective_perms = []
-    for perm_uuid_str in role.permissions:
-        if perm_uuid_str not in org_perm_uuids:
+    for perm_uuid in role.permission_set:
+        if perm_uuid not in org_perm_uuids:
             continue
-        perm_uuid = UUID(perm_uuid_str)
         if perm_uuid not in _db._data.permissions:
             continue
         p = _db._data.permissions[perm_uuid]
@@ -560,16 +549,9 @@ def create_organization(org: Org, *, ctx: SessionContext | None = None) -> None:
     if org.uuid in _db._data.orgs:
         raise ValueError(f"Organization {org.uuid} already exists")
     with _db.transaction("Created organization", ctx):
-        _db._data.orgs[org.uuid] = _OrgData(
+        _db._data.orgs[org.uuid] = Org(
             display_name=org.display_name, created_at=datetime.now(timezone.utc)
         )
-        # Grant listed permissions to this org (org.permissions contains UUIDs now)
-        for perm_uuid_str in org.permissions:
-            perm_uuid = (
-                UUID(perm_uuid_str) if isinstance(perm_uuid_str, str) else perm_uuid_str
-            )
-            if perm_uuid in _db._data.permissions:
-                _db._data.permissions[perm_uuid].orgs[org.uuid] = True
         # Create Administration role with org admin permission
         import uuid7
 
@@ -581,11 +563,13 @@ def create_organization(org: Org, *, ctx: SessionContext | None = None) -> None:
                 org_admin_perm_uuid = pid
                 break
         role_permissions = {org_admin_perm_uuid: True} if org_admin_perm_uuid else {}
-        _db._data.roles[admin_role_uuid] = _RoleData(
+        admin_role = Role(
             org=org.uuid,
             display_name="Administration",
             permissions=role_permissions,
         )
+        admin_role.uuid = admin_role_uuid
+        _db._data.roles[admin_role_uuid] = admin_role
 
 
 def update_organization_name(
@@ -699,11 +683,7 @@ def create_role(role: Role, *, ctx: SessionContext | None = None) -> None:
     if role.org not in _db._data.orgs:
         raise ValueError(f"Organization {role.org} not found")
     with _db.transaction("Created role", ctx):
-        _db._data.roles[role.uuid] = _RoleData(
-            org=role.org,
-            display_name=role.display_name,
-            permissions={UUID(pid): True for pid in role.permissions},
-        )
+        _db._data.roles[role.uuid] = role
 
 
 def update_role_name(
@@ -1263,17 +1243,21 @@ def bootstrap(
         _db._data.permissions[perm_org_admin_uuid] = perm_org_admin
 
         # Create organization
-        _db._data.orgs[org_uuid] = _OrgData(
+        new_org = Org(
             display_name=org_name,
             created_at=now,
         )
+        new_org.uuid = org_uuid
+        _db._data.orgs[org_uuid] = new_org
 
         # Create Administration role with both permissions
-        _db._data.roles[role_uuid] = _RoleData(
+        admin_role = Role(
             org=org_uuid,
             display_name="Administration",
             permissions={perm_admin_uuid: True, perm_org_admin_uuid: True},
         )
+        admin_role.uuid = role_uuid
+        _db._data.roles[role_uuid] = admin_role
 
         # Create admin user
         admin_user = User(

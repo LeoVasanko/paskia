@@ -14,6 +14,11 @@ class Permission(msgspec.Struct, dict=True, omit_defaults=True):
     def __post_init__(self):
         self.uuid: UUID | None = None  # Convenience field, not serialized
 
+    @property
+    def org_set(self) -> set[UUID]:
+        """Get orgs that can grant this permission as a set."""
+        return set(self.orgs.keys())
+
     @classmethod
     def create(
         cls,
@@ -31,49 +36,51 @@ class Permission(msgspec.Struct, dict=True, omit_defaults=True):
         return perm
 
 
-class Role(msgspec.Struct, dict=True):
+class Role(msgspec.Struct, dict=True, omit_defaults=True):
     org: UUID
     display_name: str
-    permissions: list[str] = []  # permission UUIDs this role grants
+    permissions: dict[UUID, bool] = {}  # permission_uuid -> True
 
     def __post_init__(self):
         self.uuid: UUID | None = None  # Convenience field, not serialized
+
+    @property
+    def permission_set(self) -> set[UUID]:
+        """Get permissions as a set of UUIDs."""
+        return set(self.permissions.keys())
 
     @classmethod
     def create(
         cls,
         org: UUID,
         display_name: str,
-        permissions: list[str] | None = None,
+        permissions: set[UUID] | None = None,
     ) -> "Role":
         """Create a new Role with auto-generated uuid7."""
         role = cls(
             org=org,
             display_name=display_name,
-            permissions=permissions or [],
+            permissions={p: True for p in (permissions or set())},
         )
         role.uuid = uuid7.create()
         return role
 
 
-class Org(msgspec.Struct, dict=True):
+class Org(msgspec.Struct, dict=True, omit_defaults=True):
     display_name: str
-    permissions: list[str] = []  # permission UUIDs this org can grant
-    roles: list[Role] = []  # roles belonging to this org
+    created_at: datetime | None = None
 
     def __post_init__(self):
         self.uuid: UUID | None = None  # Convenience field, not serialized
 
     @classmethod
-    def create(
-        cls,
-        display_name: str,
-        permissions: list[str] | None = None,
-    ) -> "Org":
+    def create(cls, display_name: str) -> "Org":
         """Create a new Org with auto-generated uuid7."""
+        from datetime import timezone
+
         org = cls(
             display_name=display_name,
-            permissions=permissions or [],
+            created_at=datetime.now(timezone.utc),
         )
         org.uuid = uuid7.create()
         return org
@@ -188,25 +195,14 @@ class SessionContext(msgspec.Struct):
 
 
 # -------------------------------------------------------------------------
-# Internal storage types (different structure for efficient storage)
+# Database storage structure
 # -------------------------------------------------------------------------
 
 
-class _OrgData(msgspec.Struct):
-    display_name: str
-    created_at: datetime | None = None
-
-
-class _RoleData(msgspec.Struct):
-    org: UUID
-    display_name: str
-    permissions: dict[UUID, bool] = {}  # permission_uuid -> True
-
-
-class _DatabaseData(msgspec.Struct, omit_defaults=True):
+class DatabaseData(msgspec.Struct, omit_defaults=True):
     permissions: dict[UUID, Permission]
-    orgs: dict[UUID, _OrgData]
-    roles: dict[UUID, _RoleData]
+    orgs: dict[UUID, Org]
+    roles: dict[UUID, Role]
     users: dict[UUID, User]
     credentials: dict[UUID, Credential]
     sessions: dict[str, Session]
