@@ -14,7 +14,6 @@ from paskia import db
 from paskia.authsession import (
     delete_credential,
     expires,
-    get_session,
 )
 from paskia.fastapi import authz, session
 from paskia.fastapi.session import AUTH_COOKIE
@@ -43,18 +42,18 @@ async def user_update_display_name(
         raise authz.AuthException(
             status_code=401, detail="Authentication Required", mode="login"
         )
-    try:
-        s = await get_session(auth, host=request.headers.get("host"))
-    except ValueError as e:
+    host = request.headers.get("host")
+    ctx = db.get_session_context(auth, host)
+    if not ctx:
         raise authz.AuthException(
             status_code=401, detail="Session expired", mode="login"
-        ) from e
+        )
     new_name = (payload.get("display_name") or "").strip()
     if not new_name:
         raise HTTPException(status_code=400, detail="display_name required")
     if len(new_name) > 64:
         raise HTTPException(status_code=400, detail="display_name too long")
-    db.update_user_display_name(s.user, new_name)
+    db.update_user_display_name(ctx.user.uuid, new_name, ctx=ctx)
     return {"status": "ok"}
 
 
@@ -62,13 +61,13 @@ async def user_update_display_name(
 async def api_logout_all(request: Request, response: Response, auth=AUTH_COOKIE):
     if not auth:
         return {"message": "Already logged out"}
-    try:
-        s = await get_session(auth, host=request.headers.get("host"))
-    except ValueError:
+    host = request.headers.get("host")
+    ctx = db.get_session_context(auth, host)
+    if not ctx:
         raise authz.AuthException(
             status_code=401, detail="Session expired", mode="login"
         )
-    db.delete_sessions_for_user(s.user)
+    db.delete_sessions_for_user(ctx.user.uuid, ctx=ctx)
     session.clear_session_cookie(response)
     return {"message": "Logged out from all hosts"}
 
@@ -84,18 +83,18 @@ async def api_delete_session(
         raise authz.AuthException(
             status_code=401, detail="Authentication Required", mode="login"
         )
-    try:
-        current_session = await get_session(auth, host=request.headers.get("host"))
-    except ValueError as exc:
+    host = request.headers.get("host")
+    ctx = db.get_session_context(auth, host)
+    if not ctx:
         raise authz.AuthException(
             status_code=401, detail="Session expired", mode="login"
-        ) from exc
+        )
 
     target_session = db.data().sessions.get(session_id)
-    if not target_session or target_session.user != current_session.user:
+    if not target_session or target_session.user != ctx.user.uuid:
         raise HTTPException(status_code=404, detail="Session not found")
 
-    db.delete_session(session_id)
+    db.delete_session(session_id, ctx=ctx)
     current_terminated = session_id == auth
     if current_terminated:
         session.clear_session_cookie(response)  # explicit because 200
@@ -127,20 +126,15 @@ async def api_create_link(
     auth=AUTH_COOKIE,
 ):
     # Require recent authentication for sensitive operation
-    await authz.verify(auth, [], host=request.headers.get("host"), max_age="5m")
-    try:
-        s = await get_session(auth, host=request.headers.get("host"))
-    except ValueError as e:
-        raise authz.AuthException(
-            status_code=401, detail="Session expired", mode="login"
-        ) from e
+    ctx = await authz.verify(auth, [], host=request.headers.get("host"), max_age="5m")
     token = passphrase.generate()
     expiry = expires()
     db.create_reset_token(
-        user_uuid=s.user,
+        user_uuid=ctx.user.uuid,
         passphrase=token,
         expiry=expiry,
         token_type="device addition",
+        ctx=ctx,
     )
     url = hostutil.reset_link_url(token)
     return {

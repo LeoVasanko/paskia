@@ -1,7 +1,7 @@
 from fastapi import FastAPI, WebSocket
 
 from paskia import db
-from paskia.authsession import expires, get_reset, get_session
+from paskia.authsession import expires, get_reset
 from paskia.fastapi import authz, remote
 from paskia.fastapi.session import AUTH_COOKIE, infodict
 from paskia.fastapi.wschat import authenticate_chat, register_chat
@@ -91,12 +91,10 @@ async def websocket_authenticate(ws: WebSocket, auth=AUTH_COOKIE):
     session_user_uuid = None
     credential_ids = None
     if auth:
-        try:
-            session = await get_session(auth, host=host)
-            session_user_uuid = session.user
+        ctx = db.get_session_context(auth, host)
+        if ctx:
+            session_user_uuid = ctx.user.uuid
             credential_ids = db.get_user_credential_ids(session_user_uuid) or None
-        except ValueError:
-            pass  # Invalid/expired session - allow normal authentication
 
     cred = await authenticate_chat(ws, origin, credential_ids)
 

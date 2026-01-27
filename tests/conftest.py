@@ -28,9 +28,9 @@ from paskia.db import (
     Permission,
     Role,
     User,
-    add_permission_to_organization,
+    add_permission_to_org,
     create_credential,
-    create_organization,
+    create_org,
     create_permission,
     create_reset_token,
     create_role,
@@ -86,9 +86,9 @@ async def passkey_instance() -> Passkey:
 async def test_org(test_db: DB, admin_permission: Permission) -> Org:
     """Create a test organization with admin permission."""
     org = Org.create(display_name="Test Organization")
-    create_organization(org)
+    create_org(org)
     # Grant admin permission to this org
-    add_permission_to_organization(org.uuid, admin_permission.uuid)
+    add_permission_to_org(org.uuid, admin_permission.uuid)
     return org
 
 
@@ -106,7 +106,7 @@ async def org_admin_permission(test_db: DB, test_org: Org) -> Permission:
     perm = Permission.create(scope="auth:org:admin", display_name="Organization Admin")
     create_permission(perm)
     # Make it grantable by the org
-    add_permission_to_organization(test_org.uuid, perm.uuid)
+    add_permission_to_org(test_org.uuid, perm.uuid)
     return perm
 
 
