@@ -208,3 +208,20 @@ class DatabaseData(msgspec.Struct, omit_defaults=True):
     sessions: dict[str, Session]
     reset_tokens: dict[bytes, ResetToken]
     v: int = 0
+
+    def __post_init__(self):
+        # Set the key fields on all stored objects
+        for uuid, perm in self.permissions.items():
+            perm.uuid = uuid
+        for uuid, org in self.orgs.items():
+            org.uuid = uuid
+        for uuid, role in self.roles.items():
+            role.uuid = uuid
+        for uuid, user in self.users.items():
+            user.uuid = uuid
+        for uuid, cred in self.credentials.items():
+            cred.uuid = uuid
+        for key, session in self.sessions.items():
+            session.key = key
+        for key, token in self.reset_tokens.items():
+            token.key = key
