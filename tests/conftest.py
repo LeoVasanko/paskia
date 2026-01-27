@@ -13,13 +13,11 @@ import asyncio
 import os
 import tempfile
 from collections.abc import AsyncGenerator
-from datetime import datetime, timezone
 from uuid import UUID
 
 import httpx
 import pytest
 import pytest_asyncio
-import uuid7
 
 from paskia import globals as paskia_globals
 from paskia.authsession import expires
@@ -84,11 +82,10 @@ async def passkey_instance() -> Passkey:
 @pytest_asyncio.fixture(scope="function")
 async def test_org(test_db: DB, admin_permission: Permission) -> Org:
     """Create a test organization with admin permission."""
-    org = Org.create(
-        display_name="Test Organization",
-        permissions=[str(admin_permission.uuid)],  # Org can grant this permission
-    )
+    org = Org.create(display_name="Test Organization")
     create_organization(org)
+    # Grant admin permission to this org
+    add_permission_to_organization(str(org.uuid), str(admin_permission.uuid))
     return org
 
 
@@ -121,7 +118,7 @@ async def test_role(
     role = Role.create(
         org=test_org.uuid,
         display_name="Test Admin Role",
-        permissions=[str(admin_permission.uuid), str(org_admin_permission.uuid)],
+        permissions={admin_permission.uuid, org_admin_permission.uuid},
     )
     create_role(role)
     return role

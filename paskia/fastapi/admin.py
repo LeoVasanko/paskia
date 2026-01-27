@@ -137,8 +137,11 @@ async def admin_create_org(
 
     display_name = payload.get("display_name") or "New Organization"
     permissions = payload.get("permissions") or []
-    org = OrgDC.create(display_name=display_name, permissions=permissions)
+    org = OrgDC.create(display_name=display_name)
     db.create_organization(org, ctx=ctx)
+    # Grant requested permissions to the new org
+    for perm in permissions:
+        db.add_permission_to_organization(str(org.uuid), perm)
 
     return {"uuid": str(org.uuid)}
 
@@ -266,18 +269,17 @@ async def admin_create_role(
     display_name = payload.get("display_name") or "New Role"
     perms = payload.get("permissions") or []
     org = db.get_organization(str(org_uuid))
-    grantable = set(org.permissions or [])
+    grantable = org.permissions  # set[UUID] computed by build_org
 
     # Normalize permission IDs to UUIDs
-    permission_uuids = []
+    permission_uuids: set[UUID] = set()
     for pid in perms:
         perm = db.get_permission(pid)
         if not perm:
             raise ValueError(f"Permission {pid} not found")
-        perm_uuid_str = str(perm.uuid)
-        if perm_uuid_str not in grantable:
+        if perm.uuid not in grantable:
             raise ValueError(f"Permission not grantable by org: {pid}")
-        permission_uuids.append(perm_uuid_str)
+        permission_uuids.add(perm.uuid)
 
     role = RoleDC.create(
         org=org_uuid,
@@ -348,7 +350,7 @@ async def admin_add_role_permission(
     if not perm:
         raise HTTPException(status_code=404, detail="Permission not found")
     org = db.get_organization(str(org_uuid))
-    if str(permission_uuid) not in org.permissions:
+    if permission_uuid not in org.permissions:
         raise ValueError("Permission not grantable by organization")
 
     db.add_permission_to_role(role_uuid, permission_uuid, ctx=ctx)
@@ -380,13 +382,11 @@ async def admin_remove_role_permission(
         raise HTTPException(status_code=404, detail="Role not found in organization")
 
     # Sanity check: prevent admin from removing their own access
-    # Find auth:admin and auth:org:admin permission UUIDs
-    perm_uuid_str = str(permission_uuid)
     perm = db.get_permission(permission_uuid)
     if ctx.org.uuid == org_uuid and ctx.role.uuid == role_uuid:
         if perm and perm.scope in ["auth:admin", "auth:org:admin"]:
             # Check if removing this permission would leave no admin access
-            remaining_perms = set(role.permissions) - {perm_uuid_str}
+            remaining_perms = role.permission_set - {permission_uuid}
             has_admin = False
             for rp_uuid in remaining_perms:
                 rp = db.get_permission(rp_uuid)
@@ -918,8 +918,8 @@ async def admin_list_permissions(request: Request, auth=AUTH_COOKIE):
         return [_perm_to_dict(p) for p in perms]
 
     # Org admins only see permissions their org can grant (by UUID)
-    grantable = set(ctx.org.permissions or [])
-    filtered_perms = [p for p in perms if str(p.uuid) in grantable]
+    grantable = ctx.org.permissions  # set[UUID]
+    filtered_perms = [p for p in perms if p.uuid in grantable]
     return [_perm_to_dict(p) for p in filtered_perms]
 
 

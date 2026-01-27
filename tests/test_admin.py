@@ -58,7 +58,7 @@ async def second_org_role(
     role = Role.create(
         org=second_org.uuid,
         display_name="Second Org Admin Role",
-        permissions=[str(admin_permission.uuid)],
+        permissions={admin_permission.uuid},
     )
     create_role(role)
     return role
@@ -117,7 +117,7 @@ async def org_admin_role(
     role = Role.create(
         org=test_org.uuid,
         display_name="Org Admin Role",
-        permissions=[str(org_admin_permission.uuid)],
+        permissions={org_admin_permission.uuid},
     )
     create_role(role)
     return role
@@ -397,7 +397,7 @@ class TestAdminOrganizations:
         client: httpx.AsyncClient,
         session_token: str,
         test_db: DB,
-    ):  
+    ):
         """Admin should be able to delete another organization."""
         # Create org to delete
         org_to_delete = Org.create(

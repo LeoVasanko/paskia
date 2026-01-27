@@ -56,12 +56,12 @@ async def migrate_from_sql(
     from paskia.db.operations import DB as JSONDB
     from paskia.db.structs import (
         Credential,
+        Org,
         Permission,
         ResetToken,
+        Role,
         Session,
         User,
-        _OrgData,
-        _RoleData,
     )
 
     # Initialize source SQL database
@@ -131,9 +131,9 @@ async def migrate_from_sql(
     orgs = await sql_db.list_organizations()
     for org in orgs:
         org_key: UUID = org.uuid
-        json_db._data.orgs[org_key] = _OrgData(
-            display_name=org.display_name,
-        )
+        new_org = Org(display_name=org.display_name)
+        new_org.uuid = org_key
+        json_db._data.orgs[org_key] = new_org
         # Update permissions to allow this org to grant them (by UUID)
         for old_perm_id in org.permissions:
             perm_uuid = perm_id_to_uuid.get(old_perm_id)
@@ -154,11 +154,13 @@ async def migrate_from_sql(
                 perm_uuid = perm_id_to_uuid.get(old_perm_id)
                 if perm_uuid:
                     new_permissions[perm_uuid] = True
-            json_db._data.roles[role_key] = _RoleData(
+            new_role = Role(
                 org=role.org_uuid,
                 display_name=role.display_name,
                 permissions=new_permissions,
             )
+            new_role.uuid = role_key
+            json_db._data.roles[role_key] = new_role
             role_count += 1
     print(f"  Migrated {role_count} roles")
 
