@@ -55,13 +55,13 @@ async def migrate_from_sql(
 
     from paskia.db.operations import DB as JSONDB
     from paskia.db.structs import (
+        Credential,
+        Permission,
+        ResetToken,
+        Session,
         User,
-        _CredentialData,
         _OrgData,
-        _PermissionData,
-        _ResetTokenData,
         _RoleData,
-        _SessionData,
     )
 
     # Initialize source SQL database
@@ -90,11 +90,13 @@ async def migrate_from_sql(
     # Migrate permissions with UUID keys and scope field
     # Always create exactly one common auth:org:admin permission for all org admin needs
     org_admin_perm_uuid: UUID = uuid7.create()
-    json_db._data.permissions[org_admin_perm_uuid] = _PermissionData(
+    org_admin_perm = Permission(
         scope="auth:org:admin",
         display_name="Org Admin",
         orgs={},
     )
+    org_admin_perm.uuid = org_admin_perm_uuid
+    json_db._data.permissions[org_admin_perm_uuid] = org_admin_perm
 
     # Mapping from old permission ID to new permission UUID
     perm_id_to_uuid: dict[str, UUID] = {}
@@ -113,11 +115,13 @@ async def migrate_from_sql(
 
         # Regular permission - create with UUID key
         perm_uuid: UUID = uuid7.create()
-        json_db._data.permissions[perm_uuid] = _PermissionData(
+        new_perm = Permission(
             scope=perm.id,  # Old ID becomes the scope
             display_name=perm.display_name,
             orgs={},
         )
+        new_perm.uuid = perm_uuid
+        json_db._data.permissions[perm_uuid] = new_perm
         perm_id_to_uuid[perm.id] = perm_uuid
     print(
         f"  Migrated {len(permissions)} permissions (with {len(org_admin_uuids)} org-specific admins consolidated to auth:org:admin)"
@@ -181,18 +185,20 @@ async def migrate_from_sql(
         result = await session.execute(select(CredentialModel))
         cred_models = result.scalars().all()
         for cm in cred_models:
-            cred = cm.as_dataclass()
-            cred_key: UUID = cred.uuid
-            json_db._data.credentials[cred_key] = _CredentialData(
-                credential_id=cred.credential_id,
-                user=cred.user_uuid,
-                aaguid=cred.aaguid,
-                public_key=cred.public_key,
-                sign_count=cred.sign_count,
-                created_at=cred.created_at,
-                last_used=cred.last_used,
-                last_verified=cred.last_verified,
+            legacy_cred = cm.as_dataclass()
+            cred_key: UUID = legacy_cred.uuid
+            new_cred = Credential(
+                credential_id=legacy_cred.credential_id,
+                user=legacy_cred.user_uuid,
+                aaguid=legacy_cred.aaguid,
+                public_key=legacy_cred.public_key,
+                sign_count=legacy_cred.sign_count,
+                created_at=legacy_cred.created_at,
+                last_used=legacy_cred.last_used,
+                last_verified=legacy_cred.last_verified,
             )
+            new_cred.uuid = cred_key
+            json_db._data.credentials[cred_key] = new_cred
         print(f"  Migrated {len(cred_models)} credentials")
 
     # Migrate sessions
@@ -209,7 +215,7 @@ async def migrate_from_sql(
             else:
                 # Already in new format or unknown - try to use as-is
                 session_key = base64url.enc(old_key[:12])
-            json_db._data.sessions[session_key] = _SessionData(
+            json_db._data.sessions[session_key] = Session(
                 user=sess.user_uuid,
                 credential=sess.credential_uuid,
                 host=sess.host,
@@ -233,7 +239,7 @@ async def migrate_from_sql(
             else:
                 # Already in new format or unknown - truncate to 9 bytes
                 token_key = old_key[:9]
-            json_db._data.reset_tokens[token_key] = _ResetTokenData(
+            json_db._data.reset_tokens[token_key] = ResetToken(
                 user=token.user_uuid,
                 expiry=token.expiry,
                 token_type=token.token_type,

@@ -59,18 +59,11 @@ export default async function globalTeardown() {
     rmSync(stateFile, { force: true })
   }
 
-  // Optionally clean up test database (keep it for debugging by default)
-  if (process.env.CLEANUP_TEST_DB === 'true') {
-    const dbPath = join(testDataDir, 'test.sqlite')
-    if (existsSync(dbPath)) {
-      console.log('  Removing test database...')
-      rmSync(dbPath)
-    }
-    // Remove wal/shm files too
-    for (const ext of ['-wal', '-shm']) {
-      const file = dbPath + ext
-      if (existsSync(file)) rmSync(file)
-    }
+  // Clean up test database
+  const testDbFile = join(testDataDir, 'test-db.jsonl')
+  if (existsSync(testDbFile)) {
+    console.log('  Removing test database...')
+    rmSync(testDbFile)
   }
 
   // Generate Python coverage report if coverage was collected

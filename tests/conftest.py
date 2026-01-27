@@ -84,8 +84,7 @@ async def passkey_instance() -> Passkey:
 @pytest_asyncio.fixture(scope="function")
 async def test_org(test_db: DB, admin_permission: Permission) -> Org:
     """Create a test organization with admin permission."""
-    org = Org(
-        uuid=uuid7.create(),
+    org = Org.create(
         display_name="Test Organization",
         permissions=[str(admin_permission.uuid)],  # Org can grant this permission
     )
@@ -96,11 +95,7 @@ async def test_org(test_db: DB, admin_permission: Permission) -> Org:
 @pytest_asyncio.fixture(scope="function")
 async def admin_permission(test_db: DB) -> Permission:
     """Create the auth:admin permission."""
-    import uuid7
-
-    perm = Permission(
-        uuid=uuid7.create(), scope="auth:admin", display_name="Master Admin"
-    )
+    perm = Permission.create(scope="auth:admin", display_name="Master Admin")
     create_permission(perm)
     return perm
 
@@ -108,11 +103,7 @@ async def admin_permission(test_db: DB) -> Permission:
 @pytest_asyncio.fixture(scope="function")
 async def org_admin_permission(test_db: DB, test_org: Org) -> Permission:
     """Create the auth:org:admin permission."""
-    import uuid7
-
-    perm = Permission(
-        uuid=uuid7.create(), scope="auth:org:admin", display_name="Organization Admin"
-    )
+    perm = Permission.create(scope="auth:org:admin", display_name="Organization Admin")
     create_permission(perm)
     # Make it grantable by the org
     add_permission_to_organization(str(test_org.uuid), "auth:org:admin")
@@ -127,9 +118,8 @@ async def test_role(
     org_admin_permission: Permission,
 ) -> Role:
     """Create a test role with admin permission."""
-    role = Role(
-        uuid=uuid7.create(),
-        org_uuid=test_org.uuid,
+    role = Role.create(
+        org=test_org.uuid,
         display_name="Test Admin Role",
         permissions=[str(admin_permission.uuid), str(org_admin_permission.uuid)],
     )
@@ -140,11 +130,9 @@ async def test_role(
 @pytest_asyncio.fixture(scope="function")
 async def user_role(test_db: DB, test_org: Org) -> Role:
     """Create a test role without admin permission (regular user)."""
-    role = Role(
-        uuid=uuid7.create(),
-        org_uuid=test_org.uuid,
+    role = Role.create(
+        org=test_org.uuid,
         display_name="User Role",
-        permissions=[],
     )
     create_role(role)
     return role
@@ -153,12 +141,9 @@ async def user_role(test_db: DB, test_org: Org) -> Role:
 @pytest_asyncio.fixture(scope="function")
 async def test_user(test_db: DB, test_role: Role) -> User:
     """Create a test user with admin role."""
-    user = User(
-        uuid=uuid7.create(),
+    user = User.create(
         display_name="Test Admin",
-        role_uuid=test_role.uuid,
-        created_at=datetime.now(timezone.utc),
-        visits=0,
+        role=test_role.uuid,
     )
     create_user(user)
     return user
@@ -167,12 +152,9 @@ async def test_user(test_db: DB, test_role: Role) -> User:
 @pytest_asyncio.fixture(scope="function")
 async def regular_user(test_db: DB, user_role: Role) -> User:
     """Create a regular test user without admin permissions."""
-    user = User(
-        uuid=uuid7.create(),
+    user = User.create(
         display_name="Regular User",
-        role_uuid=user_role.uuid,
-        created_at=datetime.now(timezone.utc),
-        visits=0,
+        role=user_role.uuid,
     )
     create_user(user)
     return user
@@ -181,16 +163,12 @@ async def regular_user(test_db: DB, user_role: Role) -> User:
 @pytest_asyncio.fixture(scope="function")
 async def test_credential(test_db: DB, test_user: User) -> Credential:
     """Create a test credential for the admin user."""
-    credential = Credential(
-        uuid=uuid7.create(),
+    credential = Credential.create(
         credential_id=os.urandom(32),
-        user_uuid=test_user.uuid,
+        user=test_user.uuid,
         aaguid=UUID("00000000-0000-0000-0000-000000000000"),
         public_key=os.urandom(64),
         sign_count=0,
-        created_at=datetime.now(timezone.utc),
-        last_used=None,
-        last_verified=None,
     )
     create_credential(credential)
     return credential
@@ -199,16 +177,12 @@ async def test_credential(test_db: DB, test_user: User) -> Credential:
 @pytest_asyncio.fixture(scope="function")
 async def regular_credential(test_db: DB, regular_user: User) -> Credential:
     """Create a test credential for the regular user."""
-    credential = Credential(
-        uuid=uuid7.create(),
+    credential = Credential.create(
         credential_id=os.urandom(32),
-        user_uuid=regular_user.uuid,
+        user=regular_user.uuid,
         aaguid=UUID("00000000-0000-0000-0000-000000000000"),
         public_key=os.urandom(64),
         sign_count=0,
-        created_at=datetime.now(timezone.utc),
-        last_used=None,
-        last_verified=None,
     )
     create_credential(credential)
     return credential

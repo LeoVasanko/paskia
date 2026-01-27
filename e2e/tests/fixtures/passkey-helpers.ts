@@ -23,6 +23,40 @@ export interface AuthenticationResult {
   session_token: string
 }
 
+export interface SessionContext {
+  user: { uuid: string; display_name: string }
+  org: { uuid: string; display_name: string }
+  role: { uuid: string; display_name: string }
+  permissions: string[]
+}
+
+export interface UserInfo {
+  ctx: SessionContext
+  created_at: string
+  last_seen: string
+  visits: number
+  credentials: Array<{
+    credential_uuid: string
+    aaguid: string
+    created_at: string
+    last_used: string | null
+    last_verified: string | null
+    sign_count: number
+    is_current_session: boolean
+  }>
+  aaguid_info: Record<string, { name: string; icon_light?: string; icon_dark?: string }>
+  sessions: Array<{
+    id: string
+    credential_uuid: string
+    host: string
+    ip: string
+    user_agent: string
+    last_renewed: string
+    is_current: boolean
+    is_current_host: boolean
+  }>
+}
+
 /**
  * Get the bootstrap reset token from the test state file.
  */
@@ -376,7 +410,7 @@ export async function validateSession(
   page: Page,
   baseUrl: string,
   sessionToken: string
-): Promise<{ valid: boolean; user_uuid: string; renewed: boolean }> {
+): Promise<{ valid: boolean; ctx: SessionContext; renewed: boolean }> {
   const cookieName = getSessionCookieName()
   const response = await page.request.post(`${baseUrl}/auth/api/validate`, {
     headers: {
@@ -393,7 +427,7 @@ export async function getUserInfo(
   page: Page,
   baseUrl: string,
   sessionToken: string
-): Promise<any> {
+): Promise<UserInfo> {
   const cookieName = getSessionCookieName()
   const response = await page.request.post(`${baseUrl}/auth/api/user-info`, {
     headers: {

@@ -37,13 +37,9 @@ from paskia.db.structs import (
     Session,
     SessionContext,
     User,
-    _CredentialData,
     _DatabaseData,
     _OrgData,
-    _PermissionData,
-    _ResetTokenData,
     _RoleData,
-    _SessionData,
 )
 from paskia.util.passphrase import is_well_formed as _is_passphrase
 
@@ -170,10 +166,9 @@ async def init(*args, **kwargs):
 
 
 def build_permission(uuid: UUID) -> Permission:
-    p = _db._data.permissions[uuid]
-    return Permission(
-        uuid=uuid, scope=p.scope, display_name=p.display_name, domain=p.domain
-    )
+    perm = _db._data.permissions[uuid]
+    perm.uuid = uuid
+    return perm
 
 
 def build_user(uuid: UUID) -> User:
@@ -184,12 +179,13 @@ def build_user(uuid: UUID) -> User:
 
 def build_role(uuid: UUID) -> Role:
     r = _db._data.roles[uuid]
-    return Role(
-        uuid=uuid,
-        org_uuid=r.org,
+    role = Role(
+        org=r.org,
         display_name=r.display_name,
         permissions=[str(pid) for pid in r.permissions.keys()],
     )
+    role.uuid = uuid
+    return role
 
 
 def build_org(uuid: UUID, include_roles: bool = False) -> Org:
@@ -197,7 +193,8 @@ def build_org(uuid: UUID, include_roles: bool = False) -> Org:
     perm_uuids = [
         str(pid) for pid, p in _db._data.permissions.items() if uuid in p.orgs
     ]
-    org = Org(uuid=uuid, display_name=o.display_name, permissions=perm_uuids)
+    org = Org(display_name=o.display_name, permissions=perm_uuids)
+    org.uuid = uuid
     if include_roles:
         org.roles = [
             build_role(rid) for rid, r in _db._data.roles.items() if r.org == uuid
@@ -206,41 +203,21 @@ def build_org(uuid: UUID, include_roles: bool = False) -> Org:
 
 
 def build_credential(uuid: UUID) -> Credential:
-    c = _db._data.credentials[uuid]
-    return Credential(
-        uuid=uuid,
-        credential_id=c.credential_id,
-        user_uuid=c.user,
-        aaguid=c.aaguid,
-        public_key=c.public_key,
-        sign_count=c.sign_count,
-        created_at=c.created_at,
-        last_used=c.last_used,
-        last_verified=c.last_verified,
-    )
+    cred = _db._data.credentials[uuid]
+    cred.uuid = uuid
+    return cred
 
 
 def build_session(key: str) -> Session:
     s = _db._data.sessions[key]
-    return Session(
-        key=key,
-        user_uuid=s.user,
-        credential_uuid=s.credential,
-        host=s.host,
-        ip=s.ip,
-        user_agent=s.user_agent,
-        expiry=s.expiry,
-    )
+    s.key = key
+    return s
 
 
 def build_reset_token(key: bytes) -> ResetToken:
     t = _db._data.reset_tokens[key]
-    return ResetToken(
-        key=key,
-        user_uuid=t.user,
-        expiry=t.expiry,
-        token_type=t.token_type,
-    )
+    t.key = key
+    return t
 
 
 # -------------------------------------------------------------------------
@@ -520,12 +497,7 @@ def create_permission(perm: Permission, *, ctx: SessionContext | None = None) ->
     if perm.uuid in _db._data.permissions:
         raise ValueError(f"Permission {perm.uuid} already exists")
     with _db.transaction("Created permission", ctx):
-        _db._data.permissions[perm.uuid] = _PermissionData(
-            scope=perm.scope,
-            display_name=perm.display_name,
-            domain=perm.domain,
-            orgs={},
-        )
+        _db._data.permissions[perm.uuid] = perm
 
 
 def update_permission(perm: Permission, *, ctx: SessionContext | None = None) -> None:
@@ -724,11 +696,11 @@ def create_role(role: Role, *, ctx: SessionContext | None = None) -> None:
     """Create a new role."""
     if role.uuid in _db._data.roles:
         raise ValueError(f"Role {role.uuid} already exists")
-    if role.org_uuid not in _db._data.orgs:
-        raise ValueError(f"Organization {role.org_uuid} not found")
+    if role.org not in _db._data.orgs:
+        raise ValueError(f"Organization {role.org} not found")
     with _db.transaction("Created role", ctx):
         _db._data.roles[role.uuid] = _RoleData(
-            org=role.org_uuid,
+            org=role.org,
             display_name=role.display_name,
             permissions={UUID(pid): True for pid in role.permissions},
         )
@@ -901,19 +873,10 @@ def create_credential(cred: Credential, *, ctx: SessionContext | None = None) ->
     """Create a new credential."""
     if cred.uuid in _db._data.credentials:
         raise ValueError(f"Credential {cred.uuid} already exists")
-    if cred.user_uuid not in _db._data.users:
-        raise ValueError(f"User {cred.user_uuid} not found")
+    if cred.user not in _db._data.users:
+        raise ValueError(f"User {cred.user} not found")
     with _db.transaction("Added credential", ctx):
-        _db._data.credentials[cred.uuid] = _CredentialData(
-            credential_id=cred.credential_id,
-            user=cred.user_uuid,
-            aaguid=cred.aaguid,
-            public_key=cred.public_key,
-            sign_count=cred.sign_count,
-            created_at=cred.created_at,
-            last_used=cred.last_used,
-            last_verified=cred.last_verified,
-        )
+        _db._data.credentials[cred.uuid] = cred
 
 
 def update_credential_sign_count(
@@ -981,7 +944,7 @@ def create_session(
     if credential_uuid not in _db._data.credentials:
         raise ValueError(f"Credential {credential_uuid} not found")
     with _db.transaction("Created session", ctx):
-        _db._data.sessions[key] = _SessionData(
+        _db._data.sessions[key] = Session(
             user=user_uuid,
             credential=credential_uuid,
             host=host,
@@ -1073,7 +1036,7 @@ def create_reset_token(
     # For self-service, derive user from the user_uuid param
     user_str = str(user_uuid) if not ctx else None
     with _db.transaction("Created reset token", ctx, user=user_str):
-        _db._data.reset_tokens[key] = _ResetTokenData(
+        _db._data.reset_tokens[key] = ResetToken(
             user=user_uuid, expiry=expiry, token_type=token_type
         )
 
@@ -1155,7 +1118,7 @@ def login(
         _db._data.credentials[credential.uuid].sign_count = credential.sign_count
         _db._data.credentials[credential.uuid].last_used = now
         # Create session
-        _db._data.sessions[session_key] = _SessionData(
+        _db._data.sessions[session_key] = Session(
             user=user_uuid,
             credential=credential.uuid,
             host=host,
@@ -1201,19 +1164,10 @@ def create_credential_session(
             _db._data.users[user_uuid].display_name = display_name
 
         # Create credential
-        _db._data.credentials[credential.uuid] = _CredentialData(
-            credential_id=credential.credential_id,
-            user=user_uuid,
-            aaguid=credential.aaguid,
-            public_key=credential.public_key,
-            sign_count=credential.sign_count,
-            created_at=credential.created_at,
-            last_used=credential.last_used,
-            last_verified=credential.last_verified,
-        )
+        _db._data.credentials[credential.uuid] = credential
 
         # Create session
-        _db._data.sessions[session_key] = _SessionData(
+        _db._data.sessions[session_key] = Session(
             user=user_uuid,
             credential=credential.uuid,
             host=host,
@@ -1291,18 +1245,22 @@ def bootstrap(
 
     with _db.transaction("bootstrap"):
         # Create auth:admin permission
-        _db._data.permissions[perm_admin_uuid] = _PermissionData(
+        perm_admin = Permission(
             scope="auth:admin",
             display_name="Master Admin",
             orgs={org_uuid: True},  # Grant to org
         )
+        perm_admin.uuid = perm_admin_uuid
+        _db._data.permissions[perm_admin_uuid] = perm_admin
 
         # Create auth:org:admin permission
-        _db._data.permissions[perm_org_admin_uuid] = _PermissionData(
+        perm_org_admin = Permission(
             scope="auth:org:admin",
             display_name="Org Admin",
             orgs={org_uuid: True},  # Grant to org
         )
+        perm_org_admin.uuid = perm_org_admin_uuid
+        _db._data.permissions[perm_org_admin_uuid] = perm_org_admin
 
         # Create organization
         _db._data.orgs[org_uuid] = _OrgData(
@@ -1329,7 +1287,7 @@ def bootstrap(
         _db._data.users[user_uuid] = admin_user
 
         # Create reset token
-        _db._data.reset_tokens[reset_key] = _ResetTokenData(
+        _db._data.reset_tokens[reset_key] = ResetToken(
             user=user_uuid,
             expiry=reset_expiry,
             token_type="admin bootstrap",

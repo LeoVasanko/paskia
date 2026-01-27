@@ -135,13 +135,12 @@ async def admin_create_org(
     )
     from ..db import Org as OrgDC  # local import to avoid cycles
 
-    org_uuid = uuid4()
     display_name = payload.get("display_name") or "New Organization"
     permissions = payload.get("permissions") or []
-    org = OrgDC(uuid=org_uuid, display_name=display_name, permissions=permissions)
+    org = OrgDC.create(display_name=display_name, permissions=permissions)
     db.create_organization(org, ctx=ctx)
 
-    return {"uuid": str(org_uuid)}
+    return {"uuid": str(org.uuid)}
 
 
 @app.patch("/orgs/{org_uuid}")
@@ -264,7 +263,6 @@ async def admin_create_role(
         )
     from ..db import Role as RoleDC
 
-    role_uuid = uuid4()
     display_name = payload.get("display_name") or "New Role"
     perms = payload.get("permissions") or []
     org = db.get_organization(str(org_uuid))
@@ -281,14 +279,13 @@ async def admin_create_role(
             raise ValueError(f"Permission not grantable by org: {pid}")
         permission_uuids.append(perm_uuid_str)
 
-    role = RoleDC(
-        uuid=role_uuid,
-        org_uuid=org_uuid,
+    role = RoleDC.create(
+        org=org_uuid,
         display_name=display_name,
         permissions=permission_uuids,
     )
     db.create_role(role, ctx=ctx)
-    return {"uuid": str(role_uuid)}
+    return {"uuid": str(role.uuid)}
 
 
 @app.patch("/orgs/{org_uuid}/roles/{role_uuid}")
@@ -939,8 +936,6 @@ async def admin_create_permission(
         match=permutil.has_all,
         max_age="5m",
     )
-    import uuid7
-
     from ..db import Permission as PermDC
 
     scope = payload.get("scope") or payload.get(
@@ -953,9 +948,7 @@ async def admin_create_permission(
     querysafe.assert_safe(scope, field="scope")
     _validate_permission_domain(domain)
     db.create_permission(
-        PermDC(
-            uuid=uuid7.create(), scope=scope, display_name=display_name, domain=domain
-        ),
+        PermDC.create(scope=scope, display_name=display_name, domain=domain),
         ctx=ctx,
     )
     return {"status": "ok"}
@@ -999,15 +992,13 @@ async def admin_update_permission(
 
     from ..db import Permission as PermDC
 
-    db.update_permission(
-        PermDC(
-            uuid=perm.uuid,
-            scope=new_scope,
-            display_name=new_display_name,
-            domain=domain_value,
-        ),
-        ctx=ctx,
+    updated_perm = PermDC(
+        scope=new_scope,
+        display_name=new_display_name,
+        domain=domain_value,
     )
+    updated_perm.uuid = perm.uuid
+    db.update_permission(updated_perm, ctx=ctx)
     return {"status": "ok"}
 
 

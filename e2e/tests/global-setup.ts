@@ -42,21 +42,23 @@ export default async function globalSetup() {
   const serverArgs = COLLECT_COVERAGE
     ? [
         'run', 'coverage', 'run', '--parallel-mode',
-        '-m', 'paskia.fastapi', 'serve', 'localhost:4404',
+        '-m', 'paskia.fastapi', 'localhost:4404',
         '--rp-id', 'localhost'
       ]
     : [
-        'run', 'paskia', 'serve', 'localhost:4404',
+        'run', 'paskia', 'localhost:4404',
         '--rp-id', 'localhost'
       ]
 
+  // Use a temporary jsonl file for test database
+  const testDbFile = join(testDataDir, 'test-db.jsonl')
+
   // Start the server using Node's spawn
-  // Use in-memory SQLite for faster tests
   const serverProcess = spawn('uv', serverArgs, {
     cwd: projectRoot,
     env: {
       ...process.env,
-      PASKIA_DB: 'sqlite+aiosqlite:///:memory:',
+      PASKIA_DB: testDbFile,
       COVERAGE_FILE: join(projectRoot, '.coverage'),
     },
     stdio: ['ignore', 'pipe', 'pipe'],
