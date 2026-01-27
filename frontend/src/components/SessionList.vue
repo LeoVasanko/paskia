@@ -20,7 +20,7 @@
                 :class="['session-item', {
                   'is-current': session.is_current && !hoveredIp && !hoveredCredentialUuid,
                   'is-hovered': hoveredSession?.id === session.id,
-                  'is-linked-credential': hoveredCredentialUuid === session.credential_uuid
+                  'is-linked-credential': hoveredCredentialUuid === session.credential
                 }]"
                 tabindex="-1"
                 @mousedown.prevent
@@ -34,7 +34,7 @@
                   <div class="item-actions">
                     <span v-if="session.is_current && !hoveredIp && !hoveredCredentialUuid" class="badge badge-current">Current</span>
                     <span v-else-if="hoveredSession?.id === session.id" class="badge badge-current">Selected</span>
-                    <span v-else-if="hoveredCredentialUuid === session.credential_uuid" class="badge badge-current">Linked</span>
+                    <span v-else-if="hoveredCredentialUuid === session.credential" class="badge badge-current">Linked</span>
                     <span v-else-if="!hoveredCredentialUuid && isSameHost(session.ip)" class="badge">Same IP</span>
                     <button
                       @click="$emit('terminate', session)"

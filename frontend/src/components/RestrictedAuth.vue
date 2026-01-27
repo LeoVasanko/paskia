@@ -279,7 +279,7 @@ onUnmounted(() => {
 defineExpose({
   showMessage,
   isAuthenticated,
-  userInfo
+  session
 })
 </script>
 

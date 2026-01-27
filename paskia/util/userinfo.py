@@ -57,13 +57,13 @@ async def format_user_info(
         user_aaguids.add(aaguid_str)
         credentials.append(
             {
-                "credential_uuid": str(c.uuid),
+                "credential": str(c.uuid),
                 "aaguid": aaguid_str,
                 "created_at": _format_datetime(c.created_at),
                 "last_used": _format_datetime(c.last_used),
                 "last_verified": _format_datetime(c.last_verified),
                 "sign_count": c.sign_count,
-                "is_current_session": session_record.credential_uuid == c.uuid,
+                "is_current_session": session_record.credential == c.uuid,
             }
         )
 
@@ -80,7 +80,7 @@ async def format_user_info(
         sessions_payload.append(
             {
                 "id": entry.key,
-                "credential_uuid": str(entry.credential_uuid),
+                "credential": str(entry.credential),
                 "host": entry.host,
                 "ip": entry.ip,
                 "user_agent": useragent.compact_user_agent(entry.user_agent),

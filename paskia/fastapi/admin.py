@@ -99,7 +99,7 @@ async def admin_list_orgs(request: Request, auth=AUTH_COOKIE):
     def role_to_dict(r):
         return {
             "uuid": str(r.uuid),
-            "org_uuid": str(r.org_uuid),
+            "org": str(r.org),
             "display_name": r.display_name,
             "permissions": r.permissions,
         }
@@ -600,7 +600,7 @@ async def admin_get_user_detail(
         aaguids.add(aaguid_str)
         creds.append(
             {
-                "credential_uuid": str(c.uuid),
+                "credential": str(c.uuid),
                 "aaguid": aaguid_str,
                 "created_at": (
                     c.created_at.astimezone(timezone.utc)
@@ -656,7 +656,7 @@ async def admin_get_user_detail(
         sessions_payload.append(
             {
                 "id": entry.key,
-                "credential_uuid": str(entry.credential_uuid),
+                "credential": str(entry.credential),
                 "host": entry.host,
                 "ip": entry.ip,
                 "user_agent": useragent.compact_user_agent(entry.user_agent),

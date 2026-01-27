@@ -179,7 +179,7 @@ async def websocket_remote_auth_request(ws: WebSocket):
                         ):
                             response = {
                                 "status": "authenticated",
-                                "user_uuid": str(result_data["user_uuid"]),
+                                "user": str(result_data["user_uuid"]),
                             }
                             if result_data.get("session_token"):
                                 response["session_token"] = result_data["session_token"]

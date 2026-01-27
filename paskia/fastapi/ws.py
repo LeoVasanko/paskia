@@ -93,8 +93,8 @@ async def websocket_register_add(
     assert isinstance(auth, str) and len(auth) == 16
     await ws.send_json(
         {
-            "user_uuid": str(user.uuid),
-            "credential_uuid": str(credential.uuid),
+            "user": str(user.uuid),
+            "credential": str(credential.uuid),
             "session_token": auth,
             "message": "New credential added successfully",
         }
@@ -164,7 +164,7 @@ async def websocket_authenticate(ws: WebSocket, auth=AUTH_COOKIE):
 
     await ws.send_json(
         {
-            "user_uuid": str(stored_cred.user),
+            "user": str(stored_cred.user),
             "session_token": token,
         }
     )

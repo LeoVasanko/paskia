@@ -45,7 +45,7 @@ function handleEditName() {
 
 async function handleDelete(credential) {
   try {
-    const data = await apiJson(`/auth/api/admin/orgs/${props.selectedUser.org_uuid}/users/${props.selectedUser.uuid}/credentials/${credential.credential_uuid}`, { method: 'DELETE' })
+    const data = await apiJson(`/auth/api/admin/orgs/${props.selectedUser.org}/users/${props.selectedUser.uuid}/credentials/${credential.credential}`, { method: 'DELETE' })
     if (data.status === 'ok') {
       emit('onUserNameSaved') // Reuse to refresh user detail
     } else {
@@ -61,7 +61,7 @@ async function handleTerminateSession(session) {
   if (!sessionId) return
   terminatingSessions.value = { ...terminatingSessions.value, [sessionId]: true }
   try {
-    const data = await apiJson(`/auth/api/admin/orgs/${props.selectedUser.org_uuid}/users/${props.selectedUser.uuid}/sessions/${sessionId}`, { method: 'DELETE' })
+    const data = await apiJson(`/auth/api/admin/orgs/${props.selectedUser.org}/users/${props.selectedUser.uuid}/sessions/${sessionId}`, { method: 'DELETE' })
     if (data.status === 'ok') {
       if (data.current_session_terminated) {
         sessionStorage.clear()
@@ -183,7 +183,7 @@ defineExpose({ focusFirstElement })
         :loading="loading"
         :org-display-name="userDetail.org.display_name"
         :role-name="userDetail.role"
-        :update-endpoint="`/auth/api/admin/orgs/${selectedUser.org_uuid}/users/${selectedUser.uuid}/display-name`"
+        :update-endpoint="`/auth/api/admin/orgs/${selectedUser.org}/users/${selectedUser.uuid}/display-name`"
         @saved="$emit('onUserNameSaved')"
         @edit-name="handleEditName"
       />
@@ -212,7 +212,7 @@ defineExpose({ focusFirstElement })
             :aaguid-info="userDetail.aaguid_info"
             :allow-delete="true"
             :hovered-credential-uuid="hoveredCredentialUuid"
-            :hovered-session-credential-uuid="hoveredSession?.credential_uuid"
+            :hovered-session-credential-uuid="hoveredSession?.credential"
             :navigation-disabled="hasActiveModal"
             @delete="handleDelete"
             @credential-hover="hoveredCredentialUuid = $event"
@@ -238,7 +238,7 @@ defineExpose({ focusFirstElement })
     </div>
     <RegistrationLinkModal
       v-if="showRegModal"
-      :endpoint="`/auth/api/admin/orgs/${selectedUser.org_uuid}/users/${selectedUser.uuid}/create-link`"
+      :endpoint="`/auth/api/admin/orgs/${selectedUser.org}/users/${selectedUser.uuid}/create-link`"
       :user-name="userDetail?.display_name || selectedUser.display_name"
       @close="$emit('closeRegModal')"
       @copied="onLinkCopied"

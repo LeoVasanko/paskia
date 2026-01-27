@@ -47,7 +47,7 @@
           :aaguid-info="authStore.userInfo?.aaguid_info || {}"
           :loading="authStore.isLoading"
           :hovered-credential-uuid="hoveredCredentialUuid"
-          :hovered-session-credential-uuid="hoveredSession?.credential_uuid"
+          :hovered-session-credential-uuid="hoveredSession?.credential"
           :navigation-disabled="hasActiveModal"
           allow-delete
           @delete="handleDelete"
@@ -292,7 +292,7 @@ const handleLogoutButtonKeydown = (event) => {
 }
 
 const handleDelete = async (credential) => {
-  const credentialId = credential?.credential_uuid
+  const credentialId = credential?.credential
   if (!credentialId) return
   try {
     await authStore.deleteCredential(credentialId)

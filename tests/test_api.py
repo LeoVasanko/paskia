@@ -317,7 +317,7 @@ class TestSetSessionEndpoint:
         )
         assert response.status_code == 200
         data = response.json()
-        assert "user_uuid" in data
+        assert "user" in data
         # Check that Set-Cookie header is present
         assert "set-cookie" in response.headers
 
