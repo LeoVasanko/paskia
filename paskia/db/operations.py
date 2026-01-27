@@ -232,16 +232,6 @@ def get_session(key: str) -> Session | None:
     return _db.sessions.get(key)
 
 
-def list_sessions_for_user(user_uuid: UUID) -> list[Session]:
-    """Get all active sessions for a user.
-
-    Call sites:
-    - List sessions for user info (userinfo.py:75)
-    - List sessions for user details API (admin.py:651)
-    """
-    return [s for s in _db.sessions.values() if s.user == user_uuid]
-
-
 def _reset_key(passphrase: str) -> bytes:
     """Hash a passphrase to bytes for reset token storage."""
     if not _is_passphrase(passphrase):

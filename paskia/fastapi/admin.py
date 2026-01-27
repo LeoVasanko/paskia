@@ -675,7 +675,7 @@ async def admin_get_user_detail(
 
     # Get sessions for the user
     normalized_request_host = hostutil.normalize_host(request.headers.get("host"))
-    session_records = db.list_sessions_for_user(user_uuid)
+    session_records = [s for s in db.data().sessions.values() if s.user == user_uuid]
     current_session_key = auth
     sessions_payload: list[dict] = []
     for entry in session_records:
