@@ -163,51 +163,14 @@ async def init(*args, **kwargs):
 # -------------------------------------------------------------------------
 
 
-def build_permission(uuid: UUID) -> Permission:
-    perm = _db._data.permissions[uuid]
-    perm.uuid = uuid
-    return perm
-
-
-def build_user(uuid: UUID) -> User:
-    user = _db._data.users[uuid]
-    user.uuid = uuid
-    return user
-
-
-def build_role(uuid: UUID) -> Role:
-    r = _db._data.roles[uuid]
-    r.uuid = uuid
-    return r
-
-
 def build_org(uuid: UUID, include_roles: bool = False) -> Org:
     o = _db._data.orgs[uuid]
-    o.uuid = uuid
     o.permissions = {pid for pid, p in _db._data.permissions.items() if uuid in p.orgs}
     if include_roles:
         o.roles = [
-            build_role(rid) for rid, r in _db._data.roles.items() if r.org == uuid
+            _db._data.roles[rid] for rid, r in _db._data.roles.items() if r.org == uuid
         ]
     return o
-
-
-def build_credential(uuid: UUID) -> Credential:
-    cred = _db._data.credentials[uuid]
-    cred.uuid = uuid
-    return cred
-
-
-def build_session(key: str) -> Session:
-    s = _db._data.sessions[key]
-    s.key = key
-    return s
-
-
-def build_reset_token(key: bytes) -> ResetToken:
-    t = _db._data.reset_tokens[key]
-    t.key = key
-    return t
 
 
 # -------------------------------------------------------------------------
@@ -228,9 +191,7 @@ def get_permission(uuid: UUID) -> Permission | None:
     - Get permission for renaming its scope (admin.py:1031)
     - Get permission to check scope before deleting (admin.py:1071)
     """
-    if uuid in _db._data.permissions:
-        return build_permission(uuid)
-    return None
+    return _db._data.permissions.get(uuid)
 
 
 def get_permission_by_scope(scope: str) -> Permission | None:
@@ -239,9 +200,9 @@ def get_permission_by_scope(scope: str) -> Permission | None:
     Call sites:
     - Check if system is already bootstrapped by looking for auth:admin permission (bootstrap.py:113)
     """
-    for uuid, p in _db._data.permissions.items():
+    for p in _db._data.permissions.values():
         if p.scope == scope:
-            return build_permission(uuid)
+            return p
     return None
 
 
@@ -251,11 +212,7 @@ def get_permissions_by_scope(scope: str) -> list[Permission]:
     Since scopes are not unique, this returns all matching permissions.
     Use this for scope-based permission checking.
     """
-    return [
-        build_permission(uuid)
-        for uuid, p in _db._data.permissions.items()
-        if p.scope == scope
-    ]
+    return [p for p in _db._data.permissions.values() if p.scope == scope]
 
 
 def list_permissions() -> list[Permission]:
@@ -268,7 +225,7 @@ def list_permissions() -> list[Permission]:
     - List permissions to check admin permissions when deleting permission (admin.py:882)
     - Admin API endpoint to list permissions (admin.py:914)
     """
-    return [build_permission(uuid) for uuid in _db._data.permissions]
+    return list(_db._data.permissions.values())
 
 
 def get_permission_organizations(scope: str) -> list[Org]:
@@ -316,8 +273,8 @@ def get_organization_users(org_uuid: UUID) -> list[tuple[User, str]]:
         rid: r.display_name for rid, r in _db._data.roles.items() if r.org == org_uuid
     }
     return [
-        (build_user(uid), role_map[u.role])
-        for uid, u in _db._data.users.items()
+        (u, role_map[u.role])
+        for u in _db._data.users.values()
         if u.role in role_map
     ]
 
@@ -331,7 +288,7 @@ def get_role(uuid: UUID) -> Role | None:
     - Get role to remove permission from it (admin.py:380)
     - Get role to delete it (admin.py:421)
     """
-    return build_role(uuid) if uuid in _db._data.roles else None
+    return _db._data.roles.get(uuid)
 
 
 def get_roles_by_organization(org_uuid: UUID) -> list[Role]:
@@ -341,7 +298,7 @@ def get_roles_by_organization(org_uuid: UUID) -> list[Role]:
     - Get roles by organization when creating a user to find the role by name (admin.py:459)
     - Get roles by organization when updating user role to validate the new role name (admin.py:498)
     """
-    return [build_role(rid) for rid, r in _db._data.roles.items() if r.org == org_uuid]
+    return [r for r in _db._data.roles.values() if r.org == org_uuid]
 
 
 def get_user_by_uuid(uuid: UUID) -> User | None:
@@ -352,7 +309,7 @@ def get_user_by_uuid(uuid: UUID) -> User | None:
     - Get user from reset token for registration info (api.py:127)
     - Get user for listing user credentials in admin API (admin.py:594)
     """
-    return build_user(uuid) if uuid in _db._data.users else None
+    return _db._data.users.get(uuid)
 
 
 def get_user_organization(user_uuid: UUID) -> tuple[Org, str]:
@@ -385,9 +342,9 @@ def get_credential_by_id(credential_id: bytes) -> Credential | None:
     - Get credential by ID for WebAuthn authentication (ws.py:132)
     - Get credential by ID for remote authentication (remote.py:325)
     """
-    for uuid, c in _db._data.credentials.items():
+    for c in _db._data.credentials.values():
         if c.credential_id == credential_id:
-            return build_credential(uuid)
+            return c
     return None
 
 
@@ -402,11 +359,7 @@ def get_credentials_by_user_uuid(user_uuid: UUID) -> list[Credential]:
     - Get credentials to check if admin user has credentials (bootstrap.py:81)
     - Get credentials for user info formatting (userinfo.py:51)
     """
-    return [
-        build_credential(cid)
-        for cid, c in _db._data.credentials.items()
-        if c.user == user_uuid
-    ]
+    return [c for c in _db._data.credentials.values() if c.user == user_uuid]
 
 
 def get_session(key: str) -> Session | None:
@@ -423,7 +376,7 @@ def get_session(key: str) -> Session | None:
     s = _db._data.sessions[key]
     if s.expiry < datetime.now(timezone.utc):
         return None
-    return build_session(key)
+    return s
 
 
 def list_sessions_for_user(user_uuid: UUID) -> list[Session]:
@@ -434,11 +387,7 @@ def list_sessions_for_user(user_uuid: UUID) -> list[Session]:
     - List sessions for user details API (admin.py:651)
     """
     now = datetime.now(timezone.utc)
-    return [
-        build_session(key)
-        for key, s in _db._data.sessions.items()
-        if s.user == user_uuid and s.expiry >= now
-    ]
+    return [s for s in _db._data.sessions.values() if s.user == user_uuid and s.expiry >= now]
 
 
 def _reset_key(passphrase: str) -> bytes:
@@ -464,7 +413,7 @@ def get_reset_token(passphrase: str) -> ResetToken | None:
     t = _db._data.reset_tokens[key]
     if t.expiry < datetime.now(timezone.utc):
         return None
-    return build_reset_token(key)
+    return t
 
 
 # -------------------------------------------------------------------------
@@ -521,15 +470,15 @@ def get_session_context(
     if org_uuid not in _db._data.orgs:
         return None
 
-    session = build_session(session_key)
-    user = build_user(s.user)
-    role = build_role(role_uuid)
+    session = _db._data.sessions[session_key]
+    user = _db._data.users[s.user]
+    role = _db._data.roles[role_uuid]
     org = build_org(org_uuid)
 
     # Credential must exist (sessions are cascade-deleted when credential is deleted)
     if s.credential not in _db._data.credentials:
         return None
-    credential = build_credential(s.credential)
+    credential = _db._data.credentials[s.credential]
 
     # Effective permissions: role's permissions that the org can grant
     # Also filter by domain if host is provided
@@ -547,7 +496,7 @@ def get_session_context(
         # Check domain restriction
         if p.domain is not None and p.domain != host_without_port:
             continue
-        effective_perms.append(build_permission(perm_uuid))
+        effective_perms.append(_db._data.permissions[perm_uuid])
 
     return SessionContext(
         session=session,
@@ -624,9 +573,11 @@ def create_organization(org: Org, *, ctx: SessionContext | None = None) -> None:
     if org.uuid in _db._data.orgs:
         raise ValueError(f"Organization {org.uuid} already exists")
     with _db.transaction("Created organization", ctx):
-        _db._data.orgs[org.uuid] = Org(
+        new_org = Org(
             display_name=org.display_name, created_at=datetime.now(timezone.utc)
         )
+        _db._data.orgs[org.uuid] = new_org
+        new_org.uuid = org.uuid
         # Create Administration role with org admin permission
         import uuid7
 
@@ -1182,7 +1133,7 @@ def bootstrap(
     admin_name: str = "Admin",
     reset_passphrase: str | None = None,
     reset_expiry: datetime | None = None,
-) -> dict:
+) -> str:
     """Bootstrap the entire system in a single transaction.
 
     Creates:
@@ -1202,7 +1153,7 @@ def bootstrap(
         reset_expiry: Expiry datetime for the reset token (default: 14 days)
 
     Returns:
-        dict with keys: perm_admin, perm_org_admin, org, role, user, reset_passphrase
+        The reset passphrase for admin registration.
     """
     import uuid7
 
@@ -1286,12 +1237,4 @@ def bootstrap(
             token_type="admin bootstrap",
         )
 
-    # Return info about what was created (for logging by caller)
-    return {
-        "perm_admin": build_permission(perm_admin_uuid),
-        "perm_org_admin": build_permission(perm_org_admin_uuid),
-        "org": build_org(org_uuid),
-        "role": build_role(role_uuid),
-        "user": build_user(user_uuid),
-        "reset_passphrase": reset_passphrase,
-    }
+    return reset_passphrase

@@ -30,29 +30,18 @@ def _log_reset_link(message: str, passphrase: str) -> str:
     return reset_link
 
 
-async def bootstrap_system() -> dict:
+async def bootstrap_system() -> None:
     """
     Bootstrap the entire system with default data.
 
     Uses db.bootstrap() which performs all operations in a single transaction.
     The transaction log will show a single "bootstrap" action with all changes.
-
-    Returns:
-        dict: Contains information about created entities and reset link
     """
     # Call the single-transaction bootstrap function
-    result = db.bootstrap()
+    reset_passphrase = db.bootstrap()
 
     # Log the reset link (this is separate from the transaction log)
-    reset_link = _log_reset_link("✅ Bootstrap completed!", result["reset_passphrase"])
-
-    return {
-        "user": result["user"],
-        "org": result["org"],
-        "role": result["role"],
-        "permissions": [result["perm_admin"], result["perm_org_admin"]],
-        "reset_link": reset_link,
-    }
+    _log_reset_link("✅ Bootstrap completed!", reset_passphrase)
 
 
 async def check_admin_credentials() -> bool:
