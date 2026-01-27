@@ -44,7 +44,6 @@ from paskia.db.structs import (
     _ResetTokenData,
     _RoleData,
     _SessionData,
-    _UserData,
 )
 from paskia.util.passphrase import is_well_formed as _is_passphrase
 
@@ -178,15 +177,9 @@ def build_permission(uuid: UUID) -> Permission:
 
 
 def build_user(uuid: UUID) -> User:
-    u = _db._data.users[uuid]
-    return User(
-        uuid=uuid,
-        display_name=u.display_name,
-        role_uuid=u.role,
-        created_at=u.created_at,
-        last_seen=u.last_seen,
-        visits=u.visits,
-    )
+    user = _db._data.users[uuid]
+    user.uuid = uuid
+    return user
 
 
 def build_role(uuid: UUID) -> Role:
@@ -809,16 +802,10 @@ def create_user(new_user: User, *, ctx: SessionContext | None = None) -> None:
     """Create a new user."""
     if new_user.uuid in _db._data.users:
         raise ValueError(f"User {new_user.uuid} already exists")
-    if new_user.role_uuid not in _db._data.roles:
-        raise ValueError(f"Role {new_user.role_uuid} not found")
+    if new_user.role not in _db._data.roles:
+        raise ValueError(f"Role {new_user.role} not found")
     with _db.transaction("Created user", ctx):
-        _db._data.users[new_user.uuid] = _UserData(
-            display_name=new_user.display_name,
-            role=new_user.role_uuid,
-            created_at=new_user.created_at or datetime.now(timezone.utc),
-            last_seen=new_user.last_seen,
-            visits=new_user.visits,
-        )
+        _db._data.users[new_user.uuid] = new_user
 
 
 def update_user_display_name(
@@ -1331,13 +1318,15 @@ def bootstrap(
         )
 
         # Create admin user
-        _db._data.users[user_uuid] = _UserData(
+        admin_user = User(
             display_name=admin_name,
             role=role_uuid,
             created_at=now,
             last_seen=None,
             visits=0,
         )
+        admin_user.uuid = user_uuid
+        _db._data.users[user_uuid] = admin_user
 
         # Create reset token
         _db._data.reset_tokens[reset_key] = _ResetTokenData(

@@ -30,8 +30,20 @@ from paskia.db import (
     Org,
     ResetToken,
     Role,
-    User,
 )
+
+
+# Legacy User class for SQL schema (uses 'role_uuid' not 'role')
+@dataclass
+class _LegacyUser:
+    """User as stored in the old SQL schema with role_uuid field."""
+
+    uuid: UUID
+    display_name: str
+    role_uuid: UUID
+    created_at: datetime | None = None
+    last_seen: datetime | None = None
+    visits: int = 0
 
 
 # Local Permission class for SQL schema (uses 'id' not 'uuid' + 'scope')
@@ -129,8 +141,8 @@ class UserModel(Base):
     )
     visits: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
-    def as_dataclass(self) -> User:
-        return User(
+    def as_dataclass(self) -> "_LegacyUser":
+        return _LegacyUser(
             uuid=UUID(bytes=self.uuid),
             display_name=self.display_name,
             role_uuid=UUID(bytes=self.role_uuid),
@@ -140,7 +152,7 @@ class UserModel(Base):
         )
 
     @staticmethod
-    def from_dataclass(user: User):
+    def from_dataclass(user: "_LegacyUser"):
         return UserModel(
             uuid=user.uuid.bytes,
             display_name=user.display_name,

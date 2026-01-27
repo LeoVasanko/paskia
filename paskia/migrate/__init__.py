@@ -55,13 +55,13 @@ async def migrate_from_sql(
 
     from paskia.db.operations import DB as JSONDB
     from paskia.db.structs import (
+        User,
         _CredentialData,
         _OrgData,
         _PermissionData,
         _ResetTokenData,
         _RoleData,
         _SessionData,
-        _UserData,
     )
 
     # Initialize source SQL database
@@ -163,15 +163,17 @@ async def migrate_from_sql(
         result = await session.execute(select(UserModel))
         user_models = result.scalars().all()
         for um in user_models:
-            user = um.as_dataclass()
-            user_key: UUID = user.uuid
-            json_db._data.users[user_key] = _UserData(
-                display_name=user.display_name,
-                role=user.role_uuid,
-                created_at=user.created_at or datetime.now(timezone.utc),
-                last_seen=user.last_seen,
-                visits=user.visits,
+            legacy_user = um.as_dataclass()
+            user_key: UUID = legacy_user.uuid
+            new_user = User(
+                display_name=legacy_user.display_name,
+                role=legacy_user.role_uuid,
+                created_at=legacy_user.created_at or datetime.now(timezone.utc),
+                last_seen=legacy_user.last_seen,
+                visits=legacy_user.visits,
             )
+            new_user.uuid = user_key
+            json_db._data.users[user_key] = new_user
         print(f"  Migrated {len(user_models)} users")
 
     # Migrate credentials
@@ -238,9 +240,9 @@ async def migrate_from_sql(
             )
         print(f"  Migrated {len(token_models)} reset tokens")
 
-    # Queue and flush all changes with actor "migrate"
-    json_db._current_actor = "migrate"
-    json_db._queue_change()
+    # Queue and flush all changes using the transaction mechanism
+    with json_db.transaction("migrate"):
+        pass  # All data already added to _data, transaction commits on exit
     from paskia.db.jsonl import flush_changes
 
     await flush_changes(json_db.db_path, json_db._pending_changes)
