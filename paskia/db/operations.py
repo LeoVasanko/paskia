@@ -53,123 +53,6 @@ async def init(*args, **kwargs):
 # -------------------------------------------------------------------------
 
 
-def get_permission(uuid: UUID) -> Permission | None:
-    """Get permission by UUID.
-
-    Call sites:
-    - Normalize permission IDs to UUIDs when creating a role (admin.py:277)
-    - Verify permission exists when adding to role (admin.py:349)
-    - Check permission scope when removing from role to prevent losing admin access (admin.py:385)
-    - Get permission to check scope for admin access check (admin.py:392)
-    - Check if new role has admin permissions when user changes own role (admin.py:509)
-    - Get permission for updating its details (admin.py:977)
-    - Get permission for renaming its scope (admin.py:1031)
-    - Get permission to check scope before deleting (admin.py:1071)
-    """
-    return _db.permissions.get(uuid)
-
-
-def get_permission_by_scope(scope: str) -> Permission | None:
-    """Get permission by scope identifier.
-
-    Call sites:
-    - Check if system is already bootstrapped by looking for auth:admin permission (bootstrap.py:113)
-    """
-    for p in _db.permissions.values():
-        if p.scope == scope:
-            return p
-    return None
-
-
-def get_permissions_by_scope(scope: str) -> list[Permission]:
-    """Get all permissions with the given scope.
-
-    Since scopes are not unique, this returns all matching permissions.
-    Use this for scope-based permission checking.
-    """
-    return [p for p in _db.permissions.values() if p.scope == scope]
-
-
-def list_permissions() -> list[Permission]:
-    """List all permissions.
-
-    Call sites:
-    - List permissions during migration to identify org-specific admin permissions (migrate/__init__.py:84)
-    - List permissions to delete organization-specific permissions when deleting org (admin.py:193)
-    - List permissions to check admin permissions when updating permission domain (admin.py:847)
-    - List permissions to check admin permissions when deleting permission (admin.py:882)
-    - Admin API endpoint to list permissions (admin.py:914)
-    """
-    return list(_db.permissions.values())
-
-
-def get_organization(uuid: UUID) -> Org | None:
-    """Get organization by UUID.
-
-    Call sites:
-    - Get organization when creating a role to check grantable permissions (admin.py:271)
-    - Get organization when adding permission to role to check if org can grant it (admin.py:352)
-    """
-    return _db.orgs.get(uuid)
-
-
-def list_organizations() -> list[Org]:
-    """List all organizations.
-
-    Call sites:
-    - List organizations during migration (migrate/__init__.py:131)
-    - Admin API endpoint to list organizations (admin.py:94)
-    """
-    return list(_db.orgs.values())
-
-
-def get_organization_users(org_uuid: UUID) -> list[tuple[User, str]]:
-    """Get all users in an organization with their role names.
-
-    Call sites:
-    - Get users for each organization in the admin list orgs API (admin.py:108)
-    - Get users from organizations with auth:admin for reset targets (reset.py:31,42,58)
-    - Get users from organization to check if admin has credentials (bootstrap.py:73)
-    """
-    role_map = {
-        rid: r.display_name for rid, r in _db.roles.items() if r.org == org_uuid
-    }
-    return [(u, role_map[u.role]) for u in _db.users.values() if u.role in role_map]
-
-
-def get_role(uuid: UUID) -> Role | None:
-    """Get role by UUID.
-
-    Call sites:
-    - Get role to update its display name (admin.py:312)
-    - Get role to add permission to it (admin.py:344)
-    - Get role to remove permission from it (admin.py:380)
-    - Get role to delete it (admin.py:421)
-    """
-    return _db.roles.get(uuid)
-
-
-def get_roles_by_organization(org_uuid: UUID) -> list[Role]:
-    """Get all roles in an organization.
-
-    Call sites:
-    - Get roles by organization when creating a user to find the role by name (admin.py:459)
-    - Get roles by organization when updating user role to validate the new role name (admin.py:498)
-    """
-    return [r for r in _db.roles.values() if r.org == org_uuid]
-
-
-def get_user_by_uuid(uuid: UUID) -> User | None:
-    """Get user by UUID.
-
-    Call sites:
-    - Get user for WebAuthn credential registration (ws.py:68)
-    - Get user from reset token for registration info (api.py:127)
-    - Get user for listing user credentials in admin API (admin.py:594)
-    """
-    return _db.users.get(uuid)
-
-
 def get_user_organization(user_uuid: UUID) -> tuple[Org, str]:
     """Get the organization a user belongs to and their role name.
 
@@ -193,31 +76,23 @@ def get_user_organization(user_uuid: UUID) -> tuple[Org, str]:
     return _db.orgs[org_uuid], role_data.display_name
 
 
-def get_credential_by_id(credential_id: bytes) -> Credential | None:
-    """Get credential by credential_id (the authenticator's ID).
+def get_organization_users(org_uuid: UUID) -> list[tuple[User, str]]:
+    """Get all users in an organization with their role names.
 
-    Call sites:
-    - Get credential by ID for WebAuthn authentication (ws.py:132)
-    - Get credential by ID for remote authentication (remote.py:325)
+    Returns list of (User, role_display_name) tuples.
     """
-    for c in _db.credentials.values():
-        if c.credential_id == credential_id:
-            return c
-    return None
+    role_map = {
+        rid: r.display_name for rid, r in _db.roles.items() if r.org == org_uuid
+    }
+    return [(u, role_map[u.role]) for u in _db.users.values() if u.role in role_map]
 
 
-def get_credentials_by_user_uuid(user_uuid: UUID) -> list[Credential]:
-    """Get all credentials for a user.
+def get_user_credential_ids(user_uuid: UUID) -> list[bytes]:
+    """Get credential IDs for a user (for WebAuthn exclude lists).
 
-    Call sites:
-    - Get credentials for user during registration to exclude existing ones (ws.py:74)
-    - Get credentials for session user during reauth to restrict to user's credentials (ws.py:117)
-    - Get credentials to check if user has existing ones for reset token type (admin.py:548)
-    - Get credentials for user details API (admin.py:595)
-    - Get credentials to check if admin user has credentials (bootstrap.py:81)
-    - Get credentials for user info formatting (userinfo.py:51)
+    Returns empty list if user has no credentials.
     """
-    return [c for c in _db.credentials.values() if c.user == user_uuid]
+    return [c.credential_id for c in _db.credentials.values() if c.user == user_uuid]
 
 
 def _reset_key(passphrase: str) -> bytes:

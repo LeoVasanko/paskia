@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from uuid import UUID
 
 import msgspec
@@ -76,13 +76,11 @@ class Org(msgspec.Struct, dict=True, omit_defaults=True):
     @classmethod
     def create(cls, display_name: str) -> "Org":
         """Create a new Org with auto-generated uuid7."""
-        from datetime import timezone
-
         org = cls(
             display_name=display_name,
             created_at=datetime.now(timezone.utc),
         )
-        org.uuid = uuid7.create()
+        org.uuid = uuid7.create(org.created_at)
         return org
 
 
@@ -104,7 +102,6 @@ class User(msgspec.Struct, dict=True):
         created_at: datetime | None = None,
     ) -> "User":
         """Create a new User with auto-generated uuid7."""
-        from datetime import timezone
 
         user = cls(
             display_name=display_name,
@@ -139,8 +136,6 @@ class Credential(msgspec.Struct, dict=True):
         created_at: datetime | None = None,
     ) -> "Credential":
         """Create a new Credential with auto-generated uuid7."""
-        from datetime import timezone
-
         now = created_at or datetime.now(timezone.utc)
         cred = cls(
             credential_id=credential_id,

@@ -1,11 +1,10 @@
-from uuid import UUID
-
 from fastapi import FastAPI, WebSocket
 
 from paskia import db
 from paskia.authsession import expires, get_reset, get_session
 from paskia.fastapi import authz, remote
 from paskia.fastapi.session import AUTH_COOKIE, infodict
+from paskia.fastapi.wschat import authenticate_chat, register_chat
 from paskia.fastapi.wsutil import validate_origin, websocket_error_handler
 from paskia.globals import passkey
 from paskia.util import hostutil, passphrase
@@ -15,24 +14,6 @@ app = FastAPI()
 
 # Mount the remote auth WebSocket endpoints
 app.mount("/remote-auth", remote.app)
-
-
-async def register_chat(
-    ws: WebSocket,
-    user_uuid: UUID,
-    user_name: str,
-    origin: str,
-    credential_ids: list[bytes] | None = None,
-):
-    """Generate registration options and send them to the client."""
-    options, challenge = passkey.instance.reg_generate_options(
-        user_id=user_uuid,
-        user_name=user_name,
-        credential_ids=credential_ids,
-    )
-    await ws.send_json({"optionsJSON": options})
-    response = await ws.receive_json()
-    return passkey.instance.reg_verify(response, challenge, user_uuid, origin=origin)
 
 
 @app.websocket("/register")
@@ -65,14 +46,13 @@ async def websocket_register_add(
         s = ctx.session
 
     # Get user information and determine effective user_name for this registration
-    user = db.get_user_by_uuid(user_uuid)
+    user = db.data().users.get(user_uuid)
     user_name = user.display_name
     if name is not None:
         stripped = name.strip()
         if stripped:
             user_name = stripped
-    credentials = db.get_credentials_by_user_uuid(user_uuid)
-    credential_ids = [c.credential_id for c in credentials] if credentials else None
+    credential_ids = db.get_user_credential_ids(user_uuid) or None
 
     # WebAuthn registration
     credential = await register_chat(ws, user_uuid, user_name, origin, credential_ids)
@@ -114,36 +94,18 @@ async def websocket_authenticate(ws: WebSocket, auth=AUTH_COOKIE):
         try:
             session = await get_session(auth, host=host)
             session_user_uuid = session.user
-            credentials = db.get_credentials_by_user_uuid(session_user_uuid)
-            credential_ids = (
-                [c.credential_id for c in credentials] if credentials else None
-            )
+            credential_ids = db.get_user_credential_ids(session_user_uuid) or None
         except ValueError:
             pass  # Invalid/expired session - allow normal authentication
 
-    options, challenge = passkey.instance.auth_generate_options(
-        credential_ids=credential_ids
-    )
-    await ws.send_json({"optionsJSON": options})
-    # Wait for the client to use his authenticator to authenticate
-    credential = passkey.instance.auth_parse(await ws.receive_json())
-    # Fetch from the database by credential ID
-    try:
-        stored_cred = db.get_credential_by_id(credential.raw_id)
-    except ValueError:
-        raise ValueError(
-            f"This passkey is no longer registered with {passkey.instance.rp_name}"
-        )
+    cred = await authenticate_chat(ws, origin, credential_ids)
 
     # If reauth mode, verify the credential belongs to the session's user
-    if session_user_uuid and stored_cred.user != session_user_uuid:
+    if session_user_uuid and cred.user != session_user_uuid:
         raise ValueError("This passkey belongs to a different account")
 
-    # Verify the credential matches the stored data
-    passkey.instance.auth_verify(credential, challenge, stored_cred, origin)
-
     # Create session and update user/credential in a single transaction
-    assert stored_cred.uuid is not None
+    assert cred.uuid is not None
     metadata = infodict(ws, "auth")
     normalized_host = hostutil.normalize_host(host)
     if not normalized_host:
@@ -154,8 +116,8 @@ async def websocket_authenticate(ws: WebSocket, auth=AUTH_COOKIE):
         raise ValueError(f"Host must be the same as or a subdomain of {rp_id}")
 
     token = db.login(
-        user_uuid=stored_cred.user,
-        credential=stored_cred,
+        user_uuid=cred.user,
+        credential=cred,
         host=normalized_host,
         ip=metadata.get("ip") or "",
         user_agent=metadata.get("user_agent") or "",
@@ -164,7 +126,7 @@ async def websocket_authenticate(ws: WebSocket, auth=AUTH_COOKIE):
 
     await ws.send_json(
         {
-            "user": str(stored_cred.user),
+            "user": str(cred.user),
             "session_token": token,
         }
     )

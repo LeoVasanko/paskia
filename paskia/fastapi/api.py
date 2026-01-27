@@ -124,7 +124,7 @@ async def token_info(credentials=Depends(bearer_auth)):
     except ValueError as e:
         raise HTTPException(401, str(e))
 
-    u = db.get_user_by_uuid(reset_token.user)
+    u = db.data().users.get(reset_token.user)
     return {
         "token_type": reset_token.token_type,
         "display_name": u.display_name,

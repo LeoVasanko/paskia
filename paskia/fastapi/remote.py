@@ -17,8 +17,8 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 
 from paskia import db, remoteauth
 from paskia.fastapi.session import infodict
+from paskia.fastapi.wschat import authenticate_chat
 from paskia.fastapi.wsutil import validate_origin, websocket_error_handler
-from paskia.globals import passkey
 from paskia.util import passphrase, pow
 
 # Create a FastAPI subapp for remote auth WebSocket endpoints
@@ -311,30 +311,10 @@ async def websocket_remote_auth_permit(ws: WebSocket):
 
             # Handle authenticate request (no PoW needed - already validated during lookup)
             if msg.get("authenticate") and request is not None:
-                # Generate authentication options
-                options, webauthn_challenge = passkey.instance.auth_generate_options(
-                    credential_ids=None
-                )
-                await ws.send_json({"optionsJSON": options})
-
-                # Wait for WebAuthn response
-                credential = passkey.instance.auth_parse(await ws.receive_json())
-
-                # Fetch and verify credential
-                try:
-                    stored_cred = db.get_credential_by_id(credential.raw_id)
-                except ValueError:
-                    raise ValueError(
-                        f"This passkey is no longer registered with {passkey.instance.rp_name}"
-                    )
-
-                # Verify the credential
-                passkey.instance.auth_verify(
-                    credential, webauthn_challenge, stored_cred, origin
-                )
+                cred = await authenticate_chat(ws, origin)
 
                 # Create a session for the REQUESTING device
-                assert stored_cred.uuid is not None
+                assert cred.uuid is not None
 
                 session_token = None
                 reset_token = None
@@ -347,7 +327,7 @@ async def websocket_remote_auth_permit(ws: WebSocket):
                     token_str = passphrase.generate()
                     expiry = expires()
                     db.create_reset_token(
-                        user_uuid=stored_cred.user,
+                        user_uuid=cred.user,
                         passphrase=token_str,
                         expiry=expiry,
                         token_type="device addition",
@@ -356,8 +336,8 @@ async def websocket_remote_auth_permit(ws: WebSocket):
                     # Also create a session so the device is logged in
                     normalized_host = hostutil.normalize_host(request.host)
                     session_token = db.login(
-                        user_uuid=stored_cred.user,
-                        credential=stored_cred,
+                        user_uuid=cred.user,
+                        credential=cred,
                         host=normalized_host,
                         ip=request.ip,
                         user_agent=request.user_agent,
@@ -370,8 +350,8 @@ async def websocket_remote_auth_permit(ws: WebSocket):
 
                     normalized_host = hostutil.normalize_host(request.host)
                     session_token = db.login(
-                        user_uuid=stored_cred.user,
-                        credential=stored_cred,
+                        user_uuid=cred.user,
+                        credential=cred,
                         host=normalized_host,
                         ip=request.ip,
                         user_agent=request.user_agent,
@@ -382,8 +362,8 @@ async def websocket_remote_auth_permit(ws: WebSocket):
                 completed = await remoteauth.instance.complete_request(
                     token=request.key,
                     session_token=session_token,
-                    user_uuid=stored_cred.user,
-                    credential_uuid=stored_cred.uuid,
+                    user_uuid=cred.user,
+                    credential_uuid=cred.uuid,
                     reset_token=reset_token,
                 )
 
