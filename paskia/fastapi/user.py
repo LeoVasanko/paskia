@@ -111,7 +111,7 @@ async def api_delete_credential(
     # Require recent authentication for sensitive operation
     await authz.verify(auth, [], host=request.headers.get("host"), max_age="5m")
     try:
-        await delete_credential(uuid, auth, host=request.headers.get("host"))
+        delete_credential(uuid, auth, host=request.headers.get("host"))
     except ValueError as e:
         raise authz.AuthException(
             status_code=401, detail="Session expired", mode="login"
