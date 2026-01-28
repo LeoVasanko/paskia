@@ -1,5 +1,4 @@
 import logging
-from datetime import UTC
 from uuid import UUID
 
 from fastapi import Body, FastAPI, HTTPException, Query, Request, Response
@@ -13,6 +12,7 @@ from paskia.db import Permission as PermDC
 from paskia.db import Role as RoleDC
 from paskia.db import User as UserDC
 from paskia.fastapi import authz
+from paskia.fastapi.response import MsgspecResponse
 from paskia.fastapi.session import AUTH_COOKIE
 from paskia.globals import passkey
 from paskia.util import (
@@ -20,9 +20,9 @@ from paskia.util import (
     passphrase,
     permutil,
     querysafe,
-    useragent,
     vitedev,
 )
+from paskia.util.apistructs import ApiPermission, ApiSession, format_datetime
 from paskia.util.hostutil import normalize_host
 
 app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
@@ -83,34 +83,34 @@ async def admin_list_orgs(request: Request, auth=AUTH_COOKIE):
         # Org admins can only see their own organization
         orgs = [o for o in orgs if o.uuid == ctx.org.uuid]
 
-    def role_to_dict(r):
-        return {
-            "uuid": str(r.uuid),
-            "org": str(r.org_uuid),
-            "display_name": r.display_name,
-            "permissions": list(r.permissions.keys()),
-        }
-
-    async def org_to_dict(o):
+    def org_to_dict(o):
         users = db.get_organization_users(o.uuid)
         return {
-            "uuid": str(o.uuid),
+            "uuid": o.uuid,
             "display_name": o.display_name,
             "permissions": {p.uuid for p in o.permissions},
-            "roles": [role_to_dict(r) for r in o.roles],
+            "roles": [
+                {
+                    "uuid": r.uuid,
+                    "org": r.org_uuid,
+                    "display_name": r.display_name,
+                    "permissions": list(r.permissions.keys()),
+                }
+                for r in o.roles
+            ],
             "users": [
                 {
-                    "uuid": str(u.uuid),
+                    "uuid": u.uuid,
                     "display_name": u.display_name,
                     "role": role_name,
                     "visits": u.visits,
-                    "last_seen": u.last_seen.isoformat() if u.last_seen else None,
+                    "last_seen": u.last_seen,
                 }
                 for (u, role_name) in users
             ],
         }
 
-    return [await org_to_dict(o) for o in orgs]
+    return MsgspecResponse([org_to_dict(o) for o in orgs])
 
 
 @app.post("/orgs")
@@ -552,11 +552,7 @@ async def admin_create_user_registration_link(
     url = hostutil.reset_link_url(token)
     return {
         "url": url,
-        "expires": (
-            expiry.astimezone(UTC).isoformat().replace("+00:00", "Z")
-            if expiry.tzinfo
-            else expiry.replace(tzinfo=UTC).isoformat().replace("+00:00", "Z")
-        ),
+        "expires": format_datetime(expiry),
     }
 
 
@@ -584,108 +580,39 @@ async def admin_get_user_detail(
             status_code=403, detail="Insufficient permissions", mode="forbidden"
         )
     user = db.data().users.get(user_uuid)
-    user_creds = user.credentials
-    creds: list[dict] = []
-    aaguids: set[str] = set()
-    for c in user_creds:
-        aaguid_str = str(c.aaguid)
-        aaguids.add(aaguid_str)
-        creds.append(
-            {
-                "credential": str(c.uuid),
-                "aaguid": aaguid_str,
-                "created_at": (
-                    c.created_at.astimezone(UTC).isoformat().replace("+00:00", "Z")
-                    if c.created_at.tzinfo
-                    else c.created_at.replace(tzinfo=UTC)
-                    .isoformat()
-                    .replace("+00:00", "Z")
-                ),
-                "last_used": (
-                    c.last_used.astimezone(UTC).isoformat().replace("+00:00", "Z")
-                    if c.last_used and c.last_used.tzinfo
-                    else (
-                        c.last_used.replace(tzinfo=UTC)
-                        .isoformat()
-                        .replace("+00:00", "Z")
-                        if c.last_used
-                        else None
-                    )
-                ),
-                "last_verified": (
-                    c.last_verified.astimezone(UTC).isoformat().replace("+00:00", "Z")
-                    if c.last_verified and c.last_verified.tzinfo
-                    else (
-                        c.last_verified.replace(tzinfo=UTC)
-                        .isoformat()
-                        .replace("+00:00", "Z")
-                        if c.last_verified
-                        else None
-                    )
+    normalized_host = hostutil.normalize_host(request.headers.get("host"))
+
+    return MsgspecResponse(
+        {
+            "display_name": user.display_name,
+            "org": {"display_name": user_org.display_name},
+            "role": role_name,
+            "visits": user.visits,
+            "created_at": user.created_at,
+            "last_seen": user.last_seen,
+            "credentials": [
+                {
+                    "credential": c.uuid,
+                    "aaguid": c.aaguid,
+                    "created_at": c.created_at,
+                    "last_used": c.last_used,
+                    "last_verified": c.last_verified,
+                    "sign_count": c.sign_count,
+                }
+                for c in user.credentials
+            ],
+            "aaguid_info": aaguid_mod.filter(c.aaguid for c in user.credentials),
+            "sessions": [
+                ApiSession.from_db(
+                    s,
+                    current_key=auth,
+                    normalized_host=normalized_host,
+                    expires_delta=EXPIRES,
                 )
-                if c.last_verified
-                else None,
-                "sign_count": c.sign_count,
-            }
-        )
-
-    aaguid_info = aaguid_mod.filter(aaguids)
-
-    # Get sessions for the user
-    normalized_request_host = hostutil.normalize_host(request.headers.get("host"))
-    session_records = user.sessions
-    current_session_key = auth
-    sessions_payload: list[dict] = []
-    for entry in session_records:
-        renewed = entry.expiry - EXPIRES
-        sessions_payload.append(
-            {
-                "id": entry.key,
-                "credential": str(entry.credential),
-                "host": entry.host,
-                "ip": entry.ip,
-                "user_agent": useragent.compact_user_agent(entry.user_agent),
-                "last_renewed": (
-                    renewed.astimezone(UTC).isoformat().replace("+00:00", "Z")
-                    if renewed.tzinfo
-                    else renewed.replace(tzinfo=UTC).isoformat().replace("+00:00", "Z")
-                ),
-                "is_current": entry.key == current_session_key,
-                "is_current_host": bool(
-                    normalized_request_host
-                    and entry.host
-                    and entry.host == normalized_request_host
-                ),
-            }
-        )
-
-    return {
-        "display_name": user.display_name,
-        "org": {"display_name": user_org.display_name},
-        "role": role_name,
-        "visits": user.visits,
-        "created_at": (
-            user.created_at.astimezone(UTC).isoformat().replace("+00:00", "Z")
-            if user.created_at and user.created_at.tzinfo
-            else (
-                user.created_at.replace(tzinfo=UTC).isoformat().replace("+00:00", "Z")
-                if user.created_at
-                else None
-            )
-        ),
-        "last_seen": (
-            user.last_seen.astimezone(UTC).isoformat().replace("+00:00", "Z")
-            if user.last_seen and user.last_seen.tzinfo
-            else (
-                user.last_seen.replace(tzinfo=UTC).isoformat().replace("+00:00", "Z")
-                if user.last_seen
-                else None
-            )
-        ),
-        "credentials": creds,
-        "aaguid_info": aaguid_info,
-        "sessions": sessions_payload,
-    }
+                for s in user.sessions
+            ],
+        }
+    )
 
 
 @app.patch("/orgs/{org_uuid}/users/{user_uuid}/display-name")
@@ -789,14 +716,6 @@ async def admin_delete_user_session(
 # -------------------- Permissions (global) --------------------
 
 
-def _perm_to_dict(p):
-    """Convert Permission to dict, omitting domain if None."""
-    d = {"uuid": str(p.uuid), "scope": p.scope, "display_name": p.display_name}
-    if p.domain is not None:
-        d["domain"] = p.domain
-    return d
-
-
 def _validate_permission_domain(domain: str | None) -> None:
     """Validate that domain is rp_id or a subdomain of it."""
     if domain is None:
@@ -888,7 +807,7 @@ async def admin_list_permissions(request: Request, auth=AUTH_COOKIE):
         host=request.headers.get("host"),
     )
     perms = db.data().permissions.values() if master_admin(ctx) else ctx.org.permissions
-    return [_perm_to_dict(p) for p in perms]
+    return MsgspecResponse([ApiPermission.from_db(p) for p in perms])
 
 
 @app.post("/permissions")

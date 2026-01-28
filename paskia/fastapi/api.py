@@ -20,6 +20,7 @@ from paskia.authsession import (
     refresh_session_token,
 )
 from paskia.fastapi import authz, session, user
+from paskia.fastapi.response import MsgspecResponse
 from paskia.fastapi.session import AUTH_COOKIE, AUTH_COOKIE_NAME
 from paskia.globals import passkey as global_passkey
 from paskia.util import hostutil, htmlutil, passphrase, userinfo, vitedev
@@ -105,11 +106,13 @@ async def validate_token(
                 raise authz.AuthException(
                     status_code=401, detail="Session expired", mode="login"
                 )
-    return {
-        "valid": True,
-        "renewed": renewed,
-        "ctx": userinfo.format_session_context(ctx),
-    }
+    return MsgspecResponse(
+        {
+            "valid": True,
+            "renewed": renewed,
+            "ctx": userinfo.build_session_context(ctx),
+        }
+    )
 
 
 @app.get("/token-info")
@@ -235,11 +238,13 @@ async def api_user_info(
     if not ctx:
         raise HTTPException(401, "Session expired")
 
-    return await userinfo.format_user_info(
-        user_uuid=ctx.user.uuid,
-        auth=auth,
-        session_record=ctx.session,
-        request_host=request.headers.get("host"),
+    return MsgspecResponse(
+        await userinfo.build_user_info(
+            user_uuid=ctx.user.uuid,
+            auth=auth,
+            session_record=ctx.session,
+            request_host=request.headers.get("host"),
+        )
     )
 
 

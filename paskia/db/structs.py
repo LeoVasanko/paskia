@@ -28,7 +28,8 @@ class Permission(msgspec.Struct, dict=True, omit_defaults=True):
     orgs: dict[UUID, bool] = {}  # org_uuid -> True (which orgs can grant this)
 
     def __post_init__(self):
-        self.uuid: UUID = _UUID_UNSET  # Convenience field, not serialized
+        if getattr(self, "uuid", _UUID_UNSET) == _UUID_UNSET:
+            self.uuid: UUID = _UUID_UNSET
 
     @property
     def org_set(self) -> set[UUID]:
@@ -67,7 +68,8 @@ class Org(msgspec.Struct, dict=True):
     display_name: str
 
     def __post_init__(self):
-        self.uuid: UUID = _UUID_UNSET  # Convenience field, not serialized
+        if getattr(self, "uuid", _UUID_UNSET) == _UUID_UNSET:
+            self.uuid: UUID = _UUID_UNSET
 
     @property
     def roles(self) -> list[Role]:
@@ -100,7 +102,8 @@ class Role(msgspec.Struct, dict=True, omit_defaults=True):
     permissions: dict[UUID, bool] = {}  # permission_uuid -> True
 
     def __post_init__(self):
-        self.uuid: UUID = _UUID_UNSET  # Convenience field, not serialized
+        if getattr(self, "uuid", _UUID_UNSET) == _UUID_UNSET:
+            self.uuid: UUID = _UUID_UNSET
 
     @property
     def permission_set(self) -> set[UUID]:
@@ -159,7 +162,8 @@ class User(msgspec.Struct, dict=True):
     visits: int = 0
 
     def __post_init__(self):
-        self.uuid: UUID = _UUID_UNSET  # Convenience field, not serialized
+        if getattr(self, "uuid", _UUID_UNSET) == _UUID_UNSET:
+            self.uuid: UUID = _UUID_UNSET
 
     @property
     def role(self) -> Role:
@@ -222,7 +226,8 @@ class Credential(msgspec.Struct, dict=True):
     last_verified: datetime | None = None
 
     def __post_init__(self):
-        self.uuid: UUID = _UUID_UNSET  # Convenience field, not serialized
+        if getattr(self, "uuid", _UUID_UNSET) == _UUID_UNSET:
+            self.uuid: UUID = _UUID_UNSET
 
     @property
     def user(self) -> User:
@@ -279,7 +284,8 @@ class Session(msgspec.Struct, dict=True):
     expiry: datetime
 
     def __post_init__(self):
-        self.key: str = ""  # Convenience field, not serialized
+        if not getattr(self, "key", ""):
+            self.key: str = ""
 
     @property
     def user(self) -> User:
@@ -338,7 +344,8 @@ class ResetToken(msgspec.Struct, dict=True):
     token_type: str
 
     def __post_init__(self):
-        self.key: bytes = b""  # Convenience field, not serialized
+        if not getattr(self, "key", b""):
+            self.key: bytes = b""
 
     @property
     def user(self) -> User:
