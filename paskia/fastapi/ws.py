@@ -115,7 +115,8 @@ async def websocket_authenticate(ws: WebSocket, auth=AUTH_COOKIE):
 
     token = db.login(
         user_uuid=cred.user,
-        credential=cred,
+        credential_uuid=cred.uuid,
+        sign_count=cred.sign_count,
         host=normalized_host,
         ip=metadata["ip"],
         user_agent=metadata["user_agent"],
