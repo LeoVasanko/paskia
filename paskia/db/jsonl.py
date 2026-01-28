@@ -248,10 +248,13 @@ class JsonlStore:
         # Check for out-of-transaction modifications
         current_state = msgspec.to_builtins(self.db)
         if current_state != self._previous_builtins:
+            diff = compute_diff(self._previous_builtins, current_state)
+            diff_json = json.dumps(diff, default=str, indent=2)
             _logger.error(
                 "Database state modified outside of transaction! "
                 "This indicates a bug where DB changes occurred without a transaction wrapper. "
-                "Resetting to last known state from JSONL file."
+                "Resetting to last known state from JSONL file.\n"
+                f"Changes detected:\n{diff_json}"
             )
             # Hard reset to last known good state
             decoder = msgspec.json.Decoder(DB)
