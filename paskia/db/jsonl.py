@@ -3,9 +3,7 @@ JSONL persistence layer for the database.
 """
 
 import copy
-import json
 import logging
-import sys
 from collections import deque
 from contextlib import contextmanager
 from datetime import UTC, datetime
@@ -17,6 +15,7 @@ import aiofiles
 import jsondiff
 import msgspec
 
+from paskia.db.logging import log_change
 from paskia.db.migrations import DBVER, apply_all_migrations
 from paskia.db.structs import DB, SessionContext
 
@@ -211,11 +210,7 @@ class JsonlStore:
             except (ValueError, KeyError):
                 user_display = user
 
-        diff_json = json.dumps(diff, default=str)
-        if user_display:
-            print(f"{action} by {user_display}: {diff_json}", file=sys.stderr)
-        else:
-            print(f"{action}: {diff_json}", file=sys.stderr)
+        log_change(action, diff, user_display)
 
     @contextmanager
     def transaction(
@@ -244,7 +239,7 @@ class JsonlStore:
                 pass  # Expected: creating database from scratch
             else:
                 diff = compute_diff(self._previous_builtins, current_state)
-                diff_json = json.dumps(diff, default=str, indent=2)
+                diff_json = msgspec.json.encode(diff).decode()
                 _logger.critical(
                     "Database state modified outside of transaction! "
                     "This indicates a bug where DB changes occurred without a transaction wrapper.\n"

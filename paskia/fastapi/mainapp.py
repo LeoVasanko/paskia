@@ -10,13 +10,15 @@ from fastapi_vue import Frontend
 
 from paskia import globals
 from paskia.db import start_background, stop_background
+from paskia.db.logging import configure_db_logging
 from paskia.fastapi import admin, api, auth_host, ws
 from paskia.fastapi.logging import AccessLogMiddleware, configure_access_logging
 from paskia.fastapi.session import AUTH_COOKIE
 from paskia.util import hostutil, passphrase, vitedev
 
-# Configure custom access logging
+# Configure custom logging
 configure_access_logging()
+configure_db_logging()
 
 # Vue Frontend static files
 frontend = Frontend(
