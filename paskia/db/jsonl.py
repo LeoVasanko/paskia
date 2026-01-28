@@ -105,7 +105,7 @@ def create_change_record(
 
 
 # Actions that are allowed to create a new database file
-_BOOTSTRAP_ACTIONS = frozenset({"bootstrap", "migrate"})
+_BOOTSTRAP_ACTIONS = frozenset({"bootstrap", "migrate:sql"})
 
 
 async def flush_changes(
@@ -187,15 +187,35 @@ class JsonlStore:
                 # Update previous state to migrated data FIRST (to avoid transaction hardening reset)
                 self._previous_builtins = data_dict
 
-                # Persist migration by manually computing and queueing the diff
+                # Persist version migration by manually computing and queueing the diff
                 if migrated:
+                    new_version = data_dict.get("v", 1)
                     diff = compute_diff(original_dict, data_dict)
                     if diff:
+                        action = f"migrate:v{new_version}"
                         self._pending_changes.append(
-                            create_change_record("migrate", diff, user=None)
+                            create_change_record(action, diff, user=None)
                         )
-                        _logger.info("Queued migration changes for persistence")
+                        diff_json = json.dumps(diff, default=str)
+                        print(f"{action}: {diff_json}", file=sys.stderr)
                     await self.flush()
+                    # Update original_dict to reflect persisted state
+                    original_dict = copy.deepcopy(data_dict)
+
+                # Normalize via msgspec round-trip (handles omit_defaults etc.)
+                # This ensures _previous_builtins matches what msgspec would produce
+                normalized_dict = msgspec.to_builtins(self.db)
+                diff = compute_diff(original_dict, normalized_dict)
+                if diff:
+                    action = "migrate:msgspec"
+                    self._pending_changes.append(
+                        create_change_record(action, diff, user=None)
+                    )
+                    diff_json = json.dumps(diff, default=str)
+                    print(f"{action}: {diff_json}", file=sys.stderr)
+                    await self.flush()
+                    # Update _previous_builtins to normalized state
+                    self._previous_builtins = normalized_dict
             else:
                 # No data loaded - _previous_builtins stays as empty dict
                 pass
@@ -252,7 +272,8 @@ class JsonlStore:
         current_state = msgspec.to_builtins(self.db)
         if current_state != self._previous_builtins:
             # Allow bootstrap/migrate to create a new database from empty state
-            if action in _BOOTSTRAP_ACTIONS and not self._previous_builtins:
+            is_bootstrap = action in _BOOTSTRAP_ACTIONS or action.startswith("migrate:")
+            if is_bootstrap and not self._previous_builtins:
                 pass  # Expected: creating database from scratch
             else:
                 diff = compute_diff(self._previous_builtins, current_state)
