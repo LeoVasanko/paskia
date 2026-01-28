@@ -14,7 +14,7 @@ Or via the CLI entry point (if installed):
 import argparse
 import asyncio
 import re
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from uuid import UUID
 
 import base64url
@@ -173,7 +173,7 @@ async def migrate_from_sql(
             new_user = User(
                 display_name=legacy_user.display_name,
                 role=legacy_user.role_uuid,
-                created_at=legacy_user.created_at or datetime.now(timezone.utc),
+                created_at=legacy_user.created_at or datetime.now(UTC),
                 last_seen=legacy_user.last_seen,
                 visits=legacy_user.visits,
             )
@@ -190,7 +190,7 @@ async def migrate_from_sql(
             cred_key: UUID = legacy_cred.uuid
             new_cred = Credential(
                 credential_id=legacy_cred.credential_id,
-                user=legacy_cred.user_uuid,
+                user_uuid=legacy_cred.user_uuid,
                 aaguid=legacy_cred.aaguid,
                 public_key=legacy_cred.public_key,
                 sign_count=legacy_cred.sign_count,
@@ -217,8 +217,8 @@ async def migrate_from_sql(
                 # Already in new format or unknown - try to use as-is
                 session_key = base64url.enc(old_key[:12])
             db.sessions[session_key] = Session(
-                user=sess.user_uuid,
-                credential=sess.credential_uuid,
+                user_uuid=sess.user_uuid,
+                credential_uuid=sess.credential_uuid,
                 host=sess.host,
                 ip=sess.ip,
                 user_agent=sess.user_agent,
@@ -241,7 +241,7 @@ async def migrate_from_sql(
                 # Already in new format or unknown - truncate to 9 bytes
                 token_key = old_key[:9]
             db.reset_tokens[token_key] = ResetToken(
-                user=token.user_uuid,
+                user_uuid=token.user_uuid,
                 expiry=token.expiry,
                 token_type=token.token_type,
             )

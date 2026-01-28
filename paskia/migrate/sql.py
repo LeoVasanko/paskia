@@ -9,7 +9,7 @@ DO NOT use this module for new code. Use paskia.db instead.
 
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from uuid import UUID
 
 from sqlalchemy import (
@@ -112,8 +112,8 @@ def _normalize_dt(value: datetime | None) -> datetime | None:
     if value is None:
         return None
     if value.tzinfo is None:
-        return value.replace(tzinfo=timezone.utc)
-    return value.astimezone(timezone.utc)
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)
 
 
 class Base(DeclarativeBase):
@@ -172,7 +172,7 @@ class UserModel(Base):
         LargeBinary(16), ForeignKey("roles.uuid", ondelete="CASCADE"), nullable=False
     )
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+        DateTime(timezone=True), default=lambda: datetime.now(UTC)
     )
     last_seen: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
@@ -195,7 +195,7 @@ class UserModel(Base):
             uuid=user.uuid.bytes,
             display_name=user.display_name,
             role_uuid=user.role_uuid.bytes,
-            created_at=user.created_at or datetime.now(timezone.utc),
+            created_at=user.created_at or datetime.now(UTC),
             last_seen=user.last_seen,
             visits=user.visits,
         )
@@ -215,7 +215,7 @@ class CredentialModel(Base):
     public_key: Mapped[bytes] = mapped_column(BLOB, nullable=False)
     sign_count: Mapped[int] = mapped_column(Integer, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+        DateTime(timezone=True), default=lambda: datetime.now(UTC)
     )
     last_used: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
@@ -255,7 +255,7 @@ class SessionModel(Base):
     user_agent: Mapped[str] = mapped_column(String(512), nullable=False)
     renewed: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
-        default=lambda: datetime.now(timezone.utc),
+        default=lambda: datetime.now(UTC),
         nullable=False,
     )
 

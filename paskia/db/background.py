@@ -6,7 +6,7 @@ Periodically flushes pending changes to disk and cleans up expired items.
 
 import asyncio
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from paskia.db.operations import _store, cleanup_expired
 
@@ -33,7 +33,7 @@ async def _background_loop():
     cleanup_expired()
     await flush()
 
-    last_cleanup = datetime.now(timezone.utc)
+    last_cleanup = datetime.now(UTC)
 
     while True:
         try:
@@ -42,7 +42,7 @@ async def _background_loop():
             await flush()
 
             # Run cleanup periodically
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             if (now - last_cleanup).total_seconds() >= CLEANUP_INTERVAL:
                 cleanup_expired()
                 await flush()  # Flush cleanup changes

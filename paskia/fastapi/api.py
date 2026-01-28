@@ -1,6 +1,6 @@
 import logging
 from contextlib import suppress
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from fastapi import (
     Depends,
@@ -90,7 +90,7 @@ async def validate_token(
         raise
     renewed = False
     if auth:
-        consumed = EXPIRES - (ctx.session.expiry - datetime.now(timezone.utc))
+        consumed = EXPIRES - (ctx.session.expiry - datetime.now(UTC))
         if not timedelta(0) < consumed < _REFRESH_INTERVAL:
             try:
                 refresh_session_token(
@@ -123,7 +123,7 @@ async def token_info(credentials=Depends(bearer_auth)):
     except ValueError as e:
         raise HTTPException(401, str(e))
 
-    u = db.data().users.get(reset_token.user)
+    u = reset_token.user
     return {
         "token_type": reset_token.token_type,
         "display_name": u.display_name,
@@ -170,11 +170,9 @@ async def forward_authentication(
             "Remote-Role": str(ctx.role.uuid),
             "Remote-Role-Name": ctx.role.display_name,
             "Remote-Session-Expires": (
-                ctx.session.expiry.astimezone(timezone.utc)
-                .isoformat()
-                .replace("+00:00", "Z")
+                ctx.session.expiry.astimezone(UTC).isoformat().replace("+00:00", "Z")
                 if ctx.session.expiry.tzinfo
-                else ctx.session.expiry.replace(tzinfo=timezone.utc)
+                else ctx.session.expiry.replace(tzinfo=UTC)
                 .isoformat()
                 .replace("+00:00", "Z")
             ),

@@ -12,7 +12,8 @@ These tests cover:
 """
 
 import os
-from datetime import datetime, timezone
+import secrets
+from datetime import UTC, datetime
 from uuid import UUID
 
 import httpx
@@ -36,7 +37,7 @@ from paskia.db import (
     create_session,
     create_user,
 )
-from paskia.db.operations import DB, _create_token
+from paskia.db.operations import DB
 from tests.conftest import auth_headers
 
 # -------------------- Additional Fixtures --------------------
@@ -97,17 +98,14 @@ async def second_org_session_token(
     test_db: DB, second_org_user: User, second_org_credential: Credential
 ) -> str:
     """Create a session for the second org admin user."""
-    token = _create_token()
-    create_session(
+    return create_session(
         user_uuid=second_org_user.uuid,
         credential_uuid=second_org_credential.uuid,
-        key=token,
         host="localhost:4401",
         ip="127.0.0.1",
         user_agent="pytest",
         expiry=expires(),
     )
-    return token
 
 
 @pytest_asyncio.fixture(scope="function")
@@ -132,7 +130,7 @@ async def org_admin_user(test_db: DB, org_admin_role: Role) -> User:
         role=org_admin_role.uuid,
     )
     user.visits = 5
-    user.last_seen = datetime.now(timezone.utc)
+    user.last_seen = datetime.now(UTC)
     create_user(user)
     return user
 
@@ -157,17 +155,14 @@ async def org_admin_session_token(
     test_db: DB, org_admin_user: User, org_admin_credential: Credential
 ) -> str:
     """Create a session for the org admin user."""
-    token = _create_token()
-    create_session(
+    return create_session(
         user_uuid=org_admin_user.uuid,
         credential_uuid=org_admin_credential.uuid,
-        key=token,
         host="localhost:4401",
         ip="127.0.0.1",
         user_agent="pytest",
         expiry=expires(),
     )
-    return token
 
 
 @pytest_asyncio.fixture(scope="function")
@@ -1170,11 +1165,9 @@ class TestAdminSessions:
     ):
         """Admin should be able to delete a user's session."""
         # Create an additional session to delete
-        extra_token = _create_token()
-        create_session(
+        extra_token = create_session(
             user_uuid=test_user.uuid,
             credential_uuid=test_credential.uuid,
-            key=extra_token,
             host="other.host:4401",
             ip="192.168.1.1",
             user_agent="other-agent",
@@ -1255,7 +1248,7 @@ class TestAdminSessions:
     ):
         """Deleting non-existent session should fail."""
         # Use a valid format but non-existent key
-        fake_token = _create_token()
+        fake_token = secrets.token_urlsafe(12)
         response = await client.delete(
             f"/auth/api/admin/orgs/{test_org.uuid}/users/{test_user.uuid}/sessions/{fake_token}",
             headers={**auth_headers(session_token), "Host": "localhost:4401"},

@@ -10,7 +10,7 @@ import logging
 import sys
 from collections import deque
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from uuid import UUID
@@ -97,7 +97,7 @@ def create_change_record(
 ) -> _ChangeRecord:
     """Create a change record for persistence."""
     return _ChangeRecord(
-        ts=datetime.now(timezone.utc),
+        ts=datetime.now(UTC),
         a=action,
         u=user,
         diff=diff,

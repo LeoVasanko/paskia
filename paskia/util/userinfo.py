@@ -1,6 +1,6 @@
 """User information formatting and retrieval logic."""
 
-from datetime import timezone
+from datetime import UTC
 
 from paskia import aaguid, db
 from paskia.authsession import EXPIRES
@@ -13,9 +13,9 @@ def _format_datetime(dt):
     if dt is None:
         return None
     if dt.tzinfo:
-        return dt.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+        return dt.astimezone(UTC).isoformat().replace("+00:00", "Z")
     else:
-        return dt.replace(tzinfo=timezone.utc).isoformat().replace("+00:00", "Z")
+        return dt.replace(tzinfo=UTC).isoformat().replace("+00:00", "Z")
 
 
 def format_session_context(ctx: SessionContext) -> dict:
@@ -48,9 +48,8 @@ async def format_user_info(
     ctx = await permutil.session_context(auth, request_host)
 
     # Fetch and format credentials
-    user_credentials = [
-        c for c in db.data().credentials.values() if c.user == user_uuid
-    ]
+    user = db.data().users[user_uuid]
+    user_credentials = user.credentials
     credentials: list[dict] = []
     user_aaguids: set[str] = set()
 
@@ -74,7 +73,7 @@ async def format_user_info(
 
     # Format sessions
     normalized_request_host = hostutil.normalize_host(request_host)
-    session_records = [s for s in db.data().sessions.values() if s.user == user_uuid]
+    session_records = user.sessions
     current_session_key = auth
     sessions_payload: list[dict] = []
 

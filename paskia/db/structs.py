@@ -1,9 +1,13 @@
-from datetime import datetime, timezone
+from __future__ import annotations
+
+import secrets
+from datetime import UTC, datetime
 from uuid import UUID
 
 import msgspec
 import uuid7
 
+from paskia import db
 from paskia.util.hostutil import normalize_host
 
 # Sentinel for uuid fields before they are set by create() or DB post init
@@ -31,13 +35,22 @@ class Permission(msgspec.Struct, dict=True, omit_defaults=True):
         """Get orgs that can grant this permission as a set."""
         return set(self.orgs.keys())
 
+    @property
+    def orgs_list(self) -> list[Org]:
+        """Get list of Org objects that can grant this permission."""
+        return [
+            db.data().orgs[org_uuid]
+            for org_uuid in self.orgs.keys()
+            if org_uuid in db.data().orgs
+        ]
+
     @classmethod
     def create(
         cls,
         scope: str,
         display_name: str,
         domain: str | None = None,
-    ) -> "Permission":
+    ) -> Permission:
         """Create a new Permission with auto-generated uuid7."""
         perm = cls(
             scope=scope,
@@ -48,15 +61,41 @@ class Permission(msgspec.Struct, dict=True, omit_defaults=True):
         return perm
 
 
+class Org(msgspec.Struct, dict=True):
+    """Organization data structure."""
+
+    display_name: str
+
+    def __post_init__(self):
+        self.uuid: UUID = _UUID_UNSET  # Convenience field, not serialized
+
+    @property
+    def roles(self) -> list[Role]:
+        """Get all roles that belong to this organization."""
+        return [r for r in db.data().roles.values() if r.org_uuid == self.uuid]
+
+    @property
+    def permissions(self) -> list[Permission]:
+        """Get all permissions that this organization can grant."""
+        return [p for p in db.data().permissions.values() if self.uuid in p.orgs]
+
+    @classmethod
+    def create(cls, display_name: str) -> Org:
+        """Create a new Org with auto-generated uuid7."""
+        org = cls(display_name=display_name)
+        org.uuid = uuid7.create()
+        return org
+
+
 class Role(msgspec.Struct, dict=True, omit_defaults=True):
     """Role data structure.
 
     Mutable fields: display_name, permissions
-    Immutable fields: org (set at creation, never modified)
+    Immutable fields: org_uuid (set at creation, never modified)
     uuid is generated at creation.
     """
 
-    org: UUID
+    org_uuid: UUID = msgspec.field(name="org")
     display_name: str
     permissions: dict[UUID, bool] = {}  # permission_uuid -> True
 
@@ -68,16 +107,36 @@ class Role(msgspec.Struct, dict=True, omit_defaults=True):
         """Get permissions as a set of UUIDs."""
         return set(self.permissions.keys())
 
+    @property
+    def permissions_list(self) -> list[Permission]:
+        """Get list of Permission objects for this role."""
+        return [
+            db.data().permissions[perm_uuid]
+            for perm_uuid in self.permissions.keys()
+            if perm_uuid in db.data().permissions
+        ]
+
+    @property
+    def org(self) -> Org:
+        """Get the organization object this role belongs to."""
+        return db.data().orgs[self.org_uuid]
+
+    @property
+    def users(self) -> list[User]:
+        """Get all users that have this role."""
+        return [u for u in db.data().users.values() if u.role_uuid == self.uuid]
+
     @classmethod
     def create(
         cls,
-        org: UUID,
+        org: UUID | Org,
         display_name: str,
         permissions: set[UUID] | None = None,
-    ) -> "Role":
+    ) -> Role:
         """Create a new Role with auto-generated uuid7."""
+        org_uuid = org if isinstance(org, UUID) else org.uuid
         role = cls(
-            org=org,
+            org_uuid=org_uuid,
             display_name=display_name,
             permissions={p: True for p in (permissions or set())},
         )
@@ -85,32 +144,16 @@ class Role(msgspec.Struct, dict=True, omit_defaults=True):
         return role
 
 
-class Org(msgspec.Struct, dict=True):
-    """Organization data structure."""
-
-    display_name: str
-
-    def __post_init__(self):
-        self.uuid: UUID = _UUID_UNSET  # Convenience field, not serialized
-
-    @classmethod
-    def create(cls, display_name: str) -> "Org":
-        """Create a new Org with auto-generated uuid7."""
-        org = cls(display_name=display_name)
-        org.uuid = uuid7.create()
-        return org
-
-
 class User(msgspec.Struct, dict=True):
     """User data structure.
 
-    Mutable fields: display_name, role, last_seen, visits
+    Mutable fields: display_name, role_uuid, last_seen, visits
     Immutable fields: created_at (set at creation, never modified)
     uuid is derived from created_at using uuid7.
     """
 
     display_name: str
-    role: UUID
+    role_uuid: UUID = msgspec.field(name="role")
     created_at: datetime
     last_seen: datetime | None = None
     visits: int = 0
@@ -118,19 +161,44 @@ class User(msgspec.Struct, dict=True):
     def __post_init__(self):
         self.uuid: UUID = _UUID_UNSET  # Convenience field, not serialized
 
+    @property
+    def role(self) -> Role:
+        """Get the role object this user has."""
+        return db.data().roles[self.role_uuid]
+
+    @property
+    def org(self) -> Org:
+        """Get the organization this user belongs to (via role)."""
+        return self.role.org
+
+    @property
+    def credentials(self) -> list[Credential]:
+        """Get all credentials for this user."""
+        return [c for c in db.data().credentials.values() if c.user_uuid == self.uuid]
+
+    @property
+    def sessions(self) -> list[Session]:
+        """Get all sessions for this user."""
+        return [s for s in db.data().sessions.values() if s.user_uuid == self.uuid]
+
+    @property
+    def reset_tokens(self) -> list[ResetToken]:
+        """Get all reset tokens for this user."""
+        return [t for t in db.data().reset_tokens.values() if t.user_uuid == self.uuid]
+
     @classmethod
     def create(
         cls,
         display_name: str,
-        role: UUID,
+        role: UUID | Role,
         created_at: datetime | None = None,
-    ) -> "User":
+    ) -> User:
         """Create a new User with auto-generated uuid7."""
-
+        role_uuid = role if isinstance(role, UUID) else role.uuid
         user = cls(
             display_name=display_name,
-            role=role,
-            created_at=created_at or datetime.now(timezone.utc),
+            role_uuid=role_uuid,
+            created_at=created_at or datetime.now(UTC),
         )
         user.uuid = uuid7.create(user.created_at)
         return user
@@ -145,7 +213,7 @@ class Credential(msgspec.Struct, dict=True):
     """
 
     credential_id: bytes  # Long binary ID from the authenticator
-    user: UUID
+    user_uuid: UUID = msgspec.field(name="user")
     aaguid: UUID
     public_key: bytes
     sign_count: int
@@ -156,21 +224,34 @@ class Credential(msgspec.Struct, dict=True):
     def __post_init__(self):
         self.uuid: UUID = _UUID_UNSET  # Convenience field, not serialized
 
+    @property
+    def user(self) -> User:
+        """Get the User object for this credential."""
+        return db.data().users[self.user_uuid]
+
+    @property
+    def sessions(self) -> list[Session]:
+        """Get all sessions using this credential."""
+        return [
+            s for s in db.data().sessions.values() if s.credential_uuid == self.uuid
+        ]
+
     @classmethod
     def create(
         cls,
         credential_id: bytes,
-        user: UUID,
+        user: UUID | User,
         aaguid: UUID,
         public_key: bytes,
         sign_count: int,
         created_at: datetime | None = None,
-    ) -> "Credential":
+    ) -> Credential:
         """Create a new Credential with auto-generated uuid7."""
-        now = created_at or datetime.now(timezone.utc)
+        user_uuid = user if isinstance(user, UUID) else user.uuid
+        now = created_at or datetime.now(UTC)
         cred = cls(
             credential_id=credential_id,
-            user=user,
+            user_uuid=user_uuid,
             aaguid=aaguid,
             public_key=public_key,
             sign_count=sign_count,
@@ -186,12 +267,12 @@ class Session(msgspec.Struct, dict=True):
     """Session data structure.
 
     Mutable fields: expiry (updated on session refresh)
-    Immutable fields: user, credential, host, ip, user_agent
+    Immutable fields: user_uuid, credential_uuid, host, ip, user_agent
     key is stored in the dict key, not in the struct.
     """
 
-    user: UUID
-    credential: UUID
+    user_uuid: UUID = msgspec.field(name="user")
+    credential_uuid: UUID = msgspec.field(name="credential")
     host: str
     ip: str
     user_agent: str
@@ -199,6 +280,16 @@ class Session(msgspec.Struct, dict=True):
 
     def __post_init__(self):
         self.key: str = ""  # Convenience field, not serialized
+
+    @property
+    def user(self) -> User:
+        """Get the User object for this session."""
+        return db.data().users[self.user_uuid]
+
+    @property
+    def credential(self) -> Credential:
+        """Get the Credential object for this session."""
+        return db.data().credentials[self.credential_uuid]
 
     def metadata(self) -> dict:
         """Return session metadata for backwards compatibility."""
@@ -208,6 +299,32 @@ class Session(msgspec.Struct, dict=True):
             "expiry": self.expiry.isoformat(),
         }
 
+    @classmethod
+    def create(
+        cls,
+        user: UUID | User,
+        credential: UUID | Credential,
+        host: str,
+        ip: str,
+        user_agent: str,
+        expiry: datetime,
+    ) -> Session:
+        """Create a new Session with auto-generated key."""
+        user_uuid = user if isinstance(user, UUID) else user.uuid
+        credential_uuid = (
+            credential if isinstance(credential, UUID) else credential.uuid
+        )
+        session = cls(
+            user_uuid=user_uuid,
+            credential_uuid=credential_uuid,
+            host=host,
+            ip=ip,
+            user_agent=user_agent,
+            expiry=expiry,
+        )
+        session.key = secrets.token_urlsafe(12)
+        return session
+
 
 class ResetToken(msgspec.Struct, dict=True):
     """Reset/device-addition token data structure.
@@ -216,12 +333,17 @@ class ResetToken(msgspec.Struct, dict=True):
     key is stored in the dict key, not in the struct.
     """
 
-    user: UUID
+    user_uuid: UUID = msgspec.field(name="user")
     expiry: datetime
     token_type: str
 
     def __post_init__(self):
         self.key: bytes = b""  # Convenience field, not serialized
+
+    @property
+    def user(self) -> User:
+        """Get the User object for this reset token."""
+        return db.data().users[self.user_uuid]
 
 
 class SessionContext(msgspec.Struct):
@@ -296,18 +418,16 @@ class DB(msgspec.Struct, dict=True, omit_defaults=False):
             return None
 
         try:
-            user = self.users[s.user]
-            role = self.roles[user.role]
-            org = self.orgs[role.org]
-            credential = self.credentials[s.credential]
+            user = s.user
+            role = user.role
+            org = role.org
+            credential = s.credential
         except KeyError:
             return None
 
         # Effective permissions: role's permissions that the org can grant
         # Also filter by domain if host is provided
-        org_perm_uuids = {
-            pid for pid, p in self.permissions.items() if org.uuid in p.orgs
-        }
+        org_perm_uuids = {p.uuid for p in org.permissions}
         normalized_host = normalize_host(host)
         host_without_port = (
             normalized_host.rsplit(":", 1)[0] if normalized_host else None

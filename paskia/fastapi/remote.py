@@ -324,7 +324,7 @@ async def websocket_remote_auth_permit(ws: WebSocket):
                     token_str = passphrase.generate()
                     expiry = expires()
                     db.create_reset_token(
-                        user_uuid=cred.user,
+                        user_uuid=cred.user_uuid,
                         passphrase=token_str,
                         expiry=expiry,
                         token_type="device addition",
@@ -333,7 +333,7 @@ async def websocket_remote_auth_permit(ws: WebSocket):
                     # Also create a session so the device is logged in
                     normalized_host = hostutil.normalize_host(request.host)
                     session_token = db.login(
-                        user_uuid=cred.user,
+                        user_uuid=cred.user_uuid,
                         credential_uuid=cred.uuid,
                         sign_count=new_sign_count,
                         host=normalized_host,
@@ -346,7 +346,7 @@ async def websocket_remote_auth_permit(ws: WebSocket):
 
                     normalized_host = hostutil.normalize_host(request.host)
                     session_token = db.login(
-                        user_uuid=cred.user,
+                        user_uuid=cred.user_uuid,
                         credential_uuid=cred.uuid,
                         sign_count=new_sign_count,
                         host=normalized_host,
@@ -359,7 +359,7 @@ async def websocket_remote_auth_permit(ws: WebSocket):
                 completed = await remoteauth.instance.complete_request(
                     token=request.key,
                     session_token=session_token,
-                    user_uuid=cred.user,
+                    user_uuid=cred.user_uuid,
                     credential_uuid=cred.uuid,
                     reset_token=reset_token,
                 )

@@ -1,5 +1,5 @@
 import logging
-from datetime import timezone
+from datetime import UTC
 from uuid import UUID
 
 from fastapi import Body, FastAPI, HTTPException, Query, Request, Response
@@ -28,38 +28,18 @@ from paskia.util.hostutil import normalize_host
 app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
 
 
-def is_global_admin(ctx) -> bool:
-    """Check if user has global admin permission."""
-    effective_scopes = (
-        {p.scope for p in (ctx.permissions or [])}
-        if ctx.permissions
-        else set(ctx.role.permissions or [])
+def master_admin(ctx) -> bool:
+    return any(p.scope == "auth:admin" for p in ctx.permissions)
+
+
+def org_admin(ctx, org_uuid: UUID) -> bool:
+    return ctx.org.uuid == org_uuid and any(
+        p.scope == "auth:org:admin" for p in ctx.permissions
     )
-    return "auth:admin" in effective_scopes
-
-
-def is_org_admin(ctx, org_uuid: UUID | None = None) -> bool:
-    """Check if user has org admin permission.
-
-    If org_uuid is provided, checks if user is admin of that specific org.
-    If org_uuid is None, checks if user is admin of their own org.
-    """
-    effective_scopes = (
-        {p.scope for p in (ctx.permissions or [])}
-        if ctx.permissions
-        else set(ctx.role.permissions or [])
-    )
-    if "auth:org:admin" not in effective_scopes:
-        return False
-    if org_uuid is None:
-        return True
-    # User must belong to the target org (via their role)
-    return ctx.org.uuid == org_uuid
 
 
 def can_manage_org(ctx, org_uuid: UUID) -> bool:
-    """Check if user can manage the specified organization."""
-    return is_global_admin(ctx) or is_org_admin(ctx, org_uuid)
+    return master_admin(ctx) or org_admin(ctx, org_uuid)
 
 
 @app.exception_handler(ValueError)
@@ -99,14 +79,14 @@ async def admin_list_orgs(request: Request, auth=AUTH_COOKIE):
         host=request.headers.get("host"),
     )
     orgs = list(db.data().orgs.values())
-    if not is_global_admin(ctx):
+    if not master_admin(ctx):
         # Org admins can only see their own organization
         orgs = [o for o in orgs if o.uuid == ctx.org.uuid]
 
     def role_to_dict(r):
         return {
             "uuid": str(r.uuid),
-            "org": str(r.org),
+            "org": str(r.org_uuid),
             "display_name": r.display_name,
             "permissions": list(r.permissions.keys()),
         }
@@ -116,12 +96,8 @@ async def admin_list_orgs(request: Request, auth=AUTH_COOKIE):
         return {
             "uuid": str(o.uuid),
             "display_name": o.display_name,
-            "permissions": {
-                pid for pid, p in db.data().permissions.items() if o.uuid in p.orgs
-            },
-            "roles": [
-                role_to_dict(r) for r in db.data().roles.values() if r.org == o.uuid
-            ],
+            "permissions": {p.uuid for p in o.permissions},
+            "roles": [role_to_dict(r) for r in o.roles],
             "users": [
                 {
                     "uuid": str(u.uuid),
@@ -283,7 +259,8 @@ async def admin_create_role(
     perms = payload.get("permissions") or []
     if org_uuid not in db.data().orgs:
         raise HTTPException(status_code=404, detail="Organization not found")
-    grantable = {pid for pid, p in db.data().permissions.items() if org_uuid in p.orgs}
+    org = db.data().orgs[org_uuid]
+    grantable = {p.uuid for p in org.permissions}
 
     # Normalize permission IDs to UUIDs
     permission_uuids: set[UUID] = set()
@@ -324,7 +301,7 @@ async def admin_update_role_name(
             status_code=403, detail="Insufficient permissions", mode="forbidden"
         )
     role = db.data().roles.get(role_uuid)
-    if not role or role.org != org_uuid:
+    if not role or role.org_uuid != org_uuid:
         raise HTTPException(status_code=404, detail="Role not found in organization")
 
     display_name = payload.get("display_name")
@@ -356,7 +333,7 @@ async def admin_add_role_permission(
         )
 
     role = db.data().roles.get(role_uuid)
-    if not role or role.org != org_uuid:
+    if not role or role.org_uuid != org_uuid:
         raise HTTPException(status_code=404, detail="Role not found in organization")
 
     # Verify permission exists and org can grant it
@@ -391,7 +368,7 @@ async def admin_remove_role_permission(
         )
 
     role = db.data().roles.get(role_uuid)
-    if not role or role.org != org_uuid:
+    if not role or role.org_uuid != org_uuid:
         raise HTTPException(status_code=404, detail="Role not found in organization")
 
     # Sanity check: prevent admin from removing their own access
@@ -432,7 +409,7 @@ async def admin_delete_role(
             status_code=403, detail="Insufficient permissions", mode="forbidden"
         )
     role = db.data().roles.get(role_uuid)
-    if not role or role.org != org_uuid:
+    if not role or role.org_uuid != org_uuid:
         raise HTTPException(status_code=404, detail="Role not found in organization")
 
     # Sanity check: prevent admin from deleting their own role
@@ -468,8 +445,11 @@ async def admin_create_user(
     if not display_name or not role_name:
         raise ValueError("display_name and role are required")
 
-    roles = [r for r in db.data().roles.values() if r.org == org_uuid]
-    role_obj = next((r for r in roles if r.display_name == role_name), None)
+    org = db.data().orgs[org_uuid]
+    role_obj = next(
+        (r for r in org.roles if r.display_name == role_name),
+        None,
+    )
     if not role_obj:
         raise ValueError("Role not found in organization")
     user = UserDC.create(
@@ -507,7 +487,7 @@ async def admin_update_user_role(
         raise ValueError("User not found")
     if user_org.uuid != org_uuid:
         raise ValueError("User does not belong to this organization")
-    roles = [r for r in db.data().roles.values() if r.org == org_uuid]
+    roles = user_org.roles
     if not any(r.display_name == new_role for r in roles):
         raise ValueError("Role not found in organization")
 
@@ -573,9 +553,9 @@ async def admin_create_user_registration_link(
     return {
         "url": url,
         "expires": (
-            expiry.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+            expiry.astimezone(UTC).isoformat().replace("+00:00", "Z")
             if expiry.tzinfo
-            else expiry.replace(tzinfo=timezone.utc).isoformat().replace("+00:00", "Z")
+            else expiry.replace(tzinfo=UTC).isoformat().replace("+00:00", "Z")
         ),
     }
 
@@ -604,7 +584,7 @@ async def admin_get_user_detail(
             status_code=403, detail="Insufficient permissions", mode="forbidden"
         )
     user = db.data().users.get(user_uuid)
-    user_creds = [c for c in db.data().credentials.values() if c.user == user_uuid]
+    user_creds = user.credentials
     creds: list[dict] = []
     aaguids: set[str] = set()
     for c in user_creds:
@@ -615,21 +595,17 @@ async def admin_get_user_detail(
                 "credential": str(c.uuid),
                 "aaguid": aaguid_str,
                 "created_at": (
-                    c.created_at.astimezone(timezone.utc)
-                    .isoformat()
-                    .replace("+00:00", "Z")
+                    c.created_at.astimezone(UTC).isoformat().replace("+00:00", "Z")
                     if c.created_at.tzinfo
-                    else c.created_at.replace(tzinfo=timezone.utc)
+                    else c.created_at.replace(tzinfo=UTC)
                     .isoformat()
                     .replace("+00:00", "Z")
                 ),
                 "last_used": (
-                    c.last_used.astimezone(timezone.utc)
-                    .isoformat()
-                    .replace("+00:00", "Z")
+                    c.last_used.astimezone(UTC).isoformat().replace("+00:00", "Z")
                     if c.last_used and c.last_used.tzinfo
                     else (
-                        c.last_used.replace(tzinfo=timezone.utc)
+                        c.last_used.replace(tzinfo=UTC)
                         .isoformat()
                         .replace("+00:00", "Z")
                         if c.last_used
@@ -637,12 +613,10 @@ async def admin_get_user_detail(
                     )
                 ),
                 "last_verified": (
-                    c.last_verified.astimezone(timezone.utc)
-                    .isoformat()
-                    .replace("+00:00", "Z")
+                    c.last_verified.astimezone(UTC).isoformat().replace("+00:00", "Z")
                     if c.last_verified and c.last_verified.tzinfo
                     else (
-                        c.last_verified.replace(tzinfo=timezone.utc)
+                        c.last_verified.replace(tzinfo=UTC)
                         .isoformat()
                         .replace("+00:00", "Z")
                         if c.last_verified
@@ -659,7 +633,7 @@ async def admin_get_user_detail(
 
     # Get sessions for the user
     normalized_request_host = hostutil.normalize_host(request.headers.get("host"))
-    session_records = [s for s in db.data().sessions.values() if s.user == user_uuid]
+    session_records = user.sessions
     current_session_key = auth
     sessions_payload: list[dict] = []
     for entry in session_records:
@@ -672,11 +646,9 @@ async def admin_get_user_detail(
                 "ip": entry.ip,
                 "user_agent": useragent.compact_user_agent(entry.user_agent),
                 "last_renewed": (
-                    renewed.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+                    renewed.astimezone(UTC).isoformat().replace("+00:00", "Z")
                     if renewed.tzinfo
-                    else renewed.replace(tzinfo=timezone.utc)
-                    .isoformat()
-                    .replace("+00:00", "Z")
+                    else renewed.replace(tzinfo=UTC).isoformat().replace("+00:00", "Z")
                 ),
                 "is_current": entry.key == current_session_key,
                 "is_current_host": bool(
@@ -693,23 +665,19 @@ async def admin_get_user_detail(
         "role": role_name,
         "visits": user.visits,
         "created_at": (
-            user.created_at.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+            user.created_at.astimezone(UTC).isoformat().replace("+00:00", "Z")
             if user.created_at and user.created_at.tzinfo
             else (
-                user.created_at.replace(tzinfo=timezone.utc)
-                .isoformat()
-                .replace("+00:00", "Z")
+                user.created_at.replace(tzinfo=UTC).isoformat().replace("+00:00", "Z")
                 if user.created_at
                 else None
             )
         ),
         "last_seen": (
-            user.last_seen.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+            user.last_seen.astimezone(UTC).isoformat().replace("+00:00", "Z")
             if user.last_seen and user.last_seen.tzinfo
             else (
-                user.last_seen.replace(tzinfo=timezone.utc)
-                .isoformat()
-                .replace("+00:00", "Z")
+                user.last_seen.replace(tzinfo=UTC).isoformat().replace("+00:00", "Z")
                 if user.last_seen
                 else None
             )
@@ -808,7 +776,7 @@ async def admin_delete_user_session(
         )
 
     target_session = db.data().sessions.get(session_id)
-    if not target_session or target_session.user != user_uuid:
+    if not target_session or target_session.user_uuid != user_uuid:
         raise HTTPException(status_code=404, detail="Session not found")
 
     db.delete_session(session_id, ctx=ctx)
@@ -919,18 +887,8 @@ async def admin_list_permissions(request: Request, auth=AUTH_COOKIE):
         match=permutil.has_any,
         host=request.headers.get("host"),
     )
-    perms = list(db.data().permissions.values())
-
-    # Global admins see all permissions
-    if is_global_admin(ctx):
-        return [_perm_to_dict(p) for p in perms]
-
-    # Org admins only see permissions their org can grant (by UUID)
-    grantable = {
-        pid for pid, p in db.data().permissions.items() if ctx.org.uuid in p.orgs
-    }
-    filtered_perms = [p for p in perms if p.uuid in grantable]
-    return [_perm_to_dict(p) for p in filtered_perms]
+    perms = db.data().permissions.values() if master_admin(ctx) else ctx.org.permissions
+    return [_perm_to_dict(p) for p in perms]
 
 
 @app.post("/permissions")
