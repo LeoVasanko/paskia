@@ -10,8 +10,6 @@ display name. If multiple users match, they are listed and the command
 aborts. A new one-time reset link is always created.
 """
 
-from __future__ import annotations
-
 import asyncio
 from uuid import UUID
 
