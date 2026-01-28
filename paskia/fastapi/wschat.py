@@ -35,7 +35,7 @@ async def authenticate_chat(
     credential_ids: list[bytes] | None = None,
 ) -> tuple[Credential, int]:
     """Run WebAuthn authentication flow and return the credential and new sign count.
-    
+
     Returns:
         tuple of (credential, new_sign_count) where new_sign_count comes from WebAuthn verification
     """

@@ -8,7 +8,6 @@ This module provides a unified interface for WebAuthn operations including:
 """
 
 import json
-from datetime import datetime, timezone
 from urllib.parse import urlparse
 from uuid import UUID
 
@@ -233,7 +232,7 @@ class Passkey:
             expected_challenge: The earlier generated challenge bytes
             stored_cred: The server stored credential record (NOT modified)
             origin: The origin URL (required, must be pre-validated)
-            
+
         Returns:
             VerifiedAuthentication with new_sign_count and user_verified status
         """
