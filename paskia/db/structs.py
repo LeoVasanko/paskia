@@ -84,15 +84,9 @@ class Role(msgspec.Struct, dict=True, omit_defaults=True):
 
 
 class Org(msgspec.Struct, dict=True):
-    """Organization data structure.
-
-    Mutable fields: display_name
-    Immutable fields: created_at (set at creation, never modified)
-    uuid is derived from created_at using uuid7.
-    """
+    """Organization data structure."""
 
     display_name: str
-    created_at: datetime
 
     def __post_init__(self):
         self.uuid: UUID = _UUID_UNSET  # Convenience field, not serialized
@@ -100,11 +94,8 @@ class Org(msgspec.Struct, dict=True):
     @classmethod
     def create(cls, display_name: str) -> "Org":
         """Create a new Org with auto-generated uuid7."""
-        org = cls(
-            display_name=display_name,
-            created_at=datetime.now(timezone.utc),
-        )
-        org.uuid = uuid7.create(org.created_at)
+        org = cls(display_name=display_name)
+        org.uuid = uuid7.create()
         return org
 
 

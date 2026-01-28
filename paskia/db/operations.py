@@ -264,9 +264,7 @@ def create_org(org: Org, *, ctx: SessionContext | None = None) -> None:
     if org.uuid in _db.orgs:
         raise ValueError(f"Organization {org.uuid} already exists")
     with _db.transaction("admin:create_org", ctx):
-        new_org = Org(
-            display_name=org.display_name, created_at=datetime.now(timezone.utc)
-        )
+        new_org = Org(display_name=org.display_name)
         _db.orgs[org.uuid] = new_org
         new_org.uuid = org.uuid
         # Create Administration role with org admin permission
@@ -885,10 +883,7 @@ def bootstrap(
         _db.permissions[perm_org_admin_uuid] = perm_org_admin
 
         # Create organization
-        new_org = Org(
-            display_name=org_name,
-            created_at=now,
-        )
+        new_org = Org(display_name=org_name)
         new_org.uuid = org_uuid
         _db.orgs[org_uuid] = new_org
 
