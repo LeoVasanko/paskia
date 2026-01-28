@@ -184,14 +184,18 @@ class JsonlStore:
                 self.db = decoder.decode(msgspec.json.encode(data_dict))
                 self.db._store = self
                 
-                # Persist migration by setting previous state to pre-migration
+                # Update previous state to migrated data FIRST (to avoid transaction hardening reset)
+                self._previous_builtins = data_dict
+                
+                # Persist migration by manually computing and queueing the diff
                 if migrated:
-                    self._previous_builtins = original_dict
-                    with self.transaction("migrate"):
-                        pass  # Trigger change detection
+                    diff = compute_diff(original_dict, data_dict)
+                    if diff:
+                        self._pending_changes.append(
+                            create_change_record("migrate", diff, user=None)
+                        )
+                        _logger.info("Queued migration changes for persistence")
                     await self.flush()
-                else:
-                    self._previous_builtins = data_dict
         except ValueError:
             if self.db_path.exists():
                 raise
