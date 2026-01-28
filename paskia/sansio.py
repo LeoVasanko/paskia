@@ -231,8 +231,11 @@ class Passkey:
         Args:
             credential: The authentication credential response from the client
             expected_challenge: The earlier generated challenge bytes
-            stored_cred: The server stored credential record (modified by this function)
+            stored_cred: The server stored credential record (NOT modified)
             origin: The origin URL (required, must be pre-validated)
+            
+        Returns:
+            VerifiedAuthentication with new_sign_count and user_verified status
         """
         # Verify the authentication response
         verification = verify_authentication_response(
@@ -243,11 +246,6 @@ class Passkey:
             credential_public_key=stored_cred.public_key,
             credential_current_sign_count=stored_cred.sign_count,
         )
-        stored_cred.sign_count = verification.new_sign_count
-        now = datetime.now(timezone.utc)
-        stored_cred.last_used = now
-        if verification.user_verified:
-            stored_cred.last_verified = now
         return verification
 
 

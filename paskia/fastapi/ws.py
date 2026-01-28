@@ -96,7 +96,7 @@ async def websocket_authenticate(ws: WebSocket, auth=AUTH_COOKIE):
             session_user_uuid = ctx.user.uuid
             credential_ids = db.get_user_credential_ids(session_user_uuid) or None
 
-    cred = await authenticate_chat(ws, origin, credential_ids)
+    cred, new_sign_count = await authenticate_chat(ws, origin, credential_ids)
 
     # If reauth mode, verify the credential belongs to the session's user
     if session_user_uuid and cred.user != session_user_uuid:
@@ -116,7 +116,7 @@ async def websocket_authenticate(ws: WebSocket, auth=AUTH_COOKIE):
     token = db.login(
         user_uuid=cred.user,
         credential_uuid=cred.uuid,
-        sign_count=cred.sign_count,
+        sign_count=new_sign_count,
         host=normalized_host,
         ip=metadata["ip"],
         user_agent=metadata["user_agent"],

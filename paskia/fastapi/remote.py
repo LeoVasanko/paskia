@@ -310,7 +310,7 @@ async def websocket_remote_auth_permit(ws: WebSocket):
 
             # Handle authenticate request (no PoW needed - already validated during lookup)
             if msg.get("authenticate") and request is not None:
-                cred = await authenticate_chat(ws, origin)
+                cred, new_sign_count = await authenticate_chat(ws, origin)
 
                 # Create a session for the REQUESTING device
                 assert cred.uuid is not None
@@ -335,7 +335,7 @@ async def websocket_remote_auth_permit(ws: WebSocket):
                     session_token = db.login(
                         user_uuid=cred.user,
                         credential_uuid=cred.uuid,
-                        sign_count=cred.sign_count,
+                        sign_count=new_sign_count,
                         host=normalized_host,
                         ip=request.ip,
                         user_agent=request.user_agent,
@@ -348,7 +348,7 @@ async def websocket_remote_auth_permit(ws: WebSocket):
                     session_token = db.login(
                         user_uuid=cred.user,
                         credential_uuid=cred.uuid,
-                        sign_count=cred.sign_count,
+                        sign_count=new_sign_count,
                         host=normalized_host,
                         ip=request.ip,
                         user_agent=request.user_agent,
