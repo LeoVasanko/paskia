@@ -707,7 +707,8 @@ def _create_token() -> str:
 
 def login(
     user_uuid: UUID,
-    credential: Credential,
+    credential_uuid: UUID,
+    sign_count: int,
     host: str,
     ip: str,
     user_agent: str,
@@ -728,8 +729,8 @@ def login(
     now = datetime.now(timezone.utc)
     if user_uuid not in _db.users:
         raise ValueError(f"User {user_uuid} not found")
-    if credential.uuid not in _db.credentials:
-        raise ValueError(f"Credential {credential.uuid} not found")
+    if credential_uuid not in _db.credentials:
+        raise ValueError(f"Credential {credential_uuid} not found")
 
     session_key = _create_token()
     user_str = str(user_uuid)
@@ -738,12 +739,12 @@ def login(
         _db.users[user_uuid].last_seen = now
         _db.users[user_uuid].visits += 1
         # Update credential
-        _db.credentials[credential.uuid].sign_count = credential.sign_count
-        _db.credentials[credential.uuid].last_used = now
+        _db.credentials[credential_uuid].sign_count = sign_count
+        _db.credentials[credential_uuid].last_used = now
         # Create session
         _db.sessions[session_key] = Session(
             user=user_uuid,
-            credential=credential.uuid,
+            credential=credential_uuid,
             host=host,
             ip=ip,
             user_agent=user_agent,

@@ -334,7 +334,8 @@ async def websocket_remote_auth_permit(ws: WebSocket):
                     normalized_host = hostutil.normalize_host(request.host)
                     session_token = db.login(
                         user_uuid=cred.user,
-                        credential=cred,
+                        credential_uuid=cred.uuid,
+                        sign_count=cred.sign_count,
                         host=normalized_host,
                         ip=request.ip,
                         user_agent=request.user_agent,
@@ -346,7 +347,8 @@ async def websocket_remote_auth_permit(ws: WebSocket):
                     normalized_host = hostutil.normalize_host(request.host)
                     session_token = db.login(
                         user_uuid=cred.user,
-                        credential=cred,
+                        credential_uuid=cred.uuid,
+                        sign_count=cred.sign_count,
                         host=normalized_host,
                         ip=request.ip,
                         user_agent=request.user_agent,
