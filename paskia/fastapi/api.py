@@ -14,11 +14,7 @@ from fastapi.responses import JSONResponse
 from fastapi.security import HTTPBearer
 
 from paskia import db
-from paskia.authsession import (
-    EXPIRES,
-    get_reset,
-    refresh_session_token,
-)
+from paskia.authsession import EXPIRES, expires, get_reset
 from paskia.fastapi import authz, session, user
 from paskia.fastapi.response import MsgspecResponse
 from paskia.fastapi.session import AUTH_COOKIE, AUTH_COOKIE_NAME
@@ -93,19 +89,14 @@ async def validate_token(
     if auth:
         consumed = EXPIRES - (ctx.session.expiry - datetime.now(UTC))
         if not timedelta(0) < consumed < _REFRESH_INTERVAL:
-            try:
-                refresh_session_token(
-                    auth,
-                    ip=request.client.host if request.client else "",
-                    user_agent=request.headers.get("user-agent") or "",
-                )
-                session.set_session_cookie(response, auth)
-                renewed = True
-            except ValueError:
-                # Session disappeared, e.g. due to concurrent logout; global handler will clear
-                raise authz.AuthException(
-                    status_code=401, detail="Session expired", mode="login"
-                )
+            db.update_session(
+                auth,
+                ip=request.client.host if request.client else "",
+                user_agent=request.headers.get("user-agent") or "",
+                expiry=expires(),
+            )
+            session.set_session_cookie(response, auth)
+            renewed = True
     return MsgspecResponse(
         {
             "valid": True,
@@ -113,24 +104,6 @@ async def validate_token(
             "ctx": userinfo.build_session_context(ctx),
         }
     )
-
-
-@app.get("/token-info")
-async def token_info(credentials=Depends(bearer_auth)):
-    """Get reset/device-add token info. Pass token via Bearer header."""
-    token = credentials.credentials
-    if not passphrase.is_well_formed(token):
-        raise HTTPException(400, "Invalid token format")
-    try:
-        reset_token = get_reset(token)
-    except ValueError as e:
-        raise HTTPException(401, str(e))
-
-    u = reset_token.user
-    return {
-        "token_type": reset_token.token_type,
-        "display_name": u.display_name,
-    }
 
 
 @app.get("/forward")
@@ -246,6 +219,24 @@ async def api_user_info(
             request_host=request.headers.get("host"),
         )
     )
+
+
+@app.get("/token-info")
+async def token_info(credentials=Depends(bearer_auth)):
+    """Get reset/device-add token info. Pass token via Bearer header."""
+    token = credentials.credentials
+    if not passphrase.is_well_formed(token):
+        raise HTTPException(400, "Invalid token format")
+    try:
+        reset_token = get_reset(token)
+    except ValueError as e:
+        raise HTTPException(401, str(e))
+
+    u = reset_token.user
+    return {
+        "token_type": reset_token.token_type,
+        "display_name": u.display_name,
+    }
 
 
 @app.post("/logout")
