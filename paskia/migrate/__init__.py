@@ -154,7 +154,7 @@ async def migrate_from_sql(
                 if perm_uuid:
                     new_permissions[perm_uuid] = True
             new_role = Role(
-                org=role.org_uuid,
+                org_uuid=role.org_uuid,
                 display_name=role.display_name,
                 permissions=new_permissions,
             )
@@ -172,7 +172,7 @@ async def migrate_from_sql(
             user_key: UUID = legacy_user.uuid
             new_user = User(
                 display_name=legacy_user.display_name,
-                role=legacy_user.role_uuid,
+                role_uuid=legacy_user.role_uuid,
                 created_at=legacy_user.created_at or datetime.now(UTC),
                 last_seen=legacy_user.last_seen,
                 visits=legacy_user.visits,

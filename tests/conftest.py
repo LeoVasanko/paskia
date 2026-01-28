@@ -28,10 +28,7 @@ from paskia.db import (
     Permission,
     Role,
     User,
-    add_permission_to_org,
     create_credential,
-    create_org,
-    create_permission,
     create_reset_token,
     create_role,
     create_session,
@@ -55,7 +52,13 @@ def event_loop():
 
 @pytest_asyncio.fixture(scope="function")
 async def test_db() -> AsyncGenerator[DB, None]:
-    """Create an in-memory JSON database for testing."""
+    """Create an in-memory JSON database for testing.
+
+    Uses bootstrap() to properly initialize the database with:
+    - auth:admin and auth:org:admin permissions
+    - A default organization with Administration role
+    - An admin user with the Administration role
+    """
 
     with tempfile.NamedTemporaryFile(suffix=".jsonl", delete=True) as f:
         db = DB()
@@ -64,6 +67,11 @@ async def test_db() -> AsyncGenerator[DB, None]:
         await store.load()
         ops_db._db = db
         ops_db._store = store
+        # Bootstrap creates the initial permissions, org, role, and admin user
+        ops_db.bootstrap(
+            org_name="Test Organization",
+            admin_name="Test Admin",
+        )
         yield db
         ops_db._db = None
         ops_db._store = None
@@ -83,48 +91,29 @@ async def passkey_instance() -> Passkey:
 
 
 @pytest_asyncio.fixture(scope="function")
-async def test_org(test_db: DB, admin_permission: Permission) -> Org:
-    """Create a test organization with admin permission."""
-    org = Org.create(display_name="Test Organization")
-    create_org(org)
-    # Grant admin permission to this org
-    add_permission_to_org(org.uuid, admin_permission.uuid)
-    return org
-
-
-@pytest_asyncio.fixture(scope="function")
 async def admin_permission(test_db: DB) -> Permission:
-    """Create the auth:admin permission."""
-    perm = Permission.create(scope="auth:admin", display_name="Master Admin")
-    create_permission(perm)
-    return perm
+    """Get the auth:admin permission created by bootstrap."""
+    return next(p for p in test_db.permissions.values() if p.scope == "auth:admin")
 
 
 @pytest_asyncio.fixture(scope="function")
-async def org_admin_permission(test_db: DB, test_org: Org) -> Permission:
-    """Create the auth:org:admin permission."""
-    perm = Permission.create(scope="auth:org:admin", display_name="Organization Admin")
-    create_permission(perm)
-    # Make it grantable by the org
-    add_permission_to_org(test_org.uuid, perm.uuid)
-    return perm
+async def org_admin_permission(test_db: DB) -> Permission:
+    """Get the auth:org:admin permission created by bootstrap."""
+    return next(p for p in test_db.permissions.values() if p.scope == "auth:org:admin")
 
 
 @pytest_asyncio.fixture(scope="function")
-async def test_role(
-    test_db: DB,
-    test_org: Org,
-    admin_permission: Permission,
-    org_admin_permission: Permission,
-) -> Role:
-    """Create a test role with admin permission."""
-    role = Role.create(
-        org=test_org.uuid,
-        display_name="Test Admin Role",
-        permissions={admin_permission.uuid, org_admin_permission.uuid},
-    )
-    create_role(role)
-    return role
+async def test_org(test_db: DB) -> Org:
+    """Get the test organization created by bootstrap."""
+    # Bootstrap creates exactly one org
+    return next(iter(test_db.orgs.values()))
+
+
+@pytest_asyncio.fixture(scope="function")
+async def test_role(test_db: DB) -> Role:
+    """Get the Administration role created by bootstrap."""
+    # Bootstrap creates exactly one role (Administration)
+    return next(iter(test_db.roles.values()))
 
 
 @pytest_asyncio.fixture(scope="function")
@@ -139,14 +128,10 @@ async def user_role(test_db: DB, test_org: Org) -> Role:
 
 
 @pytest_asyncio.fixture(scope="function")
-async def test_user(test_db: DB, test_role: Role) -> User:
-    """Create a test user with admin role."""
-    user = User.create(
-        display_name="Test Admin",
-        role=test_role.uuid,
-    )
-    create_user(user)
-    return user
+async def test_user(test_db: DB) -> User:
+    """Get the admin user created by bootstrap."""
+    # Bootstrap creates exactly one user (admin)
+    return next(iter(test_db.users.values()))
 
 
 @pytest_asyncio.fixture(scope="function")
