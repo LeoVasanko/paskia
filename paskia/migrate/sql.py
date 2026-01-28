@@ -25,11 +25,6 @@ from sqlalchemy.dialects.sqlite import BLOB
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
-from paskia.db import (
-    Org,
-    Role,
-)
-
 
 # Legacy User class for SQL schema (uses 'role_uuid' not 'role')
 @dataclass
@@ -69,6 +64,17 @@ class _LegacyRole:
     org_uuid: UUID
     display_name: str
     permissions: list[str] | None = None
+
+
+# Legacy Org class for SQL schema (has mutable permissions/roles lists)
+@dataclass
+class _LegacyOrg:
+    """Org as stored in the old SQL schema with mutable permissions/roles."""
+
+    uuid: UUID
+    display_name: str
+    permissions: list[str] | None = None
+    roles: list[_LegacyRole] | None = None
 
 
 # Legacy Session class for SQL schema (uses 'key' as field, 'user_uuid', 'credential_uuid')
@@ -128,12 +134,13 @@ class OrgModel(Base):
 
     def as_dataclass(self):
         # Base Org without permissions/roles (filled by data accessors)
-        org = Org(display_name=self.display_name)
-        org.uuid = UUID(bytes=self.uuid)
-        return org
+        return _LegacyOrg(
+            uuid=UUID(bytes=self.uuid),
+            display_name=self.display_name,
+        )
 
     @staticmethod
-    def from_dataclass(org: Org):
+    def from_dataclass(org: _LegacyOrg):
         return OrgModel(uuid=org.uuid.bytes, display_name=org.display_name)
 
 
@@ -388,7 +395,7 @@ class DB:
             result = await session.execute(select(PermissionModel))
             return [p.as_dataclass() for p in result.scalars().all()]
 
-    async def list_organizations(self) -> list[Org]:
+    async def list_organizations(self) -> list[_LegacyOrg]:
         async with self.session() as session:
             # Load all orgs
             orgs_result = await session.execute(select(OrgModel))
@@ -415,13 +422,13 @@ class DB:
                 perms_by_role.setdefault(rp.role_uuid, []).append(rp.permission_id)
 
             # Build org dataclasses with roles and permission IDs
-            roles_by_org: dict[bytes, list[Role]] = {}
+            roles_by_org: dict[bytes, list[_LegacyRole]] = {}
             for rm in role_models:
                 r_dc = rm.as_dataclass()
                 r_dc.permissions = perms_by_role.get(rm.uuid, [])
                 roles_by_org.setdefault(rm.org_uuid, []).append(r_dc)
 
-            orgs: list[Org] = []
+            orgs: list[_LegacyOrg] = []
             for om in org_models:
                 o_dc = om.as_dataclass()
                 o_dc.permissions = perms_by_org.get(om.uuid, [])

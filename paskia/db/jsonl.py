@@ -196,6 +196,9 @@ class JsonlStore:
                         )
                         _logger.info("Queued migration changes for persistence")
                     await self.flush()
+            else:
+                # No data loaded - _previous_builtins stays as empty dict
+                pass
         except ValueError:
             if self.db_path.exists():
                 raise
@@ -248,19 +251,18 @@ class JsonlStore:
         # Check for out-of-transaction modifications
         current_state = msgspec.to_builtins(self.db)
         if current_state != self._previous_builtins:
-            diff = compute_diff(self._previous_builtins, current_state)
-            diff_json = json.dumps(diff, default=str, indent=2)
-            _logger.error(
-                "Database state modified outside of transaction! "
-                "This indicates a bug where DB changes occurred without a transaction wrapper. "
-                "Resetting to last known state from JSONL file.\n"
-                f"Changes detected:\n{diff_json}"
-            )
-            # Hard reset to last known good state
-            decoder = msgspec.json.Decoder(DB)
-            self.db = decoder.decode(msgspec.json.encode(self._previous_builtins))
-            self.db._store = self
-            current_state = self._previous_builtins.copy()
+            # Allow bootstrap/migrate to create a new database from empty state
+            if action in _BOOTSTRAP_ACTIONS and not self._previous_builtins:
+                pass  # Expected: creating database from scratch
+            else:
+                diff = compute_diff(self._previous_builtins, current_state)
+                diff_json = json.dumps(diff, default=str, indent=2)
+                _logger.critical(
+                    "Database state modified outside of transaction! "
+                    "This indicates a bug where DB changes occurred without a transaction wrapper.\n"
+                    f"Changes detected:\n{diff_json}"
+                )
+                raise SystemExit(1)
 
         old_action = self._current_action
         old_user = self._current_user
