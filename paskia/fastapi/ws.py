@@ -91,7 +91,7 @@ async def websocket_authenticate(ws: WebSocket, auth=AUTH_COOKIE):
     session_user_uuid = None
     credential_ids = None
     if auth:
-        ctx = db.get_session_context(auth, host)
+        ctx = db.data().session_ctx(auth, host)
         if ctx:
             session_user_uuid = ctx.user.uuid
             credential_ids = db.get_user_credential_ids(session_user_uuid) or None

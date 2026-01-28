@@ -2,7 +2,7 @@
 Database module for WebAuthn passkey authentication.
 
 Read: Access data() directly, use build_* to convert to public structs.
-CTX: get_session_context(key) returns SessionContext with effective permissions.
+CTX: data().session_ctx(key) returns SessionContext with effective permissions.
 Write: Functions validate and commit, or raise ValueError.
 
 Usage:
@@ -13,7 +13,7 @@ Usage:
     user = db.build_user(user_uuid)
 
     # Context
-    ctx = db.get_session_context(session_key)
+    ctx = db.data().session_ctx(session_key)
 
     # Write
     db.create_user(user)
@@ -49,7 +49,6 @@ from paskia.db.operations import (
     delete_user,
     get_organization_users,
     get_reset_token,
-    get_session_context,
     get_user_credential_ids,
     get_user_organization,
     init,
@@ -113,7 +112,6 @@ __all__ = [
     # Read ops
     "get_organization_users",
     "get_reset_token",
-    "get_session_context",
     "get_user_credential_ids",
     "get_user_organization",
     # Write ops

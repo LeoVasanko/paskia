@@ -4,6 +4,8 @@ from uuid import UUID
 import msgspec
 import uuid7
 
+from paskia.util.hostutil import normalize_host
+
 # Sentinel for uuid fields before they are set by create() or DB post init
 _UUID_UNSET = UUID(int=0)
 
@@ -270,3 +272,65 @@ class DB(msgspec.Struct, dict=True, omit_defaults=False):
     def transaction(self, action, ctx=None, *, user=None):
         """Wrap writes in transaction. Delegates to JsonlStore."""
         return self._store.transaction(action, ctx, user=user)
+
+    def session_ctx(
+        self, session_key: str, host: str | None = None
+    ) -> SessionContext | None:
+        """Get full session context with effective permissions.
+
+        Args:
+            session_key: The session key string
+            host: Optional host for binding/validation and domain-scoped permissions
+
+        Returns:
+            SessionContext if valid, None if session not found, expired, or host mismatch
+        """
+        try:
+            s = self.sessions[session_key]
+        except KeyError:
+            return None
+
+        # Validate host matches (sessions are always created with a host)
+        if s.host != host:
+            # Session bound to different host
+            return None
+
+        try:
+            user = self.users[s.user]
+            role = self.roles[user.role]
+            org = self.orgs[role.org]
+            credential = self.credentials[s.credential]
+        except KeyError:
+            return None
+
+        # Effective permissions: role's permissions that the org can grant
+        # Also filter by domain if host is provided
+        org_perm_uuids = {
+            pid for pid, p in self.permissions.items() if org.uuid in p.orgs
+        }
+        normalized_host = normalize_host(host)
+        host_without_port = (
+            normalized_host.rsplit(":", 1)[0] if normalized_host else None
+        )
+
+        effective_perms = []
+        for perm_uuid in role.permission_set:
+            if perm_uuid not in org_perm_uuids:
+                continue
+            try:
+                p = self.permissions[perm_uuid]
+            except KeyError:
+                continue
+            # Check domain restriction
+            if p.domain is not None and p.domain != host_without_port:
+                continue
+            effective_perms.append(p)
+
+        return SessionContext(
+            session=s,
+            user=user,
+            org=org,
+            role=role,
+            credential=credential,
+            permissions=effective_perms,
+        )
