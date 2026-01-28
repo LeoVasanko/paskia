@@ -4,6 +4,7 @@ JSONL persistence layer for the database.
 
 from __future__ import annotations
 
+import copy
 import json
 import logging
 import sys
@@ -173,19 +174,24 @@ class JsonlStore:
         try:
             data_dict = await load_jsonl(self.db_path)
             if data_dict:
-                # Apply schema migrations
+                # Preserve original state before migrations (deep copy for nested dicts)
+                original_dict = copy.deepcopy(data_dict)
+                
+                # Apply schema migrations (modifies data_dict in place)
                 migrated = apply_migrations(data_dict)
 
                 decoder = msgspec.json.Decoder(DB)
                 self.db = decoder.decode(msgspec.json.encode(data_dict))
                 self.db._store = self
-                self._previous_builtins = data_dict
-
-                # Persist migration
+                
+                # Persist migration by setting previous state to pre-migration
                 if migrated:
+                    self._previous_builtins = original_dict
                     with self.transaction("migrate"):
                         pass  # Trigger change detection
                     await self.flush()
+                else:
+                    self._previous_builtins = data_dict
         except ValueError:
             if self.db_path.exists():
                 raise
