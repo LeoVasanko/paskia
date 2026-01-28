@@ -189,6 +189,7 @@ def main():
 
     run_kwargs: dict = {
         "log_level": "info",
+        "access_log": False,  # We use custom AccessLogMiddleware instead
     }
 
     if devmode:
