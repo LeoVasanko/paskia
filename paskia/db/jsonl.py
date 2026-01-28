@@ -162,6 +162,8 @@ class JsonlStore:
         self._pending_changes: deque[_ChangeRecord] = deque()
         self._current_action: str = "system"
         self._current_user: str | None = None
+        self._in_transaction: bool = False
+        self._transaction_snapshot: dict[str, Any] | None = None
 
     async def load(self, db_path: str | None = None) -> None:
         """Load data from JSONL change log."""
@@ -220,17 +222,49 @@ class JsonlStore:
             ctx: Session context of user performing the action (None for system operations)
             user: User UUID string (alternative to ctx when full context unavailable)
         """
+        if self._in_transaction:
+            raise RuntimeError("Nested transactions are not supported")
+
+        # Check for out-of-transaction modifications
+        current_state = msgspec.to_builtins(self.db)
+        if current_state != self._previous_builtins:
+            _logger.error(
+                "Database state modified outside of transaction! "
+                "This indicates a bug where DB changes occurred without a transaction wrapper. "
+                "Resetting to last known state from JSONL file."
+            )
+            # Hard reset to last known good state
+            decoder = msgspec.json.Decoder(DB)
+            self.db = decoder.decode(msgspec.json.encode(self._previous_builtins))
+            self.db._store = self
+            current_state = self._previous_builtins.copy()
+
         old_action = self._current_action
         old_user = self._current_user
         self._current_action = action
         # Prefer ctx.user.uuid if ctx provided, otherwise use user param
         self._current_user = str(ctx.user.uuid) if ctx else user
+        self._in_transaction = True
+        self._transaction_snapshot = current_state
+
         try:
             yield
             self._queue_change()
+        except Exception:
+            # Rollback on error: restore from snapshot
+            _logger.warning("Transaction '%s' failed, rolling back changes", action)
+            if self._transaction_snapshot is not None:
+                decoder = msgspec.json.Decoder(DB)
+                self.db = decoder.decode(
+                    msgspec.json.encode(self._transaction_snapshot)
+                )
+                self.db._store = self
+            raise
         finally:
             self._current_action = old_action
             self._current_user = old_user
+            self._in_transaction = False
+            self._transaction_snapshot = None
 
     async def flush(self) -> bool:
         """Write all pending changes to disk."""

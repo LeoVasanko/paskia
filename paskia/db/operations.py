@@ -225,14 +225,24 @@ def create_permission(perm: Permission, *, ctx: SessionContext | None = None) ->
         _db.permissions[perm.uuid] = perm
 
 
-def update_permission(perm: Permission, *, ctx: SessionContext | None = None) -> None:
-    """Update a permission's scope, display_name, and domain."""
-    if perm.uuid not in _db.permissions:
-        raise ValueError(f"Permission {perm.uuid} not found")
+def update_permission(
+    uuid: UUID,
+    scope: str,
+    display_name: str,
+    domain: str | None = None,
+    *,
+    ctx: SessionContext | None = None,
+) -> None:
+    """Update a permission's scope, display_name, and domain.
+
+    Only these fields can be modified; created_at and other metadata remain immutable.
+    """
+    if uuid not in _db.permissions:
+        raise ValueError(f"Permission {uuid} not found")
     with _db.transaction("admin:update_permission", ctx):
-        _db.permissions[perm.uuid].scope = perm.scope
-        _db.permissions[perm.uuid].display_name = perm.display_name
-        _db.permissions[perm.uuid].domain = perm.domain
+        _db.permissions[uuid].scope = scope
+        _db.permissions[uuid].display_name = display_name
+        _db.permissions[uuid].domain = domain
 
 
 def delete_permission(uuid: UUID, *, ctx: SessionContext | None = None) -> None:

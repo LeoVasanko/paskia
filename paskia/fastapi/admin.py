@@ -997,13 +997,13 @@ async def admin_update_permission(
     if perm.scope == "auth:admin" or new_scope == "auth:admin":
         _check_admin_lockout(str(perm.uuid), domain_value, request.headers.get("host"))
 
-    updated_perm = PermDC(
+    db.update_permission(
+        uuid=perm.uuid,
         scope=new_scope,
         display_name=new_display_name,
         domain=domain_value,
+        ctx=ctx,
     )
-    updated_perm.uuid = perm.uuid
-    db.update_permission(updated_perm, ctx=ctx)
     return {"status": "ok"}
 
 
