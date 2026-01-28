@@ -18,6 +18,7 @@ import aiofiles
 import jsondiff
 import msgspec
 
+from paskia.db.migrations import apply_migrations
 from paskia.db.structs import DB, SessionContext
 
 _logger = logging.getLogger(__name__)
@@ -172,10 +173,19 @@ class JsonlStore:
         try:
             data_dict = await load_jsonl(self.db_path)
             if data_dict:
+                # Apply schema migrations
+                migrated = apply_migrations(data_dict)
+
                 decoder = msgspec.json.Decoder(DB)
                 self.db = decoder.decode(msgspec.json.encode(data_dict))
                 self.db._store = self
                 self._previous_builtins = data_dict
+
+                # Persist migration
+                if migrated:
+                    with self.transaction("migrate"):
+                        pass  # Trigger change detection
+                    await self.flush()
         except ValueError:
             if self.db_path.exists():
                 raise
