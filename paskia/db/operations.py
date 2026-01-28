@@ -41,16 +41,21 @@ _logger = logging.getLogger(__name__)
 _db = DB()
 _store = JsonlStore(_db)
 _db._store = _store
+_initialized = False
 
 
 async def init(*args, **kwargs):
     """Load database from JSONL file."""
-    global _db
+    global _db, _initialized
+    if _initialized:
+        _logger.debug("Database already initialized, skipping reload")
+        return
     db_path = os.environ.get("PASKIA_DB", DB_PATH_DEFAULT)
     if db_path.startswith("json:"):
         db_path = db_path[5:]
     await _store.load(db_path)
     _db = _store.db
+    _initialized = True
 
 
 # -------------------------------------------------------------------------
@@ -150,15 +155,10 @@ def get_session_context(
     if s.expiry < datetime.now(timezone.utc):
         return None
 
-    # Handle host binding
-    if host is not None:
-        if s.host is None:
-            # Bind session to this host
-            with _db.transaction("bind_session_host"):
-                s.host = host
-        elif s.host != host:
-            # Session bound to different host
-            return None
+    # Validate host matches (sessions are always created with a host)
+    if host is not None and s.host != host:
+        # Session bound to different host
+        return None
 
     # Validate user exists
     if s.user not in _db.users:
@@ -558,9 +558,9 @@ def create_session(
     key: str,
     user_uuid: UUID,
     credential_uuid: UUID,
-    host: str | None,
-    ip: str | None,
-    user_agent: str | None,
+    host: str,
+    ip: str,
+    user_agent: str,
     expiry: datetime,
     *,
     ctx: SessionContext | None = None,
@@ -708,9 +708,9 @@ def _create_token() -> str:
 def login(
     user_uuid: UUID,
     credential: Credential,
-    host: str | None,
-    ip: str | None,
-    user_agent: str | None,
+    host: str,
+    ip: str,
+    user_agent: str,
     expiry: datetime,
 ) -> str:
     """Update user/credential on login and create session in a single transaction.
@@ -755,9 +755,9 @@ def login(
 def create_credential_session(
     user_uuid: UUID,
     credential: Credential,
-    host: str | None,
-    ip: str | None,
-    user_agent: str | None,
+    host: str,
+    ip: str,
+    user_agent: str,
     display_name: str | None = None,
     reset_key: bytes | None = None,
 ) -> str:

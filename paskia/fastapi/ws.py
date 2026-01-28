@@ -65,8 +65,8 @@ async def websocket_register_add(
         reset_key=(s.key if reset is not None else None),
         display_name=user_name,
         host=host,
-        ip=metadata.get("ip"),
-        user_agent=metadata.get("user_agent"),
+        ip=metadata["ip"],
+        user_agent=metadata["user_agent"],
     )
     auth = token
 
@@ -117,8 +117,8 @@ async def websocket_authenticate(ws: WebSocket, auth=AUTH_COOKIE):
         user_uuid=cred.user,
         credential=cred,
         host=normalized_host,
-        ip=metadata.get("ip") or "",
-        user_agent=metadata.get("user_agent") or "",
+        ip=metadata["ip"],
+        user_agent=metadata["user_agent"],
         expiry=expires(),
     )
 

@@ -176,17 +176,17 @@ class JsonlStore:
             if data_dict:
                 # Preserve original state before migrations (deep copy for nested dicts)
                 original_dict = copy.deepcopy(data_dict)
-                
+
                 # Apply schema migrations (modifies data_dict in place)
                 migrated = apply_migrations(data_dict)
 
                 decoder = msgspec.json.Decoder(DB)
                 self.db = decoder.decode(msgspec.json.encode(data_dict))
                 self.db._store = self
-                
+
                 # Update previous state to migrated data FIRST (to avoid transaction hardening reset)
                 self._previous_builtins = data_dict
-                
+
                 # Persist migration by manually computing and queueing the diff
                 if migrated:
                     diff = compute_diff(original_dict, data_dict)
