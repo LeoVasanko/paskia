@@ -377,7 +377,6 @@ class DB(msgspec.Struct, dict=True, omit_defaults=False):
     credentials: dict[UUID, Credential] = {}
     sessions: dict[str, Session] = {}
     reset_tokens: dict[bytes, ResetToken] = {}
-    v: int = 0
 
     def __post_init__(self):
         # Store reference for persistence (not serialized)
