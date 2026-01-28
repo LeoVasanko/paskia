@@ -31,20 +31,4 @@ def apply_migrations(data_dict: dict) -> bool:
         migrated = True
         _logger.info("Applied schema migration: v0 -> v1 (removed org.created_at)")
 
-    if db_version < 2:
-        # Migration v1 -> v2: Convert null ip/user_agent to empty strings in sessions
-        if "sessions" in data_dict:
-            for session_data in data_dict["sessions"].values():
-                if session_data.get("ip") is None:
-                    session_data["ip"] = ""
-                if session_data.get("user_agent") is None:
-                    session_data["user_agent"] = ""
-                if session_data.get("host") is None:
-                    session_data["host"] = ""
-        data_dict["v"] = 2
-        migrated = True
-        _logger.info(
-            "Applied schema migration: v1 -> v2 (null session fields -> empty strings)"
-        )
-
     return migrated
