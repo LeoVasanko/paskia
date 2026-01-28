@@ -19,8 +19,8 @@ AUTH_COOKIE = Cookie(None, alias=AUTH_COOKIE_NAME)
 def infodict(request: Request | WebSocket, type: str) -> dict:
     """Extract client information from request."""
     return {
-        "ip": request.client.host if request.client else None,
-        "user_agent": request.headers.get("user-agent", "")[:500] or None,
+        "ip": request.client.host if request.client else "",
+        "user_agent": request.headers.get("user-agent", "")[:500],
         "session_type": type,
     }
 

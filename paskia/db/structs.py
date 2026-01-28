@@ -190,9 +190,9 @@ class Session(msgspec.Struct, dict=True):
 
     user: UUID
     credential: UUID
-    host: str | None
-    ip: str | None
-    user_agent: str | None
+    host: str
+    ip: str
+    user_agent: str
     expiry: datetime
 
     def __post_init__(self):
