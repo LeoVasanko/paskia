@@ -9,6 +9,13 @@ _UUID_UNSET = UUID(int=0)
 
 
 class Permission(msgspec.Struct, dict=True, omit_defaults=True):
+    """Permission data structure.
+
+    Mutable fields: scope, display_name, domain, orgs
+    Immutable fields: None (all fields can be updated via update_permission)
+    uuid is generated at creation.
+    """
+
     scope: str  # Permission scope identifier (e.g. "auth:admin", "myapp:write")
     display_name: str
     domain: str | None = None  # If set, scopes permission to this domain
@@ -40,6 +47,13 @@ class Permission(msgspec.Struct, dict=True, omit_defaults=True):
 
 
 class Role(msgspec.Struct, dict=True, omit_defaults=True):
+    """Role data structure.
+
+    Mutable fields: display_name, permissions
+    Immutable fields: org (set at creation, never modified)
+    uuid is generated at creation.
+    """
+
     org: UUID
     display_name: str
     permissions: dict[UUID, bool] = {}  # permission_uuid -> True
@@ -69,9 +83,16 @@ class Role(msgspec.Struct, dict=True, omit_defaults=True):
         return role
 
 
-class Org(msgspec.Struct, dict=True, omit_defaults=True):
+class Org(msgspec.Struct, dict=True):
+    """Organization data structure.
+
+    Mutable fields: display_name
+    Immutable fields: created_at (set at creation, never modified)
+    uuid is derived from created_at using uuid7.
+    """
+
     display_name: str
-    created_at: datetime | None = None
+    created_at: datetime
 
     def __post_init__(self):
         self.uuid: UUID = _UUID_UNSET  # Convenience field, not serialized
@@ -88,6 +109,13 @@ class Org(msgspec.Struct, dict=True, omit_defaults=True):
 
 
 class User(msgspec.Struct, dict=True):
+    """User data structure.
+
+    Mutable fields: display_name, role, last_seen, visits
+    Immutable fields: created_at (set at creation, never modified)
+    uuid is derived from created_at using uuid7.
+    """
+
     display_name: str
     role: UUID
     created_at: datetime
@@ -116,6 +144,13 @@ class User(msgspec.Struct, dict=True):
 
 
 class Credential(msgspec.Struct, dict=True):
+    """Credential (passkey) data structure.
+
+    Mutable fields: sign_count, last_used, last_verified
+    Immutable fields: credential_id, user, aaguid, public_key, created_at
+    uuid is derived from created_at using uuid7.
+    """
+
     credential_id: bytes  # Long binary ID from the authenticator
     user: UUID
     aaguid: UUID
@@ -155,6 +190,13 @@ class Credential(msgspec.Struct, dict=True):
 
 
 class Session(msgspec.Struct, dict=True):
+    """Session data structure.
+
+    Mutable fields: expiry (updated on session refresh)
+    Immutable fields: user, credential, host, ip, user_agent
+    key is stored in the dict key, not in the struct.
+    """
+
     user: UUID
     credential: UUID
     host: str | None
@@ -175,6 +217,12 @@ class Session(msgspec.Struct, dict=True):
 
 
 class ResetToken(msgspec.Struct, dict=True):
+    """Reset/device-addition token data structure.
+
+    Immutable fields: All fields (tokens are created and deleted, never modified)
+    key is stored in the dict key, not in the struct.
+    """
+
     user: UUID
     expiry: datetime
     token_type: str
