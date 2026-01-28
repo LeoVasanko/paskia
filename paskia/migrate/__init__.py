@@ -248,7 +248,7 @@ async def migrate_from_sql(
         print(f"  Migrated {len(token_models)} reset tokens")
 
     # Queue and flush all changes using the transaction mechanism
-    with db.transaction("migrate"):
+    with db.transaction("migrate:sql"):
         pass  # All data already added to _data, transaction commits on exit
 
     await store.flush()
