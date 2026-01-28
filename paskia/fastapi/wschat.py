@@ -33,8 +33,12 @@ async def authenticate_chat(
     ws: WebSocket,
     origin: str,
     credential_ids: list[bytes] | None = None,
-) -> Credential:
-    """Run WebAuthn authentication flow and return the verified credential."""
+) -> tuple[Credential, int]:
+    """Run WebAuthn authentication flow and return the credential and new sign count.
+    
+    Returns:
+        tuple of (credential, new_sign_count) where new_sign_count comes from WebAuthn verification
+    """
     options, challenge = passkey.instance.auth_generate_options(
         credential_ids=credential_ids
     )
@@ -54,5 +58,5 @@ async def authenticate_chat(
             f"This passkey is no longer registered with {passkey.instance.rp_name}"
         )
 
-    passkey.instance.auth_verify(authcred, challenge, cred, origin)
-    return cred
+    verification = passkey.instance.auth_verify(authcred, challenge, cred, origin)
+    return cred, verification.new_sign_count
