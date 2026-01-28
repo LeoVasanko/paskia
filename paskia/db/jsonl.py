@@ -2,8 +2,6 @@
 JSONL persistence layer for the database.
 """
 
-from __future__ import annotations
-
 import copy
 import json
 import logging
