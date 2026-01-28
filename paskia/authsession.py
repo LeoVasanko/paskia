@@ -8,7 +8,7 @@ independent of any web framework:
 - Credential management
 """
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 from uuid import UUID
 
@@ -23,11 +23,11 @@ EXPIRES = SESSION_LIFETIME
 
 
 def expires() -> datetime:
-    return datetime.now(timezone.utc) + EXPIRES
+    return datetime.now(UTC) + EXPIRES
 
 
 def reset_expires() -> datetime:
-    return datetime.now(timezone.utc) + RESET_LIFETIME
+    return datetime.now(UTC) + RESET_LIFETIME
 
 
 def get_reset(token: str) -> "ResetToken":

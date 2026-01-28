@@ -10,14 +10,14 @@ These tests cover:
 - /auth/api/set-session - Set session from bearer token
 """
 
-from datetime import datetime, timedelta, timezone
+import secrets
+from datetime import UTC, datetime, timedelta
 
 import httpx
 import pytest
 
 from paskia.authsession import EXPIRES
 from paskia.db import create_session, delete_session
-from paskia.db.operations import _create_token
 from paskia.util.passphrase import generate
 from tests.conftest import auth_headers
 
@@ -503,7 +503,7 @@ class TestValidateSessionRefresh:
         """Validate should handle session expiry during refresh attempt."""
 
         # Create a token but don't create a session for it
-        token = _create_token()
+        token = secrets.token_urlsafe(12)
         response = await client.post(
             "/auth/api/validate",
             headers={**auth_headers(token), "Host": "localhost:4401"},
@@ -522,12 +522,10 @@ class TestValidateSessionRefresh:
         """Validate should return 401 if session disappears during refresh."""
 
         # Create a session with an old expiry time to trigger refresh
-        token = _create_token()
-        old_expiry = datetime.now(timezone.utc) + EXPIRES - timedelta(minutes=10)
-        create_session(
+        old_expiry = datetime.now(UTC) + EXPIRES - timedelta(minutes=10)
+        token = create_session(
             user_uuid=test_user.uuid,
             credential_uuid=test_credential.uuid,
-            key=token,
             host="localhost:4401",
             ip="127.0.0.1",
             user_agent="pytest",

@@ -38,7 +38,7 @@ from paskia.db import (
     create_user,
 )
 from paskia.db.jsonl import JsonlStore
-from paskia.db.operations import DB, _create_token
+from paskia.db.operations import DB
 from paskia.fastapi.mainapp import app
 from paskia.fastapi.session import AUTH_COOKIE_NAME
 from paskia.sansio import Passkey
@@ -193,17 +193,14 @@ async def session_token(
     test_db: DB, test_user: User, test_credential: Credential
 ) -> str:
     """Create a session for the admin user and return the token."""
-    token = _create_token()
-    create_session(
+    return create_session(
         user_uuid=test_user.uuid,
         credential_uuid=test_credential.uuid,
-        key=token,
         host="localhost:4401",
         ip="127.0.0.1",
         user_agent="pytest",
         expiry=expires(),
     )
-    return token
 
 
 @pytest_asyncio.fixture(scope="function")
@@ -211,17 +208,14 @@ async def regular_session_token(
     test_db: DB, regular_user: User, regular_credential: Credential
 ) -> str:
     """Create a session for a regular user and return the token."""
-    token = _create_token()
-    create_session(
+    return create_session(
         user_uuid=regular_user.uuid,
         credential_uuid=regular_credential.uuid,
-        key=token,
         host="localhost:4401",
         ip="127.0.0.1",
         user_agent="pytest",
         expiry=expires(),
     )
-    return token
 
 
 @pytest_asyncio.fixture(scope="function")

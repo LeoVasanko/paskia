@@ -38,11 +38,11 @@ async def websocket_register_add(
                 f"The reset link for {passkey.instance.rp_name} is invalid or has expired"
             )
         s = get_reset(reset)
-        user_uuid = s.user
+        user_uuid = s.user_uuid
     else:
         # Require recent authentication for adding a new passkey
         ctx = await authz.verify(auth, perm=[], host=host, max_age="5m")
-        user_uuid = ctx.session.user
+        user_uuid = ctx.session.user_uuid
         s = ctx.session
 
     # Get user information and determine effective user_name for this registration
@@ -99,7 +99,7 @@ async def websocket_authenticate(ws: WebSocket, auth=AUTH_COOKIE):
     cred, new_sign_count = await authenticate_chat(ws, origin, credential_ids)
 
     # If reauth mode, verify the credential belongs to the session's user
-    if session_user_uuid and cred.user != session_user_uuid:
+    if session_user_uuid and cred.user_uuid != session_user_uuid:
         raise ValueError("This passkey belongs to a different account")
 
     # Create session and update user/credential in a single transaction
@@ -114,7 +114,7 @@ async def websocket_authenticate(ws: WebSocket, auth=AUTH_COOKIE):
         raise ValueError(f"Host must be the same as or a subdomain of {rp_id}")
 
     token = db.login(
-        user_uuid=cred.user,
+        user_uuid=cred.user_uuid,
         credential_uuid=cred.uuid,
         sign_count=new_sign_count,
         host=normalized_host,
@@ -125,7 +125,7 @@ async def websocket_authenticate(ws: WebSocket, auth=AUTH_COOKIE):
 
     await ws.send_json(
         {
-            "user": str(cred.user),
+            "user": str(cred.user_uuid),
             "session_token": token,
         }
     )

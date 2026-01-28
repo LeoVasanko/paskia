@@ -1,4 +1,4 @@
-from datetime import timezone
+from datetime import UTC
 from uuid import UUID
 
 from fastapi import (
@@ -91,7 +91,7 @@ async def api_delete_session(
         )
 
     target_session = db.data().sessions.get(session_id)
-    if not target_session or target_session.user != ctx.user.uuid:
+    if not target_session or target_session.user_uuid != ctx.user.uuid:
         raise HTTPException(status_code=404, detail="Session not found")
 
     db.delete_session(session_id, ctx=ctx)
@@ -141,8 +141,8 @@ async def api_create_link(
         "message": "Registration link generated successfully",
         "url": url,
         "expires": (
-            expiry.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+            expiry.astimezone(UTC).isoformat().replace("+00:00", "Z")
             if expiry.tzinfo
-            else expiry.replace(tzinfo=timezone.utc).isoformat().replace("+00:00", "Z")
+            else expiry.replace(tzinfo=UTC).isoformat().replace("+00:00", "Z")
         ),
     }

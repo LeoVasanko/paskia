@@ -19,9 +19,9 @@ The first 3 words of the token serve as the pairing code for manual entry.
 
 import asyncio
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
-from typing import Callable
+from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 from paskia.util import passphrase, pow
@@ -94,7 +94,7 @@ class RemoteAuthManager:
 
     async def _cleanup_expired(self):
         """Remove expired requests and notify waiting clients."""
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         expired_keys = []
         async with self._lock:
             for key, req in self._requests.items():
@@ -123,7 +123,7 @@ class RemoteAuthManager:
         Returns:
             (code, expiry) - The 3-word passphrase code and expiration time
         """
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         expiry = now + REMOTE_AUTH_LIFETIME
 
         async with self._lock:
@@ -160,7 +160,7 @@ class RemoteAuthManager:
             req = self._requests.get(normalized)
             if req is None:
                 return None
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             if now > req.created_at + REMOTE_AUTH_LIFETIME:
                 # Expired
                 del self._requests[normalized]
@@ -331,7 +331,7 @@ class RemoteAuthManager:
             req = self._requests.get(token)
             if req is None:
                 return None
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             if now > req.created_at + REMOTE_AUTH_LIFETIME:
                 del self._requests[token]
                 return None

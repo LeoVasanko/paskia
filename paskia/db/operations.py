@@ -10,7 +10,7 @@ import hashlib
 import logging
 import os
 import secrets
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from uuid import UUID
 
 import uuid7
@@ -68,21 +68,18 @@ def get_user_organization(user_uuid: UUID) -> tuple[Org, str]:
     Raises ValueError if user not found.
 
     Call sites:
-    - Get user's organization when updating user role (admin.py:493)
-    - Get user's organization for user credential listing (admin.py:530)
-    - Get user's organization for user details API (admin.py:579)
-    - Get user's organization for updating user display name (admin.py:721)
-    - Get user's organization for deleting user credential (admin.py:754)
-    - Get user's organization for deleting user session (admin.py:783)
+    - update_user_role_in_organization: org only
+    - admin_create_user_registration_link: org only
+    - admin_get_user_detail: org and role
+    - admin_update_user_display_name: org only
+    - admin_delete_user_credential: org only
+    - admin_delete_user_session: org only
     """
     if user_uuid not in _db.users:
         raise ValueError(f"User {user_uuid} not found")
-    role_uuid = _db.users[user_uuid].role
-    if role_uuid not in _db.roles:
-        raise ValueError(f"Role {role_uuid} not found")
-    role_data = _db.roles[role_uuid]
-    org_uuid = role_data.org
-    return _db.orgs[org_uuid], role_data.display_name
+    user = _db.users[user_uuid]
+    role = user.role
+    return role.org, role.display_name
 
 
 def get_organization_users(org_uuid: UUID) -> list[tuple[User, str]]:
@@ -90,10 +87,8 @@ def get_organization_users(org_uuid: UUID) -> list[tuple[User, str]]:
 
     Returns list of (User, role_display_name) tuples.
     """
-    role_map = {
-        rid: r.display_name for rid, r in _db.roles.items() if r.org == org_uuid
-    }
-    return [(u, role_map[u.role]) for u in _db.users.values() if u.role in role_map]
+    org = _db.orgs[org_uuid]
+    return [(u, u.role.display_name) for role in org.roles for u in role.users]
 
 
 def get_user_credential_ids(user_uuid: UUID) -> list[bytes]:
@@ -101,7 +96,8 @@ def get_user_credential_ids(user_uuid: UUID) -> list[bytes]:
 
     Returns empty list if user has no credentials.
     """
-    return [c.credential_id for c in _db.credentials.values() if c.user == user_uuid]
+    assert user_uuid
+    return [c.credential_id for c in _db.users[user_uuid].credentials]
 
 
 def _reset_key(passphrase: str) -> bytes:
@@ -177,9 +173,9 @@ def create_org(org: Org, *, ctx: SessionContext | None = None) -> None:
     if org.uuid in _db.orgs:
         raise ValueError(f"Organization {org.uuid} already exists")
     with _db.transaction("admin:create_org", ctx):
-        new_org = Org(display_name=org.display_name)
-        _db.orgs[org.uuid] = new_org
+        new_org = Org.create(display_name=org.display_name)
         new_org.uuid = org.uuid
+        _db.orgs[org.uuid] = new_org
         # Create Administration role with org admin permission
 
         admin_role_uuid = uuid7.create()
@@ -191,7 +187,7 @@ def create_org(org: Org, *, ctx: SessionContext | None = None) -> None:
                 break
         role_permissions = {org_admin_perm_uuid: True} if org_admin_perm_uuid else {}
         admin_role = Role(
-            org=org.uuid,
+            org_uuid=org.uuid,
             display_name="Administration",
             permissions=role_permissions,
         )
@@ -217,17 +213,15 @@ def delete_org(uuid: UUID, *, ctx: SessionContext | None = None) -> None:
     if uuid not in _db.orgs:
         raise ValueError(f"Organization {uuid} not found")
     with _db.transaction("admin:delete_org", ctx):
+        org = _db.orgs[uuid]
         # Remove org from all permissions
         for p in _db.permissions.values():
             p.orgs.pop(uuid, None)
-        # Delete roles in this org
-        role_uuids = [rid for rid, r in _db.roles.items() if r.org == uuid]
-        for rid in role_uuids:
-            del _db.roles[rid]
-        # Delete users with those roles
-        user_uuids = [uid for uid, u in _db.users.items() if u.role in role_uuids]
-        for uid in user_uuids:
-            del _db.users[uid]
+        # Delete roles in this org and their users
+        for role in org.roles:
+            for user in role.users:
+                del _db.users[user.uuid]
+            del _db.roles[role.uuid]
         del _db.orgs[uuid]
 
 
@@ -269,8 +263,8 @@ def create_role(role: Role, *, ctx: SessionContext | None = None) -> None:
     """Create a new role."""
     if role.uuid in _db.roles:
         raise ValueError(f"Role {role.uuid} already exists")
-    if role.org not in _db.orgs:
-        raise ValueError(f"Organization {role.org} not found")
+    if role.org_uuid not in _db.orgs:
+        raise ValueError(f"Organization {role.org_uuid} not found")
     with _db.transaction("admin:create_role", ctx):
         _db.roles[role.uuid] = role
 
@@ -321,7 +315,8 @@ def delete_role(uuid: UUID, *, ctx: SessionContext | None = None) -> None:
     if uuid not in _db.roles:
         raise ValueError(f"Role {uuid} not found")
     # Check no users have this role
-    if any(u.role == uuid for u in _db.users.values()):
+    role = _db.roles[uuid]
+    if role.users:
         raise ValueError(f"Cannot delete role {uuid}: users still assigned")
     with _db.transaction("admin:delete_role", ctx):
         del _db.roles[uuid]
@@ -331,8 +326,8 @@ def create_user(new_user: User, *, ctx: SessionContext | None = None) -> None:
     """Create a new user."""
     if new_user.uuid in _db.users:
         raise ValueError(f"User {new_user.uuid} already exists")
-    if new_user.role not in _db.roles:
-        raise ValueError(f"Role {new_user.role} not found")
+    if new_user.role_uuid not in _db.roles:
+        raise ValueError(f"Role {new_user.role_uuid} not found")
     with _db.transaction("admin:create_user", ctx):
         _db.users[new_user.uuid] = new_user
 
@@ -369,7 +364,7 @@ def update_user_role(
     if role_uuid not in _db.roles:
         raise ValueError(f"Role {role_uuid} not found")
     with _db.transaction("admin:update_user_role", ctx):
-        _db.users[uuid].role = role_uuid
+        _db.users[uuid].role_uuid = role_uuid
 
 
 def update_user_role_in_organization(
@@ -381,39 +376,35 @@ def update_user_role_in_organization(
     """Update user's role by role name within their current organization."""
     if user_uuid not in _db.users:
         raise ValueError(f"User {user_uuid} not found")
-    current_role_uuid = _db.users[user_uuid].role
-    if current_role_uuid not in _db.roles:
-        raise ValueError("Current role not found")
-    org_uuid = _db.roles[current_role_uuid].org
+    user = _db.users[user_uuid]
+    org = user.org
     # Find role by name in the same org
     new_role_uuid = None
-    for rid, r in _db.roles.items():
-        if r.org == org_uuid and r.display_name == role_name:
-            new_role_uuid = rid
+    for r in org.roles:
+        if r.display_name == role_name:
+            new_role_uuid = r.uuid
             break
     if new_role_uuid is None:
         raise ValueError(f"Role '{role_name}' not found in organization")
     with _db.transaction("admin:update_user_role", ctx):
-        _db.users[user_uuid].role = new_role_uuid
+        _db.users[user_uuid].role_uuid = new_role_uuid
 
 
 def delete_user(uuid: UUID, *, ctx: SessionContext | None = None) -> None:
     """Delete user and their credentials/sessions."""
     if uuid not in _db.users:
         raise ValueError(f"User {uuid} not found")
+    user = _db.users[uuid]
     with _db.transaction("admin:delete_user", ctx):
         # Delete credentials
-        cred_uuids = [cid for cid, c in _db.credentials.items() if c.user == uuid]
-        for cid in cred_uuids:
-            del _db.credentials[cid]
+        for cred in user.credentials:
+            del _db.credentials[cred.uuid]
         # Delete sessions
-        sess_keys = [k for k, s in _db.sessions.items() if s.user == uuid]
-        for k in sess_keys:
-            del _db.sessions[k]
+        for sess in user.sessions:
+            del _db.sessions[sess.key]
         # Delete reset tokens
-        token_keys = [k for k, t in _db.reset_tokens.items() if t.user == uuid]
-        for k in token_keys:
-            del _db.reset_tokens[k]
+        for token in user.reset_tokens:
+            del _db.reset_tokens[token.key]
         del _db.users[uuid]
 
 
@@ -421,8 +412,8 @@ def create_credential(cred: Credential, *, ctx: SessionContext | None = None) ->
     """Create a new credential."""
     if cred.uuid in _db.credentials:
         raise ValueError(f"Credential {cred.uuid} already exists")
-    if cred.user not in _db.users:
-        raise ValueError(f"User {cred.user} not found")
+    if cred.user_uuid not in _db.users:
+        raise ValueError(f"User {cred.user_uuid} not found")
     with _db.transaction("create_credential", ctx):
         _db.credentials[cred.uuid] = cred
 
@@ -455,20 +446,19 @@ def delete_credential(
     """
     if uuid not in _db.credentials:
         raise ValueError(f"Credential {uuid} not found")
+    cred = _db.credentials[uuid]
     if user_uuid is not None:
-        cred_user = _db.credentials[uuid].user
-        if cred_user != user_uuid:
+        if cred.user_uuid != user_uuid:
             raise ValueError(f"Credential {uuid} does not belong to user {user_uuid}")
     with _db.transaction("delete_credential", ctx):
         # Delete all sessions using this credential
-        keys = [k for k, s in _db.sessions.items() if s.credential == uuid]
-        for k in keys:
-            del _db.sessions[k]
+        for sess in cred.sessions:
+            print(sess, repr(sess.key))
+            del _db.sessions[sess.key]
         del _db.credentials[uuid]
 
 
 def create_session(
-    key: str,
     user_uuid: UUID,
     credential_uuid: UUID,
     host: str,
@@ -477,23 +467,25 @@ def create_session(
     expiry: datetime,
     *,
     ctx: SessionContext | None = None,
-) -> None:
-    """Create a new session."""
-    if key in _db.sessions:
-        raise ValueError("Session already exists")
+) -> str:
+    """Create a new session. Returns the session key."""
     if user_uuid not in _db.users:
         raise ValueError(f"User {user_uuid} not found")
     if credential_uuid not in _db.credentials:
         raise ValueError(f"Credential {credential_uuid} not found")
+    session = Session.create(
+        user=user_uuid,
+        credential=credential_uuid,
+        host=host,
+        ip=ip,
+        user_agent=user_agent,
+        expiry=expiry,
+    )
+    if session.key in _db.sessions:
+        raise ValueError("Session already exists")
     with _db.transaction("create_session", ctx):
-        _db.sessions[key] = Session(
-            user=user_uuid,
-            credential=credential_uuid,
-            host=host,
-            ip=ip,
-            user_agent=user_agent,
-            expiry=expiry,
-        )
+        _db.sessions[session.key] = session
+    return session.key
 
 
 def update_session(
@@ -547,10 +539,12 @@ def delete_sessions_for_user(
     For user logout-all, pass ctx of the user's session.
     For admin bulk termination, pass admin's ctx.
     """
+    user = _db.users.get(user_uuid)
+    if not user:
+        return
     with _db.transaction("admin:delete_sessions_for_user", ctx):
-        keys = [k for k, s in _db.sessions.items() if s.user == user_uuid]
-        for k in keys:
-            del _db.sessions[k]
+        for sess in user.sessions:
+            del _db.sessions[sess.key]
 
 
 def create_reset_token(
@@ -575,7 +569,7 @@ def create_reset_token(
         raise ValueError(f"User {user_uuid} not found")
     with _db.transaction("create_reset_token", ctx):
         _db.reset_tokens[key] = ResetToken(
-            user=user_uuid, expiry=expiry, token_type=token_type
+            user_uuid=user_uuid, expiry=expiry, token_type=token_type
         )
 
 
@@ -594,7 +588,7 @@ def delete_reset_token(key: bytes, *, ctx: SessionContext | None = None) -> None
 
 def cleanup_expired() -> int:
     """Remove expired sessions and reset tokens. Returns count removed."""
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     count = 0
     with _db.transaction("expiry"):
         expired_sessions = [k for k, s in _db.sessions.items() if s.expiry < now]
@@ -639,13 +633,20 @@ def login(
     """
     if isinstance(user_uuid, str):
         user_uuid = UUID(user_uuid)
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     if user_uuid not in _db.users:
         raise ValueError(f"User {user_uuid} not found")
     if credential_uuid not in _db.credentials:
         raise ValueError(f"Credential {credential_uuid} not found")
 
-    session_key = _create_token()
+    session = Session.create(
+        user=user_uuid,
+        credential=credential_uuid,
+        host=host,
+        ip=ip,
+        user_agent=user_agent,
+        expiry=expiry,
+    )
     user_str = str(user_uuid)
     with _db.transaction("login", user=user_str):
         # Update user
@@ -655,15 +656,8 @@ def login(
         _db.credentials[credential_uuid].sign_count = sign_count
         _db.credentials[credential_uuid].last_used = now
         # Create session
-        _db.sessions[session_key] = Session(
-            user=user_uuid,
-            credential=credential_uuid,
-            host=host,
-            ip=ip,
-            user_agent=user_agent,
-            expiry=expiry,
-        )
-    return session_key
+        _db.sessions[session.key] = session
+    return session.key
 
 
 def create_credential_session(
@@ -686,13 +680,20 @@ def create_credential_session(
     Returns the generated session token.
     """
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     expiry = now + SESSION_LIFETIME
-    session_key = _create_token()
 
     if user_uuid not in _db.users:
         raise ValueError(f"User {user_uuid} not found")
 
+    session = Session.create(
+        user=user_uuid,
+        credential=credential.uuid,
+        host=host,
+        ip=ip,
+        user_agent=user_agent,
+        expiry=expiry,
+    )
     user_str = str(user_uuid)
     with _db.transaction("create_credential_session", user=user_str):
         # Update display name if provided
@@ -703,20 +704,13 @@ def create_credential_session(
         _db.credentials[credential.uuid] = credential
 
         # Create session
-        _db.sessions[session_key] = Session(
-            user=user_uuid,
-            credential=credential.uuid,
-            host=host,
-            ip=ip,
-            user_agent=user_agent,
-            expiry=expiry,
-        )
+        _db.sessions[session.key] = session
 
         # Delete reset token if provided
         if reset_key:
             if reset_key in _db.reset_tokens:
                 del _db.reset_tokens[reset_key]
-    return session_key
+    return session.key
 
 
 # -------------------------------------------------------------------------
@@ -775,7 +769,7 @@ def bootstrap(
         reset_expiry = reset_expires()
     reset_key = _reset_key(reset_passphrase)
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     with _db.transaction("bootstrap"):
         # Create auth:admin permission
@@ -797,13 +791,13 @@ def bootstrap(
         _db.permissions[perm_org_admin_uuid] = perm_org_admin
 
         # Create organization
-        new_org = Org(display_name=org_name)
+        new_org = Org.create(display_name=org_name)
         new_org.uuid = org_uuid
         _db.orgs[org_uuid] = new_org
 
         # Create Administration role with both permissions
         admin_role = Role(
-            org=org_uuid,
+            org_uuid=org_uuid,
             display_name="Administration",
             permissions={perm_admin_uuid: True, perm_org_admin_uuid: True},
         )
@@ -813,7 +807,7 @@ def bootstrap(
         # Create admin user
         admin_user = User(
             display_name=admin_name,
-            role=role_uuid,
+            role_uuid=role_uuid,
             created_at=now,
             last_seen=None,
             visits=0,
@@ -823,7 +817,7 @@ def bootstrap(
 
         # Create reset token
         _db.reset_tokens[reset_key] = ResetToken(
-            user=user_uuid,
+            user_uuid=user_uuid,
             expiry=reset_expiry,
             token_type="admin bootstrap",
         )
