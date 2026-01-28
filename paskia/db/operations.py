@@ -2,7 +2,7 @@
 Database for WebAuthn passkey authentication.
 
 Read operations: Access _db directly, use build_* helpers to get public structs.
-Context lookup: get_session_context() returns full SessionContext with effective permissions.
+Context lookup: _db.session_ctx() returns full SessionContext with effective permissions.
 Write operations: Functions that validate and commit, or raise ValueError.
 """
 
@@ -31,7 +31,6 @@ from paskia.db.structs import (
     SessionContext,
     User,
 )
-from paskia.util.hostutil import normalize_host
 from paskia.util.passphrase import generate as generate_passphrase
 from paskia.util.passphrase import is_well_formed as _is_passphrase
 
@@ -124,92 +123,6 @@ def get_reset_token(passphrase: str) -> ResetToken | None:
     """
     key = _reset_key(passphrase)
     return _db.reset_tokens.get(key)
-
-
-# -------------------------------------------------------------------------
-# Context lookup
-# -------------------------------------------------------------------------
-
-
-def get_session_context(
-    session_key: str, host: str | None = None
-) -> SessionContext | None:
-    """Get full session context with effective permissions.
-
-    Args:
-        session_key: The session key string
-        host: Optional host for binding/validation and domain-scoped permissions
-
-    Returns:
-        SessionContext if valid, None if session not found, expired, or host mismatch
-
-    Call sites:
-    - Example usage in docstring (db/__init__.py:16)
-    - Get session context from auth token (util/permutil.py:43)
-    """
-
-    if session_key not in _db.sessions:
-        return None
-
-    s = _db.sessions[session_key]
-    if s.expiry < datetime.now(timezone.utc):
-        return None
-
-    # Validate host matches (sessions are always created with a host)
-    if host is not None and s.host != host:
-        # Session bound to different host
-        return None
-
-    # Validate user exists
-    if s.user not in _db.users:
-        return None
-
-    # Validate role exists
-    role_uuid = _db.users[s.user].role
-    if role_uuid not in _db.roles:
-        return None
-
-    # Validate org exists
-    org_uuid = _db.roles[role_uuid].org
-    if org_uuid not in _db.orgs:
-        return None
-
-    session = _db.sessions[session_key]
-    user = _db.users[s.user]
-    role = _db.roles[role_uuid]
-    org = _db.orgs[org_uuid]
-
-    # Credential must exist (sessions are cascade-deleted when credential is deleted)
-    if s.credential not in _db.credentials:
-        return None
-    credential = _db.credentials[s.credential]
-
-    # Effective permissions: role's permissions that the org can grant
-    # Also filter by domain if host is provided
-    org_perm_uuids = {pid for pid, p in _db.permissions.items() if org_uuid in p.orgs}
-    normalized_host = normalize_host(host)
-    host_without_port = normalized_host.rsplit(":", 1)[0] if normalized_host else None
-
-    effective_perms = []
-    for perm_uuid in role.permission_set:
-        if perm_uuid not in org_perm_uuids:
-            continue
-        if perm_uuid not in _db.permissions:
-            continue
-        p = _db.permissions[perm_uuid]
-        # Check domain restriction
-        if p.domain is not None and p.domain != host_without_port:
-            continue
-        effective_perms.append(_db.permissions[perm_uuid])
-
-    return SessionContext(
-        session=session,
-        user=user,
-        org=org,
-        role=role,
-        credential=credential,
-        permissions=effective_perms,
-    )
 
 
 # -------------------------------------------------------------------------

@@ -56,7 +56,7 @@ def refresh_session_token(token: str, *, ip: str, user_agent: str):
 
 def delete_credential(credential_uuid: UUID, auth: str, host: str | None = None):
     """Delete a specific credential for the current user."""
-    ctx = db.get_session_context(auth, hostutil.normalize_host(host))
+    ctx = db.data().session_ctx(auth, hostutil.normalize_host(host))
     if not ctx:
         raise ValueError("Session expired")
     db.delete_credential(credential_uuid, ctx.user.uuid)

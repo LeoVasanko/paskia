@@ -233,7 +233,7 @@ async def api_user_info(
             detail="Authentication required",
             mode="login",
         )
-    ctx = db.get_session_context(auth, request.headers.get("host"))
+    ctx = db.data().session_ctx(auth, request.headers.get("host"))
     if not ctx:
         raise HTTPException(401, "Session expired")
 
@@ -250,7 +250,7 @@ async def api_logout(request: Request, response: Response, auth=AUTH_COOKIE):
     if not auth:
         return {"message": "Already logged out"}
     host = request.headers.get("host")
-    ctx = db.get_session_context(auth, host)
+    ctx = db.data().session_ctx(auth, host)
     if not ctx:
         return {"message": "Already logged out"}
     with suppress(Exception):
@@ -263,7 +263,7 @@ async def api_logout(request: Request, response: Response, auth=AUTH_COOKIE):
 async def api_set_session(
     request: Request, response: Response, auth=Depends(bearer_auth)
 ):
-    ctx = db.get_session_context(auth.credentials, request.headers.get("host"))
+    ctx = db.data().session_ctx(auth.credentials, request.headers.get("host"))
     if not ctx:
         raise HTTPException(401, "Session expired")
     session.set_session_cookie(response, auth.credentials)

@@ -40,4 +40,4 @@ async def session_context(auth: str | None, host: str | None = None):
     if not auth:
         return None
     normalized_host = normalize_host(host) if host else None
-    return db.get_session_context(auth, normalized_host)
+    return db.data().session_ctx(auth, normalized_host)
