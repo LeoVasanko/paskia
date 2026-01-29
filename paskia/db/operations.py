@@ -554,6 +554,7 @@ def create_reset_token(
     token_type: str,
     *,
     ctx: SessionContext | None = None,
+    user: str | None = None,
 ) -> None:
     """Create a reset token from a passphrase.
 
@@ -561,13 +562,14 @@ def create_reset_token(
     For self-service (user creating own recovery link), pass user's ctx.
     For admin operations, pass admin's ctx.
     For system operations (bootstrap), pass neither to log no user.
+    For API operations where ctx is not available but user is known, pass user.
     """
     key = _reset_key(passphrase)
     if key in _db.reset_tokens:
         raise ValueError("Reset token already exists")
     if user_uuid not in _db.users:
         raise ValueError(f"User {user_uuid} not found")
-    with _db.transaction("create_reset_token", ctx):
+    with _db.transaction("create_reset_token", ctx, user=user):
         _db.reset_tokens[key] = ResetToken(
             user_uuid=user_uuid, expiry=expiry, token_type=token_type
         )
