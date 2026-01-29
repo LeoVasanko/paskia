@@ -26,7 +26,6 @@ _RESET = "\033[0m"
 _DIM = "\033[2m"
 _PATH_PREFIX = "\033[1;30m"  # Dark grey for path prefix (like host in access log)
 _PATH_FINAL = "\033[0m"  # Default for final element (like path in access log)
-_REPLACE = "\033[0;33m"  # Yellow for replacements
 _DELETE = "\033[1;31m"  # Red for deletions
 _ADD = "\033[0;32m"  # Green for additions
 _ACTION = "\033[1;34m"  # Bold blue for action name
@@ -93,18 +92,34 @@ def _format_path(path: list[str], use_color: bool) -> str:
     return f"{_PATH_PREFIX}{prefix}.{_RESET}{_PATH_FINAL}{final}{_RESET}"
 
 
+def _get_nested(data: dict | None, path: list[str]) -> Any:
+    """Get a nested value from a dict by path, or None if not found."""
+    if data is None:
+        return None
+    current = data
+    for key in path:
+        if not isinstance(current, dict) or key not in current:
+            return None
+        current = current[key]
+    return current
+
+
 def _collect_changes(
-    diff: dict, path: list[str], changes: list[tuple[str, list[str], Any, Any | None]]
+    diff: dict,
+    path: list[str],
+    changes: list[tuple[str, list[str], Any]],
+    previous: dict | None,
 ) -> None:
     """
     Recursively collect changes from a diff into a flat list.
 
-    Each change is a tuple of (change_type, path, new_value, old_value).
-    change_type is one of: 'set', 'replace', 'delete'
+    Each change is a tuple of (change_type, path, new_value).
+    change_type is one of: 'add', 'update', 'delete'
     """
     if not isinstance(diff, dict):
-        # Leaf value - this is a set operation
-        changes.append(("set", path, diff, None))
+        # Leaf value - check if it existed before
+        existed = _get_nested(previous, path) is not None
+        changes.append(("update" if existed else "add", path, diff))
         return
 
     for key, value in diff.items():
@@ -112,76 +127,136 @@ def _collect_changes(
             # $delete contains a list of keys to delete
             if isinstance(value, list):
                 for deleted_key in value:
-                    changes.append(("delete", path + [str(deleted_key)], None, None))
+                    changes.append(("delete", path + [str(deleted_key)], None))
             else:
-                changes.append(("delete", path + [str(value)], None, None))
+                changes.append(("delete", path + [str(value)], None))
 
         elif key == "$replace":
-            # $replace contains the new value for this path
+            # $replace replaces the entire collection at this path
+            # We need to track what was added and what was deleted
+            old_collection = _get_nested(previous, path)
+            old_keys = (
+                set(old_collection.keys())
+                if isinstance(old_collection, dict)
+                else set()
+            )
+            new_keys = set(value.keys()) if isinstance(value, dict) else set()
+
+            # Items that existed before but not in new = deleted
+            for deleted_key in old_keys - new_keys:
+                changes.append(("delete", path + [str(deleted_key)], None))
+
+            # Items in new collection
             if isinstance(value, dict):
-                # Replacing with a dict - show each key as a replacement
                 for rkey, rval in value.items():
-                    changes.append(("replace", path + [str(rkey)], rval, None))
-                if not value:
-                    # Empty replacement - clearing the collection
-                    changes.append(("replace", path, {}, None))
-            else:
-                changes.append(("replace", path, value, None))
+                    existed = rkey in old_keys
+                    changes.append(
+                        ("update" if existed else "add", path + [str(rkey)], rval)
+                    )
+            elif value or not old_keys:
+                # Non-dict replacement or empty replacement with nothing before
+                changes.append(
+                    ("update" if old_collection is not None else "add", path, value)
+                )
 
         elif key.startswith("$"):
             # Other special operations (future-proofing)
-            changes.append(("set", path, {key: value}, None))
+            changes.append(("add", path, {key: value}))
 
         else:
-            # Regular nested key
-            _collect_changes(value, path + [str(key)], changes)
+            # Regular nested key - check if this item existed before
+            new_path = path + [str(key)]
+            existed = _get_nested(previous, new_path) is not None
+            if existed:
+                # Item exists - recurse to show specific field changes
+                _collect_changes(value, new_path, changes, previous)
+            else:
+                # New item - record as add with full value, don't recurse
+                changes.append(("add", new_path, value))
 
 
-def _format_change_line(
+def _format_change_lines(
     change_type: str, path: list[str], value: Any, use_color: bool
-) -> str:
-    """Format a single change as a one-line string."""
+) -> list[str]:
+    """Format a single change as one or more lines."""
     if change_type == "delete":
         if not use_color:
-            return f"  {'.'.join(path)} ✗"
+            return [f"  {'.'.join(path)} ✗"]
         if len(path) == 1:
-            return f"  {_DELETE}{path[0]} ✗{_RESET}"
+            return [f"  {_DELETE}{path[0]} ✗{_RESET}"]
         prefix = ".".join(path[:-1])
         final = path[-1]
-        return f"  {_PATH_PREFIX}{prefix}.{_RESET}{_DELETE}{final} ✗{_RESET}"
+        return [f"  {_PATH_PREFIX}{prefix}.{_RESET}{_DELETE}{final} ✗{_RESET}"]
 
-    path_str = _format_path(path, use_color)
+    if change_type == "add":
+        # New item being created - only final element in green
+        # For dict values, show children on separate indented lines
+        if isinstance(value, dict) and value:
+            lines = []
+            # First line: path with green final element and grey =
+            if not use_color:
+                lines.append(f"  {'.'.join(path)} =")
+            elif len(path) == 1:
+                lines.append(f"  {_ADD}{path[0]}{_RESET} {_DIM}={_RESET}")
+            else:
+                prefix = ".".join(path[:-1])
+                final = path[-1]
+                lines.append(
+                    f"  {_PATH_PREFIX}{prefix}.{_RESET}{_ADD}{final}{_RESET} {_DIM}={_RESET}"
+                )
+            # Child lines: indented key: value, with aligned values
+            max_key_len = max(len(k) for k in value.keys())
+            field_width = max(max_key_len, 12)  # minimum 12 chars
+            for k, v in value.items():
+                v_str = _format_value(v, use_color)
+                padding = " " * (field_width - len(k))
+                if use_color:
+                    lines.append(f"    {k}{_DIM}:{_RESET}{padding} {v_str}")
+                else:
+                    lines.append(f"    {k}:{padding} {v_str}")
+            return lines
+        else:
+            value_str = _format_value(value, use_color)
+            if not use_color:
+                return [f"  {'.'.join(path)} = {value_str}"]
+            if len(path) == 1:
+                return [f"  {_ADD}{path[0]}{_RESET} {_DIM}={_RESET} {value_str}"]
+            prefix = ".".join(path[:-1])
+            final = path[-1]
+            return [
+                f"  {_PATH_PREFIX}{prefix}.{_RESET}{_ADD}{final}{_RESET} {_DIM}={_RESET} {value_str}"
+            ]
+
+    # update: Existing item being updated - normal path colors
     value_str = _format_value(value, use_color)
-
-    if change_type == "replace":
-        if use_color:
-            return f"  {_REPLACE}{path_str}{_RESET} {_DIM}={_RESET} {value_str}"
-        return f"  {path_str} = {value_str}"
-
-    # Default: set/add
+    path_str = _format_path(path, use_color)
     if use_color:
-        return f"  {_ADD}{path_str}{_RESET} {_DIM}={_RESET} {value_str}"
-    return f"  {path_str} = {value_str}"
+        return [f"  {path_str} {_DIM}={_RESET} {value_str}"]
+    return [f"  {path_str} = {value_str}"]
 
 
-def format_diff(diff: dict) -> list[str]:
+def format_diff(diff: dict, previous: dict | None = None) -> list[str]:
     """
     Format a JSON diff as human-readable lines.
+
+    Args:
+        diff: The JSON diff dict
+        previous: The previous state dict (for determining add vs update)
 
     Returns a list of formatted lines (without newlines).
     Single changes return one line, multiple changes return multiple lines.
     """
     use_color = _use_color()
-    changes: list[tuple[str, list[str], Any, Any | None]] = []
-    _collect_changes(diff, [], changes)
+    changes: list[tuple[str, list[str], Any]] = []
+    _collect_changes(diff, [], changes, previous)
 
     if not changes:
         return []
 
     # Format each change
     lines = []
-    for change_type, path, value, _ in changes:
-        lines.append(_format_change_line(change_type, path, value, use_color))
+    for change_type, path, value in changes:
+        lines.extend(_format_change_lines(change_type, path, value, use_color))
 
     return lines
 
@@ -202,7 +277,12 @@ def format_action_header(action: str, user_display: str | None = None) -> str:
         return action
 
 
-def log_change(action: str, diff: dict, user_display: str | None = None) -> None:
+def log_change(
+    action: str,
+    diff: dict,
+    user_display: str | None = None,
+    previous: dict | None = None,
+) -> None:
     """
     Log a database change with pretty-printed diff.
 
@@ -210,9 +290,10 @@ def log_change(action: str, diff: dict, user_display: str | None = None) -> None
         action: The action name (e.g., "login", "admin:delete_user")
         diff: The JSON diff dict
         user_display: Optional display name of the user who performed the action
+        previous: The previous state dict (for determining add vs update)
     """
     header = format_action_header(action, user_display)
-    diff_lines = format_diff(diff)
+    diff_lines = format_diff(diff, previous)
 
     if not diff_lines:
         logger.info(header)
