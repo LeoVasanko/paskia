@@ -51,8 +51,8 @@ def format_ipv6_network(ip: str) -> str:
             network_int >>= 16
         # Compress consecutive zero groups
         result = ":".join(groups) + "::"
-        # Simplify leading zeros in groups and compress
-        return str(IPv6Address(result + "0"))
+        # Simplify leading zeros in groups and compress, then strip trailing ::
+        return str(IPv6Address(result + "0")).removesuffix("::")
     except Exception:
         return ip
 
@@ -93,7 +93,7 @@ def format_access_log(
     use_color = sys.stderr.isatty()
 
     # Format components with fixed widths for alignment
-    ip = format_client_ip(client).ljust(15)  # IPv4 max 15 chars
+    ip = format_client_ip(client).ljust(19)  # IPv6 network max 19 chars
     timing = f"{duration_ms:.0f}ms"
     method_padded = method.ljust(7)  # Longest method is OPTIONS (7)
 
