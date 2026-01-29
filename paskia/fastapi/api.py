@@ -78,7 +78,7 @@ async def validate_token(
     try:
         ctx = await authz.verify(
             auth,
-            perm,
+            " ".join(perm).split(),
             host=request.headers.get("host"),
             max_age=max_age,
         )
@@ -131,7 +131,10 @@ async def forward_authentication(
     """
     try:
         ctx = await authz.verify(
-            auth, perm, host=request.headers.get("host"), max_age=max_age
+            auth,
+            " ".join(perm).split(),
+            host=request.headers.get("host"),
+            max_age=max_age,
         )
         # Build permission scopes for Remote-Groups header
         role_permissions = (
