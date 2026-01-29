@@ -94,6 +94,7 @@ async def validate_token(
                 ip=request.client.host if request.client else "",
                 user_agent=request.headers.get("user-agent") or "",
                 expiry=expires(),
+                ctx=ctx,
             )
             session.set_session_cookie(response, auth)
             renewed = True
