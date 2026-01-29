@@ -20,6 +20,8 @@ from paskia.util import hostutil, passphrase, vitedev
 configure_access_logging()
 configure_db_logging()
 
+_access_logger = logging.getLogger("paskia.access")
+
 # Vue Frontend static files
 frontend = Frontend(
     Path(__file__).parent.parent / "frontend-build",
@@ -59,7 +61,6 @@ async def lifespan(app: FastAPI):  # pragma: no cover - startup path
     if frontend.devmode:
         logging.getLogger("uvicorn").setLevel(logging.INFO)
     logging.getLogger("uvicorn.error").setLevel(logging.WARNING)
-
     await frontend.load()
     await start_background()
     yield
