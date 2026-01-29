@@ -27,7 +27,7 @@ _DIM = "\033[2m"
 _PATH_PREFIX = "\033[1;30m"  # Dark grey for path prefix (like host in access log)
 _PATH_FINAL = "\033[0m"  # Default for final element (like path in access log)
 _REPLACE = "\033[0;33m"  # Yellow for replacements
-_DELETE = "\033[0;31m"  # Red for deletions
+_DELETE = "\033[1;31m"  # Red for deletions
 _ADD = "\033[0;32m"  # Green for additions
 _ACTION = "\033[1;34m"  # Bold blue for action name
 _USER = "\033[0;34m"  # Blue for user display
@@ -141,23 +141,27 @@ def _format_change_line(
     change_type: str, path: list[str], value: Any, use_color: bool
 ) -> str:
     """Format a single change as a one-line string."""
+    if change_type == "delete":
+        if not use_color:
+            return f"  {'.'.join(path)} ✗"
+        if len(path) == 1:
+            return f"  {_DELETE}{path[0]} ✗{_RESET}"
+        prefix = ".".join(path[:-1])
+        final = path[-1]
+        return f"  {_PATH_PREFIX}{prefix}.{_RESET}{_DELETE}{final} ✗{_RESET}"
+
     path_str = _format_path(path, use_color)
     value_str = _format_value(value, use_color)
 
-    if change_type == "delete":
-        if use_color:
-            return f"  ❌  {path_str}"
-        return f"  - {path_str}"
-
     if change_type == "replace":
         if use_color:
-            return f"  {_REPLACE}⟳{_RESET} {path_str} {_DIM}={_RESET} {value_str}"
-        return f"  ~ {path_str} = {value_str}"
+            return f"  {_REPLACE}{path_str}{_RESET} {_DIM}={_RESET} {value_str}"
+        return f"  {path_str} = {value_str}"
 
     # Default: set/add
     if use_color:
-        return f"  {_ADD}+{_RESET} {path_str} {_DIM}={_RESET} {value_str}"
-    return f"  + {path_str} = {value_str}"
+        return f"  {_ADD}{path_str}{_RESET} {_DIM}={_RESET} {value_str}"
+    return f"  {path_str} = {value_str}"
 
 
 def format_diff(diff: dict) -> list[str]:
