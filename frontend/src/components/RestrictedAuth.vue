@@ -58,7 +58,7 @@
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import passkey from '@/utils/passkey'
 import { getSettings, uiBasePath } from '@/utils/settings'
-import { fetchJson, getUserFriendlyErrorMessage } from '@/utils/api'
+import { fetchJson, getUserFriendlyErrorMessage } from '@/paskia/fetch'
 import RemoteAuthRequest from '@/components/RemoteAuthRequest.vue'
 import { focusDialogButton } from '@/utils/keynav'
 

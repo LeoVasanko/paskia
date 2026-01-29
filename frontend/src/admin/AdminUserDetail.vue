@@ -5,7 +5,7 @@ import CredentialList from '@/components/CredentialList.vue'
 import RegistrationLinkModal from '@/components/RegistrationLinkModal.vue'
 import SessionList from '@/components/SessionList.vue'
 import { useAuthStore } from '@/stores/auth'
-import { apiJson } from '@/utils/api'
+import { apiJson } from '@/paskia/fetch'
 import { getDirection, navigateButtonRow, focusPreferred, focusAtIndex } from '@/utils/keynav'
 
 const props = defineProps({

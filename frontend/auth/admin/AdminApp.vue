@@ -12,8 +12,8 @@ import AdminUserDetail from '@/admin/AdminUserDetail.vue'
 import AdminDialogs from '@/admin/AdminDialogs.vue'
 import { useAuthStore } from '@/stores/auth'
 import { adminUiPath, makeUiHref } from '@/utils/settings'
-import { apiJson } from '@/utils/api'
-import { useSessionValidation } from '@/utils/session'
+import { apiJson } from '@/paskia/fetch'
+import { SessionValidator } from '@/paskia/validate'
 import { getDirection } from '@/utils/keynav'
 import { goBack } from '@/utils/helpers'
 
@@ -167,8 +167,11 @@ function onSessionLost(e) {
   }
 }
 
-const userUuid = computed(() => info.value?.ctx.user.uuid)
-useSessionValidation(userUuid, onSessionLost)
+const userUuidGetter = () => info.value?.ctx.user.uuid
+const sessionValidator = new SessionValidator(userUuidGetter, onSessionLost)
+
+onMounted(() => sessionValidator.start())
+onUnmounted(() => sessionValidator.stop())
 
 async function load() {
   loading.value = true

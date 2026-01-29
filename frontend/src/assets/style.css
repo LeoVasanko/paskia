@@ -731,42 +731,6 @@ th {
   }
 }
 
-/* Global backdrop controlled by api.js ref-counting */
-body::before {
-  content: '';
-  position: fixed;
-  inset: 0;
-  z-index: 1099;
-  background: transparent;
-  backdrop-filter: blur(0) brightness(1);
-  -webkit-backdrop-filter: blur(0) brightness(1);
-  pointer-events: none;
-  visibility: hidden;
-  transition: all 0.2s ease-out;
-}
-
-body.has-backdrop::before {
-  -webkit-backdrop-filter: blur(.2rem) brightness(0.5);
-  backdrop-filter: blur(.2rem) brightness(0.5);
-  visibility: visible;
-}
-
-body.has-backdrop {
-  overflow: auto;
-}
-
-#auth-iframe {
-  border: none;
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  z-index: 9999;
-  color-scheme: auto;
-  background: transparent;
-}
-
 .slot-machine {
   padding: 0.875rem 1rem;
   background: var(--color-surface-hover, rgba(0, 0, 0, 0.03));
