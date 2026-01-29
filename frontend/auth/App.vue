@@ -14,6 +14,7 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import { apiJson, getAuthIframeUrl } from '@/utils/api'
+import { useSessionValidation } from '@/utils/session'
 import StatusMessage from '@/components/StatusMessage.vue'
 import ProfileView from '@/components/ProfileView.vue'
 import HostProfileView from '@/components/HostProfileView.vue'
@@ -46,7 +47,7 @@ const isHostMode = computed(() => {
   const configuredHost = normalizeHost(authHost)
   return currentHost !== configuredHost
 })
-let validationTimer = null
+const userUuid = computed(() => store.userInfo?.ctx.user.uuid)
 let authIframe = null
 
 function terminateSession() {
@@ -54,11 +55,12 @@ function terminateSession() {
   viewState.value = 'terminal'
 }
 
+useSessionValidation(userUuid, terminateSession)
+
 async function loadUserInfo() {
   try {
     store.userInfo = await apiJson('/auth/api/user-info', { method: 'POST' })
     viewState.value = 'profile'
-    startSessionValidation()
     return true
   } catch {
     store.userInfo = null
@@ -128,28 +130,6 @@ function handleAuthMessage(event) {
   }
 }
 
-async function validateSession() {
-  try {
-    await apiJson('/auth/api/validate', { method: 'POST' })
-  } catch {
-    stopSessionValidation()
-    terminateSession()
-  }
-}
-
-function startSessionValidation() {
-  // Validate session every 2 minutes
-  stopSessionValidation()
-  validationTimer = setInterval(validateSession, 2 * 60 * 1000)
-}
-
-function stopSessionValidation() {
-  if (validationTimer) {
-    clearInterval(validationTimer)
-    validationTimer = null
-  }
-}
-
 onMounted(async () => {
   // Listen for postMessage from auth iframe
   window.addEventListener('message', handleAuthMessage)
@@ -178,7 +158,6 @@ onMounted(async () => {
 
 onUnmounted(() => {
   window.removeEventListener('message', handleAuthMessage)
-  stopSessionValidation()
   hideAuthIframe()
 })
 </script>
