@@ -706,7 +706,7 @@ async def admin_delete_user_session(
     if not target_session or target_session.user_uuid != user_uuid:
         raise HTTPException(status_code=404, detail="Session not found")
 
-    db.delete_session(session_id, ctx=ctx)
+    db.delete_session(session_id, ctx=ctx, action="admin:delete_session")
 
     # Check if admin terminated their own session
     current_terminated = session_id == auth

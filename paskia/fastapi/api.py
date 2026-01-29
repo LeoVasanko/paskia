@@ -252,7 +252,7 @@ async def api_logout(request: Request, response: Response, auth=AUTH_COOKIE):
     if not ctx:
         return {"message": "Already logged out"}
     with suppress(Exception):
-        db.delete_session(auth, ctx=ctx)
+        db.delete_session(auth, ctx=ctx, action="logout")
     session.clear_session_cookie(response)
     return {"message": "Logged out successfully"}
 
