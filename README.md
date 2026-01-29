@@ -1,5 +1,7 @@
 # Paskia
 
+![Screenshot](https://git.zi.fi/leovasanko/paskia/raw/main/docs/screenshots/forbidden-light.webp)
+
 An easy to install passkey-based authentication service that protects any web application with strong passwordless login.
 
 ## What is Paskia?
