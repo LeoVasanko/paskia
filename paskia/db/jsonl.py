@@ -198,7 +198,6 @@ class JsonlStore:
         if not diff:
             return
         self._pending_changes.append(create_change_record(action, version, diff, user))
-        self._previous_builtins = copy.deepcopy(current)
 
         # Log the change with user display name if available
         user_display = None
@@ -210,7 +209,8 @@ class JsonlStore:
             except (ValueError, KeyError):
                 user_display = user
 
-        log_change(action, diff, user_display)
+        log_change(action, diff, user_display, self._previous_builtins)
+        self._previous_builtins = copy.deepcopy(current)
 
     @contextmanager
     def transaction(
