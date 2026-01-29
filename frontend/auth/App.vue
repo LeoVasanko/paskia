@@ -13,8 +13,10 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useAuthStore } from '@/stores/auth'
-import { apiJson, getAuthIframeUrl } from '@/utils/api'
-import { useSessionValidation } from '@/utils/session'
+import { apiJson } from '@/paskia/fetch'
+import { getAuthIframeUrl } from '@/utils/api'
+import { SessionValidator } from '@/paskia/validate'
+import { createAuthIframe, removeAuthIframe } from '@/paskia/overlay'
 import StatusMessage from '@/components/StatusMessage.vue'
 import ProfileView from '@/components/ProfileView.vue'
 import HostProfileView from '@/components/HostProfileView.vue'
@@ -48,14 +50,17 @@ const isHostMode = computed(() => {
   return currentHost !== configuredHost
 })
 const userUuid = computed(() => store.userInfo?.ctx.user.uuid)
-let authIframe = null
 
 function terminateSession() {
   store.userInfo = null
   viewState.value = 'terminal'
 }
 
-useSessionValidation(userUuid, terminateSession)
+const userUuidGetter = () => store.userInfo?.ctx.user.uuid
+const sessionValidator = new SessionValidator(userUuidGetter, terminateSession)
+
+onMounted(() => sessionValidator.start())
+onUnmounted(() => sessionValidator.stop())
 
 async function loadUserInfo() {
   try {
@@ -69,25 +74,9 @@ async function loadUserInfo() {
 }
 
 async function showAuthIframe() {
-  // Remove existing iframe if any
-  hideAuthIframe()
-
-  // Create new iframe for authentication using src URL
   const url = await getAuthIframeUrl('login')
-  authIframe = document.createElement('iframe')
-  authIframe.id = 'auth-iframe'
-  authIframe.title = 'Authentication'
-  authIframe.allow = 'publickey-credentials-get; publickey-credentials-create'
-  authIframe.src = url
-  document.body.appendChild(authIframe)
+  createAuthIframe(url)
   loadingMessage.value = 'Authentication required...'
-}
-
-function hideAuthIframe() {
-  if (authIframe) {
-    authIframe.remove()
-    authIframe = null
-  }
 }
 
 function handleAuthMessage(event) {
@@ -97,7 +86,7 @@ function handleAuthMessage(event) {
   switch (data.type) {
     case 'auth-success':
       // Authentication successful - reload user info
-      hideAuthIframe()
+      removeAuthIframe()
       viewState.value = 'loading'
       loadingMessage.value = 'Loading user profile...'
       loadUserInfo()
@@ -119,13 +108,13 @@ function handleAuthMessage(event) {
 
     case 'auth-back':
       // User clicked Back - show terminal state
-      hideAuthIframe()
+      removeAuthIframe()
       terminateSession()
       break
 
     case 'auth-close-request':
       // Legacy support - treat as back
-      hideAuthIframe()
+      removeAuthIframe()
       break
   }
 }
@@ -158,7 +147,7 @@ onMounted(async () => {
 
 onUnmounted(() => {
   window.removeEventListener('message', handleAuthMessage)
-  hideAuthIframe()
+  removeAuthIframe()
 })
 </script>
 
