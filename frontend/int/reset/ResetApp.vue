@@ -59,7 +59,7 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import passkey from '@/utils/passkey'
 import { getSettings, uiBasePath } from '@/utils/settings'
-import { apiJson, ApiError, getUserFriendlyErrorMessage } from '@/paskia/fetch'
+import { apiJson, ApiError, getUserFriendlyErrorMessage } from 'paskia'
 
 const status = reactive({
   show: false,

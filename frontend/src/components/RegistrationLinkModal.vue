@@ -35,7 +35,7 @@
 <script setup>
 import { ref, onMounted, onUnmounted, nextTick } from 'vue'
 import QRCodeDisplay from '@/components/QRCodeDisplay.vue'
-import { apiJson } from '@/paskia/fetch'
+import { apiJson } from 'paskia'
 import { formatDate } from '@/utils/helpers'
 import { getDirection } from '@/utils/keynav'
 import { useAuthStore } from '@/stores/auth'

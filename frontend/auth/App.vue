@@ -13,10 +13,8 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useAuthStore } from '@/stores/auth'
-import { apiJson } from '@/paskia/fetch'
+import { apiJson, SessionValidator, createAuthIframe, removeAuthIframe } from 'paskia'
 import { getAuthIframeUrl } from '@/utils/api'
-import { SessionValidator } from '@/paskia/validate'
-import { createAuthIframe, removeAuthIframe } from '@/paskia/overlay'
 import StatusMessage from '@/components/StatusMessage.vue'
 import ProfileView from '@/components/ProfileView.vue'
 import HostProfileView from '@/components/HostProfileView.vue'
