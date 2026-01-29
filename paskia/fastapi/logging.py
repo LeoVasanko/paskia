@@ -136,7 +136,7 @@ def log_ws_open(ws) -> int:
     path = ws.url.path
     origin = ws.headers.get("origin")
 
-    ip = format_client_ip(client).ljust(15)
+    ip = format_client_ip(client).ljust(19)
     id_str = f"{ws_id:02d}".ljust(7)  # Align with method field (7 chars)
 
     # Determine if origin should be shown (omit when same as host)
@@ -205,7 +205,7 @@ def log_ws_close(ws_id: int, close_code: int | None, duration: float) -> None:
         status_str = status
         timing_str = timing
 
-    logger.info(f"{' ' * 15} {prefix} {status_str} {timing_str}")
+    logger.info(f"{' ' * 19} {prefix} {status_str} {timing_str}")
 
 
 def log_permission_denied(
