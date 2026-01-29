@@ -38,6 +38,7 @@ import QRCodeDisplay from '@/components/QRCodeDisplay.vue'
 import { apiJson } from '@/utils/api'
 import { formatDate } from '@/utils/helpers'
 import { getDirection } from '@/utils/keynav'
+import { useAuthStore } from '@/stores/auth'
 
 const props = defineProps({
   endpoint: { type: String, required: true },
@@ -46,6 +47,7 @@ const props = defineProps({
 
 const emit = defineEmits(['close', 'copied'])
 
+const authStore = useAuthStore()
 const dialog = ref(null)
 const linkUrl = ref(null)
 const expiresAt = ref(null)
@@ -73,7 +75,8 @@ async function generateLink() {
     } else {
       emit('close')
     }
-  } catch {
+  } catch (e) {
+    authStore.showMessage(e.message || 'Failed to generate link', 'error')
     emit('close')
   }
 }

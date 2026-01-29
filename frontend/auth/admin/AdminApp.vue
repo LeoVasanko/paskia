@@ -13,6 +13,7 @@ import AdminDialogs from '@/admin/AdminDialogs.vue'
 import { useAuthStore } from '@/stores/auth'
 import { adminUiPath, makeUiHref } from '@/utils/settings'
 import { apiJson } from '@/utils/api'
+import { useSessionValidation } from '@/utils/session'
 import { getDirection } from '@/utils/keynav'
 import { goBack } from '@/utils/helpers'
 
@@ -157,6 +158,18 @@ function clearSensitiveState() {
   authenticated.value = false
 }
 
+function onSessionLost(e) {
+  clearSensitiveState()
+  if (e.name === 'AuthCancelledError') {
+    showBackMessage.value = true
+  } else {
+    error.value = e.message
+  }
+}
+
+const userUuid = computed(() => info.value?.ctx.user.uuid)
+useSessionValidation(userUuid, onSessionLost)
+
 async function load() {
   loading.value = true
   loadingMessage.value = 'Loading...'
@@ -177,12 +190,7 @@ async function load() {
       }
     } else parseHash()
   } catch (e) {
-    clearSensitiveState()
-    if (e.name === 'AuthCancelledError') {
-      showBackMessage.value = true
-    } else {
-      error.value = e.message
-    }
+    onSessionLost(e)
   } finally {
     loading.value = false
   }
