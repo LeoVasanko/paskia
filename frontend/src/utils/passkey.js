@@ -1,7 +1,7 @@
 import { startRegistration, startAuthentication } from '@simplewebauthn/browser'
 import aWebSocket from '@/utils/awaitable-websocket'
 import { getSettings } from '@/utils/settings'
-import { showAuthIframe } from '@/paskia/overlay'
+import { showAuthIframe } from 'paskia'
 
 // Generic path normalizer: if an auth_host is configured and differs from current
 // host, return absolute URL (scheme derived by aWebSocket). Otherwise, keep as-is.

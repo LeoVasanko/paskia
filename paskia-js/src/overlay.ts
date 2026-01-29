@@ -34,14 +34,14 @@ body.paskia-backdrop {
 }
 `
 
-let authIframe = null
-let authPromise = null
-let authResolve = null
-let authReject = null
+let authIframe: HTMLIFrameElement | null = null
+let authPromise: Promise<void> | null = null
+let authResolve: (() => void) | null = null
+let authReject: ((error: Error) => void) | null = null
 let messageListenerInstalled = false
 let backdropHolders = 0
 
-function injectStyles() {
+function injectStyles(): void {
   if (document.getElementById(STYLES_ID)) return
   const style = document.createElement('style')
   style.id = STYLES_ID
@@ -56,23 +56,23 @@ export class AuthCancelledError extends Error {
   }
 }
 
-export function holdGlobalBackdrop() {
+export function holdGlobalBackdrop(): void {
   backdropHolders++
   document.body.classList.add('paskia-backdrop')
 }
 
-export function releaseGlobalBackdrop() {
+export function releaseGlobalBackdrop(): void {
   backdropHolders = Math.max(0, backdropHolders - 1)
   if (backdropHolders === 0) {
     document.body.classList.remove('paskia-backdrop')
   }
 }
 
-export function isAuthIframeOpen() {
+export function isAuthIframeOpen(): boolean {
   return !!document.getElementById(AUTH_IFRAME_ID)
 }
 
-export function hideAuthIframe() {
+export function hideAuthIframe(): void {
   if (authIframe) {
     authIframe.remove()
     authIframe = null
@@ -80,8 +80,8 @@ export function hideAuthIframe() {
   }
 }
 
-function handleAuthMessage(event) {
-  const data = event.data
+function handleAuthMessage(event: MessageEvent): void {
+  const data = event.data as { type?: string }
   if (!data?.type) return
 
   switch (data.type) {
@@ -107,7 +107,7 @@ function handleAuthMessage(event) {
   }
 }
 
-function ensureMessageListener() {
+function ensureMessageListener(): void {
   if (messageListenerInstalled) return
   if (typeof window !== 'undefined') {
     window.addEventListener('message', handleAuthMessage)
@@ -115,7 +115,7 @@ function ensureMessageListener() {
   }
 }
 
-export function showAuthIframe(iframeUrl, title = 'Authentication') {
+export function showAuthIframe(iframeUrl: string, title = 'Authentication'): Promise<void> {
   injectStyles()
   ensureMessageListener()
 
@@ -146,7 +146,7 @@ export function showAuthIframe(iframeUrl, title = 'Authentication') {
   return authPromise
 }
 
-export function createAuthIframe(iframeUrl, title = 'Authentication') {
+export function createAuthIframe(iframeUrl: string, title = 'Authentication'): HTMLIFrameElement {
   injectStyles()
   const existing = document.getElementById(AUTH_IFRAME_ID)
   if (existing) existing.remove()
@@ -160,7 +160,7 @@ export function createAuthIframe(iframeUrl, title = 'Authentication') {
   return iframe
 }
 
-export function removeAuthIframe() {
+export function removeAuthIframe(): void {
   const iframe = document.getElementById(AUTH_IFRAME_ID)
   if (iframe) iframe.remove()
 }

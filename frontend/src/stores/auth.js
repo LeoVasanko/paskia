@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { register, authenticate } from '@/utils/passkey'
 import { getSettings } from '@/utils/settings'
-import { apiJson } from '@/paskia/fetch'
+import { apiJson } from 'paskia'
 
 export const useAuthStore = defineStore('auth', {
   state: () => ({

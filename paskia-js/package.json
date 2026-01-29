@@ -1,0 +1,32 @@
+{
+  "name": "paskia",
+  "version": "0.1.2",
+  "description": "Paskia authentication utilities for JavaScript",
+  "type": "module",
+  "main": "./dist/paskia.js",
+  "types": "./dist/paskia.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/paskia.d.ts",
+      "import": "./dist/paskia.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "vite build",
+    "prepublishOnly": "npm run build"
+  },
+  "devDependencies": {
+    "typescript": "~5.8.0",
+    "vite": "^7.3.1",
+    "vite-plugin-dts": "^4.5.4"
+  },
+  "keywords": [
+    "auth",
+    "authentication",
+    "paskia"
+  ],
+  "license": "Unlicense"
+}

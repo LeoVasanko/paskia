@@ -127,7 +127,7 @@ import { useAuthStore } from '@/stores/auth'
 import { adminUiPath, makeUiHref } from '@/utils/settings'
 import passkey from '@/utils/passkey'
 import { goBack } from '@/utils/helpers'
-import { apiJson } from '@/paskia/fetch'
+import { apiJson } from 'paskia'
 import { navigateButtonRow, focusPreferred, focusAtIndex, getDirection } from '@/utils/keynav'
 
 const authStore = useAuthStore()
