@@ -127,7 +127,7 @@ async def admin_create_org(
     db.create_org(org, ctx=ctx)
     # Grant requested permissions to the new org
     for perm in permissions:
-        db.add_permission_to_org(str(org.uuid), perm)
+        db.add_permission_to_org(str(org.uuid), perm, ctx=ctx)
 
     return {"uuid": str(org.uuid)}
 

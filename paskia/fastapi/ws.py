@@ -1,13 +1,13 @@
 from fastapi import FastAPI, WebSocket
 
 from paskia import db
-from paskia.authsession import expires, get_reset
+from paskia.authsession import get_reset
 from paskia.fastapi import authz, remote
 from paskia.fastapi.session import AUTH_COOKIE, infodict
-from paskia.fastapi.wschat import authenticate_chat, register_chat
+from paskia.fastapi.wschat import authenticate_and_login, register_chat
 from paskia.fastapi.wsutil import validate_origin, websocket_error_handler
 from paskia.globals import passkey
-from paskia.util import hostutil, passphrase
+from paskia.util import passphrase
 
 # Create a FastAPI subapp for WebSocket endpoints
 app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
@@ -46,7 +46,7 @@ async def websocket_register_add(
         s = ctx.session
 
     # Get user information and determine effective user_name for this registration
-    user = db.data().users.get(user_uuid)
+    user = db.data().users[user_uuid]
     user_name = user.display_name
     if name is not None:
         stripped = name.strip()
@@ -59,7 +59,7 @@ async def websocket_register_add(
 
     # Create a new session and store everything in database
     metadata = infodict(ws, "authenticated")
-    token = db.create_credential_session(  # type: ignore[attr-defined]
+    token = db.create_credential_session(
         user_uuid=user_uuid,
         credential=credential,
         reset_key=(s.key if reset is not None else None),
@@ -91,41 +91,20 @@ async def websocket_authenticate(ws: WebSocket, auth=AUTH_COOKIE):
     session_user_uuid = None
     credential_ids = None
     if auth:
-        ctx = db.data().session_ctx(auth, host)
-        if ctx:
-            session_user_uuid = ctx.user.uuid
+        existing_ctx = db.data().session_ctx(auth, host)
+        if existing_ctx:
+            session_user_uuid = existing_ctx.user.uuid
             credential_ids = db.get_user_credential_ids(session_user_uuid) or None
 
-    cred, new_sign_count = await authenticate_chat(ws, origin, credential_ids)
+    ctx = await authenticate_and_login(ws, credential_ids)
 
     # If reauth mode, verify the credential belongs to the session's user
-    if session_user_uuid and cred.user_uuid != session_user_uuid:
+    if session_user_uuid and ctx.user.uuid != session_user_uuid:
         raise ValueError("This passkey belongs to a different account")
-
-    # Create session and update user/credential in a single transaction
-    assert cred.uuid is not None
-    metadata = infodict(ws, "auth")
-    normalized_host = hostutil.normalize_host(host)
-    if not normalized_host:
-        raise ValueError("Host required for session creation")
-    hostname = normalized_host.split(":")[0]
-    rp_id = passkey.instance.rp_id
-    if not (hostname == rp_id or hostname.endswith(f".{rp_id}")):
-        raise ValueError(f"Host must be the same as or a subdomain of {rp_id}")
-
-    token = db.login(
-        user_uuid=cred.user_uuid,
-        credential_uuid=cred.uuid,
-        sign_count=new_sign_count,
-        host=normalized_host,
-        ip=metadata["ip"],
-        user_agent=metadata["user_agent"],
-        expiry=expires(),
-    )
 
     await ws.send_json(
         {
-            "user": str(cred.user_uuid),
-            "session_token": token,
+            "user": str(ctx.user.uuid),
+            "session_token": ctx.session.key,
         }
     )

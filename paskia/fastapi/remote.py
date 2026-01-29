@@ -18,9 +18,9 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from paskia import db, remoteauth
 from paskia.authsession import expires
 from paskia.fastapi.session import infodict
-from paskia.fastapi.wschat import authenticate_chat
+from paskia.fastapi.wschat import authenticate_and_login
 from paskia.fastapi.wsutil import validate_origin, websocket_error_handler
-from paskia.util import hostutil, passphrase, pow, useragent
+from paskia.util import passphrase, pow, useragent
 
 # Create a FastAPI subapp for remote auth WebSocket endpoints
 app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
@@ -270,7 +270,7 @@ async def websocket_remote_auth_permit(ws: WebSocket):
     7. Server sends {status: "success", message: "..."}
     """
 
-    origin = validate_origin(ws)
+    validate_origin(ws)
 
     if remoteauth.instance is None:
         raise ValueError("Remote authentication is not available")
@@ -310,56 +310,30 @@ async def websocket_remote_auth_permit(ws: WebSocket):
 
             # Handle authenticate request (no PoW needed - already validated during lookup)
             if msg.get("authenticate") and request is not None:
-                cred, new_sign_count = await authenticate_chat(ws, origin)
+                ctx = await authenticate_and_login(ws)
 
-                # Create a session for the REQUESTING device
-                assert cred.uuid is not None
-
-                session_token = None
+                session_token = ctx.session.key
                 reset_token = None
 
                 if request.action == "register":
                     # For registration, create a reset token for device addition
-
                     token_str = passphrase.generate()
                     expiry = expires()
                     db.create_reset_token(
-                        user_uuid=cred.user_uuid,
+                        user_uuid=ctx.user.uuid,
                         passphrase=token_str,
                         expiry=expiry,
                         token_type="device addition",
+                        user=str(ctx.user.uuid),
                     )
                     reset_token = token_str
-                    # Also create a session so the device is logged in
-                    normalized_host = hostutil.normalize_host(request.host)
-                    session_token = db.login(
-                        user_uuid=cred.user_uuid,
-                        credential_uuid=cred.uuid,
-                        sign_count=new_sign_count,
-                        host=normalized_host,
-                        ip=request.ip,
-                        user_agent=request.user_agent,
-                        expiry=expires(),
-                    )
-                else:
-                    # Default login action
-
-                    normalized_host = hostutil.normalize_host(request.host)
-                    session_token = db.login(
-                        user_uuid=cred.user_uuid,
-                        credential_uuid=cred.uuid,
-                        sign_count=new_sign_count,
-                        host=normalized_host,
-                        ip=request.ip,
-                        user_agent=request.user_agent,
-                        expiry=expires(),
-                    )
 
                 # Complete the remote auth request (notifies the waiting device)
+                cred = db.data().credentials[ctx.session.credential_uuid]
                 completed = await remoteauth.instance.complete_request(
                     token=request.key,
                     session_token=session_token,
-                    user_uuid=cred.user_uuid,
+                    user_uuid=ctx.user.uuid,
                     credential_uuid=cred.uuid,
                     reset_token=reset_token,
                 )
