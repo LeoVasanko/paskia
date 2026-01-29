@@ -68,9 +68,11 @@ async def authenticate_chat(
 
 async def authenticate_and_login(
     ws: WebSocket,
-    credential_ids: list[bytes] | None = None,
+    auth: str | None = None,
 ) -> SessionContext:
     """Run WebAuthn authentication flow, create session, and return the session context.
+
+    If auth is provided, restrict authentication to credentials of that session's user.
 
     Returns:
         SessionContext for the authenticated session
@@ -85,6 +87,13 @@ async def authenticate_and_login(
     if not (hostname == rp_id or hostname.endswith(f".{rp_id}")):
         raise ValueError(f"Host must be the same as or a subdomain of {rp_id}")
     metadata = infodict(ws, "auth")
+
+    # Get credential IDs if restricting to a user's credentials
+    credential_ids = None
+    if auth:
+        existing_ctx = db.data().session_ctx(auth, host)
+        if existing_ctx:
+            credential_ids = db.get_user_credential_ids(existing_ctx.user.uuid) or None
 
     cred, new_sign_count = await authenticate_chat(ws, credential_ids)
 

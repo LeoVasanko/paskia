@@ -89,14 +89,12 @@ async def websocket_authenticate(ws: WebSocket, auth=AUTH_COOKIE):
 
     # If there's an existing session, restrict to that user's credentials (reauth)
     session_user_uuid = None
-    credential_ids = None
     if auth:
         existing_ctx = db.data().session_ctx(auth, host)
         if existing_ctx:
             session_user_uuid = existing_ctx.user.uuid
-            credential_ids = db.get_user_credential_ids(session_user_uuid) or None
 
-    ctx = await authenticate_and_login(ws, credential_ids)
+    ctx = await authenticate_and_login(ws, auth)
 
     # If reauth mode, verify the credential belongs to the session's user
     if session_user_uuid and ctx.user.uuid != session_user_uuid:
