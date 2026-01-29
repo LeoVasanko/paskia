@@ -1,6 +1,6 @@
 # Paskia
 
-![Paskia](https://git.zi.fi/leovasanko/paskia/raw/main/docs/screenshots/forbidden-light.webp)
+![Screenshot](https://git.zi.fi/leovasanko/paskia/raw/main/docs/screenshots/forbidden-light.webp)
 
 JavaScript utilities for [Paskia authentication system](https://git.zi.fi/leovasanko/paskia) integration into web apps.
 
