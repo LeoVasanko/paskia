@@ -17,7 +17,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 
 from paskia import db, remoteauth
 from paskia.authsession import expires
-from paskia.fastapi.session import infodict
+from paskia.fastapi.session import AUTH_COOKIE, infodict
 from paskia.fastapi.wschat import authenticate_and_login
 from paskia.fastapi.wsutil import validate_origin, websocket_error_handler
 from paskia.util import passphrase, pow, useragent
@@ -252,7 +252,7 @@ async def websocket_remote_auth_request(ws: WebSocket):
 
 @app.websocket("/permit")
 @websocket_error_handler
-async def websocket_remote_auth_permit(ws: WebSocket):
+async def websocket_remote_auth_permit(ws: WebSocket, auth=AUTH_COOKIE):
     """Complete a remote authentication request using a 3-word pairing code.
 
     This endpoint is called from the user's profile on the authenticating device.
@@ -310,7 +310,7 @@ async def websocket_remote_auth_permit(ws: WebSocket):
 
             # Handle authenticate request (no PoW needed - already validated during lookup)
             if msg.get("authenticate") and request is not None:
-                ctx = await authenticate_and_login(ws)
+                ctx = await authenticate_and_login(ws, auth)
 
                 session_token = ctx.session.key
                 reset_token = None
