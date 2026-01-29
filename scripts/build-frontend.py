@@ -24,7 +24,7 @@ class CustomBuildHook(BuildHookInterface):
         super().initialize(version, build_data)
         stderr.write(">>> Building paskia-js library\n")
 
-        install_cmd, build_cmd = find_build_tool()
+        install_cmd, build_cmd = find_build_tool()  # noqa: F821 # type: ignore
 
         try:
             # Install dependencies for paskia-js
