@@ -7,12 +7,12 @@ from urllib.parse import urlparse
 
 from fastapi_vue.hostutil import parse_endpoint
 from uvicorn import Config, Server
+from uvicorn import run as uvicorn_run
 
 from paskia import globals as _globals
 from paskia.bootstrap import bootstrap_if_needed
 from paskia.config import PaskiaConfig
 from paskia.db.background import flush
-from paskia.fastapi import app as fastapi_app
 from paskia.fastapi import reset as reset_cmd
 from paskia.util import startupbox
 from paskia.util.hostutil import normalize_origin
@@ -188,7 +188,7 @@ def main():
     devmode = bool(os.environ.get("FASTAPI_VUE_FRONTEND_URL"))
 
     run_kwargs: dict = {
-        "log_level": "info",
+        "log_level": "warning",  # Suppress startup messages; we use custom logging
         "access_log": False,  # We use custom AccessLogMiddleware instead
     }
 
@@ -199,8 +199,6 @@ def main():
             raise SystemExit(f"Dev mode requires localhost:4402, got {host}:{port}")
         run_kwargs["reload"] = True
         run_kwargs["reload_dirs"] = ["paskia"]
-        # Suppress uvicorn startup messages in dev mode
-        run_kwargs["log_level"] = "warning"
 
     async def async_main():
         await _globals.init(
@@ -220,10 +218,18 @@ def main():
             async with asyncio.TaskGroup() as tg:
                 for ep in endpoints:
                     tg.create_task(
-                        Server(Config(app=fastapi_app, **run_kwargs, **ep)).serve()
+                        Server(
+                            Config(app="paskia.fastapi:app", **run_kwargs, **ep)
+                        ).serve()
                     )
+        elif devmode:
+            # Use uvicorn.run for proper reload support (it handles subprocess spawning)
+            ep = endpoints[0]
+            uvicorn_run("paskia.fastapi:app", **run_kwargs, **ep)
         else:
-            server = Server(Config(app=fastapi_app, **run_kwargs, **endpoints[0]))
+            server = Server(
+                Config(app="paskia.fastapi:app", **run_kwargs, **endpoints[0])
+            )
             await server.serve()
 
     try:

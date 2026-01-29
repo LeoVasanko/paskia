@@ -21,12 +21,8 @@ def websocket_error_handler(func):
 
     @wraps(func)
     async def wrapper(ws: WebSocket, *args, **kwargs):
-        client = ws.client.host if ws.client else "-"
-        host = ws.headers.get("host", "-")
-        path = ws.url.path
-
         start = time.perf_counter()
-        ws_id = log_ws_open(client, host, path)
+        ws_id = log_ws_open(ws)
         close_code = None
 
         try:
@@ -47,8 +43,7 @@ def websocket_error_handler(func):
             logging.exception("Internal Server Error")
             await ws.send_json({"status": 500, "detail": "Internal Server Error"})
         finally:
-            duration_ms = (time.perf_counter() - start) * 1000
-            log_ws_close(client, ws_id, close_code, duration_ms)
+            log_ws_close(ws_id, close_code, time.perf_counter() - start)
 
     return wrapper
 

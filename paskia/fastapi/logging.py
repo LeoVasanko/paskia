@@ -13,18 +13,18 @@ logger = logging.getLogger("paskia.access")
 
 _RESET = "\033[0m"
 _STATUS_INFO = "\033[32m"  # 1xx (green)
-_STATUS_OK = "\033[92m"  # 2xx (bright green)
+_STATUS_OK = "\033[1;92m"  # 2xx (bright green)
 _STATUS_REDIRECT = "\033[32m"  # 3xx (green)
 _STATUS_CLIENT_ERR = "\033[0;31m"  # 4xx (red)
-_STATUS_SERVER_ERR = "\033[1;31m"  # 5xx (bright red)
+_STATUS_SERVER_ERR = "\033[1;91m"  # 5xx (bold bright red)
 _METHOD_READ = "\033[0;34m"  # GET, HEAD, OPTIONS (blue)
-_METHOD_WRITE = "\033[1;34m"  # POST, PUT, DELETE, PATCH (bright blue)
-_HOST = "\033[1;30m"  # hostname (dark grey)
-_PATH = "\033[0m"  # path (default)
-_TIMING = "\033[2m"  # timing (dim)
-_WS_OPEN = "\033[1;33m"  # WebSocket connect (bright yellow)
-_WS_CLOSE = "\033[0;33m"  # WebSocket disconnect (yellow)
-_WS_STATUS = "\033[1;30m"  # WebSocket close status (dark grey)
+_METHOD_WRITE = "\033[1;94m"  # POST, PUT, DELETE, PATCH (bold bright blue)
+_HOST = "\033[38;5;242m"  # hostname (dark grey)
+_PATH = "\033[38;5;248m"  # path (default)
+_TIMING = "\033[38;5;242m"  # timing/devmode (dark grey)
+_WS_OPEN = "\033[1;93m"  # WebSocket connect (bold bright yellow)
+_WS_CLOSE = "\033[33m"  # WebSocket disconnect (yellow)
+_WS_STATUS = "\033[38;5;242m"  # WebSocket close status (dark grey)
 
 
 def format_ipv6_network(ip: str) -> str:
@@ -116,25 +116,39 @@ def _next_ws_id() -> int:
     return ws_id
 
 
-def log_ws_open(client: str, host: str, path: str) -> int:
+def log_ws_open(ws) -> int:
     """Log WebSocket connection open. Returns connection ID for use in close."""
     use_color = sys.stderr.isatty()
     ws_id = _next_ws_id()
 
+    client = ws.client.host if ws.client else "-"
+    host = ws.headers.get("host", "-")
+    path = ws.url.path
+    origin = ws.headers.get("origin")
+
     ip = format_client_ip(client).ljust(15)
     id_str = f"{ws_id:02d}".ljust(7)  # Align with method field (7 chars)
+
+    # Determine if origin should be shown (omit when same as host)
+    # Origin header includes scheme (e.g., "https://example.com"), compare host part
+    origin_host = origin.split("://", 1)[-1] if origin else None
+    show_origin = origin_host and origin_host != host
 
     if use_color:
         # 🔌 aligned with status (takes ~2 char width), ID aligned with method
         prefix = f"🔌  {_WS_OPEN}{id_str}{_RESET}"
         host_str = f"{_HOST}{host}{_RESET}"
         path_str = f"{_PATH}{path}{_RESET}"
+        origin_str = (
+            f" {_RESET}from {_HOST}{origin_host}{_RESET}" if show_origin else ""
+        )
     else:
         prefix = f"WS+ {id_str}"
         host_str = host
         path_str = path
+        origin_str = f" from {origin_host}" if show_origin else ""
 
-    logger.info(f"{ip} {prefix} {host_str}{path_str}")
+    logger.info(f"{ip} {prefix} {host_str}{path_str}{origin_str}")
     return ws_id
 
 
@@ -158,15 +172,12 @@ WS_CLOSE_CODES = {
 }
 
 
-def log_ws_close(
-    client: str, ws_id: int, close_code: int | None, duration_ms: float
-) -> None:
+def log_ws_close(ws_id: int, close_code: int | None, duration: float) -> None:
     """Log WebSocket connection close with duration and status."""
     use_color = sys.stderr.isatty()
 
-    ip = format_client_ip(client).ljust(15)
     id_str = f"{ws_id:02d}".ljust(7)  # Align with method field (7 chars)
-    timing = f"{duration_ms:.0f}ms"
+    timing = f"{duration * 1000:.0f}ms"
 
     # Convert close code to status text
     if close_code is None:
@@ -184,7 +195,7 @@ def log_ws_close(
         status_str = status
         timing_str = timing
 
-    logger.info(f"{ip} {prefix} {status_str} {timing_str}")
+    logger.info(f"{' ' * 15} {prefix} {status_str} {timing_str}")
 
 
 class AccessLogMiddleware(BaseHTTPMiddleware):
@@ -216,3 +227,5 @@ def configure_access_logging():
     logger.addHandler(handler)
     logger.setLevel(logging.INFO)
     logger.propagate = False
+    # Suppress watchfiles "X changes detected" INFO messages (keep WARNING for reload notification)
+    logging.getLogger("watchfiles.main").setLevel(logging.WARNING)
