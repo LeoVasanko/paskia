@@ -2,6 +2,7 @@ import logging
 
 from fastapi import HTTPException
 
+from paskia.fastapi.logging import log_permission_denied
 from paskia.util import permutil, sessionutil
 
 logger = logging.getLogger(__name__)
@@ -93,20 +94,14 @@ async def verify(
             logger.warning(f"Invalid max_age format '{max_age}': {e}")
 
     if not match(ctx, perm):
-        # Determine which permissions are missing for clearer diagnostics
         effective_scopes = (
             {p.scope for p in (ctx.permissions or [])}
             if ctx.permissions
             else set(ctx.role.permissions or [])
         )
         missing = sorted(set(perm) - effective_scopes)
-        logger.warning(
-            "Permission denied: user=%s role=%s missing=%s required=%s granted=%s",  # noqa: E501
-            getattr(ctx.user, "uuid", "?"),
-            getattr(ctx.role, "display_name", "?"),
-            missing,
-            perm,
-            list(effective_scopes),
+        log_permission_denied(
+            ctx, perm, missing, require_all=(match == permutil.has_all)
         )
         raise AuthException(
             status_code=403, mode="forbidden", detail="Permission required"
