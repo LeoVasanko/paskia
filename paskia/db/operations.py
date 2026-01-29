@@ -517,16 +517,18 @@ def set_session_host(key: str, host: str, *, ctx: SessionContext | None = None) 
     update_session(key, host=host, ctx=ctx)
 
 
-def delete_session(key: str, *, ctx: SessionContext | None = None) -> None:
+def delete_session(
+    key: str, *, ctx: SessionContext | None = None, action: str = "delete_session"
+) -> None:
     """Delete a session.
 
     The acting user should be logged via ctx.
-    For user logout, pass ctx of the user's session.
+    For user logout, pass ctx of the user's session and action="logout".
     For admin terminating a session, pass admin's ctx.
     """
     if key not in _db.sessions:
         raise ValueError("Session not found")
-    with _db.transaction("delete_session", ctx):
+    with _db.transaction(action, ctx):
         del _db.sessions[key]
 
 
