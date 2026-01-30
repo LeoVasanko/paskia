@@ -147,10 +147,10 @@ class Role(msgspec.Struct, dict=True, omit_defaults=True):
         return role
 
 
-class User(msgspec.Struct, dict=True):
+class User(msgspec.Struct, dict=True, omit_defaults=True):
     """User data structure.
 
-    Mutable fields: display_name, role_uuid, last_seen, visits
+    Mutable fields: display_name, role_uuid, last_seen, visits, theme
     Immutable fields: created_at (set at creation, never modified)
     uuid is derived from created_at using uuid7.
     """
@@ -160,6 +160,7 @@ class User(msgspec.Struct, dict=True):
     created_at: datetime
     last_seen: datetime | None = None
     visits: int = 0
+    theme: str = ""  # "" or "auto" = OS default, "light", "dark"
 
     def __post_init__(self):
         if not hasattr(self, "uuid"):

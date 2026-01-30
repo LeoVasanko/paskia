@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { register, authenticate } from '@/utils/passkey'
 import { getSettings } from '@/utils/settings'
 import { apiJson } from 'paskia'
+import { updateThemeFromSession } from '@/utils/theme'
 
 export const useAuthStore = defineStore('auth', {
   state: () => ({
@@ -86,6 +87,7 @@ export const useAuthStore = defineStore('auth', {
     async loadUserInfo() {
       try {
         this.userInfo = await apiJson('/auth/api/user-info', { method: 'POST' })
+        updateThemeFromSession(this.userInfo?.ctx)
         console.log('User info loaded:', this.userInfo)
       } catch (error) {
         // Suppress toast for 401/403 errors - the auth iframe will handle these

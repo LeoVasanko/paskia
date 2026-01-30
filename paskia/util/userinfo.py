@@ -9,12 +9,15 @@ from paskia.util.apistructs import ApiSession
 
 def build_session_context(ctx: SessionContext) -> dict:
     """Build session context dict from SessionContext."""
-    return {
+    result = {
         "user": {"uuid": ctx.user.uuid, "display_name": ctx.user.display_name},
         "org": {"uuid": ctx.org.uuid, "display_name": ctx.org.display_name},
         "role": {"uuid": ctx.role.uuid, "display_name": ctx.role.display_name},
         "permissions": [p.scope for p in ctx.permissions],
     }
+    if ctx.user.theme:
+        result["user"]["theme"] = ctx.user.theme
+    return result
 
 
 async def build_user_info(
