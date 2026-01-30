@@ -8,7 +8,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { onMounted, ref } from 'vue'
 import RestrictedAuth from '@/components/RestrictedAuth.vue'
 
 // Check if this is a remote auth URL: /auth/{token}
@@ -30,14 +30,9 @@ function extractRemoteToken() {
   return null
 }
 
-// Detect mode from URL hash fragment
-const authMode = computed(() => {
-  const params = new URLSearchParams(window.location.hash.slice(1))
-  const mode = params.get('mode')
-  if (mode === 'reauth') return 'reauth'
-  if (mode === 'forbidden') return 'forbidden'
-  return 'login'
-})
+// Parse URL hash fragment
+const hashParams = new URLSearchParams(window.location.hash.slice(1))
+const authMode = ['reauth', 'forbidden'].includes(hashParams.get('mode')) ? hashParams.get('mode') : 'login'
 
 function postToParent(message) {
   if (window.parent && window.parent !== window) {

@@ -78,7 +78,6 @@ html {
 }
 
 body {
-  color-scheme: light dark;
   overflow: auto;
   scrollbar-gutter: stable;
   height: 100%;
