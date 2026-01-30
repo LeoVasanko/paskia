@@ -1,5 +1,15 @@
 <template>
   <section class="view-root" data-view="profile">
+    <div class="theme-toggle">
+      <button class="theme-btn" @click="themeMenuOpen = !themeMenuOpen" :title="themeTitle">
+        {{ themeEmoji }}
+      </button>
+      <div v-if="themeMenuOpen" class="theme-menu" @click="themeMenuOpen = false">
+        <button class="theme-option top" :class="{ active: selectedTheme === '' }" @click.stop="setTheme('')" title="Auto">🌓</button>
+        <button class="theme-option left" :class="{ active: selectedTheme === 'light' }" @click.stop="setTheme('light')" title="Light">☀️</button>
+        <button class="theme-option right" :class="{ active: selectedTheme === 'dark' }" @click.stop="setTheme('dark')" title="Dark">🌙</button>
+      </div>
+    </div>
     <header class="view-header">
       <h1>User Profile</h1>
       <Breadcrumbs ref="breadcrumbs" :entries="breadcrumbEntries" @keydown="handleBreadcrumbKeydown" />
@@ -129,6 +139,7 @@ import passkey from '@/utils/passkey'
 import { goBack } from '@/utils/helpers'
 import { apiJson } from 'paskia'
 import { navigateButtonRow, focusPreferred, focusAtIndex, getDirection } from '@/utils/keynav'
+import { updateThemeFromSession } from '@/utils/theme'
 
 const authStore = useAuthStore()
 const updateInterval = ref(null)
@@ -147,6 +158,22 @@ const logoutButtons = ref(null)
 const breadcrumbs = ref(null)
 const userBasicInfo = ref(null)
 const userInfoSection = ref(null)
+
+// Theme preference
+const selectedTheme = ref('')
+const themeMenuOpen = ref(false)
+const themeEmoji = computed(() => ({ '': '🌓', light: '☀️', dark: '🌙' })[selectedTheme.value] || '🌓')
+const themeTitle = computed(() => ({ '': 'Auto (system)', light: 'Light mode', dark: 'Dark mode' })[selectedTheme.value] || 'Theme')
+watch(() => authStore.userInfo?.ctx?.user?.theme, (t) => { selectedTheme.value = t || '' }, { immediate: true })
+function setTheme(theme) {
+  selectedTheme.value = theme
+  themeMenuOpen.value = false
+  // Apply immediately for instant feedback
+  updateThemeFromSession({ user: { theme } }, true)
+  // Save to server in background
+  apiJson('/auth/api/user/theme', { method: 'PATCH', body: { theme } })
+    .catch(e => authStore.showMessage(e.message, 'error'))
+}
 
 // Check if any modal/dialog is open (blocks arrow key navigation)
 const hasActiveModal = computed(() => showNameDialog.value || showRegLink.value)
@@ -352,8 +379,16 @@ const saveName = async () => {
 .logout-note { margin: 0.75rem 0 0; color: var(--color-text-muted); font-size: 0.875rem; }
 .remote-auth-inline { display: flex; flex-direction: column; gap: 0.5rem; }
 .remote-auth-label { display: block; margin: 0; font-size: 0.875rem; color: var(--color-text-muted); font-weight: 500; }
-.remote-auth-description {
-  font-size: 0.75rem;
-  color: var(--color-text-muted);
-}
+.remote-auth-description { font-size: 0.75rem; color: var(--color-text-muted); }
+.theme-toggle { position: absolute; top: var(--layout-padding); right: var(--layout-padding); }
+.theme-btn { background: none; border: none; padding: 0.25rem; font-size: 1.25rem; cursor: pointer; opacity: 0.5; transition: opacity 0.15s; }
+.theme-btn:hover { opacity: 0.8; }
+.theme-menu { position: absolute; top: 100%; right: 0; width: 5rem; height: 4rem; margin-top: 0.25rem; }
+.theme-option { position: absolute; background: none; border: none; font-size: 1.25rem; cursor: pointer; opacity: 0.5; padding: 0.25rem; border-radius: var(--radius-sm); transition: opacity 0.15s, transform 0.15s; }
+.theme-option:hover { opacity: 1; transform: scale(1.2); }
+.theme-option.active { opacity: 1; }
+.theme-option.top { top: 0; left: 50%; transform: translateX(-50%); }
+.theme-option.top:hover { transform: translateX(-50%) scale(1.2); }
+.theme-option.left { bottom: 0; left: 0; }
+.theme-option.right { bottom: 0; right: 0; }
 </style>

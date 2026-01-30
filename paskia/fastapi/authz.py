@@ -80,6 +80,9 @@ async def verify(
             mode="login",
             clear_session=True,
         )
+    # User's theme preference for iframe (only if explicitly set)
+    user_theme = ctx.user.theme if ctx.user.theme else None
+
     # Check max_age requirement if specified
     if max_age:
         try:
@@ -88,6 +91,7 @@ async def verify(
                     status_code=401,
                     detail="Additional authentication required",
                     mode="reauth",
+                    theme=user_theme,
                 )
         except ValueError as e:
             # Invalid max_age format - log but don't fail the request
@@ -104,7 +108,10 @@ async def verify(
             ctx, perm, missing, require_all=(match == permutil.has_all)
         )
         raise AuthException(
-            status_code=403, mode="forbidden", detail="Permission required"
+            status_code=403,
+            mode="forbidden",
+            detail="Permission required",
+            theme=user_theme,
         )
 
     return ctx

@@ -352,6 +352,23 @@ def update_user_display_name(
         _db.users[uuid].display_name = display_name
 
 
+def update_user_theme(
+    uuid: UUID,
+    theme: str,
+    *,
+    ctx: SessionContext | None = None,
+) -> None:
+    """Update user theme preference ('' for auto, 'light', 'dark')."""
+    if isinstance(uuid, str):
+        uuid = UUID(uuid)
+    if uuid not in _db.users:
+        raise ValueError(f"User {uuid} not found")
+    if theme not in ("", "light", "dark"):
+        raise ValueError(f"Invalid theme: {theme}")
+    with _db.transaction("update_user_theme", ctx):
+        _db.users[uuid].theme = theme
+
+
 def update_user_role(
     uuid: UUID,
     role_uuid: UUID,

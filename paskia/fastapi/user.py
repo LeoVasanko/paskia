@@ -57,6 +57,28 @@ async def user_update_display_name(
     return {"status": "ok"}
 
 
+@app.patch("/theme")
+async def user_update_theme(
+    request: Request,
+    payload: dict = Body(...),
+    auth=AUTH_COOKIE,
+):
+    if not auth:
+        raise authz.AuthException(
+            status_code=401, detail="Authentication Required", mode="login"
+        )
+    ctx = db.data().session_ctx(auth, request.headers.get("host"))
+    if not ctx:
+        raise authz.AuthException(
+            status_code=401, detail="Session expired", mode="login"
+        )
+    theme = payload.get("theme", "")
+    if theme not in ("", "light", "dark"):
+        raise HTTPException(status_code=400, detail="Invalid theme")
+    db.update_user_theme(ctx.user.uuid, theme, ctx=ctx)
+    return {"status": "ok"}
+
+
 @app.post("/logout-all")
 async def api_logout_all(request: Request, response: Response, auth=AUTH_COOKIE):
     if not auth:

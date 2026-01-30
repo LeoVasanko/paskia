@@ -1,3 +1,6 @@
+import { initThemeFromCache } from '@/utils/theme'
+initThemeFromCache()
+
 import '@/assets/style.css'
 
 import { createApp } from 'vue'
