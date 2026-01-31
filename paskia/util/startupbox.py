@@ -1,6 +1,7 @@
 """Startup configuration box formatting utilities."""
 
 import os
+import re
 from sys import stderr
 from typing import TYPE_CHECKING
 
@@ -11,12 +12,26 @@ if TYPE_CHECKING:
 
 BOX_WIDTH = 60  # Inner width (excluding box chars)
 
+# ANSI color codes
+RESET = "\033[0m"
+YELLOW = "\033[33m"  # Dark yellow
+BRIGHT_YELLOW = "\033[93m"  # Bright yellow
+BRIGHT_WHITE = "\033[1;37m"  # Bold bright white
+
+
+def _visible_len(text: str) -> int:
+    """Calculate visible length of text, ignoring ANSI escape codes."""
+    return len(re.sub(r"\033\[[0-9;]*m", "", text))
+
 
 def line(text: str = "") -> str:
     """Format a line inside the box with proper padding, truncating if needed."""
-    if len(text) > BOX_WIDTH:
+    visible = _visible_len(text)
+    if visible > BOX_WIDTH:
         text = text[: BOX_WIDTH - 1] + "…"
-    return f"┃ {text:<{BOX_WIDTH}} ┃\n"
+        visible = BOX_WIDTH
+    padding = BOX_WIDTH - visible
+    return f"┃ {text}{' ' * padding} ┃\n"
 
 
 def top() -> str:
@@ -29,12 +44,25 @@ def bottom() -> str:
 
 def print_startup_config(config: "PaskiaConfig") -> None:
     """Print server configuration on startup."""
+    # Key graphic with yellow shading (bright for highlights, dark for body)
+    Y = YELLOW  # Dark yellow for main body
+    B = BRIGHT_YELLOW  # Bright yellow for highlights/edges
+    W = BRIGHT_WHITE  # Bold white for URL
+    R = RESET
+
     lines = [top()]
-    lines.append(line(" ▄▄▄▄▄"))
-    lines.append(line("█     █ Paskia " + __version__))
-    lines.append(line("█     █▄▄▄▄▄▄▄▄▄▄▄▄"))
-    lines.append(line("█     █▀▀▀▀█▀▀█▀▀█    " + config.site_url + config.site_path))
-    lines.append(line(" ▀▀▀▀▀"))
+    lines.append(line(f" {B}▄▄▄▄▄{R}"))
+    lines.append(line(f"{B}█{Y}     {B}█{R} Paskia " + __version__))
+    lines.append(line(f"{B}█{Y}     {B}█{Y}▄▄▄▄▄▄▄▄▄▄▄▄{R}"))
+    lines.append(
+        line(
+            f"{B}█{Y}     {B}█{Y}▀▀▀▀{B}█{Y}▀▀{B}█{Y}▀▀{B}█{R}    {W}"
+            + config.site_url
+            + config.site_path
+            + R
+        )
+    )
+    lines.append(line(f" {Y}▀▀▀▀▀{R}"))
 
     # Format auth host section
     if config.auth_host:
