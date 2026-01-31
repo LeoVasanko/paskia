@@ -26,6 +26,7 @@ _access_logger = logging.getLogger("paskia.access")
 frontend = Frontend(
     Path(__file__).parent.parent / "frontend-build",
     cached=["/auth/assets/"],
+    favicon="/paskia.webp",
 )
 
 
@@ -135,6 +136,11 @@ async def examples_page():
     return FileResponse(index_file, media_type="text/html")
 
 
+# Frontend static files - must be before /{token} catch-all routes
+# (actual routes registered during lifespan after frontend.load())
+frontend.route(app, "/")
+
+
 # Note: this catch-all handler must be the last route defined
 @app.get("/{token}")
 @app.get("/auth/{token}")
@@ -147,7 +153,3 @@ async def token_link(token: str):
         raise HTTPException(status_code=404)
 
     return Response(*await vitedev.read("/int/reset/index.html"))
-
-
-# Final catch-all route for frontend files (keep at end of file)
-frontend.route(app, "/")
