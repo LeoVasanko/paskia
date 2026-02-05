@@ -1,6 +1,6 @@
 # Paskia
 
-![Screenshot](https://git.zi.fi/leovasanko/paskia/raw/main/docs/screenshots/forbidden-light.webp)
+![Login dialog screenshot](https://git.zi.fi/leovasanko/paskia/raw/main/docs/screenshots/login-light.webp)
 
 An easy to install passkey-based authentication service that protects any web application with strong passwordless login.
 
@@ -24,6 +24,9 @@ The API mode is useful for applications that can be customized to run with Paski
 
 Single Sign-On (SSO): Users register once and authenticate across all applications under your domain name (configured rp-id).
 
+![Forbidden dialog, dark mode](https://git.zi.fi/leovasanko/paskia/raw/main/docs/screenshots/forbidden-dark.webp)
+Automatic light/dark mode switching with overrides by user profile and protected app's theme.
+
 ## Quick Start
 
 Install [UV](https://docs.astral.sh/uv/getting-started/installation/) and run:
@@ -44,7 +47,7 @@ uv tool install paskia
 
 ## Configuration
 
-There is no config file. All settings are passed as CLI options:
+All configuration is passed by CLI arguments, of which there are just a few.
 
 ```text
 paskia [options]
