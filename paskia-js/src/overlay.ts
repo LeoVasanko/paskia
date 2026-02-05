@@ -14,8 +14,8 @@ body::before {
   transition: all 0.2s ease-out;
 }
 body.paskia-backdrop::before {
-  -webkit-backdrop-filter: blur(.2rem) brightness(0.5);
-  backdrop-filter: blur(.2rem) brightness(0.5);
+  backdrop-filter: blur(.2rem) brightness(0.7);
+  -webkit-backdrop-filter: blur(.2rem) brightness(0.7);
   visibility: visible;
 }
 body.paskia-backdrop {

@@ -1,28 +1,37 @@
 
+@property --hue {
+  syntax: '<angle>';
+  inherits: true;
+  initial-value: 0.72turn;
+}
+
 :root {
   --font-sans: "Inter", "Inter var", "Segoe UI", system-ui, -apple-system, "Helvetica Neue", sans-serif;
   --font-mono: "DM Mono", "JetBrains Mono", "SFMono-Regular", Menlo, Monaco, Consolas, "Liberation Mono", monospace;
-  --color-canvas: #ffffff;
-  --color-surface: #eff6ff;
-  --color-surface-subtle: #dbeafe;
-  --color-border: #2563eb;
-  --color-border-strong: #1e40af;
-  --color-heading: #1e3a8a;
-  --color-text: #1e293b;
-  --color-text-muted: #475569;
-  --color-link: #1d4ed8;
-  --color-link-hover: #1e40af;
-  --color-accent: #2563eb;
-  --color-accent-strong: #1e40af;
-  --color-accent-contrast: #ffffff;
-  --color-success-text: #166534;
-  --color-success-bg: #dcfce7;
-  --color-error-text: #b91c1c;
-  --color-error-bg: #fee2e2;
-  --color-info-text: #1e40af;
-  --color-info-bg: #dbeafe;
-  --color-danger: #dc2626;
-  --shadow-soft: 0 10px 30px rgba(30, 64, 175, 0.15);
+  --color-canvas: white;
+  --color-surface: oklch(0.97 0.005 var(--hue));
+  --color-surface-subtle: oklch(0.94 0.01 var(--hue));
+  --color-dialog: white;
+  --color-border: oklch(0.8 0.02 var(--hue));
+  --color-border-strong: oklch(0.55 0.15 var(--hue));
+  --color-heading: oklch(0.3 0.05 var(--hue));
+  --color-text: oklch(0.25 0.02 var(--hue));
+  --color-text-muted: oklch(0.5 0.02 var(--hue));
+  --color-link: oklch(0.5 0.18 var(--hue));
+  --color-link-hover: oklch(0.45 0.2 var(--hue));
+  --color-accent: oklch(0.55 0.2 var(--hue));
+  --color-accent-strong: oklch(0.45 0.2 var(--hue));
+  --color-accent-contrast: white;
+  --color-secondary: oklch(0.55 0.05 var(--hue));
+  --color-secondary-strong: oklch(0.45 0.05 var(--hue));
+  --color-success-text: oklch(0.4 0.15 0.4turn);
+  --color-success-bg: oklch(0.95 0.03 0.4turn);
+  --color-error-text: oklch(0.45 0.2 0.07turn);
+  --color-error-bg: oklch(0.95 0.03 0.07turn);
+  --color-info-text: oklch(0.45 0.15 var(--hue));
+  --color-info-bg: oklch(0.95 0.02 var(--hue));
+  --color-danger: oklch(0.55 0.22 0.07turn);
+  --shadow-soft: 0 0 .2rem black;
   --radius-none: 0;
   --radius-sm: 4px;
   --radius-md: 6px;
@@ -39,30 +48,31 @@
   --focus-ring: 0 0 0 2px var(--color-accent);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --color-canvas: #0f172a;
-    --color-surface: #141b2f;
-    --color-surface-subtle: #1b243b;
-    --color-border: #25304a;
-    --color-border-strong: #3d4d6b;
-    --color-heading: #fff;
-    --color-text: #e2e8f0;
-    --color-text-muted: #94a3b8;
-    --color-link: #60a5fa;
-    --color-link-hover: #93c5fd;
-    --color-accent: #60a5fa;
-    --color-accent-strong: #3b82f6;
-    --color-accent-contrast: #0b1120;
-    --color-success-text: #34d399;
-    --color-success-bg: #1a4d2e;
-    --color-error-text: #fca5a5;
-    --color-error-bg: #4a1f1f;
-    --color-info-text: #bae6fd;
-    --color-info-bg: #1e3a5f;
-    --color-danger: #f87171;
-    --shadow-soft: 0 0 0 #000000;
-  }
+:root.dark {
+  --color-canvas: oklch(0.15 0.03 var(--hue));
+  --color-surface: oklch(0.18 0.03 var(--hue));
+  --color-surface-subtle: oklch(0.22 0.03 var(--hue));
+  --color-dialog: oklch(0.22 0.03 var(--hue));
+  --color-border: oklch(0.3 0.03 var(--hue));
+  --color-border-strong: oklch(0.4 0.04 var(--hue));
+  --color-heading: white;
+  --color-text: oklch(0.9 0.01 var(--hue));
+  --color-text-muted: oklch(0.7 0.02 var(--hue));
+  --color-link: oklch(0.7 0.15 var(--hue));
+  --color-link-hover: oklch(0.8 0.12 var(--hue));
+  --color-accent: oklch(0.7 0.15 var(--hue));
+  --color-accent-strong: oklch(0.6 0.18 var(--hue));
+  --color-accent-contrast: oklch(0.12 0.03 var(--hue));
+  --color-secondary: oklch(0.6 0.05 var(--hue));
+  --color-secondary-strong: oklch(0.5 0.05 var(--hue));
+  --color-success-text: oklch(0.75 0.15 0.4turn);
+  --color-success-bg: oklch(0.3 0.08 0.4turn);
+  --color-error-text: oklch(0.8 0.12 0.07turn);
+  --color-error-bg: oklch(0.3 0.08 0.07turn);
+  --color-info-text: oklch(0.8 0.1 var(--hue));
+  --color-info-bg: oklch(0.3 0.05 var(--hue));
+  --color-danger: oklch(0.7 0.18 0.07turn);
+  --shadow-soft: 0 0 0 black;
 }
 
 *,
@@ -229,6 +239,7 @@ button {
   gap: 0.4rem;
   background: var(--color-surface);
   color: var(--color-text);
+  transition: box-shadow var(--transition-base), background var(--transition-base), border-color var(--transition-base);
 }
 
 button:disabled {
@@ -237,43 +248,41 @@ button:disabled {
 }
 
 .btn-primary {
-  background: var(--color-accent);
+  background: linear-gradient(to bottom, oklch(1 0 0 / 0.15), transparent 60%) var(--color-accent);
   color: var(--color-accent-contrast);
   border-color: var(--color-accent);
+}
+
+.btn-primary:hover:not(:disabled),
+.btn-primary:focus-visible {
+  background: linear-gradient(to bottom, oklch(1 0 0 / 0.15), transparent 60%) var(--color-accent-strong);
+  border-color: var(--color-accent-strong);
   box-shadow: var(--shadow-soft);
 }
 
-.btn-primary:hover:not(:disabled) {
-  background: var(--color-accent-strong);
-  border-color: var(--color-accent-strong);
-}
-
 .btn-secondary {
-  background: transparent;
-  color: var(--color-text);
-  border-color: var(--color-border);
-}
-
-.btn-secondary:hover:not(:disabled) {
-  border-color: var(--color-border-strong);
-  background: var(--color-surface-subtle);
-}
-
-.btn-danger {
-  background: var(--color-danger);
+  background: linear-gradient(to bottom, oklch(1 0 0 / 0.15), transparent 60%) var(--color-secondary);
   color: var(--color-accent-contrast);
   border-color: transparent;
 }
 
-.btn-danger:hover:not(:disabled) {
-  filter: brightness(0.92);
+.btn-secondary:hover:not(:disabled),
+.btn-secondary:focus-visible {
+  background: linear-gradient(to bottom, oklch(1 0 0 / 0.15), transparent 60%) var(--color-secondary-strong);
+  box-shadow: var(--shadow-soft);
 }
 
-/* Focus-visible outlines for buttons */
-.btn-primary:focus-visible,
-.btn-secondary:focus-visible,
+.btn-danger {
+  background: linear-gradient(to bottom, oklch(1 0 0 / 0.15), transparent 60%) var(--color-danger);
+  color: var(--color-accent-contrast);
+  border-color: transparent;
+}
+
+.btn-danger:hover:not(:disabled),
 .btn-danger:focus-visible {
-  outline: 1px solid var(-webkit-focus-ring-color);
+  background: linear-gradient(to bottom, oklch(1 0 0 / 0.15), transparent 60%) var(--color-danger);
+  filter: brightness(0.92);
+  box-shadow: var(--shadow-soft);
 }
 
 input[type="text"],
@@ -407,7 +416,7 @@ th {
 
 .device-dialog,
 .modal {
-  background: var(--color-surface);
+  background: var(--color-dialog);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
   width: min(520px, 100%);
@@ -429,7 +438,7 @@ th {
 
 .qr-code {
   padding: 1rem;
-  background: #fff;
+  background: white;
   box-shadow: var(--shadow-soft);
 }
 
@@ -567,7 +576,7 @@ th {
 }
 
 .btn-card-delete { background: transparent; border: none; color: var(--color-danger); padding: 0.35rem 0.5rem; font-size: 1.05rem; line-height: 1; border-radius: var(--radius-sm); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
-.btn-card-delete:hover:not(:disabled) { background: #fee; }
+.btn-card-delete:hover:not(:disabled) { filter: brightness(0.85); }
 .btn-card-delete:disabled { filter: opacity(0.4); cursor: not-allowed; }
 
 
@@ -692,8 +701,8 @@ th {
   width: 100vw;
   height: 100vh;
   background: transparent;
-  backdrop-filter: blur(.1rem) brightness(0.7);
-  -webkit-backdrop-filter: blur(.1rem) brightness(0.7);
+  backdrop-filter: blur(.2rem) brightness(0.7);
+  -webkit-backdrop-filter: blur(.2rem) brightness(0.7);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -711,7 +720,7 @@ th {
   width: 100%;
   max-width: 480px;
   padding: 2rem;
-  background: var(--color-surface);
+  background: var(--color-dialog);
   border-radius: var(--radius-lg);
   box-shadow: 0 20px 60px #1e293b;
   border: 1px solid var(--color-border);
