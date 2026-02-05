@@ -13,18 +13,14 @@ from paskia import globals as _globals
 from paskia.bootstrap import bootstrap_if_needed
 from paskia.config import PaskiaConfig
 from paskia.db.background import flush
-from paskia.fastapi import reset as reset_cmd
 from paskia.util import startupbox
 from paskia.util.hostutil import normalize_origin
 
 DEFAULT_PORT = 4401
 
 EPILOG = """\
-Examples:
-  paskia                           # localhost:4401
-  paskia -l :8080                  # All interfaces, port 8080
-  paskia -l /tmp/paskia.sock       # Unix socket
-  paskia reset [user]              # Generate passkey reset link
+Example:
+  paskia --rp-id example.com --rp-name "Example Corporation" --auth-host auth.example.com
 """
 
 
@@ -63,10 +59,7 @@ def add_common_options(p: argparse.ArgumentParser) -> None:
     )
     p.add_argument(
         "--auth-host",
-        help=(
-            "Dedicated host (optionally with scheme/port) to serve the auth UI at the root,"
-            " e.g. auth.example.com or https://auth.example.com"
-        ),
+        help=("Dedicated authentication site (optionally with scheme/port)"),
     )
 
 
@@ -81,17 +74,6 @@ def main():
         epilog=EPILOG,
     )
 
-    # Subcommand for reset
-    parser.add_argument(
-        "command",
-        nargs="?",
-        help="Command: 'reset' for credential reset, or omit to run server",
-    )
-    parser.add_argument(
-        "reset_query",
-        nargs="?",
-        help="For 'reset' command: user UUID or substring of display name",
-    )
     parser.add_argument(
         "-l",
         "--listen",
@@ -105,16 +87,8 @@ def main():
 
     args = parser.parse_args()
 
-    # Detect "reset" subcommand
-    is_reset = args.command == "reset"
-
-    if is_reset:
-        endpoints = []
-    else:
-        if args.command is not None:
-            raise SystemExit(f"Unknown command: {args.command}")
-        # Parse endpoint using fastapi_vue.hostutil
-        endpoints = parse_endpoint(args.listen, DEFAULT_PORT)
+    # Parse endpoint using fastapi_vue.hostutil
+    endpoints = parse_endpoint(args.listen, DEFAULT_PORT)
 
     # Extract host/port/uds from first endpoint for config display and site_url
     ep = endpoints[0] if endpoints else {}
@@ -217,10 +191,6 @@ def main():
         )
         await bootstrap_if_needed()
         await flush()
-
-        if is_reset:
-            exit_code = reset_cmd.run(args.reset_query)
-            raise SystemExit(exit_code)
 
         if len(endpoints) > 1:
             async with asyncio.TaskGroup() as tg:
