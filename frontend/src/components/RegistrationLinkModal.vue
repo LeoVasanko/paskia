@@ -3,14 +3,14 @@
     <div class="device-dialog" role="dialog" aria-modal="true" aria-labelledby="regTitle">
       <div class="reg-header-row">
         <h2 id="regTitle" class="reg-title">
-          📱 <span v-if="userName">Registration for {{ userName }}</span><span v-else>Add Another Device</span>
+          📱 <span v-if="userName">{{ tokenType === 'account recovery' ? 'Recovery' : 'Registration' }} for {{ userName }}</span><span v-else>Add Another Device</span>
         </h2>
         <button class="icon-btn" @click="$emit('close')" aria-label="Close" tabindex="-1">✕</button>
       </div>
 
       <div class="device-link-section">
         <p class="reg-help">
-          Scan this QR code on the new device, or copy the link and open it there.
+          {{ helpText }}
         </p>
 
         <QRCodeDisplay
@@ -33,7 +33,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted, nextTick } from 'vue'
+import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import QRCodeDisplay from '@/components/QRCodeDisplay.vue'
 import { apiJson } from 'paskia'
 import { formatDate } from '@/utils/helpers'
@@ -51,9 +51,23 @@ const authStore = useAuthStore()
 const dialog = ref(null)
 const linkUrl = ref(null)
 const expiresAt = ref(null)
+const tokenType = ref(null)
 const actionsRow = ref(null)
 // Store the element that had focus before modal opened
 const previouslyFocusedElement = ref(null)
+
+// Determine if this is an admin action for another user
+const isAdminAction = computed(() => !!props.userName)
+
+// Compute the help text based on token type and context
+const helpText = computed(() => {
+  if (!isAdminAction.value) {
+    // User adding their own device
+    return 'Scan this QR code on the new device, or copy the link and open it there.'
+  }
+  // Admin action for another user
+  return `Send this link to ${props.userName}, or have them scan the QR code.`
+})
 
 async function generateLink() {
   try {
@@ -61,6 +75,7 @@ async function generateLink() {
     if (data.url) {
       linkUrl.value = data.url
       expiresAt.value = data.expires ? new Date(data.expires) : null
+      tokenType.value = data.token_type || null
 
       // Show the dialog as modal
       await nextTick()
