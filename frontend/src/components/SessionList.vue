@@ -30,7 +30,7 @@
                 @keydown="handleItemKeydown($event, session)"
               >
                 <div class="item-top">
-                  <h4 class="item-title">{{ session.user_agent }}</h4>
+                  <h4 class="item-title">{{ session.user_agent || '—' }}</h4>
                   <div class="item-actions">
                     <span v-if="session.is_current && !hoveredIp && !hoveredCredentialUuid" class="badge badge-current">Current</span>
                     <span v-else-if="hoveredSession?.id === session.id" class="badge badge-current">Selected</span>

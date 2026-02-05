@@ -53,7 +53,7 @@
       <!-- Device info display (shown when 3 words match a request) -->
       <div v-else-if="deviceInfo" class="device-info">
         <p class="device-permit-text">Permit {{ deviceInfo.action === 'register' ? 'registration' : 'login' }} to <strong>{{ deviceInfo.host }}</strong></p>
-        <p class="device-meta">{{ deviceInfo.user_agent_pretty }}</p>
+        <p class="device-meta">{{ deviceInfo.user_agent_pretty || '—' }}</p>
 
         <p v-if="error" class="error-message" style="margin-top: 0.5rem;">{{ error }}</p>
 
