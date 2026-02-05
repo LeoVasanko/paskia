@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import secrets
 from datetime import UTC, datetime
 from uuid import UUID
@@ -9,6 +10,7 @@ import uuid7
 
 from paskia import db
 from paskia.util.hostutil import normalize_host
+from paskia.util.passphrase import generate as generate_passphrase
 
 # Sentinel for uuid fields before they are set by create() or DB post init
 _UUID_UNSET = UUID(int=0)
@@ -373,10 +375,6 @@ class ResetToken(msgspec.Struct, dict=True):
             Tuple of (token, passphrase) where passphrase is the human-readable
             code to give to the user.
         """
-        import hashlib
-
-        from paskia.util.passphrase import generate as generate_passphrase
-
         if passphrase is None:
             passphrase = generate_passphrase()
         key = hashlib.sha512(passphrase.encode()).digest()[:9]

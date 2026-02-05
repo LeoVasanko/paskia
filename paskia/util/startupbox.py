@@ -45,24 +45,24 @@ def bottom() -> str:
 def print_startup_config(config: "PaskiaConfig") -> None:
     """Print server configuration on startup."""
     # Key graphic with yellow shading (bright for highlights, dark for body)
-    Y = YELLOW  # Dark yellow for main body
-    B = BRIGHT_YELLOW  # Bright yellow for highlights/edges
-    W = BRIGHT_WHITE  # Bold white for URL
-    R = RESET
+    y = YELLOW  # Dark yellow for main body
+    b = BRIGHT_YELLOW  # Bright yellow for highlights/edges
+    w = BRIGHT_WHITE  # Bold white for URL
+    r = RESET
 
     lines = [top()]
-    lines.append(line(f" {B}▄▄▄▄▄{R}"))
-    lines.append(line(f"{B}█{Y}     {B}█{R} Paskia " + __version__))
-    lines.append(line(f"{B}█{Y}     {B}█{Y}▄▄▄▄▄▄▄▄▄▄▄▄{R}"))
+    lines.append(line(f" {b}▄▄▄▄▄{r}"))
+    lines.append(line(f"{b}█{y}     {b}█{r} Paskia " + __version__))
+    lines.append(line(f"{b}█{y}     {b}█{y}▄▄▄▄▄▄▄▄▄▄▄▄{r}"))
     lines.append(
         line(
-            f"{B}█{Y}     {B}█{Y}▀▀▀▀{B}█{Y}▀▀{B}█{Y}▀▀{B}█{R}    {W}"
+            f"{b}█{y}     {b}█{y}▀▀▀▀{b}█{y}▀▀{b}█{y}▀▀{b}█{r}    {w}"
             + config.site_url
             + config.site_path
-            + R
+            + r
         )
     )
-    lines.append(line(f" {Y}▀▀▀▀▀{R}"))
+    lines.append(line(f" {y}▀▀▀▀▀{r}"))
 
     # Format auth host section
     if config.auth_host:
