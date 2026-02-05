@@ -63,7 +63,6 @@ from paskia.db.operations import (
     update_session,
     update_user_display_name,
     update_user_role,
-    update_user_role_in_organization,
     update_user_theme,
 )
 from paskia.db.structs import (
@@ -147,6 +146,5 @@ __all__ = [
     "update_session",
     "update_user_display_name",
     "update_user_role",
-    "update_user_role_in_organization",
     "update_user_theme",
 ]

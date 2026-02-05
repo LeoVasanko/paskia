@@ -17,7 +17,6 @@ from paskia.fastapi.session import AUTH_COOKIE
 from paskia.globals import passkey
 from paskia.util import (
     hostutil,
-    passphrase,
     permutil,
     querysafe,
     vitedev,
@@ -103,6 +102,7 @@ async def admin_list_orgs(request: Request, auth=AUTH_COOKIE):
                     "uuid": u.uuid,
                     "display_name": u.display_name,
                     "role": role_name,
+                    "role_uuid": u.role_uuid,
                     "visits": u.visits,
                     "last_seen": u.last_seen,
                 }
@@ -281,28 +281,27 @@ async def admin_create_role(
     return {"uuid": str(role.uuid)}
 
 
-@app.patch("/orgs/{org_uuid}/roles/{role_uuid}")
+@app.patch("/roles/{role_uuid}")
 async def admin_update_role_name(
-    org_uuid: UUID,
     role_uuid: UUID,
     request: Request,
     payload: dict = Body(...),
     auth=AUTH_COOKIE,
 ):
     """Update role display name only."""
+    role = db.data().roles.get(role_uuid)
+    if not role:
+        raise HTTPException(status_code=404, detail="Role not found")
     ctx = await authz.verify(
         auth,
         ["auth:admin", "auth:org:admin"],
         match=permutil.has_any,
         host=request.headers.get("host"),
     )
-    if not can_manage_org(ctx, org_uuid):
+    if not can_manage_org(ctx, role.org_uuid):
         raise authz.AuthException(
             status_code=403, detail="Insufficient permissions", mode="forbidden"
         )
-    role = db.data().roles.get(role_uuid)
-    if not role or role.org_uuid != org_uuid:
-        raise HTTPException(status_code=404, detail="Role not found in organization")
 
     display_name = payload.get("display_name")
     if not display_name:
@@ -312,68 +311,64 @@ async def admin_update_role_name(
     return {"status": "ok"}
 
 
-@app.post("/orgs/{org_uuid}/roles/{role_uuid}/permissions/{permission_uuid}")
+@app.post("/roles/{role_uuid}/permissions/{permission_uuid}")
 async def admin_add_role_permission(
-    org_uuid: UUID,
     role_uuid: UUID,
     permission_uuid: UUID,
     request: Request,
     auth=AUTH_COOKIE,
 ):
     """Add a permission to a role (intent-based API)."""
+    role = db.data().roles.get(role_uuid)
+    if not role:
+        raise HTTPException(status_code=404, detail="Role not found")
     ctx = await authz.verify(
         auth,
         ["auth:admin", "auth:org:admin"],
         match=permutil.has_any,
         host=request.headers.get("host"),
     )
-    if not can_manage_org(ctx, org_uuid):
+    if not can_manage_org(ctx, role.org_uuid):
         raise authz.AuthException(
             status_code=403, detail="Insufficient permissions", mode="forbidden"
         )
-
-    role = db.data().roles.get(role_uuid)
-    if not role or role.org_uuid != org_uuid:
-        raise HTTPException(status_code=404, detail="Role not found in organization")
 
     # Verify permission exists and org can grant it
     perm = db.data().permissions.get(permission_uuid)
     if not perm:
         raise HTTPException(status_code=404, detail="Permission not found")
-    if org_uuid not in perm.orgs:
+    if role.org_uuid not in perm.orgs:
         raise ValueError("Permission not grantable by organization")
 
     db.add_permission_to_role(role_uuid, permission_uuid, ctx=ctx)
     return {"status": "ok"}
 
 
-@app.delete("/orgs/{org_uuid}/roles/{role_uuid}/permissions/{permission_uuid}")
+@app.delete("/roles/{role_uuid}/permissions/{permission_uuid}")
 async def admin_remove_role_permission(
-    org_uuid: UUID,
     role_uuid: UUID,
     permission_uuid: UUID,
     request: Request,
     auth=AUTH_COOKIE,
 ):
     """Remove a permission from a role (intent-based API)."""
+    role = db.data().roles.get(role_uuid)
+    if not role:
+        raise HTTPException(status_code=404, detail="Role not found")
     ctx = await authz.verify(
         auth,
         ["auth:admin", "auth:org:admin"],
         match=permutil.has_any,
         host=request.headers.get("host"),
     )
-    if not can_manage_org(ctx, org_uuid):
+    if not can_manage_org(ctx, role.org_uuid):
         raise authz.AuthException(
             status_code=403, detail="Insufficient permissions", mode="forbidden"
         )
 
-    role = db.data().roles.get(role_uuid)
-    if not role or role.org_uuid != org_uuid:
-        raise HTTPException(status_code=404, detail="Role not found in organization")
-
     # Sanity check: prevent admin from removing their own access
     perm = db.data().permissions.get(permission_uuid)
-    if ctx.org.uuid == org_uuid and ctx.role.uuid == role_uuid:
+    if ctx.org.uuid == role.org_uuid and ctx.role.uuid == role_uuid:
         if perm and perm.scope in ["auth:admin", "auth:org:admin"]:
             # Check if removing this permission would leave no admin access
             remaining_perms = role.permission_set - {permission_uuid}
@@ -390,13 +385,15 @@ async def admin_remove_role_permission(
     return {"status": "ok"}
 
 
-@app.delete("/orgs/{org_uuid}/roles/{role_uuid}")
+@app.delete("/roles/{role_uuid}")
 async def admin_delete_role(
-    org_uuid: UUID,
     role_uuid: UUID,
     request: Request,
     auth=AUTH_COOKIE,
 ):
+    role = db.data().roles.get(role_uuid)
+    if not role:
+        raise HTTPException(status_code=404, detail="Role not found")
     ctx = await authz.verify(
         auth,
         ["auth:admin", "auth:org:admin"],
@@ -404,13 +401,10 @@ async def admin_delete_role(
         host=request.headers.get("host"),
         max_age="5m",
     )
-    if not can_manage_org(ctx, org_uuid):
+    if not can_manage_org(ctx, role.org_uuid):
         raise authz.AuthException(
             status_code=403, detail="Insufficient permissions", mode="forbidden"
         )
-    role = db.data().roles.get(role_uuid)
-    if not role or role.org_uuid != org_uuid:
-        raise HTTPException(status_code=404, detail="Role not found in organization")
 
     # Sanity check: prevent admin from deleting their own role
     if ctx.role.uuid == role_uuid:
@@ -460,60 +454,58 @@ async def admin_create_user(
     return {"uuid": str(user.uuid)}
 
 
-@app.patch("/orgs/{org_uuid}/users/{user_uuid}/role")
+@app.patch("/users/{user_uuid}/role")
 async def admin_update_user_role(
-    org_uuid: UUID,
     user_uuid: UUID,
     request: Request,
     payload: dict = Body(...),
     auth=AUTH_COOKIE,
 ):
+    try:
+        user_org, _current_role = db.get_user_organization(user_uuid)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="User not found")
     ctx = await authz.verify(
         auth,
         ["auth:admin", "auth:org:admin"],
         match=permutil.has_any,
         host=request.headers.get("host"),
     )
-    if not can_manage_org(ctx, org_uuid):
+    if not can_manage_org(ctx, user_org.uuid):
         raise authz.AuthException(
             status_code=403, detail="Insufficient permissions", mode="forbidden"
         )
-    new_role = payload.get("role")
-    if not new_role:
-        raise ValueError("role is required")
+    role_uuid_str = payload.get("role_uuid")
+    if not role_uuid_str:
+        raise ValueError("role_uuid is required")
     try:
-        user_org, _current_role = db.get_user_organization(user_uuid)
-    except ValueError:
-        raise ValueError("User not found")
-    if user_org.uuid != org_uuid:
-        raise ValueError("User does not belong to this organization")
-    roles = user_org.roles
-    if not any(r.display_name == new_role for r in roles):
+        new_role_uuid = UUID(role_uuid_str)
+    except (ValueError, TypeError):
+        raise ValueError("Invalid role UUID")
+    new_role = db.data().roles.get(new_role_uuid)
+    if not new_role or new_role.org_uuid != user_org.uuid:
         raise ValueError("Role not found in organization")
 
     # Sanity check: prevent admin from removing their own access
     if ctx.user.uuid == user_uuid:
-        new_role_obj = next((r for r in roles if r.display_name == new_role), None)
-        if new_role_obj:  # pragma: no branch - always true, role validated above
-            # Check if any permission in the new role is an admin permission
-            has_admin_access = False
-            for perm_uuid in new_role_obj.permissions:
-                perm = db.data().permissions.get(perm_uuid)
-                if perm and perm.scope in ["auth:admin", "auth:org:admin"]:
-                    has_admin_access = True
-                    break
-            if not has_admin_access:
-                raise ValueError(
-                    "Cannot change your own role to one without admin permissions"
-                )
+        # Check if any permission in the new role is an admin permission
+        has_admin_access = False
+        for perm_uuid in new_role.permissions:
+            perm = db.data().permissions.get(perm_uuid)
+            if perm and perm.scope in ["auth:admin", "auth:org:admin"]:
+                has_admin_access = True
+                break
+        if not has_admin_access:
+            raise ValueError(
+                "Cannot change your own role to one without admin permissions"
+            )
 
-    db.update_user_role_in_organization(user_uuid, new_role, ctx=ctx)
+    db.update_user_role(user_uuid, new_role_uuid, ctx=ctx)
     return {"status": "ok"}
 
 
-@app.post("/orgs/{org_uuid}/users/{user_uuid}/create-link")
+@app.post("/users/{user_uuid}/create-link")
 async def admin_create_user_registration_link(
-    org_uuid: UUID,
     user_uuid: UUID,
     request: Request,
     auth=AUTH_COOKIE,
@@ -522,8 +514,6 @@ async def admin_create_user_registration_link(
         user_org, _role_name = db.get_user_organization(user_uuid)
     except ValueError:
         raise HTTPException(status_code=404, detail="User not found")
-    if user_org.uuid != org_uuid:
-        raise HTTPException(status_code=404, detail="User not found in organization")
     ctx = await authz.verify(
         auth,
         ["auth:admin", "auth:org:admin"],
@@ -531,7 +521,7 @@ async def admin_create_user_registration_link(
         host=request.headers.get("host"),
         max_age="5m",
     )
-    if not can_manage_org(ctx, org_uuid):
+    if not can_manage_org(ctx, user_org.uuid):
         raise authz.AuthException(
             status_code=403, detail="Insufficient permissions", mode="forbidden"
         )
@@ -540,11 +530,9 @@ async def admin_create_user_registration_link(
     has_credentials = db.get_user_credential_ids(user_uuid)
     token_type = "user registration" if not has_credentials else "account recovery"
 
-    token = passphrase.generate()
     expiry = reset_expires()
-    db.create_reset_token(
+    token = db.create_reset_token(
         user_uuid=user_uuid,
-        passphrase=token,
         expiry=expiry,
         token_type=token_type,
         ctx=ctx,
@@ -556,9 +544,8 @@ async def admin_create_user_registration_link(
     }
 
 
-@app.get("/orgs/{org_uuid}/users/{user_uuid}")
+@app.get("/users/{user_uuid}")
 async def admin_get_user_detail(
-    org_uuid: UUID,
     user_uuid: UUID,
     request: Request,
     auth=AUTH_COOKIE,
@@ -567,15 +554,13 @@ async def admin_get_user_detail(
         user_org, role_name = db.get_user_organization(user_uuid)
     except ValueError:
         raise HTTPException(status_code=404, detail="User not found")
-    if user_org.uuid != org_uuid:
-        raise HTTPException(status_code=404, detail="User not found in organization")
     ctx = await authz.verify(
         auth,
         ["auth:admin", "auth:org:admin"],
         match=permutil.has_any,
         host=request.headers.get("host"),
     )
-    if not can_manage_org(ctx, org_uuid):
+    if not can_manage_org(ctx, user_org.uuid):
         raise authz.AuthException(
             status_code=403, detail="Insufficient permissions", mode="forbidden"
         )
@@ -615,9 +600,8 @@ async def admin_get_user_detail(
     )
 
 
-@app.patch("/orgs/{org_uuid}/users/{user_uuid}/display-name")
+@app.patch("/users/{user_uuid}/display-name")
 async def admin_update_user_display_name(
-    org_uuid: UUID,
     user_uuid: UUID,
     request: Request,
     payload: dict = Body(...),
@@ -627,15 +611,13 @@ async def admin_update_user_display_name(
         user_org, _role_name = db.get_user_organization(user_uuid)
     except ValueError:
         raise HTTPException(status_code=404, detail="User not found")
-    if user_org.uuid != org_uuid:
-        raise HTTPException(status_code=404, detail="User not found in organization")
     ctx = await authz.verify(
         auth,
         ["auth:admin", "auth:org:admin"],
         match=permutil.has_any,
         host=request.headers.get("host"),
     )
-    if not can_manage_org(ctx, org_uuid):
+    if not can_manage_org(ctx, user_org.uuid):
         raise authz.AuthException(
             status_code=403, detail="Insufficient permissions", mode="forbidden"
         )
@@ -648,9 +630,37 @@ async def admin_update_user_display_name(
     return {"status": "ok"}
 
 
-@app.delete("/orgs/{org_uuid}/users/{user_uuid}/credentials/{credential_uuid}")
+@app.delete("/users/{user_uuid}")
+async def admin_delete_user(
+    user_uuid: UUID,
+    request: Request,
+    auth=AUTH_COOKIE,
+):
+    """Delete a user and all their credentials/sessions."""
+    try:
+        user_org, _role_name = db.get_user_organization(user_uuid)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="User not found")
+    ctx = await authz.verify(
+        auth,
+        ["auth:admin", "auth:org:admin"],
+        match=permutil.has_any,
+        host=request.headers.get("host"),
+        max_age="5m",
+    )
+    if not can_manage_org(ctx, user_org.uuid):
+        raise authz.AuthException(
+            status_code=403, detail="Insufficient permissions", mode="forbidden"
+        )
+    # Prevent admin from deleting themselves
+    if ctx.user.uuid == user_uuid:
+        raise ValueError("Cannot delete your own account")
+    db.delete_user(user_uuid, ctx=ctx)
+    return {"status": "ok"}
+
+
+@app.delete("/users/{user_uuid}/credentials/{credential_uuid}")
 async def admin_delete_user_credential(
-    org_uuid: UUID,
     user_uuid: UUID,
     credential_uuid: UUID,
     request: Request,
@@ -660,8 +670,6 @@ async def admin_delete_user_credential(
         user_org, _role_name = db.get_user_organization(user_uuid)
     except ValueError:
         raise HTTPException(status_code=404, detail="User not found")
-    if user_org.uuid != org_uuid:
-        raise HTTPException(status_code=404, detail="User not found in organization")
     ctx = await authz.verify(
         auth,
         ["auth:admin", "auth:org:admin"],
@@ -669,7 +677,7 @@ async def admin_delete_user_credential(
         host=request.headers.get("host"),
         max_age="5m",
     )
-    if not can_manage_org(ctx, org_uuid):
+    if not can_manage_org(ctx, user_org.uuid):
         raise authz.AuthException(
             status_code=403, detail="Insufficient permissions", mode="forbidden"
         )
@@ -677,9 +685,8 @@ async def admin_delete_user_credential(
     return {"status": "ok"}
 
 
-@app.delete("/orgs/{org_uuid}/users/{user_uuid}/sessions/{session_id}")
+@app.delete("/users/{user_uuid}/sessions/{session_id}")
 async def admin_delete_user_session(
-    org_uuid: UUID,
     user_uuid: UUID,
     session_id: str,
     request: Request,
@@ -689,15 +696,13 @@ async def admin_delete_user_session(
         user_org, _role_name = db.get_user_organization(user_uuid)
     except ValueError:
         raise HTTPException(status_code=404, detail="User not found")
-    if user_org.uuid != org_uuid:
-        raise HTTPException(status_code=404, detail="User not found in organization")
     ctx = await authz.verify(
         auth,
         ["auth:admin", "auth:org:admin"],
         match=permutil.has_any,
         host=request.headers.get("host"),
     )
-    if not can_manage_org(ctx, org_uuid):
+    if not can_manage_org(ctx, user_org.uuid):
         raise authz.AuthException(
             status_code=403, detail="Insufficient permissions", mode="forbidden"
         )

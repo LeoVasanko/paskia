@@ -353,6 +353,42 @@ class ResetToken(msgspec.Struct, dict=True):
         """Get the User object for this reset token."""
         return db.data().users[self.user_uuid]
 
+    @classmethod
+    def create(
+        cls,
+        user: UUID | User,
+        expiry: datetime,
+        token_type: str,
+        passphrase: str | None = None,
+    ) -> tuple[ResetToken, str]:
+        """Create a new ResetToken with auto-generated or provided passphrase.
+
+        Args:
+            user: User UUID or User object
+            expiry: Token expiration datetime
+            token_type: Type of token (e.g., "device addition", "account recovery")
+            passphrase: Optional passphrase to use (auto-generated if not provided)
+
+        Returns:
+            Tuple of (token, passphrase) where passphrase is the human-readable
+            code to give to the user.
+        """
+        import hashlib
+
+        from paskia.util.passphrase import generate as generate_passphrase
+
+        if passphrase is None:
+            passphrase = generate_passphrase()
+        key = hashlib.sha512(passphrase.encode()).digest()[:9]
+        user_uuid = user if isinstance(user, UUID) else user.uuid
+        token = cls(
+            user_uuid=user_uuid,
+            expiry=expiry,
+            token_type=token_type,
+        )
+        token.key = key
+        return token, passphrase
+
 
 class SessionContext(msgspec.Struct):
     session: Session

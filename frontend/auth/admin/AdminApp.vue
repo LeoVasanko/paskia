@@ -239,12 +239,44 @@ function deleteOrg(org) {
 
 function createUserInRole(org, role) { openDialog('user-create', { org, role }) }
 
-async function moveUserToRole(org, user, targetRoleDisplayName) {
-  if (user.role === targetRoleDisplayName) return
+function deleteUser(user, userDetail) {
+  const credentialCount = userDetail?.credentials?.length || 0
+  const userUuid = user.uuid
+  const userName = user.display_name
+  const orgUuid = user.org  // org UUID is stored in selectedUser
+
+  if (credentialCount === 0) {
+    // No credentials, safe to delete directly
+    performUserDeletion(userUuid, userName, orgUuid)
+    return
+  }
+
+  const passkeys = credentialCount === 1 ? '1 passkey' : `${credentialCount} passkeys`
+  openDialog('confirm', {
+    message: `Delete user "${userName}" with ${passkeys}? This action cannot be undone.`,
+    action: async () => {
+      await performUserDeletion(userUuid, userName, orgUuid)
+    }
+  })
+}
+
+async function performUserDeletion(userUuid, userName, orgUuid) {
   try {
-    await apiJson(`/auth/api/admin/orgs/${org.uuid}/users/${user.uuid}/role`, {
+    await apiJson(`/auth/api/admin/users/${userUuid}`, { method: 'DELETE' })
+    authStore.showMessage(`User "${userName}" deleted.`, 'success', 2500)
+    await loadOrgs()
+    window.location.hash = `#org/${orgUuid}`
+  } catch (e) {
+    authStore.showMessage(e.message || 'Failed to delete user', 'error')
+  }
+}
+
+async function moveUserToRole(user, targetRoleUuid) {
+  if (user.role_uuid === targetRoleUuid) return
+  try {
+    await apiJson(`/auth/api/admin/users/${user.uuid}/role`, {
       method: 'PATCH',
-      body: { role: targetRoleDisplayName }
+      body: { role_uuid: targetRoleUuid }
     })
     await loadOrgs()
   } catch (e) {
@@ -268,7 +300,7 @@ function onRoleDrop(e, org, role) {
     const data = JSON.parse(e.dataTransfer.getData('text/plain'))
     if (data.org !== org.uuid) return // only within same org
     const user = org.roles.flatMap(r => r.users).find(u => u.uuid === data.user_uuid)
-    if (user) moveUserToRole(org, user, role.display_name)
+    if (user) moveUserToRole(user, role.uuid)
   } catch (_) { /* ignore */ }
 }
 
@@ -279,7 +311,7 @@ function updateRole(role) { openDialog('role-update', { role, name: role.display
 
 function deleteRole(role) {
   // UI only allows deleting empty roles, so no confirmation needed
-  apiJson(`/auth/api/admin/orgs/${role.org}/roles/${role.uuid}`, { method: 'DELETE' })
+  apiJson(`/auth/api/admin/roles/${role.uuid}`, { method: 'DELETE' })
     .then(() => {
       authStore.showMessage(`Role "${role.display_name}" deleted.`, 'success', 2500)
       loadOrgs()
@@ -299,7 +331,7 @@ async function toggleRolePermission(role, pid, checked) {
 
   try {
     const method = checked ? 'POST' : 'DELETE'
-    await apiJson(`/auth/api/admin/orgs/${role.org}/roles/${role.uuid}/permissions/${pid}`, {
+    await apiJson(`/auth/api/admin/roles/${role.uuid}/permissions/${pid}`, {
       method
     })
     await loadOrgs()
@@ -406,7 +438,7 @@ const breadcrumbEntries = computed(() => {
 watch(selectedUser, async (u) => {
   if (!u) { userDetail.value = null; return }
   try {
-    userDetail.value = await apiJson(`/auth/api/admin/orgs/${u.org}/users/${u.uuid}`)
+    userDetail.value = await apiJson(`/auth/api/admin/users/${u.uuid}`)
   } catch (e) {
     userDetail.value = { error: e.message }
   }
@@ -542,7 +574,7 @@ async function refreshUserDetail() {
   await loadOrgs()
   if (selectedUser.value) {
     try {
-      userDetail.value = await apiJson(`/auth/api/admin/orgs/${selectedUser.value.org}/users/${selectedUser.value.uuid}`)
+      userDetail.value = await apiJson(`/auth/api/admin/users/${selectedUser.value.uuid}`)
     } catch (e) { authStore.showMessage(e.message || 'Failed to reload user', 'error') }
   }
 }
@@ -604,7 +636,7 @@ async function submitDialog() {
 
       // Close dialog immediately, then perform async operation
       closeDialog()
-      apiJson(`/auth/api/admin/orgs/${role.org}/roles/${role.uuid}`, { method: 'PATCH', body: { display_name: name } })
+      apiJson(`/auth/api/admin/roles/${role.uuid}`, { method: 'PATCH', body: { display_name: name } })
         .then(() => {
           authStore.showMessage(`Role renamed to "${name}".`, 'success', 2500)
           loadOrgs()
@@ -632,7 +664,7 @@ async function submitDialog() {
 
       // Close dialog immediately, then perform async operation
       closeDialog()
-      apiJson(`/auth/api/admin/orgs/${user.org}/users/${user.uuid}/display-name`, { method: 'PATCH', body: { display_name: name } })
+      apiJson(`/auth/api/admin/users/${user.uuid}/display-name`, { method: 'PATCH', body: { display_name: name } })
         .then(() => {
           authStore.showMessage(`User renamed to "${name}".`, 'success', 2500)
           onUserNameSaved()
@@ -771,6 +803,7 @@ async function submitDialog() {
                   @edit-user-name="editUserName"
                   @close-reg-modal="showRegModal = false"
                   @navigate-out="handlePanelNavigateOut"
+                  @delete-user="deleteUser(selectedUser, userDetail)"
                 />
                 <AdminOrgDetail
                   v-else-if="selectedOrg"

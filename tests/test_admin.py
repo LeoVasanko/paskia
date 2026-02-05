@@ -604,7 +604,7 @@ class TestAdminRoles:
     ):
         """Admin should be able to update a role."""
         response = await client.patch(
-            f"/auth/api/admin/orgs/{test_org.uuid}/roles/{test_role.uuid}",
+            f"/auth/api/admin/roles/{test_role.uuid}",
             json={"display_name": "Updated Role Name"},
             headers={**auth_headers(session_token), "Host": "localhost:4401"},
         )
@@ -614,17 +614,19 @@ class TestAdminRoles:
 
     @pytest.mark.asyncio
     async def test_update_role_wrong_org(
-        self, client: httpx.AsyncClient, session_token: str, test_org, second_org_role
+        self,
+        client: httpx.AsyncClient,
+        org_admin_session_token: str,
+        test_org,
+        second_org_role,
     ):
-        """Cannot update role from another org."""
+        """Org admin cannot update role from another org."""
         response = await client.patch(
-            f"/auth/api/admin/orgs/{test_org.uuid}/roles/{second_org_role.uuid}",
+            f"/auth/api/admin/roles/{second_org_role.uuid}",
             json={"display_name": "Try Update Wrong Org"},
-            headers={**auth_headers(session_token), "Host": "localhost:4401"},
+            headers={**auth_headers(org_admin_session_token), "Host": "localhost:4401"},
         )
-        assert response.status_code == 404
-        data = response.json()
-        assert "Role not found" in data["detail"]
+        assert response.status_code == 403
 
     @pytest.mark.asyncio
     async def test_update_role_add_grantable_permission(
@@ -637,7 +639,7 @@ class TestAdminRoles:
     ):
         """Admin should be able to add grantable permissions to role."""
         response = await client.post(
-            f"/auth/api/admin/orgs/{test_org.uuid}/roles/{user_role.uuid}/permissions/{grantable_permission.uuid}",
+            f"/auth/api/admin/roles/{user_role.uuid}/permissions/{grantable_permission.uuid}",
             headers={**auth_headers(session_token), "Host": "localhost:4401"},
         )
         assert response.status_code == 200
@@ -659,7 +661,7 @@ class TestAdminRoles:
         create_permission(perm)
 
         response = await client.post(
-            f"/auth/api/admin/orgs/{test_org.uuid}/roles/{user_role.uuid}/permissions/{perm.uuid}",
+            f"/auth/api/admin/roles/{user_role.uuid}/permissions/{perm.uuid}",
             headers={**auth_headers(session_token), "Host": "localhost:4401"},
         )
         assert response.status_code == 400
@@ -680,14 +682,14 @@ class TestAdminRoles:
         # test_role has both auth:admin and auth:org:admin
         # Remove auth:admin first (should succeed since org:admin remains)
         response = await client.delete(
-            f"/auth/api/admin/orgs/{test_org.uuid}/roles/{test_role.uuid}/permissions/{admin_permission.uuid}",
+            f"/auth/api/admin/roles/{test_role.uuid}/permissions/{admin_permission.uuid}",
             headers={**auth_headers(session_token), "Host": "localhost:4401"},
         )
         assert response.status_code == 200
 
         # Now try to remove auth:org:admin (should fail - would leave no admin access)
         response = await client.delete(
-            f"/auth/api/admin/orgs/{test_org.uuid}/roles/{test_role.uuid}/permissions/{org_admin_permission.uuid}",
+            f"/auth/api/admin/roles/{test_role.uuid}/permissions/{org_admin_permission.uuid}",
             headers={**auth_headers(session_token), "Host": "localhost:4401"},
         )
         assert response.status_code == 400
@@ -700,7 +702,7 @@ class TestAdminRoles:
     ):
         """Admin should be able to delete a role."""
         response = await client.delete(
-            f"/auth/api/admin/orgs/{test_org.uuid}/roles/{user_role.uuid}",
+            f"/auth/api/admin/roles/{user_role.uuid}",
             headers={**auth_headers(session_token), "Host": "localhost:4401"},
         )
         assert response.status_code == 200
@@ -709,16 +711,18 @@ class TestAdminRoles:
 
     @pytest.mark.asyncio
     async def test_delete_role_wrong_org(
-        self, client: httpx.AsyncClient, session_token: str, test_org, second_org_role
+        self,
+        client: httpx.AsyncClient,
+        org_admin_session_token: str,
+        test_org,
+        second_org_role,
     ):
-        """Cannot delete role from another org."""
+        """Org admin cannot delete role from another org."""
         response = await client.delete(
-            f"/auth/api/admin/orgs/{test_org.uuid}/roles/{second_org_role.uuid}",
-            headers={**auth_headers(session_token), "Host": "localhost:4401"},
+            f"/auth/api/admin/roles/{second_org_role.uuid}",
+            headers={**auth_headers(org_admin_session_token), "Host": "localhost:4401"},
         )
-        assert response.status_code == 404
-        data = response.json()
-        assert "Role not found" in data["detail"]
+        assert response.status_code == 403
 
     @pytest.mark.asyncio
     async def test_delete_own_role_fails(
@@ -726,7 +730,7 @@ class TestAdminRoles:
     ):
         """Admin cannot delete their own role."""
         response = await client.delete(
-            f"/auth/api/admin/orgs/{test_org.uuid}/roles/{test_role.uuid}",
+            f"/auth/api/admin/roles/{test_role.uuid}",
             headers={**auth_headers(session_token), "Host": "localhost:4401"},
         )
         assert response.status_code == 400
@@ -788,7 +792,7 @@ class TestAdminUsersInOrg:
     ):
         """Admin should be able to get user details within an org."""
         response = await client.get(
-            f"/auth/api/admin/orgs/{test_org.uuid}/users/{test_user.uuid}",
+            f"/auth/api/admin/users/{test_user.uuid}",
             headers={**auth_headers(session_token), "Host": "localhost:4401"},
         )
         assert response.status_code == 200
@@ -807,7 +811,7 @@ class TestAdminUsersInOrg:
         """Getting non-existent user should return 404."""
         fake_uuid = uuid7.create()
         response = await client.get(
-            f"/auth/api/admin/orgs/{test_org.uuid}/users/{fake_uuid}",
+            f"/auth/api/admin/users/{fake_uuid}",
             headers={**auth_headers(session_token), "Host": "localhost:4401"},
         )
         assert response.status_code == 404
@@ -816,16 +820,18 @@ class TestAdminUsersInOrg:
 
     @pytest.mark.asyncio
     async def test_get_user_wrong_org(
-        self, client: httpx.AsyncClient, session_token: str, test_org, second_org_user
+        self,
+        client: httpx.AsyncClient,
+        org_admin_session_token: str,
+        test_org,
+        second_org_user,
     ):
-        """Getting user from another org should return 404."""
+        """Org admin cannot get user from another org."""
         response = await client.get(
-            f"/auth/api/admin/orgs/{test_org.uuid}/users/{second_org_user.uuid}",
-            headers={**auth_headers(session_token), "Host": "localhost:4401"},
+            f"/auth/api/admin/users/{second_org_user.uuid}",
+            headers={**auth_headers(org_admin_session_token), "Host": "localhost:4401"},
         )
-        assert response.status_code == 404
-        data = response.json()
-        assert "User not found" in data["detail"]
+        assert response.status_code == 403
 
     @pytest.mark.asyncio
     async def test_get_user_with_org_admin(
@@ -837,7 +843,7 @@ class TestAdminUsersInOrg:
     ):
         """Org admin should be able to get user details."""
         response = await client.get(
-            f"/auth/api/admin/orgs/{test_org.uuid}/users/{org_admin_user.uuid}",
+            f"/auth/api/admin/users/{org_admin_user.uuid}",
             headers={**auth_headers(org_admin_session_token), "Host": "localhost:4401"},
         )
         assert response.status_code == 200
@@ -850,7 +856,7 @@ class TestAdminUsersInOrg:
     ):
         """Admin should be able to update user display name."""
         response = await client.patch(
-            f"/auth/api/admin/orgs/{test_org.uuid}/users/{test_user.uuid}/display-name",
+            f"/auth/api/admin/users/{test_user.uuid}/display-name",
             json={"display_name": "Updated Admin Name"},
             headers={**auth_headers(session_token), "Host": "localhost:4401"},
         )
@@ -863,7 +869,7 @@ class TestAdminUsersInOrg:
         """Updating non-existent user should return 404."""
         fake_uuid = uuid7.create()
         response = await client.patch(
-            f"/auth/api/admin/orgs/{test_org.uuid}/users/{fake_uuid}/display-name",
+            f"/auth/api/admin/users/{fake_uuid}/display-name",
             json={"display_name": "New Name"},
             headers={**auth_headers(session_token), "Host": "localhost:4401"},
         )
@@ -873,15 +879,19 @@ class TestAdminUsersInOrg:
 
     @pytest.mark.asyncio
     async def test_update_user_display_name_wrong_org(
-        self, client: httpx.AsyncClient, session_token: str, test_org, second_org_user
+        self,
+        client: httpx.AsyncClient,
+        org_admin_session_token: str,
+        test_org,
+        second_org_user,
     ):
-        """Updating user from another org should return 404."""
+        """Org admin cannot update user from another org."""
         response = await client.patch(
-            f"/auth/api/admin/orgs/{test_org.uuid}/users/{second_org_user.uuid}/display-name",
+            f"/auth/api/admin/users/{second_org_user.uuid}/display-name",
             json={"display_name": "New Name"},
-            headers={**auth_headers(session_token), "Host": "localhost:4401"},
+            headers={**auth_headers(org_admin_session_token), "Host": "localhost:4401"},
         )
-        assert response.status_code == 404
+        assert response.status_code == 403
 
     @pytest.mark.asyncio
     async def test_update_user_display_name_empty(
@@ -889,7 +899,7 @@ class TestAdminUsersInOrg:
     ):
         """Updating user with empty display name should fail."""
         response = await client.patch(
-            f"/auth/api/admin/orgs/{test_org.uuid}/users/{test_user.uuid}/display-name",
+            f"/auth/api/admin/users/{test_user.uuid}/display-name",
             json={"display_name": "   "},
             headers={**auth_headers(session_token), "Host": "localhost:4401"},
         )
@@ -903,7 +913,7 @@ class TestAdminUsersInOrg:
     ):
         """Updating user with too long display name should fail."""
         response = await client.patch(
-            f"/auth/api/admin/orgs/{test_org.uuid}/users/{test_user.uuid}/display-name",
+            f"/auth/api/admin/users/{test_user.uuid}/display-name",
             json={"display_name": "x" * 100},
             headers={**auth_headers(session_token), "Host": "localhost:4401"},
         )
@@ -923,8 +933,8 @@ class TestAdminUsersInOrg:
         """Admin should be able to change user's role within org."""
         # Use regular_user who is in the same org but not the session owner
         response = await client.patch(
-            f"/auth/api/admin/orgs/{test_org.uuid}/users/{regular_user.uuid}/role",
-            json={"role": user_role.display_name},
+            f"/auth/api/admin/users/{regular_user.uuid}/role",
+            json={"role_uuid": str(user_role.uuid)},
             headers={**auth_headers(session_token), "Host": "localhost:4401"},
         )
         assert response.status_code == 200
@@ -935,13 +945,13 @@ class TestAdminUsersInOrg:
     ):
         """Updating user role without specifying role should fail."""
         response = await client.patch(
-            f"/auth/api/admin/orgs/{test_org.uuid}/users/{test_user.uuid}/role",
+            f"/auth/api/admin/users/{test_user.uuid}/role",
             json={},
             headers={**auth_headers(session_token), "Host": "localhost:4401"},
         )
         assert response.status_code == 400
         data = response.json()
-        assert "role is required" in data["detail"]
+        assert "role_uuid is required" in data["detail"]
 
     @pytest.mark.asyncio
     async def test_update_user_role_user_not_found(
@@ -950,27 +960,29 @@ class TestAdminUsersInOrg:
         """Updating role for non-existent user should fail."""
         fake_uuid = uuid7.create()
         response = await client.patch(
-            f"/auth/api/admin/orgs/{test_org.uuid}/users/{fake_uuid}/role",
-            json={"role": "User Role"},
+            f"/auth/api/admin/users/{fake_uuid}/role",
+            json={"role_uuid": str(uuid7.create())},
             headers={**auth_headers(session_token), "Host": "localhost:4401"},
         )
-        assert response.status_code == 400
+        assert response.status_code == 404
         data = response.json()
         assert "User not found" in data["detail"]
 
     @pytest.mark.asyncio
     async def test_update_user_role_wrong_org(
-        self, client: httpx.AsyncClient, session_token: str, test_org, second_org_user
+        self,
+        client: httpx.AsyncClient,
+        org_admin_session_token: str,
+        test_org,
+        second_org_user,
     ):
-        """Updating role for user in another org should fail."""
+        """Org admin cannot update role for user in another org."""
         response = await client.patch(
-            f"/auth/api/admin/orgs/{test_org.uuid}/users/{second_org_user.uuid}/role",
-            json={"role": "User Role"},
-            headers={**auth_headers(session_token), "Host": "localhost:4401"},
+            f"/auth/api/admin/users/{second_org_user.uuid}/role",
+            json={"role_uuid": str(uuid7.create())},
+            headers={**auth_headers(org_admin_session_token), "Host": "localhost:4401"},
         )
-        assert response.status_code == 400
-        data = response.json()
-        assert "does not belong" in data["detail"]
+        assert response.status_code == 403
 
     @pytest.mark.asyncio
     async def test_update_user_role_invalid_role(
@@ -978,8 +990,8 @@ class TestAdminUsersInOrg:
     ):
         """Updating user to non-existent role should fail."""
         response = await client.patch(
-            f"/auth/api/admin/orgs/{test_org.uuid}/users/{test_user.uuid}/role",
-            json={"role": "Nonexistent Role"},
+            f"/auth/api/admin/users/{test_user.uuid}/role",
+            json={"role_uuid": str(uuid7.create())},
             headers={**auth_headers(session_token), "Host": "localhost:4401"},
         )
         assert response.status_code == 400
@@ -997,8 +1009,8 @@ class TestAdminUsersInOrg:
     ):
         """Admin cannot change their own role to non-admin role."""
         response = await client.patch(
-            f"/auth/api/admin/orgs/{test_org.uuid}/users/{org_admin_user.uuid}/role",
-            json={"role": user_role.display_name},
+            f"/auth/api/admin/users/{org_admin_user.uuid}/role",
+            json={"role_uuid": str(user_role.uuid)},
             headers={**auth_headers(org_admin_session_token), "Host": "localhost:4401"},
         )
         assert response.status_code == 400
@@ -1018,8 +1030,8 @@ class TestAdminUsersInOrg:
         # test_user is already on test_role which has auth:admin
         # Changing to the same role should succeed (no permission loss)
         response = await client.patch(
-            f"/auth/api/admin/orgs/{test_org.uuid}/users/{test_user.uuid}/role",
-            json={"role": test_role.display_name},
+            f"/auth/api/admin/users/{test_user.uuid}/role",
+            json={"role_uuid": str(test_role.uuid)},
             headers={**auth_headers(session_token), "Host": "localhost:4401"},
         )
         assert response.status_code == 200
@@ -1030,7 +1042,7 @@ class TestAdminUsersInOrg:
     ):
         """Admin should be able to create reset links for users."""
         response = await client.post(
-            f"/auth/api/admin/orgs/{test_org.uuid}/users/{test_user.uuid}/create-link",
+            f"/auth/api/admin/users/{test_user.uuid}/create-link",
             headers={**auth_headers(session_token), "Host": "localhost:4401"},
         )
         assert response.status_code == 200
@@ -1045,7 +1057,7 @@ class TestAdminUsersInOrg:
         """Creating reset link for non-existent user should fail."""
         fake_uuid = uuid7.create()
         response = await client.post(
-            f"/auth/api/admin/orgs/{test_org.uuid}/users/{fake_uuid}/create-link",
+            f"/auth/api/admin/users/{fake_uuid}/create-link",
             headers={**auth_headers(session_token), "Host": "localhost:4401"},
         )
         assert response.status_code == 404
@@ -1054,16 +1066,18 @@ class TestAdminUsersInOrg:
 
     @pytest.mark.asyncio
     async def test_create_user_reset_link_wrong_org(
-        self, client: httpx.AsyncClient, session_token: str, test_org, second_org_user
+        self,
+        client: httpx.AsyncClient,
+        org_admin_session_token: str,
+        test_org,
+        second_org_user,
     ):
-        """Creating reset link for user in another org should fail."""
+        """Org admin cannot create reset link for user in another org."""
         response = await client.post(
-            f"/auth/api/admin/orgs/{test_org.uuid}/users/{second_org_user.uuid}/create-link",
-            headers={**auth_headers(session_token), "Host": "localhost:4401"},
+            f"/auth/api/admin/users/{second_org_user.uuid}/create-link",
+            headers={**auth_headers(org_admin_session_token), "Host": "localhost:4401"},
         )
-        assert response.status_code == 404
-        data = response.json()
-        assert "not found in organization" in data["detail"]
+        assert response.status_code == 403
 
     @pytest.mark.asyncio
     async def test_create_user_registration_link_without_credentials(
@@ -1083,12 +1097,126 @@ class TestAdminUsersInOrg:
         create_user(user_no_cred)
 
         response = await client.post(
-            f"/auth/api/admin/orgs/{test_org.uuid}/users/{user_no_cred.uuid}/create-link",
+            f"/auth/api/admin/users/{user_no_cred.uuid}/create-link",
             headers={**auth_headers(session_token), "Host": "localhost:4401"},
         )
         assert response.status_code == 200
         data = response.json()
         assert "url" in data
+
+
+# -------------------- User Deletion Tests --------------------
+
+
+class TestAdminUserDeletion:
+    """Tests for admin user deletion"""
+
+    @pytest.mark.asyncio
+    async def test_delete_user_success(
+        self,
+        client: httpx.AsyncClient,
+        session_token: str,
+        test_org,
+        user_role,
+        test_db: DB,
+    ):
+        """Admin should be able to delete a user."""
+        # Create a user to delete
+        user_to_delete = User.create(
+            display_name="User To Delete",
+            role=user_role.uuid,
+        )
+        create_user(user_to_delete)
+
+        response = await client.delete(
+            f"/auth/api/admin/users/{user_to_delete.uuid}",
+            headers={**auth_headers(session_token), "Host": "localhost:4401"},
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "ok"
+        # Verify user is actually deleted
+        assert user_to_delete.uuid not in db.data().users
+
+    @pytest.mark.asyncio
+    async def test_delete_user_not_found(
+        self, client: httpx.AsyncClient, session_token: str
+    ):
+        """Deleting non-existent user should return 404."""
+        fake_uuid = uuid7.create()
+        response = await client.delete(
+            f"/auth/api/admin/users/{fake_uuid}",
+            headers={**auth_headers(session_token), "Host": "localhost:4401"},
+        )
+        assert response.status_code == 404
+        data = response.json()
+        assert "User not found" in data["detail"]
+
+    @pytest.mark.asyncio
+    async def test_delete_own_user_fails(
+        self, client: httpx.AsyncClient, session_token: str, test_user
+    ):
+        """Admin cannot delete their own account."""
+        response = await client.delete(
+            f"/auth/api/admin/users/{test_user.uuid}",
+            headers={**auth_headers(session_token), "Host": "localhost:4401"},
+        )
+        assert response.status_code == 400
+        data = response.json()
+        assert "Cannot delete your own account" in data["detail"]
+
+    @pytest.mark.asyncio
+    async def test_delete_user_wrong_org(
+        self,
+        client: httpx.AsyncClient,
+        org_admin_session_token: str,
+        second_org_user,
+    ):
+        """Org admin cannot delete user from another org."""
+        response = await client.delete(
+            f"/auth/api/admin/users/{second_org_user.uuid}",
+            headers={**auth_headers(org_admin_session_token), "Host": "localhost:4401"},
+        )
+        assert response.status_code == 403
+
+    @pytest.mark.asyncio
+    async def test_delete_user_org_admin_success(
+        self,
+        client: httpx.AsyncClient,
+        org_admin_session_token: str,
+        test_org,
+        user_role,
+        test_db: DB,
+    ):
+        """Org admin should be able to delete users in their org."""
+        # Create a user in the same org to delete
+        user_to_delete = User.create(
+            display_name="Org User To Delete",
+            role=user_role.uuid,
+        )
+        create_user(user_to_delete)
+
+        response = await client.delete(
+            f"/auth/api/admin/users/{user_to_delete.uuid}",
+            headers={**auth_headers(org_admin_session_token), "Host": "localhost:4401"},
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "ok"
+
+    @pytest.mark.asyncio
+    async def test_delete_user_regular_user_forbidden(
+        self,
+        client: httpx.AsyncClient,
+        regular_session_token: str,
+        test_user,
+    ):
+        """Regular user trying to delete user should get 403."""
+        response = await client.delete(
+            f"/auth/api/admin/users/{test_user.uuid}",
+            headers={**auth_headers(regular_session_token), "Host": "localhost:4401"},
+        )
+        assert response.status_code == 403
 
 
 # -------------------- Credential Tests --------------------
@@ -1108,7 +1236,7 @@ class TestAdminCredentials:
     ):
         """Admin should be able to delete a user's credential."""
         response = await client.delete(
-            f"/auth/api/admin/orgs/{test_org.uuid}/users/{test_user.uuid}/credentials/{test_credential.uuid}",
+            f"/auth/api/admin/users/{test_user.uuid}/credentials/{test_credential.uuid}",
             headers={**auth_headers(session_token), "Host": "localhost:4401"},
         )
         assert response.status_code == 200
@@ -1123,7 +1251,7 @@ class TestAdminCredentials:
         fake_user_uuid = uuid7.create()
         fake_cred_uuid = uuid7.create()
         response = await client.delete(
-            f"/auth/api/admin/orgs/{test_org.uuid}/users/{fake_user_uuid}/credentials/{fake_cred_uuid}",
+            f"/auth/api/admin/users/{fake_user_uuid}/credentials/{fake_cred_uuid}",
             headers={**auth_headers(session_token), "Host": "localhost:4401"},
         )
         assert response.status_code == 404
@@ -1134,17 +1262,17 @@ class TestAdminCredentials:
     async def test_delete_credential_wrong_org(
         self,
         client: httpx.AsyncClient,
-        session_token: str,
+        org_admin_session_token: str,
         test_org,
         second_org_user,
         second_org_credential,
     ):
-        """Deleting credential for user in another org should fail."""
+        """Org admin cannot delete credential for user in another org."""
         response = await client.delete(
-            f"/auth/api/admin/orgs/{test_org.uuid}/users/{second_org_user.uuid}/credentials/{second_org_credential.uuid}",
-            headers={**auth_headers(session_token), "Host": "localhost:4401"},
+            f"/auth/api/admin/users/{second_org_user.uuid}/credentials/{second_org_credential.uuid}",
+            headers={**auth_headers(org_admin_session_token), "Host": "localhost:4401"},
         )
-        assert response.status_code == 404
+        assert response.status_code == 403
 
 
 # -------------------- Session Tests --------------------
@@ -1175,7 +1303,7 @@ class TestAdminSessions:
         )
 
         response = await client.delete(
-            f"/auth/api/admin/orgs/{test_org.uuid}/users/{test_user.uuid}/sessions/{extra_token}",
+            f"/auth/api/admin/users/{test_user.uuid}/sessions/{extra_token}",
             headers={**auth_headers(session_token), "Host": "localhost:4401"},
         )
         assert response.status_code == 200
@@ -1193,7 +1321,7 @@ class TestAdminSessions:
     ):
         """Admin can delete their own current session."""
         response = await client.delete(
-            f"/auth/api/admin/orgs/{test_org.uuid}/users/{test_user.uuid}/sessions/{session_token}",
+            f"/auth/api/admin/users/{test_user.uuid}/sessions/{session_token}",
             headers={**auth_headers(session_token), "Host": "localhost:4401"},
         )
         assert response.status_code == 200
@@ -1207,7 +1335,7 @@ class TestAdminSessions:
         """Deleting session for non-existent user should fail."""
         fake_uuid = uuid7.create()
         response = await client.delete(
-            f"/auth/api/admin/orgs/{test_org.uuid}/users/{fake_uuid}/sessions/fake-session-id",
+            f"/auth/api/admin/users/{fake_uuid}/sessions/fake-session-id",
             headers={**auth_headers(session_token), "Host": "localhost:4401"},
         )
         assert response.status_code == 404
@@ -1218,16 +1346,16 @@ class TestAdminSessions:
     async def test_delete_session_wrong_org(
         self,
         client: httpx.AsyncClient,
-        session_token: str,
+        org_admin_session_token: str,
         test_org,
         second_org_user,
     ):
-        """Deleting session for user in another org should fail."""
+        """Org admin cannot delete session for user in another org."""
         response = await client.delete(
-            f"/auth/api/admin/orgs/{test_org.uuid}/users/{second_org_user.uuid}/sessions/fake-session",
-            headers={**auth_headers(session_token), "Host": "localhost:4401"},
+            f"/auth/api/admin/users/{second_org_user.uuid}/sessions/fake-session",
+            headers={**auth_headers(org_admin_session_token), "Host": "localhost:4401"},
         )
-        assert response.status_code == 404
+        assert response.status_code == 403
 
     @pytest.mark.asyncio
     async def test_delete_session_invalid_id(
@@ -1235,7 +1363,7 @@ class TestAdminSessions:
     ):
         """Deleting session with invalid/non-existent ID should fail."""
         response = await client.delete(
-            f"/auth/api/admin/orgs/{test_org.uuid}/users/{test_user.uuid}/sessions/invalid!!id",
+            f"/auth/api/admin/users/{test_user.uuid}/sessions/invalid!!id",
             headers={**auth_headers(session_token), "Host": "localhost:4401"},
         )
         assert response.status_code == 404
@@ -1250,7 +1378,7 @@ class TestAdminSessions:
         # Use a valid format but non-existent key
         fake_token = secrets.token_urlsafe(12)
         response = await client.delete(
-            f"/auth/api/admin/orgs/{test_org.uuid}/users/{test_user.uuid}/sessions/{fake_token}",
+            f"/auth/api/admin/users/{test_user.uuid}/sessions/{fake_token}",
             headers={**auth_headers(session_token), "Host": "localhost:4401"},
         )
         assert response.status_code == 404
@@ -1550,7 +1678,7 @@ class TestOrgAdminAuthExceptions:
     ):
         """Regular user (not org admin) trying to create reset link should get 403."""
         response = await client.post(
-            f"/auth/api/admin/orgs/{test_org.uuid}/users/{test_user.uuid}/create-link",
+            f"/auth/api/admin/users/{test_user.uuid}/create-link",
             headers={**auth_headers(regular_session_token), "Host": "localhost:4401"},
         )
         assert response.status_code == 403
@@ -1565,7 +1693,7 @@ class TestOrgAdminAuthExceptions:
     ):
         """Regular user trying to get user details should get 403."""
         response = await client.get(
-            f"/auth/api/admin/orgs/{test_org.uuid}/users/{test_user.uuid}",
+            f"/auth/api/admin/users/{test_user.uuid}",
             headers={**auth_headers(regular_session_token), "Host": "localhost:4401"},
         )
         assert response.status_code == 403
@@ -1580,7 +1708,7 @@ class TestOrgAdminAuthExceptions:
     ):
         """Regular user trying to update display name should get 403."""
         response = await client.patch(
-            f"/auth/api/admin/orgs/{test_org.uuid}/users/{test_user.uuid}/display-name",
+            f"/auth/api/admin/users/{test_user.uuid}/display-name",
             json={"display_name": "New Name"},
             headers={**auth_headers(regular_session_token), "Host": "localhost:4401"},
         )
@@ -1597,7 +1725,7 @@ class TestOrgAdminAuthExceptions:
     ):
         """Regular user trying to delete credential should get 403."""
         response = await client.delete(
-            f"/auth/api/admin/orgs/{test_org.uuid}/users/{test_user.uuid}/credentials/{test_credential.uuid}",
+            f"/auth/api/admin/users/{test_user.uuid}/credentials/{test_credential.uuid}",
             headers={**auth_headers(regular_session_token), "Host": "localhost:4401"},
         )
         assert response.status_code == 403
@@ -1612,7 +1740,7 @@ class TestOrgAdminAuthExceptions:
     ):
         """Regular user trying to delete session should get 403."""
         response = await client.delete(
-            f"/auth/api/admin/orgs/{test_org.uuid}/users/{test_user.uuid}/sessions/some-session",
+            f"/auth/api/admin/users/{test_user.uuid}/sessions/some-session",
             headers={**auth_headers(regular_session_token), "Host": "localhost:4401"},
         )
         assert response.status_code == 403

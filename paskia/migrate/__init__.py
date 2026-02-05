@@ -28,7 +28,6 @@ from paskia.db.structs import (
     Credential,
     Org,
     Permission,
-    ResetToken,
     Role,
     Session,
     User,
@@ -39,7 +38,6 @@ from .sql import (
 )
 from .sql import (
     CredentialModel,
-    ResetTokenModel,
     SessionModel,
     UserModel,
 )
@@ -226,26 +224,9 @@ async def migrate_from_sql(
             )
         print(f"  Migrated {len(session_models)} sessions")
 
-    # Migrate reset tokens
-    # Old format: b"rset" + 16 bytes hash -> New format: 9 bytes (truncated hash)
-    async with sql_db.session() as session:
-        result = await session.execute(select(ResetTokenModel))
-        token_models = result.scalars().all()
-        for tm in token_models:
-            token = tm.as_dataclass()
-            old_key: bytes = token.key
-            # Strip b"rset" prefix and take first 9 bytes of hash
-            if old_key.startswith(b"rset"):
-                token_key = old_key[4:13]  # 9 bytes after prefix
-            else:
-                # Already in new format or unknown - truncate to 9 bytes
-                token_key = old_key[:9]
-            db.reset_tokens[token_key] = ResetToken(
-                user_uuid=token.user_uuid,
-                expiry=token.expiry,
-                token_type=token.token_type,
-            )
-        print(f"  Migrated {len(token_models)} reset tokens")
+    # Reset tokens are not migrated - they will expire naturally
+    # and users can generate new ones as needed
+    print("  Reset tokens dropped (not migrated)")
 
     # Queue and flush all changes using the transaction mechanism
     with db.transaction("migrate:sql"):
