@@ -7,22 +7,21 @@ An easy to install passkey-based authentication service that protects any web ap
 ## What is Paskia?
 
 - Easy to use fully featured auth&auth system (login and permissions)
-- Organization and role-based access control (optional)
+- Organization and role-based access control
    * Org admins control their users and roles
-   * Master admin can create multiple independent orgs
-   * Master admin makes permissions available for orgs to assign
-- User Profile and Administration by API and web interface.
-under `/auth/` or `auth.example.com`
-- Reset tokens and additional device linking via QR code or codewords.
-- Pure Python, FastAPI, packaged with prebuilt Vue frontend
+   * Multiple independent orgs
+   * Master admin can do everything or delegate to org admins
+- User Profile and Admin by API and web interface
+- Implements login/reauth/forbidden flows for you
+- Single Sign-On (SSO): Users register once and authenticate across your services
+- Remote autentication by entering random keywords from another device (like 2fa)
+- No CORS, NodeJS or anything extra needed.
 
 Two interfaces:
 - API fetch: auth checks and login without leaving your app
 - Forward-auth proxy: protect any unprotected site or service (Caddy, Nginx)
 
 The API mode is useful for applications that can be customized to run with Paskia. Forward auth can also protect your javascript and other assets. Each provides fine-grained permission control and reauthentication requests where needed, and both can be mixed where needed.
-
-Single Sign-On (SSO): Users register once and authenticate across all applications under your domain name (configured rp-id).
 
 ![Forbidden dialog, dark mode](https://git.zi.fi/leovasanko/paskia/raw/main/docs/screenshots/forbidden-dark.webp)
 Automatic light/dark mode switching with overrides by user profile and protected app's theme.
@@ -51,7 +50,6 @@ All configuration is passed by CLI arguments, of which there are just a few.
 
 ```text
 paskia [options]
-paskia reset [user]     # Generate passkey reset link
 ```
 
 | Option | Description | Default |
