@@ -18,11 +18,11 @@ dependencies = [
     "base64url>=1.0.0",
     "uuid7-standard>=1.0.0",
     "pyjwt>=2.8.0",
-    "user-agents>=2.2.0",
     "jsondiff>=2.2.1",
     "msgspec>=0.20.0",
     "aiofiles>=25.1.0",
     "fastapi-vue>=0.3.0",
+    "ua-parser[regex]>=1.0.1",
 ]
 requires-python = ">=3.11"
 

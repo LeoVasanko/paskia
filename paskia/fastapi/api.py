@@ -17,7 +17,7 @@ from paskia import db
 from paskia.authsession import EXPIRES, expires, get_reset
 from paskia.fastapi import authz, session, user
 from paskia.fastapi.response import MsgspecResponse
-from paskia.fastapi.session import AUTH_COOKIE, AUTH_COOKIE_NAME
+from paskia.fastapi.session import AUTH_COOKIE, AUTH_COOKIE_NAME, get_client_ip
 from paskia.globals import passkey as global_passkey
 from paskia.util import hostutil, htmlutil, passphrase, userinfo, vitedev
 
@@ -91,7 +91,7 @@ async def validate_token(
         if not timedelta(0) < consumed < _REFRESH_INTERVAL:
             db.update_session(
                 auth,
-                ip=request.client.host if request.client else "",
+                ip=get_client_ip(request),
                 user_agent=request.headers.get("user-agent") or "",
                 expiry=expires(),
                 ctx=ctx,

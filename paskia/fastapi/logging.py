@@ -38,10 +38,33 @@ _AUTHZ_GRANTED = "\033[0;32m"  # Granted scope (green)
 
 
 def format_ipv6_network(ip: str) -> str:
-    """Format IPv6 address to show only network part (first 64 bits)."""
+    """Format IPv6 address to show only network part (first 64 bits).
+
+    Special addresses are returned as-is for clarity:
+    - ::1 (loopback)
+    - :: (unspecified)
+    - ::ffff:x.x.x.x (IPv4-mapped, returns just the IPv4 part)
+    - fe80:: (link-local, returned as-is since interface-specific)
+    """
     try:
+        # Strip brackets that some proxies add around IPv6
+        ip = ip.strip("[]")
+        # Strip zone ID (e.g., fe80::1%eth0)
+        if "%" in ip:
+            ip = ip.split("%")[0]
         addr = IPv6Address(ip)
-        # Get the integer representation and mask to first 64 bits
+
+        # Special cases - return as-is or with minimal processing
+        if addr.is_loopback:  # ::1
+            return "::1"
+        if addr.is_unspecified:  # ::
+            return "::"
+        if addr.ipv4_mapped:  # ::ffff:x.x.x.x
+            return str(addr.ipv4_mapped)
+        if addr.is_link_local:  # fe80::/10 - interface-specific, keep full
+            return str(addr)
+
+        # Regular addresses: truncate to /64 network prefix
         network_int = int(addr) >> 64
         # Format as IPv6 with trailing ::
         # Split into 4 groups of 16 bits
@@ -61,7 +84,9 @@ def format_client_ip(ip: str) -> str:
     """Format client IP, compressing IPv6 to network part only."""
     if not ip or ip == "-":
         return "-"
-    if ":" in ip:
+    # Strip brackets for detection (some proxies add them)
+    stripped = ip.strip("[]")
+    if ":" in stripped:
         return format_ipv6_network(ip)
     return ip
 

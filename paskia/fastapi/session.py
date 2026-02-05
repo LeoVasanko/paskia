@@ -8,6 +8,8 @@ This module provides FastAPI-specific session management functionality:
 Generic session management functions have been moved to authsession.py
 """
 
+from ipaddress import IPv4Address, IPv6Address
+
 from fastapi import Cookie, Request, Response, WebSocket
 
 from paskia.authsession import EXPIRES
@@ -16,10 +18,44 @@ AUTH_COOKIE_NAME = "__Host-paskia"
 AUTH_COOKIE = Cookie(None, alias=AUTH_COOKIE_NAME)
 
 
+def normalize_ip(ip: str) -> str:
+    """Normalize IP address, stripping brackets and validating format.
+
+    Proxies may pass IPv6 in brackets like [::1] or with zone IDs.
+    IPv4-mapped IPv6 addresses (::ffff:x.x.x.x) are converted to plain IPv4.
+    Returns empty string for invalid addresses.
+    """
+    if not ip:
+        return ""
+    # Strip brackets that some proxies add around IPv6
+    ip = ip.strip("[]")
+    # Strip zone ID (e.g., fe80::1%eth0)
+    if "%" in ip:
+        ip = ip.split("%")[0]
+    try:
+        # Validate and normalize
+        if ":" in ip:
+            addr = IPv6Address(ip)
+            # Convert IPv4-mapped addresses to plain IPv4
+            if addr.ipv4_mapped:
+                return str(addr.ipv4_mapped)
+            return str(addr)
+        return str(IPv4Address(ip))
+    except ValueError:
+        return ip  # Return as-is if not a valid IP (could be hostname)
+
+
+def get_client_ip(request: Request | WebSocket) -> str:
+    """Get client IP from request, normalized."""
+    if not request.client:
+        return ""
+    return normalize_ip(request.client.host)
+
+
 def infodict(request: Request | WebSocket, type: str) -> dict:
     """Extract client information from request."""
     return {
-        "ip": request.client.host if request.client else "",
+        "ip": get_client_ip(request),
         "user_agent": request.headers.get("user-agent", "")[:500],
         "session_type": type,
     }
