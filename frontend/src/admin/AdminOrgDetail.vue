@@ -339,6 +339,7 @@ defineExpose({ focusFirstElement })
           <strong class="role-name" :title="r.uuid">
             <span>{{ r.display_name }}</span>
             <button @click="$emit('updateRole', r)" class="icon-btn" aria-label="Edit role" title="Edit role">✏️</button>
+            <button v-if="r.users.length === 0" @click="$emit('deleteRole', r)" class="icon-btn delete-icon" aria-label="Delete role" title="Delete role">❌</button>
           </strong>
           <div class="role-actions">
             <button @click="$emit('createUserInRole', selectedOrg, r)" class="plus-btn" aria-label="Add user" title="Add user">➕</button>
@@ -369,9 +370,8 @@ defineExpose({ focusFirstElement })
             </li>
           </ul>
         </template>
-        <div v-else class="empty-role" @keydown="e => handleEmptyRoleKeydown(e, roleIndex)">
+        <div v-else class="empty-role">
           <p class="empty-text muted">No members</p>
-          <button @click="$emit('deleteRole', r)" class="icon-btn delete-icon" aria-label="Delete empty role" title="Delete role">❌</button>
         </div>
       </div>
     </div>
