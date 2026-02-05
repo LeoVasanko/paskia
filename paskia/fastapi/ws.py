@@ -7,7 +7,7 @@ from paskia.fastapi.session import AUTH_COOKIE, infodict
 from paskia.fastapi.wschat import authenticate_and_login, register_chat
 from paskia.fastapi.wsutil import validate_origin, websocket_error_handler
 from paskia.globals import passkey
-from paskia.util import passphrase
+from paskia.util import hostutil, passphrase
 
 # Create a FastAPI subapp for WebSocket endpoints
 app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
@@ -31,7 +31,7 @@ async def websocket_register_add(
     - Reset token supplied as ?reset=... (auth cookie ignored)
     """
     origin = validate_origin(ws)
-    host = origin.split("://", 1)[1]
+    host = hostutil.normalize_host(origin.split("://", 1)[1])
     if reset is not None:
         if not passphrase.is_well_formed(reset):
             raise ValueError(
