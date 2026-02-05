@@ -165,4 +165,5 @@ async def api_create_link(
             if expiry.tzinfo
             else expiry.replace(tzinfo=UTC).isoformat().replace("+00:00", "Z")
         ),
+        "token_type": "device addition",
     }

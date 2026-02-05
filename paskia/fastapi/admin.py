@@ -541,6 +541,7 @@ async def admin_create_user_registration_link(
     return {
         "url": url,
         "expires": format_datetime(expiry),
+        "token_type": token_type,
     }
 
 

@@ -196,7 +196,7 @@ defineExpose({ focusFirstElement })
             class="btn-primary"
             @click="$emit('generateUserRegistrationLink', selectedUser)"
             :disabled="loading"
-          >Registration Link</button>
+          >{{ userDetail?.credentials?.length ? 'Recovery Link' : 'Registration Link' }}</button>
           <button
             class="btn-danger"
             @click="handleDeleteUser"
