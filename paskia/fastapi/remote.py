@@ -20,7 +20,7 @@ from paskia.authsession import expires
 from paskia.fastapi.session import AUTH_COOKIE, infodict
 from paskia.fastapi.wschat import authenticate_and_login
 from paskia.fastapi.wsutil import validate_origin, websocket_error_handler
-from paskia.util import passphrase, pow, useragent
+from paskia.util import pow, useragent
 
 # Create a FastAPI subapp for remote auth WebSocket endpoints
 app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
@@ -317,16 +317,13 @@ async def websocket_remote_auth_permit(ws: WebSocket, auth=AUTH_COOKIE):
 
                 if request.action == "register":
                     # For registration, create a reset token for device addition
-                    token_str = passphrase.generate()
                     expiry = expires()
-                    db.create_reset_token(
+                    reset_token = db.create_reset_token(
                         user_uuid=ctx.user.uuid,
-                        passphrase=token_str,
                         expiry=expiry,
                         token_type="device addition",
                         user=str(ctx.user.uuid),
                     )
-                    reset_token = token_str
 
                 # Complete the remote auth request (notifies the waiting device)
                 cred = db.data().credentials[ctx.session.credential_uuid]

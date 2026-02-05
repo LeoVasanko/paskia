@@ -10,7 +10,7 @@ import asyncio
 import logging
 
 from paskia import authsession, db, globals
-from paskia.util import hostutil, passphrase
+from paskia.util import hostutil
 
 logger = logging.getLogger(__name__)
 
@@ -74,11 +74,9 @@ async def check_admin_credentials() -> bool:
             # Admin exists but has no credentials, create reset link
             logger.info("⚠️  Admin user has no credentials!")
 
-            token = passphrase.generate()
             expiry = authsession.reset_expires()
-            db.create_reset_token(
+            token = db.create_reset_token(
                 user_uuid=admin_user.uuid,
-                passphrase=token,
                 expiry=expiry,
                 token_type="admin registration",
             )

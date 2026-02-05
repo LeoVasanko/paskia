@@ -17,7 +17,7 @@ from paskia.authsession import (
 )
 from paskia.fastapi import authz, session
 from paskia.fastapi.session import AUTH_COOKIE
-from paskia.util import hostutil, passphrase
+from paskia.util import hostutil
 
 app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
 
@@ -149,11 +149,9 @@ async def api_create_link(
 ):
     # Require recent authentication for sensitive operation
     ctx = await authz.verify(auth, [], host=request.headers.get("host"), max_age="5m")
-    token = passphrase.generate()
     expiry = expires()
-    db.create_reset_token(
+    token = db.create_reset_token(
         user_uuid=ctx.user.uuid,
-        passphrase=token,
         expiry=expiry,
         token_type="device addition",
         ctx=ctx,

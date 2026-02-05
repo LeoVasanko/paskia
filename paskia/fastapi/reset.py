@@ -15,7 +15,7 @@ from uuid import UUID
 
 from paskia import authsession as _authsession
 from paskia import db
-from paskia.util import hostutil, passphrase
+from paskia.util import hostutil
 
 
 async def _resolve_targets(query: str | None):
@@ -69,10 +69,8 @@ async def _resolve_targets(query: str | None):
 
 
 async def _create_reset(user, role_name: str):
-    token = passphrase.generate()
     expiry = _authsession.reset_expires()
-    db.create_reset_token(
-        passphrase=token,
+    token = db.create_reset_token(
         user_uuid=user.uuid,
         expiry=expiry,
         token_type="manual reset",

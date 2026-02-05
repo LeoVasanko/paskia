@@ -17,7 +17,7 @@ const props = defineProps({
   navigationDisabled: { type: Boolean, default: false }
 })
 
-const emit = defineEmits(['generateUserRegistrationLink', 'goOverview', 'openOrg', 'onUserNameSaved', 'closeRegModal', 'editUserName', 'refreshUserDetail', 'navigateOut'])
+const emit = defineEmits(['generateUserRegistrationLink', 'goOverview', 'openOrg', 'onUserNameSaved', 'closeRegModal', 'editUserName', 'refreshUserDetail', 'navigateOut', 'deleteUser'])
 
 const authStore = useAuthStore()
 const terminatingSessions = ref({})
@@ -45,7 +45,7 @@ function handleEditName() {
 
 async function handleDelete(credential) {
   try {
-    const data = await apiJson(`/auth/api/admin/orgs/${props.selectedUser.org}/users/${props.selectedUser.uuid}/credentials/${credential.credential}`, { method: 'DELETE' })
+    const data = await apiJson(`/auth/api/admin/users/${props.selectedUser.uuid}/credentials/${credential.credential}`, { method: 'DELETE' })
     if (data.status === 'ok') {
       emit('onUserNameSaved') // Reuse to refresh user detail
     } else {
@@ -61,7 +61,7 @@ async function handleTerminateSession(session) {
   if (!sessionId) return
   terminatingSessions.value = { ...terminatingSessions.value, [sessionId]: true }
   try {
-    const data = await apiJson(`/auth/api/admin/orgs/${props.selectedUser.org}/users/${props.selectedUser.uuid}/sessions/${sessionId}`, { method: 'DELETE' })
+    const data = await apiJson(`/auth/api/admin/users/${props.selectedUser.uuid}/sessions/${sessionId}`, { method: 'DELETE' })
     if (data.status === 'ok') {
       if (data.current_session_terminated) {
         sessionStorage.clear()
@@ -81,6 +81,10 @@ async function handleTerminateSession(session) {
     delete next[sessionId]
     terminatingSessions.value = next
   }
+}
+
+async function handleDeleteUser() {
+  emit('deleteUser')
 }
 
 // Handle user info section keynav
@@ -183,24 +187,27 @@ defineExpose({ focusFirstElement })
         :loading="loading"
         :org-display-name="userDetail.org.display_name"
         :role-name="userDetail.role"
-        :update-endpoint="`/auth/api/admin/orgs/${selectedUser.org}/users/${selectedUser.uuid}/display-name`"
+        :update-endpoint="`/auth/api/admin/users/${selectedUser.uuid}/display-name`"
         @saved="$emit('onUserNameSaved')"
         @edit-name="handleEditName"
-      />
+      >
+        <div class="admin-actions">
+          <button
+            class="btn-primary"
+            @click="$emit('generateUserRegistrationLink', selectedUser)"
+            :disabled="loading"
+          >Registration Link</button>
+          <button
+            class="btn-danger"
+            @click="handleDeleteUser"
+            :disabled="loading"
+            title="Delete this user"
+          >Delete User</button>
+        </div>
+      </UserBasicInfo>
     </div>
     <div v-if="userDetail?.error" class="error small">{{ userDetail.error }}</div>
     <template v-if="userDetail && !userDetail.error">
-      <div class="registration-actions" ref="regActionsRef" @keydown="handleRegActionsKeydown">
-        <button
-          class="btn-secondary reg-token-btn"
-          @click="$emit('generateUserRegistrationLink', selectedUser)"
-          :disabled="loading"
-        >Generate Registration Token</button>
-        <p class="matrix-hint muted">
-          Generate a one-time registration link so this user can register or add another passkey.
-          Copy the link from the dialog and send it to the user, or have the user scan the QR code on their device.
-        </p>
-      </div>
       <section class="section-block" data-section="registered-passkeys">
         <div class="section-header">
           <h2>Registered Passkeys</h2>
@@ -238,7 +245,7 @@ defineExpose({ focusFirstElement })
     </div>
     <RegistrationLinkModal
       v-if="showRegModal"
-      :endpoint="`/auth/api/admin/orgs/${selectedUser.org}/users/${selectedUser.uuid}/create-link`"
+      :endpoint="`/auth/api/admin/users/${selectedUser.uuid}/create-link`"
       :user-name="userDetail?.display_name || selectedUser.display_name"
       @close="$emit('closeRegModal')"
       @copied="onLinkCopied"
@@ -248,13 +255,11 @@ defineExpose({ focusFirstElement })
 
 <style scoped>
 .user-detail { display: flex; flex-direction: column; gap: var(--space-lg); }
+.admin-actions { display: flex; gap: 0.5rem; }
 .actions { display: flex; flex-wrap: wrap; gap: var(--space-sm); align-items: center; }
 .ancillary-actions { margin-top: -0.5rem; }
-.reg-token-btn { align-self: flex-start; }
-.registration-actions { display: flex; flex-direction: column; gap: 0.5rem; }
 .icon-btn { background: none; border: none; color: var(--color-text-muted); padding: 0.2rem; border-radius: var(--radius-sm); cursor: pointer; transition: background 0.2s ease, color 0.2s ease; }
 .icon-btn:hover { color: var(--color-heading); background: var(--color-surface-muted); }
-.matrix-hint { font-size: 0.8rem; color: var(--color-text-muted); }
 .error { color: var(--color-danger-text); }
 .small { font-size: 0.9rem; }
 .muted { color: var(--color-text-muted); }
