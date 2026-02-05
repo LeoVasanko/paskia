@@ -56,7 +56,7 @@ def reload_config() -> None:
 
 
 def normalize_host(raw_host: str | None) -> str | None:
-    """Normalize a Host header preserving port (exact match required)."""
+    """Normalize a Host header, stripping port numbers for consistent matching."""
     if not raw_host:
         return None
     candidate = raw_host.strip()
@@ -65,11 +65,12 @@ def normalize_host(raw_host: str | None) -> str | None:
     # urlsplit to parse (add // for scheme-less); prefer netloc to retain port.
     parsed = urlsplit(candidate if "//" in candidate else f"//{candidate}")
     netloc = parsed.netloc or parsed.path or ""
-    # Strip IPv6 brackets around host part but retain port suffix.
+    # Handle IPv6 addresses: [ipv6]:port or [ipv6]
     if netloc.startswith("["):
-        # format: [ipv6]:port or [ipv6]
         if "]" in netloc:
-            host_part, _, rest = netloc.partition("]")
-            port_part = rest.lstrip(":")
-            netloc = host_part.strip("[]") + (f":{port_part}" if port_part else "")
+            host_part, _, _ = netloc.partition("]")
+            netloc = host_part.strip("[]")
+    else:
+        # Strip port from host:port
+        netloc = netloc.rsplit(":", 1)[0]
     return netloc.lower() or None

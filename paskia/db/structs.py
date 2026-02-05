@@ -455,8 +455,11 @@ class DB(msgspec.Struct, dict=True, omit_defaults=False):
         except KeyError:
             return None
 
+        # Normalize host for comparison (stored hosts are already normalized)
+        normalized_input = normalize_host(host)
+
         # Validate host matches (sessions are always created with a host)
-        if s.host != host:
+        if s.host != normalized_input:
             # Session bound to different host
             return None
 
@@ -471,10 +474,6 @@ class DB(msgspec.Struct, dict=True, omit_defaults=False):
         # Effective permissions: role's permissions that the org can grant
         # Also filter by domain if host is provided
         org_perm_uuids = {p.uuid for p in org.permissions}
-        normalized_host = normalize_host(host)
-        host_without_port = (
-            normalized_host.rsplit(":", 1)[0] if normalized_host else None
-        )
 
         effective_perms = []
         for perm_uuid in role.permission_set:
@@ -484,8 +483,8 @@ class DB(msgspec.Struct, dict=True, omit_defaults=False):
                 p = self.permissions[perm_uuid]
             except KeyError:
                 continue
-            # Check domain restriction
-            if p.domain is not None and p.domain != host_without_port:
+            # Check domain restriction (normalized_input already has port stripped)
+            if p.domain is not None and p.domain != normalized_input:
                 continue
             effective_perms.append(p)
 
