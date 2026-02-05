@@ -74,21 +74,18 @@ async def start_background():
                     _logger.debug("Background task in different event loop, restarting")
                     _background_task = None
                 else:
-                    # Task is running in the same event loop - this is an error
-                    raise RuntimeError(
-                        "Background task is already running. "
-                        "start_background() must not be called multiple times in the same event loop."
+                    # Task is already running in same loop - idempotent, just return
+                    # This happens with dual IPv4+IPv6 endpoints sharing the same process
+                    _logger.debug(
+                        "Background task already running in same loop, skipping"
                     )
-            except RuntimeError:
-                raise  # Re-raise RuntimeError from above
+                    return
             except Exception as e:
                 _logger.debug("Error checking background task loop: %s, restarting", e)
                 _background_task = None
 
     if _background_task is None:
         _background_task = asyncio.create_task(_background_loop())
-    else:
-        _logger.debug("Background task already running: %s", _background_task)
 
 
 async def stop_background():

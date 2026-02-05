@@ -29,12 +29,12 @@ Single Sign-On (SSO): Users register once and authenticate across all applicatio
 Install [UV](https://docs.astral.sh/uv/getting-started/installation/) and run:
 
 ```fish
-uvx paskia serve --rp-id example.com
+uvx paskia --rp-id example.com
 ```
 
-On the first run it downloads the software and prints a registration link for the Admin.  The server will start up on [localhost:4401](http://localhost:4401) *for authentication required*, serving for `*.example.com`. If you are going to be connecting `localhost` directly, for testing, leave out the rp-id.
+On the first run it downloads the software and prints a registration link for the Admin. The server starts on [localhost:4401](http://localhost:4401), serving authentication for `*.example.com`. For local testing, leave out `--rp-id`.
 
-Otherwise you will need a web server such as [Caddy](https://caddyserver.com/) to serve HTTPS on your actual domain names and proxy requests to Paskia and your backend apps (see documentation below).
+For production you need a web server such as [Caddy](https://caddyserver.com/) to serve HTTPS on your actual domain names and proxy requests to Paskia and your backend apps (see documentation below).
 
 For a permanent install of `paskia` CLI command, not needing `uvx`:
 
@@ -44,19 +44,20 @@ uv tool install paskia
 
 ## Configuration
 
-There is no config file. Pass only the options on CLI:
+There is no config file. All settings are passed as CLI options:
 
 ```text
-paskia serve [options]
+paskia [options]
+paskia reset [user]     # Generate passkey reset link
 ```
 
 | Option | Description | Default |
 |--------|-------------|---------|
-| Listen address | One of *host***:***port* (default all hosts, port 4401) or **unix:***path***/paskia.socket** (Unix socket) | **localhost:4401** |
-| --rp-id *domain* | Main/top domain | **localhost** |
-| --rp-name *"text"* | Name of your company or site | Same as rp-id |
-| --origin *url* | Explicitly list the domain names served | **https://**_rp-id_ |
-| --auth-host *domain* | Dedicated authentication site (e.g., **auth.example.com**) | **Unspecified:** we use **/auth/** on **every** site under rp-id.|
+| -l, --listen *endpoint* | Listen address: *host*:*port*, :*port* (all interfaces), or */path.sock* | **localhost:4401** |
+| --rp-id *domain* | Main/top domain for passkeys | **localhost** |
+| --rp-name *"text"* | Name shown during passkey registration | Same as rp-id |
+| --origin *url* | Restrict allowed origins for WebSocket auth (repeatable) | All under rp-id |
+| --auth-host *url* | Dedicated authentication site, e.g. **auth.example.com** | Use **/auth/** path on each site |
 
 ## Further Documentation
 

@@ -21,10 +21,10 @@ DEFAULT_PORT = 4401
 
 EPILOG = """\
 Examples:
-  paskia                      # localhost:4401
-  paskia :8080                # All interfaces, port 8080
-  paskia unix:/tmp/paskia.sock
-  paskia reset [user]         # Generate passkey reset link
+  paskia                           # localhost:4401
+  paskia -l :8080                  # All interfaces, port 8080
+  paskia -l /tmp/paskia.sock       # Unix socket
+  paskia reset [user]              # Generate passkey reset link
 """
 
 
@@ -81,32 +81,40 @@ def main():
         epilog=EPILOG,
     )
 
-    # Primary argument: either host:port or "reset" subcommand
+    # Subcommand for reset
     parser.add_argument(
-        "hostport",
+        "command",
         nargs="?",
-        help=(
-            "Endpoint (default: localhost:4401). Forms: host[:port] | :port | "
-            "[ipv6][:port] | ipv6 | unix:/path.sock | 'reset' for credential reset"
-        ),
+        help="Command: 'reset' for credential reset, or omit to run server",
     )
     parser.add_argument(
         "reset_query",
         nargs="?",
         help="For 'reset' command: user UUID or substring of display name",
     )
+    parser.add_argument(
+        "-l",
+        "--listen",
+        metavar="LISTEN",
+        help=(
+            "Endpoint to listen on (default: localhost:4401). "
+            "Forms: host:port  port  :port  [ipv6]:port  unix:path  /path.sock"
+        ),
+    )
     add_common_options(parser)
 
     args = parser.parse_args()
 
-    # Detect "reset" subcommand (first positional is "reset")
-    is_reset = args.hostport == "reset"
+    # Detect "reset" subcommand
+    is_reset = args.command == "reset"
 
     if is_reset:
         endpoints = []
     else:
+        if args.command is not None:
+            raise SystemExit(f"Unknown command: {args.command}")
         # Parse endpoint using fastapi_vue.hostutil
-        endpoints = parse_endpoint(args.hostport, DEFAULT_PORT)
+        endpoints = parse_endpoint(args.listen, DEFAULT_PORT)
 
     # Extract host/port/uds from first endpoint for config display and site_url
     ep = endpoints[0] if endpoints else {}

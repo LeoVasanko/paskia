@@ -15,18 +15,18 @@ from paskia.util import hostutil, passphrase
 logger = logging.getLogger(__name__)
 
 # Shared log message template for admin reset links
-ADMIN_RESET_MESSAGE = """\
-%s
-
+ADMIN_RESET_MESSAGE = """
 👤 Admin  %s
    - Use this link to register a Passkey for the admin user!
 """
 
 
-def _log_reset_link(message: str, passphrase: str) -> str:
+def _log_reset_link(passphrase: str, message: str | None = None) -> str:
     """Log a reset link message and return the URL."""
     reset_link = hostutil.reset_link_url(passphrase)
-    logger.info(ADMIN_RESET_MESSAGE, message, reset_link)
+    if message:
+        logger.info(message)
+    logger.info(ADMIN_RESET_MESSAGE, reset_link)
     return reset_link
 
 
@@ -41,7 +41,7 @@ async def bootstrap_system() -> None:
     reset_passphrase = db.bootstrap()
 
     # Log the reset link (this is separate from the transaction log)
-    _log_reset_link("✅ Bootstrap completed!", reset_passphrase)
+    _log_reset_link(reset_passphrase, "✅ Bootstrap completed!")
 
 
 async def check_admin_credentials() -> bool:
@@ -72,6 +72,7 @@ async def check_admin_credentials() -> bool:
 
         if not db.get_user_credential_ids(admin_user.uuid):
             # Admin exists but has no credentials, create reset link
+            logger.info("⚠️  Admin user has no credentials!")
 
             token = passphrase.generate()
             expiry = authsession.reset_expires()
@@ -81,7 +82,7 @@ async def check_admin_credentials() -> bool:
                 expiry=expiry,
                 token_type="admin registration",
             )
-            _log_reset_link("⚠️  Admin user has no credentials!", token)
+            _log_reset_link(token)
             return True
 
         return False

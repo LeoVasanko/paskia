@@ -6,9 +6,9 @@ not from the installed package. It starts both the Vite frontend dev server
 and the FastAPI backend with auto-reload enabled.
 
 Usage:
-    uv run scripts/devserver.py [host:port] [options...]
+    uv run scripts/devserver.py [-l host:port] [options...]
 
-The optional host:port argument sets where the Vite frontend listens.
+The optional -l/--listen argument sets where the Vite frontend listens.
 All other options are forwarded to `paskia`.
 Backend always listens on localhost:4402.
 
@@ -376,9 +376,15 @@ def run_caddy(origins: list[str], vite_port: int) -> subprocess.Popen | None:
 
 
 def main():
-    # Parse optional hostport argument for Vite frontend
+    # Parse optional listen argument for Vite frontend
     parser = argparse.ArgumentParser(add_help=False)
-    parser.add_argument("hostport", nargs="?", default=None)
+    parser.add_argument(
+        "-l",
+        "--listen",
+        metavar="ENDPOINT",
+        default=None,
+        help="Vite frontend endpoint (default: localhost:4403)",
+    )
     parser.add_argument("--caddy", action="store_true", help="Run Caddy as HTTPS proxy")
     parser.add_argument("--rp-id", default="localhost", help="Relying Party ID")
     parser.add_argument(
@@ -389,7 +395,7 @@ def main():
 
     # Parse Vite endpoint
     vite_host, vite_port, vite_uds, all_ifaces = parse_endpoint(
-        args.hostport, DEFAULT_VITE_PORT
+        args.listen, DEFAULT_VITE_PORT
     )
 
     if vite_uds:
@@ -446,8 +452,8 @@ def main():
     # Start Vite dev server
     run_vite(vite_url, vite_host, vite_port, env, args.auth_host)
 
-    # Build command with origin args (no serve subcommand, host:port is first arg)
-    cmd = ["paskia", f"localhost:{BACKEND_PORT}"]
+    # Build command with origin args
+    cmd = ["paskia", "-l", f"localhost:{BACKEND_PORT}"]
 
     # Pass through rp-id (always pass, has default)
     cmd.extend(["--rp-id", args.rp_id])
