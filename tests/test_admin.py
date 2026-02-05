@@ -101,7 +101,7 @@ async def second_org_session_token(
     return create_session(
         user_uuid=second_org_user.uuid,
         credential_uuid=second_org_credential.uuid,
-        host="localhost:4401",
+        host="localhost",
         ip="127.0.0.1",
         user_agent="pytest",
         expiry=expires(),
@@ -158,7 +158,7 @@ async def org_admin_session_token(
     return create_session(
         user_uuid=org_admin_user.uuid,
         credential_uuid=org_admin_credential.uuid,
-        host="localhost:4401",
+        host="localhost",
         ip="127.0.0.1",
         user_agent="pytest",
         expiry=expires(),
