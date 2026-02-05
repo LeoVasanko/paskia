@@ -1,7 +1,15 @@
 {
   "name": "paskia",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Paskia authentication utilities for JavaScript",
+  "author": "Leo Vasanko",
+  "license": "Unlicense",
+  "homepage": "https://git.zi.fi/LeoVasanko/paskia",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/LeoVasanko/paskia",
+    "directory": "paskia-js"
+  },
   "type": "module",
   "main": "./dist/paskia.js",
   "types": "./dist/paskia.d.ts",
@@ -26,7 +34,8 @@
   "keywords": [
     "auth",
     "authentication",
-    "paskia"
-  ],
-  "license": "Unlicense"
+    "paskia",
+    "passkey",
+    "webauthn"
+  ]
 }
