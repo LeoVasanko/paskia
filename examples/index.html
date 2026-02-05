@@ -8,26 +8,6 @@
         :root {
             color-scheme: light dark;  /* Automatic themes by browser */
         }
-        /* Login/reauth/forbidden dialog will appear in this iframe */
-        #auth-iframe {
-            /* Full viewport overlay */
-            border: none;
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            z-index: 9999;
-            /* Optional transparent background with optional blur backdrop */
-            color-scheme: auto;
-            background: transparent;
-            backdrop-filter: blur(.1rem) brightness(0.7);
-            -webkit-backdrop-filter: blur(.1rem) brightness(0.7);
-        }
-        /* Prevent background scroll when auth-iframe is shown */
-        body:has(#auth-iframe) {
-            overflow: hidden;
-        }
     </style>
 </head>
 <body>
@@ -65,99 +45,50 @@
         </div>
     </div>
 
-    <script>
+    <script type="module">
+        import { apiFetch, apiJson, AuthCancelledError } from '/paskia-js/dist/paskia.js'
+
         const output = document.getElementById('output');
-        let pendingCall = null;  // Stores the API call to retry after auth
-
-        // The auth iframe posts messages when authentication completes or is cancelled.
-        // Message types: 'auth-success' (proceed), 'auth-back' (user cancelled)
-        // Errors during auth stay in the dialog allowing retry, no message is sent.
-        window.addEventListener('message', (event) => {
-            const { type, message } = event.data || {};
-
-            if (type === 'auth-success') {
-                log('✓ Authentication successful, retrying...');
-                hideAuthIframe();
-                // Retry the original API call that triggered authentication
-                if (pendingCall) {
-                    const { url, method } = pendingCall;
-                    pendingCall = null;
-                    apiCall(url, method);
-                }
-            } else if (type === 'auth-back') {
-                log(message || 'Authentication cancelled');
-                hideAuthIframe();
-                pendingCall = null;
-            }
-        });
-
-        // Make an API call, handling 401/403 by showing the auth iframe.
-        // The server returns JSON with auth.iframe URL when authentication is needed.
-        async function apiCall(url, method = 'GET') {
-            log(`${method} ${url}...`);
-
-            const response = await fetch(url, { method });
-
-            // Server returns 401 (login/reauth) or 403 (missing permissions)
-            // with a JSON body containing the iframe URL for authentication
-            if (response.status === 401 || response.status === 403) {
-                const data = await response.json();
-                if (data.auth?.iframe) {
-                    const mode = data.auth.mode;  // 'login' or 'reauth'
-                    log(`${mode === 'reauth' ? 'Re-authentication' : 'Authentication'} required...`);
-                    pendingCall = { url, method };
-                    showAuthIframe(data.auth.iframe);
-                    return;
-                }
-                log(`Error: ${response.status} - ${data.detail}`);
-                return;
-            }
-
-            // Forward endpoint returns 204 on success (Caddy then adds Remote-* headers)
-            if (response.status === 204) {
-                log('✓ Success (204 No Content)\nHeaders:\n' +
-                    [...response.headers].filter(([k]) => k.startsWith('remote-'))
-                        .map(([k, v]) => `  ${k}: ${v}`).join('\n'));
-                return;
-            }
-
-            if (!response.ok) {
-                log(`Error: ${response.status} ${response.statusText}`);
-                return;
-            }
-
-            const data = await response.json();
-            log('✓ Response:\n' + JSON.stringify(data, null, 2));
-        }
-
-        async function logout() {
-            await fetch('/auth/api/logout', { method: 'POST' });
-            log('Logged out');
-        }
-
-        // Create fullscreen iframe for authentication.
-        // The 'allow' attribute enables WebAuthn (passkey) API inside the iframe.
-        function showAuthIframe(url) {
-            hideAuthIframe();
-            const iframe = document.createElement('iframe');
-            iframe.id = 'auth-iframe';
-            iframe.src = url;
-            document.body.appendChild(iframe);
-            log("Authentication dialog open...")
-        }
-
-        function hideAuthIframe() {
-            document.getElementById('auth-iframe')?.remove();
-        }
 
         function log(msg) {
             output.textContent = msg;
         }
 
+        // Make an API call using paskia module (handles 401/403 automatically)
+        window.apiCall = async function(url, method = 'GET') {
+            log(`${method} ${url}...`);
+            try {
+                const response = await apiFetch(url, { method });
+
+                // Forward endpoint returns 204 on success
+                if (response.status === 204) {
+                    log('✓ Success (204 No Content)');
+                    return;
+                }
+
+                if (!response.ok) {
+                    log(`Error: ${response.status} ${response.statusText}`);
+                    return;
+                }
+
+                const data = await response.json();
+                log('✓ Response:\n' + JSON.stringify(data, null, 2));
+            } catch (e) {
+                if (e instanceof AuthCancelledError) {
+                    log('Authentication cancelled');
+                } else {
+                    log(`Error: ${e.message}`);
+                }
+            }
+        }
+
+        window.logout = async function() {
+            await fetch('/auth/api/logout', { method: 'POST' });
+            log('Logged out');
+        }
+
         // Browser mode: open the forward endpoint directly in a new window.
-        // When Accept: text/html, the server redirects to the login page if needed,
-        // then back to the original URL after authentication.
-        function browserNav(url) {
+        window.browserNav = function(url) {
             log('Opening in new window...\nIf not authenticated, you\'ll see the login page.\nAfter auth, you\'ll see a 204 response (blank page = success).');
             window.open(url, '_blank');
         }

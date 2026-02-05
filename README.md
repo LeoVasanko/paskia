@@ -60,6 +60,104 @@ paskia [options]
 | --origin *url* | Restrict allowed origins for WebSocket auth (repeatable) | All under rp-id |
 | --auth-host *url* | Dedicated authentication site, e.g. **auth.example.com** | Use **/auth/** path on each site |
 
+## Tutorial: From Local Testing to Production
+
+This section walks you through a complete example, from running Paskia locally to protecting a real site in production.
+
+### Step 1: Local Testing
+
+For development and testing, run Paskia without any arguments:
+
+```fish
+paskia
+```
+
+This starts the server on [localhost:4401](http://localhost:4401) with passkeys bound to `localhost`. On first run, Paskia prints a registration link for the Master Admin—click it to register your first passkey.
+
+### Step 2: Production Configuration
+
+For a real deployment, configure Paskia with your domain name (rp-id). This enables SSO setup for that domain and any subdomains.
+
+```fish
+paskia --rp-id example.com --rp-name "Example Corp"
+```
+
+This binds passkeys to `*.example.com`. The `--rp-name` is shown to users during passkey registration.
+
+### Step 3: Set Up Caddy
+
+Install [Caddy](https://caddyserver.com/) and copy the [auth folder](caddy/auth) to `/etc/caddy/auth`. Say your current unprotected Caddyfile looks like this:
+
+```caddyfile
+app.example.com {
+    reverse_proxy :3000
+}
+```
+
+Add Paskia full site protection:
+
+```caddyfile
+app.example.com {
+    import auth/setup
+    handle {
+        import auth/require perm=myapp:login
+        reverse_proxy :3000
+    }
+}
+```
+
+Run `systemctl reload caddy`. Now `app.example.com` requires the `myapp:login` permission. Try accessing it and you'll land on a login dialog.
+
+### Step 4: Assign Permissions via Admin Panel
+
+1. Go to `app.example.com/auth/admin/`
+2. Create a permission, give it a name and scope `myapp:login`
+3. Assign it to Organization
+4. In that organization, assign it to the Administration role
+
+Now you have granted yourself the new permission.
+
+### Step 5: Add API Authentication to Your App
+
+Your backend already receives `Remote-*` headers from Caddy's forward-auth. For frontend API calls, we provide a [JS paskia module](https://www.npmjs.com/package/paskia):
+
+```js
+import { apiJson } from 'https://cdn.jsdelivr.net/npm/paskia@latest/dist/paskia.js'
+
+const data = await apiJson('/api/sensitive', { method: 'POST' })
+```
+
+When a 401/403 occurs, the auth dialog appears automatically, then the request retries.
+
+To protect the API path with a different permission, update your Caddyfile:
+
+```caddyfile
+app.example.com {
+    import auth/setup
+
+    @api path /api/*
+    handle @api {
+        import auth/require perm=myapp:api
+        reverse_proxy :3000
+    }
+
+    handle {
+        import auth/require perm=myapp:login
+        reverse_proxy :3000
+    }
+}
+```
+
+Create the `myapp:api` permission in the admin panel, that will be required for all API access. Link to `/auth/` for the built-in profile page.
+
+You may also remove the `myapp:login` protection from the rest of your site paths, unless you wish to keep all your assets behind a login page. Having this as the last entry in your config allows free access to everything not matched by other sections.
+
+```Caddyfile
+    handle {
+        reverse_proxy :3000
+    }
+```
+
 ## Further Documentation
 
 - [Caddy configuration](https://git.zi.fi/LeoVasanko/paskia/src/branch/main/docs/Caddy.md)
