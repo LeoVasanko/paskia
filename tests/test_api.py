@@ -526,7 +526,7 @@ class TestValidateSessionRefresh:
         token = create_session(
             user_uuid=test_user.uuid,
             credential_uuid=test_credential.uuid,
-            host="localhost:4401",
+            host="localhost",
             ip="127.0.0.1",
             user_agent="pytest",
             expiry=old_expiry,

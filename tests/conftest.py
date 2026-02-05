@@ -39,7 +39,6 @@ from paskia.db.operations import DB
 from paskia.fastapi.mainapp import app
 from paskia.fastapi.session import AUTH_COOKIE_NAME
 from paskia.sansio import Passkey
-from paskia.util.passphrase import generate
 
 
 @pytest.fixture(scope="session")
@@ -181,7 +180,7 @@ async def session_token(
     return create_session(
         user_uuid=test_user.uuid,
         credential_uuid=test_credential.uuid,
-        host="localhost:4401",
+        host="localhost",
         ip="127.0.0.1",
         user_agent="pytest",
         expiry=expires(),
@@ -196,7 +195,7 @@ async def regular_session_token(
     return create_session(
         user_uuid=regular_user.uuid,
         credential_uuid=regular_credential.uuid,
-        host="localhost:4401",
+        host="localhost",
         ip="127.0.0.1",
         user_agent="pytest",
         expiry=expires(),
@@ -206,15 +205,11 @@ async def regular_session_token(
 @pytest_asyncio.fixture(scope="function")
 async def reset_token(test_db: DB, test_user: User, test_credential: Credential) -> str:
     """Create a reset token for the test user."""
-
-    token = generate()
-    create_reset_token(
+    return create_reset_token(
         user_uuid=test_user.uuid,
-        passphrase=token,
         expiry=reset_expires(),
         token_type="reset",
     )
-    return token
 
 
 @pytest_asyncio.fixture(scope="function")
