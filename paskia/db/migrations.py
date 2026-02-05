@@ -19,7 +19,7 @@ migrations = sorted(
     key=lambda f: int(f.__name__.removeprefix("migrate_v")),
 )
 
-DBVER = len(migrations)  # Used by bootstrap and migrate:sql to set initial version
+DBVER = len(migrations)  # Used by bootstrap to set initial version
 
 
 async def apply_all_migrations(

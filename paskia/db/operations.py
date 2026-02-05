@@ -734,7 +734,7 @@ def bootstrap(
     - Admin user with Administration role
     - Reset token for admin registration
 
-    This is the only way to create a new database file (besides migrate).
+    This is the only way to create a new database file.
     All data is created atomically - if any step fails, nothing is written.
 
     Args:
