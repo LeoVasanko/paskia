@@ -67,7 +67,7 @@ def create_change_record(
 
 
 # Actions that are allowed to create a new database file
-_BOOTSTRAP_ACTIONS = frozenset({"bootstrap", "migrate:sql"})
+_BOOTSTRAP_ACTIONS = frozenset({"bootstrap"})
 
 
 async def flush_changes(
@@ -91,7 +91,7 @@ async def flush_changes(
         if first_action not in _BOOTSTRAP_ACTIONS:
             _logger.error(
                 "Refusing to create database file with action '%s' - "
-                "only bootstrap or migrate can create a new database",
+                "only bootstrap can create a new database",
                 first_action,
             )
             pending_changes.clear()
@@ -233,8 +233,8 @@ class JsonlStore:
         # Check for out-of-transaction modifications
         current_state = msgspec.to_builtins(self.db)
         if current_state != self._previous_builtins:
-            # Allow bootstrap/migrate to create a new database from empty state
-            is_bootstrap = action in _BOOTSTRAP_ACTIONS or action.startswith("migrate:")
+            # Allow bootstrap to create a new database from empty state
+            is_bootstrap = action in _BOOTSTRAP_ACTIONS
             if is_bootstrap and not self._previous_builtins:
                 pass  # Expected: creating database from scratch
             else:
