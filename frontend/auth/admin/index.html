@@ -3,7 +3,8 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Admin</title>
+    <title>Admin</title>
+    <script>(localStorage.getItem('paskia-theme')==='dark'||localStorage.getItem('paskia-theme')!=='light'&&matchMedia('(prefers-color-scheme:dark)').matches)&&document.documentElement.classList.add('dark')</script>
   </head>
   <body>
     <div id="admin-app"></div>
