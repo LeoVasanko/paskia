@@ -158,6 +158,34 @@ You may also remove the `myapp:login` protection from the rest of your site path
     }
 ```
 
+### Step 6: Run Paskia as a Service
+
+Create a systemd unit file with `systemctl edit --force --full paskia`. Paste and save:
+
+```ini
+[Unit]
+Description=Paskia Authentication Server
+
+[Service]
+Type=simple
+WorkingDirectory=/var/lib/paskia
+ExecStart=uvx paskia --rp-id example.com --rp-name "Example Corp"
+DynamicUser=yes
+StateDirectory=paskia
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Then enable and start:
+
+```fish
+systemctl enable --now paskia
+```
+
+The database is stored in `/var/lib/paskia/paskia.jsonl`. You will have to install UV on your system level to make use of uvx and automatic updates on service restarts.
+
+
 ## Further Documentation
 
 - [Caddy configuration](https://git.zi.fi/LeoVasanko/paskia/src/branch/main/docs/Caddy.md)
