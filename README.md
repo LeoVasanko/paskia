@@ -169,7 +169,11 @@ You may also remove the `myapp:login` protection from the rest of your site path
 
 ### Step 6: Run Paskia as a Service
 
+Create a system user paskia, install UV on the system, and create a systemd unit:
+
 ```fish
+sudo useradd --system --home-dir /srv/paskia --create-home paskia
+curl -LsSf https://astral.sh/uv/install.sh | sudo env UV_INSTALL_DIR=/usr/local/bin sh
 sudo systemctl edit --force --full paskia.service
 ```
 
@@ -181,23 +185,19 @@ Description=Paskia Authentication Server
 
 [Service]
 Type=simple
-WorkingDirectory=/var/lib/paskia
+User=paskia
+WorkingDirectory=/srv/paskia
 ExecStart=uvx paskia --rp-id example.com --rp-name "Example Corp"
-DynamicUser=yes
-StateDirectory=paskia
-Environment=XDG_CACHE_HOME=/var/lib/paskia/cache UV_TOOL_DIR=/var/lib/paskia/tools
 
 [Install]
 WantedBy=multi-user.target
 ```
 
-Then enable and start:
+Then enable and start, view output for registration link:
 
 ```fish
-sudo systemctl enable --now paskia
+sudo systemctl enable --now paskia && sudo journalctl -u paskia -f -o cat
 ```
-
-The database is stored in `/var/lib/paskia/paskia.jsonl`. You will have to install UV on your system level to make use of uvx and automatic updates on service restarts.
 
 
 ## Further Documentation
