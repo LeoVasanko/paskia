@@ -186,7 +186,7 @@ ExecStart=uvx paskia --rp-id example.com --rp-name "Example Corp"
 DynamicUser=yes
 StateDirectory=paskia
 CacheDirectory=paskia
-Environment=XDG_CACHE_HOME=/var/cache/paskia
+Environment=XDG_CACHE_HOME=/var/cache/paskia UV_TOOL_DIR=/var/cache/paskia/tools
 
 [Install]
 WantedBy=multi-user.target
