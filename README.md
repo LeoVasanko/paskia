@@ -185,6 +185,8 @@ WorkingDirectory=/var/lib/paskia
 ExecStart=uvx paskia --rp-id example.com --rp-name "Example Corp"
 DynamicUser=yes
 StateDirectory=paskia
+CacheDirectory=paskia
+Environment=XDG_CACHE_HOME=/var/cache/paskia
 
 [Install]
 WantedBy=multi-user.target
