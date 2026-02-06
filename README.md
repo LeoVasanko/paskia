@@ -169,7 +169,11 @@ You may also remove the `myapp:login` protection from the rest of your site path
 
 ### Step 6: Run Paskia as a Service
 
-Create a systemd unit file with `systemctl edit --force --full paskia`. Paste and save:
+```fish
+sudo systemctl edit --force --full paskia.service
+```
+
+Paste the following and save:
 
 ```ini
 [Unit]
