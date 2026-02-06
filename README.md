@@ -196,7 +196,7 @@ WantedBy=multi-user.target
 Then enable and start, view output for registration link:
 
 ```fish
-sudo systemctl enable --now paskia && sudo journalctl -u paskia -f -o cat
+sudo systemctl enable --now paskia && sudo journalctl -u paskia -f -n 20 -o cat
 ```
 
 
