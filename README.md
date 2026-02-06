@@ -115,6 +115,8 @@ Run `systemctl reload caddy`. Now `app.example.com` requires the `myapp:login` p
 
 ### Step 4: Assign Permissions via Admin Panel
 
+![Admin panel permissions](https://git.zi.fi/leovasanko/paskia/raw/main/docs/screenshots/master-permissions.webp)
+
 1. Go to `app.example.com/auth/admin/`
 2. Create a permission, give it a name and scope `myapp:login`
 3. Assign it to Organization
@@ -134,7 +136,7 @@ import { apiJson } from 'https://cdn.jsdelivr.net/npm/paskia@latest/dist/paskia.
 const data = await apiJson('/api/sensitive', { method: 'POST' })
 ```
 
-When a 401/403 occurs, the auth dialog appears automatically, then the request retries.
+When a 401/403 occurs, the auth dialog appears automatically, and the request retries after authentication.
 
 To protect the API path with a different permission, update your Caddyfile:
 
