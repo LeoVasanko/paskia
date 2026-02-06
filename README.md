@@ -17,14 +17,19 @@ An easy to install passkey-based authentication service that protects any web ap
 - Remote autentication by entering random keywords from another device (like 2fa)
 - No CORS, NodeJS or anything extra needed.
 
-Two interfaces:
+## Authenticate to get to your app, or in your app
+
 - API fetch: auth checks and login without leaving your app
 - Forward-auth proxy: protect any unprotected site or service (Caddy, Nginx)
 
 The API mode is useful for applications that can be customized to run with Paskia. Forward auth can also protect your javascript and other assets. Each provides fine-grained permission control and reauthentication requests where needed, and both can be mixed where needed.
 
+## Authentication flows already done
+
 ![Forbidden dialog, dark mode](https://git.zi.fi/leovasanko/paskia/raw/main/docs/screenshots/forbidden-dark.webp)
-Automatic light/dark mode switching with overrides by user profile and protected app's theme.
+**Automatic light/dark mode switching with overrides by user profile and protected app's theme.**
+
+Paskia includes set of login, reauthentication and forbidden dialogs that it can use to perform the needed flows. We never leave the URL, no redirections, and if you make use of API mode, we won't even interrupt whatever your app was doing but retry the blocked API fetch after login like nothing happened.
 
 ## Quick Start
 
@@ -116,6 +121,8 @@ Run `systemctl reload caddy`. Now `app.example.com` requires the `myapp:login` p
 4. In that organization, assign it to the Administration role
 
 Now you have granted yourself the new permission.
+
+Permission scopes are text identifiers with colons as separators that we can use for permission checks. The `myapp:` prefix is a convention to namespace permissions per application—you but you can use other forms as you see fit (urlsafe characters, no spaces allowed).
 
 ### Step 5: Add API Authentication to Your App
 
