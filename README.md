@@ -193,7 +193,7 @@ WantedBy=multi-user.target
 Then enable and start:
 
 ```fish
-systemctl enable --now paskia
+sudo systemctl enable --now paskia
 ```
 
 The database is stored in `/var/lib/paskia/paskia.jsonl`. You will have to install UV on your system level to make use of uvx and automatic updates on service restarts.
