@@ -202,6 +202,27 @@ Then enable and start, view output for registration link:
 sudo systemctl enable --now paskia@example.com && sudo journalctl -u paskia@example.com -f -n 30 -o cat
 ```
 
+### Optional: Dedicated Authentication Site
+
+By default, Paskia serves login dialogs and admin interface at the `/auth/` path on each protected site. For a cleaner setup, you can use a dedicated authentication subdomain instead. We assume you have your DNS setup for that domain or a wildcard of all subdomains to current machine.
+
+Configure Paskia with the authentication host:
+
+```fish
+paskia --rp-id example.com --auth-host=auth.example.com --save
+```
+
+Add a Caddy configuration for the authentication domain:
+
+```caddyfile
+auth.example.com {
+    reverse_proxy :4401
+}
+```
+
+Now all authentication happens at `auth.example.com` instead of `/auth/` paths on your apps. No other changes are needed. Your existing protected sites continue to work as before but they just forward to the dedicated site for user profile and other such functionality.
+
+
 
 ## Further Documentation
 
