@@ -836,5 +836,5 @@ def get_config() -> Config:
 
 async def set_config(config: Config) -> None:
     """Update the stored configuration."""
-    async with _db.transaction("update_config"):
+    with _db.transaction("update_config"):
         _db.config = config
