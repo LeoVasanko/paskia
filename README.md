@@ -51,7 +51,7 @@ uv tool install paskia
 
 ## Configuration
 
-All configuration is passed by CLI arguments, of which there are just a few.
+You will need to specify your main domain to which all passkeys will be tied as rp-id. Use your main domain even if Paskia is not running there. All other options are optional.
 
 ```text
 paskia [options]
@@ -61,9 +61,12 @@ paskia [options]
 |--------|-------------|---------|
 | -l, --listen *endpoint* | Listen address: *host*:*port*, :*port* (all interfaces), or */path.sock* | **localhost:4401** |
 | --rp-id *domain* | Main/top domain for passkeys | **localhost** |
-| --rp-name *"text"* | Name shown during passkey registration | Same as rp-id |
-| --origin *url* | Restrict allowed origins for WebSocket auth (repeatable) | All under rp-id |
+| --rp-name *"text"* | Branding name for the entire system (passkey auth, login dialog). | Same as rp-id |
+| --origin *url* | Only sites listed can login (repeatable) | rp-id and all subdomains |
 | --auth-host *url* | Dedicated authentication site, e.g. **auth.example.com** | Use **/auth/** path on each site |
+| --save | Save current options to database | (only --rp-id required on further invocations) |
+
+To clear a stored setting, pass an empty value like `--auth-host=`. The database is stored in `{rp-id}.paskiadb` in current directory. This can be overridden by environment `PASKIA_DB` if needed.
 
 ## Tutorial: From Local Testing to Production
 
@@ -84,10 +87,10 @@ This starts the server on [localhost:4401](http://localhost:4401) with passkeys 
 For a real deployment, configure Paskia with your domain name (rp-id). This enables SSO setup for that domain and any subdomains.
 
 ```fish
-paskia --rp-id example.com --rp-name "Example Corp"
+paskia --rp-id example.com --rp-name "Example Corp" --save
 ```
 
-This binds passkeys to `*.example.com`. The `--rp-name` is shown to users during passkey registration.
+This binds passkeys to `*.example.com`. The `--rp-name` is shown to users during passkey registration. The `--save` option stores these settings in the database, so future runs only need `paskia --rp-id example.com`.
 
 ### Step 3: Set Up Caddy
 
@@ -187,7 +190,7 @@ Description=Paskia Authentication Server
 Type=simple
 User=paskia
 WorkingDirectory=/srv/paskia
-ExecStart=uvx paskia --rp-id example.com --rp-name "Example Corp"
+ExecStart=uvx paskia --rp-id=example.com
 
 [Install]
 WantedBy=multi-user.target
