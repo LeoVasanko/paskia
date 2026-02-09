@@ -199,16 +199,14 @@ def main():
 
     startupbox.print_startup_config(config)
 
-    # Build config to save (will be saved after bootstrap in async_main)
-    save_config = None
-    if args.save:
-        save_config = Config(
-            rp_id=args.rp_id,
-            rp_name=args.rp_name,
-            origins=args.origins,
-            auth_host=args.auth_host,
-            listen=args.listen,
-        )
+    # Build config to save (for bootstrap or explicit --save)
+    cli_config = Config(
+        rp_id=args.rp_id,
+        rp_name=args.rp_name,
+        origins=args.origins,
+        auth_host=args.auth_host,
+        listen=args.listen,
+    )
 
     run_kwargs: dict = {
         "log_level": "warning",  # Suppress startup messages; we use custom logging
@@ -230,9 +228,11 @@ def main():
             origins=config.origins,
             bootstrap=False,
         )
-        await bootstrap_if_needed()
-        if save_config is not None:
-            await set_config(save_config)
+        # Pass config to bootstrap - it will be saved within the bootstrap transaction
+        await bootstrap_if_needed(config=cli_config)
+        # Also save config if --save was explicitly used (even without bootstrap)
+        if args.save:
+            await set_config(cli_config)
         await flush()
 
         if len(endpoints) > 1:

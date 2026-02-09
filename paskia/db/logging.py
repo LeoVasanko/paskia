@@ -109,13 +109,19 @@ class UuidResolver:
                 return role_data["display_name"]
 
         # Check permissions
-        if "permissions" in self._previous and uuid_str in self._previous["permissions"]:
+        if (
+            "permissions" in self._previous
+            and uuid_str in self._previous["permissions"]
+        ):
             perm_data = self._previous["permissions"][uuid_str]
             if isinstance(perm_data, dict) and "display_name" in perm_data:
                 return perm_data["display_name"]
 
         # Check credentials - look up user name
-        if "credentials" in self._previous and uuid_str in self._previous["credentials"]:
+        if (
+            "credentials" in self._previous
+            and uuid_str in self._previous["credentials"]
+        ):
             cred_data = self._previous["credentials"][uuid_str]
             if isinstance(cred_data, dict) and "user" in cred_data:
                 user_uuid = cred_data["user"]
