@@ -821,3 +821,19 @@ def bootstrap(
         _db.reset_tokens[reset_token.key] = reset_token
 
     return reset_passphrase
+
+
+# -------------------------------------------------------------------------
+# Config operations
+# -------------------------------------------------------------------------
+
+
+def get_config() -> Config:
+    """Get the stored configuration."""
+    return _db.config
+
+
+async def set_config(config: Config) -> None:
+    """Update the stored configuration."""
+    async with _db.transaction("update_config"):
+        _db.config = config
