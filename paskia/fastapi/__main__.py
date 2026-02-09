@@ -199,15 +199,16 @@ def main():
 
     startupbox.print_startup_config(config)
 
+    # Build config to save (will be saved after bootstrap in async_main)
+    save_config = None
     if args.save:
-        new_config = Config(
+        save_config = Config(
             rp_id=args.rp_id,
             rp_name=args.rp_name,
             origins=args.origins,
             auth_host=args.auth_host,
             listen=args.listen,
         )
-        asyncio.run(set_config(new_config))
 
     run_kwargs: dict = {
         "log_level": "warning",  # Suppress startup messages; we use custom logging
@@ -230,6 +231,8 @@ def main():
             bootstrap=False,
         )
         await bootstrap_if_needed()
+        if save_config is not None:
+            await set_config(save_config)
         await flush()
 
         if len(endpoints) > 1:
