@@ -4,6 +4,8 @@ JSONL persistence layer for the database.
 
 import copy
 import logging
+import os
+import signal
 from collections import deque
 from contextlib import contextmanager
 from datetime import UTC, datetime
@@ -69,22 +71,25 @@ def create_change_record(
 # Actions that are allowed to create a new database file
 _BOOTSTRAP_ACTIONS = frozenset({"bootstrap"})
 
+# Flag to prevent duplicate error messages on fatal flush failure
+_flush_failed = False
+
 
 async def flush_changes(
     db_path: Path,
     pending_changes: deque[_ChangeRecord],
-) -> bool:
+) -> None:
     """Write all pending changes to disk.
 
     Args:
         db_path: Path to the JSONL database file
         pending_changes: Queue of pending change records (will be cleared on success)
 
-    Returns:
-        True if flush succeeded, False otherwise
+    On failure, logs an error and sends SIGTERM to trigger graceful shutdown.
     """
-    if not pending_changes:
-        return True
+    global _flush_failed
+    if _flush_failed or not pending_changes:
+        return
 
     if not db_path.exists():
         first_action = pending_changes[0].a
@@ -94,26 +99,25 @@ async def flush_changes(
                 "only bootstrap can create a new database",
                 first_action,
             )
-            pending_changes.clear()
-            return False
+            _flush_failed = True
+            os.kill(os.getpid(), signal.SIGTERM)
+            return
 
     changes_to_write = list(pending_changes)
-    pending_changes.clear()
 
     try:
         lines = [_change_encoder.encode(change) for change in changes_to_write]
         if not lines:
-            return True
+            pending_changes.clear()
+            return
 
         async with aiofiles.open(db_path, "ab") as f:
             await f.write(b"\n".join(lines) + b"\n")
-        return True
-    except OSError:
-        _logger.exception("Failed to flush database changes")
-        # Re-queue the changes on failure
-        for change in reversed(changes_to_write):
-            pending_changes.appendleft(change)
-        return False
+        pending_changes.clear()
+    except OSError as e:
+        _logger.error("Failed to flush database: %s", e)
+        _flush_failed = True
+        os.kill(os.getpid(), signal.SIGTERM)
 
 
 class JsonlStore:
@@ -155,8 +159,10 @@ class JsonlStore:
                     self._current_version = change.get("v", 0)
                 except Exception as e:
                     raise ValueError(f"Error parsing line {line_num}: {e}")
-        except (OSError, ValueError, msgspec.DecodeError) as e:
-            raise ValueError(f"Failed to load database: {e}")
+        except OSError as e:
+            raise SystemExit(f"Failed to load database: {e}")
+        except (ValueError, msgspec.DecodeError) as e:
+            raise SystemExit(f"Failed to load database: {e}")
 
         if not data_dict:
             return
@@ -282,6 +288,6 @@ class JsonlStore:
             self._in_transaction = False
             self._transaction_snapshot = None
 
-    async def flush(self) -> bool:
+    async def flush(self) -> None:
         """Write all pending changes to disk."""
-        return await flush_changes(self.db_path, self._pending_changes)
+        await flush_changes(self.db_path, self._pending_changes)
