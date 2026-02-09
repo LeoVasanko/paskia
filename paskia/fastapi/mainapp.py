@@ -12,6 +12,7 @@ from paskia import globals
 from paskia.db import start_background, stop_background
 from paskia.db.logging import configure_db_logging
 from paskia.fastapi import admin, api, auth_host, ws
+from paskia.fastapi.__main__ import DEVMODE
 from paskia.fastapi.logging import AccessLogMiddleware, configure_access_logging
 from paskia.fastapi.session import AUTH_COOKIE
 from paskia.util import hostutil, passphrase, vitedev
@@ -59,7 +60,7 @@ async def lifespan(app: FastAPI):  # pragma: no cover - startup path
 
     # Restore uvicorn info logging (suppressed during startup in dev mode)
     # Keep uvicorn.error at WARNING to suppress WebSocket "connection open/closed" messages
-    if frontend.devmode:
+    if app.debug:
         logging.getLogger("uvicorn").setLevel(logging.INFO)
     logging.getLogger("uvicorn.error").setLevel(logging.WARNING)
     await frontend.load()
@@ -74,6 +75,7 @@ app = FastAPI(
     docs_url=None,
     redoc_url=None,
     openapi_url=None,
+    debug=DEVMODE,
 )
 
 # Custom access logging (uvicorn's access_log is disabled)
