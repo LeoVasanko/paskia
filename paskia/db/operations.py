@@ -21,6 +21,7 @@ from paskia.db.jsonl import (
 )
 from paskia.db.structs import (
     DB,
+    Config,
     Credential,
     Org,
     Permission,
@@ -49,7 +50,7 @@ async def init(rp_id: str = "localhost", *args, **kwargs):
         return
     default_path = f"{rp_id}.paskiadb"
     db_path = os.environ.get("PASKIA_DB", default_path)
-    await _store.load(db_path)
+    await _store.load(db_path, rp_id=rp_id)
     _db = _store.db
     _initialized = True
 

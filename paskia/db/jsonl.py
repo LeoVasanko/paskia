@@ -130,10 +130,13 @@ class JsonlStore:
         self._transaction_snapshot: dict[str, Any] | None = None
         self._current_version: int = DBVER  # Schema version for new databases
 
-    async def load(self, db_path: str | None = None) -> None:
+    async def load(
+        self, db_path: str | None = None, *, rp_id: str = "localhost"
+    ) -> None:
         """Load data from JSONL change log."""
         if db_path is not None:
             self.db_path = Path(db_path)
+        self._rp_id = rp_id
         if not self.db_path.exists():
             return
 
@@ -169,7 +172,9 @@ class JsonlStore:
             self._queue_change(action, new_version, current)
 
         # Apply schema migrations one at a time
-        await apply_all_migrations(data_dict, self._current_version, persist_migration)
+        await apply_all_migrations(
+            data_dict, self._current_version, persist_migration, rp_id=rp_id
+        )
 
         # Decode to msgspec struct
         decoder = msgspec.json.Decoder(DB)

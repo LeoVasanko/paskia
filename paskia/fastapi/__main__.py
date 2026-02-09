@@ -6,7 +6,8 @@ import os
 from urllib.parse import urlparse
 
 from fastapi_vue.hostutil import parse_endpoint
-from uvicorn import Config, Server
+from uvicorn import Config as UvicornConfig
+from uvicorn import Server
 from uvicorn import run as uvicorn_run
 
 from paskia import globals as _globals
@@ -236,7 +237,7 @@ def main():
                 for ep in endpoints:
                     tg.create_task(
                         Server(
-                            Config(app="paskia.fastapi:app", **run_kwargs, **ep)
+                            UvicornConfig(app="paskia.fastapi:app", **run_kwargs, **ep)
                         ).serve()
                     )
         elif DEVMODE:
@@ -245,7 +246,7 @@ def main():
             uvicorn_run("paskia.fastapi:app", **run_kwargs, **ep)
         else:
             server = Server(
-                Config(app="paskia.fastapi:app", **run_kwargs, **endpoints[0])
+                UvicornConfig(app="paskia.fastapi:app", **run_kwargs, **endpoints[0])
             )
             await server.serve()
 
