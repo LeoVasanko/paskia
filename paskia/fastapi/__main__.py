@@ -17,6 +17,7 @@ from paskia.util import startupbox
 from paskia.util.hostutil import normalize_origin
 
 DEFAULT_PORT = 4401
+DEVMODE = bool(os.getenv("PASKIA_FRONTEND_URL"))
 
 EPILOG = """\
 Example:
@@ -167,14 +168,12 @@ def main():
 
     startupbox.print_startup_config(config)
 
-    devmode = bool(os.environ.get("FASTAPI_VUE_FRONTEND_URL"))
-
     run_kwargs: dict = {
         "log_level": "warning",  # Suppress startup messages; we use custom logging
         "access_log": False,  # We use custom AccessLogMiddleware instead
     }
 
-    if devmode:
+    if DEVMODE:
         # Security: dev mode must run on localhost:4402 to prevent
         # accidental public exposure of the Vite dev server
         if host != "localhost" or port != 4402:
@@ -200,7 +199,7 @@ def main():
                             Config(app="paskia.fastapi:app", **run_kwargs, **ep)
                         ).serve()
                     )
-        elif devmode:
+        elif DEVMODE:
             # Use uvicorn.run for proper reload support (it handles subprocess spawning)
             ep = endpoints[0]
             uvicorn_run("paskia.fastapi:app", **run_kwargs, **ep)

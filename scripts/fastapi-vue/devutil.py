@@ -21,12 +21,12 @@ class ProcessGroup:
         self._cmds: dict[int, str] = {}  # pid -> command name
 
     async def spawn(
-        self, *cmd: str, cwd: str | None = None, env: dict | None = None
+        self, *cmd: str, cwd: str | None = None
     ) -> asyncio.subprocess.Process:
         """Spawn a subprocess and track it."""
         cmd_name = Path(cmd[0]).stem
         logger.info(">>> %s", " ".join([cmd_name, *cmd[1:]]))
-        proc = await asyncio.create_subprocess_exec(*cmd, cwd=cwd, env=env)
+        proc = await asyncio.create_subprocess_exec(*cmd, cwd=cwd)
         self._procs.append(proc)
         self._cmds[proc.pid] = cmd_name
         return proc
@@ -187,4 +187,25 @@ def setup_fastapi(
         f"--reload-dir={reload_dir}",
         "--forwarded-allow-ips=*",
     ]
+    return f"http://{host}:{port}", cmd
+
+
+def setup_cli(
+    cli: str, endpoint: str, default_port: int = 8000
+) -> tuple[str, list[str]]:
+    """Parse backend endpoint and build CLI command.
+
+    Returns (url, cli_cmd).
+    Raises SystemExit(1) on invalid config.
+    """
+    endpoints = parse_endpoint(endpoint, default_port)
+
+    if "uds" in endpoints[0]:
+        logger.warning("Unix sockets not supported with vite devserver")
+        raise SystemExit(1)
+
+    host = endpoints[0]["host"]
+    port = endpoints[0]["port"]
+
+    cmd = [cli, f"--listen={host}:{port}"]
     return f"http://{host}:{port}", cmd

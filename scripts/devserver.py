@@ -13,9 +13,9 @@ All other options are forwarded to `paskia`.
 Backend always listens on localhost:4402.
 
 Environment:
-    FASTAPI_VUE_FRONTEND_URL    Set by this script for the backend to know where Vite is.
-    FASTAPI_VUE_BACKEND_URL     Set by this script for Vite to know where to proxy API calls.
-    PASKIA_SITE_URL             User-facing URL for reset links (Caddy HTTPS or Vite HTTP).
+    PASKIA_FRONTEND_URL    Set by this script for the backend to know where Vite is.
+    PASKIA_BACKEND_URL     Set by this script for Vite to know where to proxy API calls.
+    PASKIA_SITE_URL        User-facing URL for reset links (Caddy HTTPS or Vite HTTP).
 
 Options:
     --caddy         Run Caddy as HTTPS proxy on port 443 (requires sudo)
@@ -34,12 +34,16 @@ from contextlib import suppress
 from pathlib import Path
 from urllib.parse import urlparse
 
-from fastapi_vue.hostutil import parse_endpoint
-
 # Import utilities from scripts/fastapi-vue (not a package, so we adjust sys.path)
 sys.path.insert(0, str(Path(__file__).with_name("fastapi-vue")))
-from buildutil import find_dev_tool, find_install_tool, logger  # noqa: E402
-from devutil import ProcessGroup, check_ports_free  # noqa: E402
+from devutil import (  # noqa: E402
+    ProcessGroup,
+    check_ports_free,
+    logger,
+    ready,
+    setup_cli,
+    setup_vite,
+)
 
 DEFAULT_VITE_PORT = 4403  # overrides by CLI option
 BACKEND_PORT = 4402  # hardcoded, also in vite.config.ts
@@ -58,35 +62,6 @@ SITE_ADDR {
 	}
 }
 """
-
-
-def build_vite_cmd(vite_host: str, vite_port: int) -> list[str] | None:
-    """Build the Vite dev command, or None if not available."""
-    devpath = Path(__file__).parent.parent / "frontend"
-    if not (devpath / "package.json").exists():
-        logger.warning("Frontend source not found at %s", devpath)
-        return None
-
-    try:
-        cmd = find_dev_tool()
-    except RuntimeError as e:
-        logger.warning(str(e))
-        return None
-
-    # Add Vite CLI args for host/port
-    cmd.extend([f"--port={vite_port}", "--logLevel=silent"])
-    if vite_host and vite_host != "localhost":
-        cmd.append("--host" if vite_host == "0.0.0.0" else f"--host={vite_host}")
-
-    return cmd
-
-
-def build_npm_install_cmd() -> list[str] | None:
-    """Build the npm install command, or None if not available."""
-    try:
-        return find_install_tool()
-    except RuntimeError:
-        return None
 
 
 def build_caddyfile(origins: list[str], vite_port: int) -> str:
@@ -181,22 +156,26 @@ async def run_caddy(origins: list[str], vite_port: int) -> asyncio.subprocess.Pr
 
 async def run_devserver(args: argparse.Namespace, remaining: list[str]) -> None:
     """Run the development server with all components."""
-    # Parse Vite endpoint
-    endpoints = parse_endpoint(args.listen, DEFAULT_VITE_PORT)
-    ep = endpoints[0]
-
-    if "uds" in ep:
-        logger.warning("Unix sockets are not supported for Vite frontend")
+    reporoot = Path(__file__).parent.parent
+    frontend_path = reporoot / "frontend"
+    if not (frontend_path / "package.json").exists():
+        logger.warning("Frontend source not found at %s", frontend_path)
         raise SystemExit(1)
 
-    vite_host = ep["host"]
-    vite_port = ep["port"]
-    # Multiple endpoints means all-interfaces (:port syntax)
-    if len(endpoints) > 1:
-        vite_host = "0.0.0.0"
+    viteurl, npm_install, vite = setup_vite(args.listen, DEFAULT_VITE_PORT)
+    backurl, paskia = setup_cli("paskia", f"localhost:{BACKEND_PORT}", BACKEND_PORT)
 
-    vite_url = f"http://localhost:{vite_port}"
-    backend_url = f"http://localhost:{BACKEND_PORT}"
+    # Extract vite port for Caddy config
+    vite_port = int(viteurl.rsplit(":", 1)[1])
+
+    # Build paskia command with options
+    paskia.extend(["--rp-id", args.rp_id])
+    if args.auth_host:
+        paskia.extend(["--auth-host", args.auth_host])
+    if args.origins:
+        for origin in args.origins:
+            paskia.extend(["--origin", origin])
+    paskia.extend(remaining)
 
     # Compute origins for Caddy
     caddy_origins = []
@@ -217,29 +196,12 @@ async def run_devserver(args: argparse.Namespace, remaining: list[str]) -> None:
     seen = set()
     caddy_origins = [x for x in caddy_origins if not (x in seen or seen.add(x))]
 
-    # Check ports are free before starting
-    await check_ports_free(vite_url, backend_url)
-
     # Set environment for subprocesses
-    os.environ["FASTAPI_VUE_FRONTEND_URL"] = vite_url
-    os.environ["FASTAPI_VUE_BACKEND_URL"] = backend_url
-    os.environ["PASKIA_SITE_URL"] = caddy_origins[0] if args.caddy else vite_url
+    os.environ["PASKIA_FRONTEND_URL"] = viteurl
+    os.environ["PASKIA_BACKEND_URL"] = backurl
+    os.environ["PASKIA_SITE_URL"] = caddy_origins[0] if args.caddy else viteurl
     if args.auth_host:
         os.environ["PASKIA_AUTH_HOST"] = args.auth_host
-
-    # Build commands
-    frontend_path = Path(__file__).parent.parent / "frontend"
-    vite_cmd = build_vite_cmd(vite_host, vite_port)
-    install_cmd = build_npm_install_cmd()
-
-    paskia_cmd = ["paskia", "-l", f"localhost:{BACKEND_PORT}"]
-    paskia_cmd.extend(["--rp-id", args.rp_id])
-    if args.auth_host:
-        paskia_cmd.extend(["--auth-host", args.auth_host])
-    if args.origins:
-        for origin in args.origins:
-            paskia_cmd.extend(["--origin", origin])
-    paskia_cmd.extend(remaining)
 
     async with ProcessGroup() as pg:
         # Start Caddy first if requested (needs to bind ports)
@@ -248,29 +210,11 @@ async def run_devserver(args: argparse.Namespace, remaining: list[str]) -> None:
             pg._procs.append(caddy_proc)
             pg._cmds[caddy_proc.pid] = "caddy"
 
-        # Run npm install concurrently with backend startup
-        if install_cmd and (frontend_path / "package.json").exists():
-            npm_proc = await pg.spawn(*install_cmd, cwd=str(frontend_path))
-        else:
-            npm_proc = None
-
-        # Start paskia backend
-        logger.info(">>> (devmode) %s", " ".join(paskia_cmd))
-        paskia_proc = await asyncio.create_subprocess_exec(*paskia_cmd)
-        pg._procs.append(paskia_proc)
-        pg._cmds[paskia_proc.pid] = "paskia"
-
-        # Wait for npm install to complete before starting Vite
-        if npm_proc:
-            await pg.wait(npm_proc)
-
-        # Start Vite dev server
-        if vite_cmd:
-            await pg.spawn(*vite_cmd, cwd=str(frontend_path))
-        else:
-            logger.info(
-                "Backend expects Vite at %s - start it manually if needed", vite_url
-            )
+        npm_proc = await pg.spawn(*npm_install, cwd=frontend_path)
+        await check_ports_free(viteurl, backurl)
+        await pg.spawn(*paskia)
+        await pg.wait(npm_proc, ready(backurl, path="/api/health?from=devserver.py"))
+        await pg.spawn(*vite, cwd=frontend_path)
 
 
 def main():
