@@ -7,6 +7,7 @@ from uuid import UUID
 
 import msgspec
 import uuid7
+from msgspec import field
 
 from paskia import db
 from paskia.util.hostutil import normalize_host
@@ -397,10 +398,10 @@ class SessionContext(msgspec.Struct):
     permissions: list[Permission] = []
 
 
-class Config(msgspec.Struct, dict=True, omit_defaults=True):
+class Config(msgspec.Struct, frozen=True, dict=True, omit_defaults=True):
     """Stored configuration for the instance."""
 
-    rp_id: str | None = None
+    rp_id: str
     rp_name: str | None = None
     origins: list[str] | None = None
     auth_host: str | None = None
@@ -422,7 +423,7 @@ class DB(msgspec.Struct, dict=True, omit_defaults=False):
     credentials: dict[UUID, Credential] = {}
     sessions: dict[str, Session] = {}
     reset_tokens: dict[bytes, ResetToken] = {}
-    config: Config = Config()
+    config: Config = field(default_factory=lambda: Config(rp_id="localhost"))
 
     def __post_init__(self):
         # Store reference for persistence (not serialized)

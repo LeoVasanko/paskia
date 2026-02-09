@@ -8,10 +8,16 @@ Each migration should be idempotent and only run when needed.
 from collections.abc import Awaitable, Callable
 
 
-def migrate_v1(d: dict) -> None:
+def migrate_v1(d: dict, **kwargs) -> None:
     """Remove Org.created_at fields."""
     for org_data in d["orgs"].values():
         org_data.pop("created_at", None)
+
+
+def migrate_v2(d: dict, *, rp_id: str = "localhost") -> None:
+    """Add config field if missing."""
+    if "config" not in d:
+        d["config"] = {"rp_id": rp_id}
 
 
 migrations = sorted(
@@ -26,8 +32,10 @@ async def apply_all_migrations(
     data_dict: dict,
     current_version: int,
     persist: Callable[[str, int, dict], Awaitable[None]],
+    *,
+    rp_id: str = "localhost",
 ) -> None:
     while current_version < DBVER:
-        migrations[current_version](data_dict)
+        migrations[current_version](data_dict, rp_id=rp_id)
         current_version += 1
         await persist(f"migrate:v{current_version}", current_version, data_dict)
