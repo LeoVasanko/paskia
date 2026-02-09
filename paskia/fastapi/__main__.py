@@ -12,7 +12,10 @@ from uvicorn import run as uvicorn_run
 from paskia import globals as _globals
 from paskia.bootstrap import bootstrap_if_needed
 from paskia.config import PaskiaConfig
+from paskia.db import get_config, set_config
+from paskia.db import init as db_init
 from paskia.db.background import flush
+from paskia.db.structs import Config
 from paskia.util import startupbox
 from paskia.util.hostutil import normalize_origin
 
@@ -62,6 +65,11 @@ def add_common_options(p: argparse.ArgumentParser) -> None:
         "--auth-host",
         help=("Dedicated authentication site (optionally with scheme/port)"),
     )
+    p.add_argument(
+        "--save",
+        action="store_true",
+        help="Save the CLI options to database for future runs.",
+    )
 
 
 def main():
@@ -87,6 +95,28 @@ def main():
     add_common_options(parser)
 
     args = parser.parse_args()
+
+    # Handle clearing options
+    if getattr(args, "auth_host", None) == "":
+        args.auth_host = None
+    if getattr(args, "rp_name", None) == "":
+        args.rp_name = None
+    if getattr(args, "listen", None) == "":
+        args.listen = None
+
+    # Init db and load stored config
+    asyncio.run(db_init(rp_id=args.rp_id))
+    stored_config = get_config()
+
+    # Apply defaults from stored config
+    if args.rp_name is None and stored_config.rp_name is not None:
+        args.rp_name = stored_config.rp_name
+    if args.origins is None and stored_config.origins is not None:
+        args.origins = stored_config.origins
+    if args.auth_host is None and stored_config.auth_host is not None:
+        args.auth_host = stored_config.auth_host
+    if args.listen is None and stored_config.listen is not None:
+        args.listen = stored_config.listen
 
     # Parse endpoint using fastapi_vue.hostutil
     endpoints = parse_endpoint(args.listen, DEFAULT_PORT)
@@ -167,6 +197,16 @@ def main():
     os.environ["PASKIA_CONFIG"] = json.dumps(config_json)
 
     startupbox.print_startup_config(config)
+
+    if args.save:
+        new_config = Config(
+            rp_id=args.rp_id,
+            rp_name=args.rp_name,
+            origins=args.origins,
+            auth_host=args.auth_host,
+            listen=args.listen,
+        )
+        asyncio.run(set_config(new_config))
 
     run_kwargs: dict = {
         "log_level": "warning",  # Suppress startup messages; we use custom logging
