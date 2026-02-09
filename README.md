@@ -87,10 +87,10 @@ This starts the server on [localhost:4401](http://localhost:4401) with passkeys 
 For a real deployment, configure Paskia with your domain name (rp-id). This enables SSO setup for that domain and any subdomains.
 
 ```fish
-paskia --rp-id example.com --rp-name "Example Corp" --save
+paskia --rp-id=example.com --rp-name="Example Corp" --save
 ```
 
-This binds passkeys to `*.example.com`. The `--rp-name` is shown to users during passkey registration. The `--save` option stores these settings in the database, so future runs only need `paskia --rp-id example.com`.
+This binds passkeys to the rp-id, allowing them to be used there or on any subdomain of it. The `--rp-name` is the branding shown in UI and registered with passkeys for everything on your domain (rp id). The `--save` option stores these settings in the database, so future runs only need `paskia --rp-id example.com`, of which we will make use of with the systemd config later on.
 
 ### Step 3: Set Up Caddy
 
