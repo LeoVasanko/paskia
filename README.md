@@ -177,20 +177,20 @@ Create a system user paskia, install UV on the system, and create a systemd unit
 ```fish
 sudo useradd --system --home-dir /srv/paskia --create-home paskia
 curl -LsSf https://astral.sh/uv/install.sh | sudo env UV_INSTALL_DIR=/usr/local/bin sh
-sudo systemctl edit --force --full paskia.service
+sudo systemctl edit --force --full paskia@.service
 ```
 
 Paste the following and save:
 
 ```ini
 [Unit]
-Description=Paskia Authentication Server
+Description=Paskia for %i
 
 [Service]
 Type=simple
 User=paskia
 WorkingDirectory=/srv/paskia
-ExecStart=uvx paskia --rp-id=example.com
+ExecStart=uvx paskia --rp-id=%i
 
 [Install]
 WantedBy=multi-user.target
@@ -199,7 +199,7 @@ WantedBy=multi-user.target
 Then enable and start, view output for registration link:
 
 ```fish
-sudo systemctl enable --now paskia && sudo journalctl -u paskia -f -n 20 -o cat
+sudo systemctl enable --now paskia@example.com && sudo journalctl -u paskia@example.com -f -n 30 -o cat
 ```
 
 
