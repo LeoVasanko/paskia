@@ -723,6 +723,7 @@ def bootstrap(
     admin_name: str = "Admin",
     reset_passphrase: str | None = None,
     reset_expiry: datetime | None = None,
+    config: Config | None = None,
 ) -> str:
     """Bootstrap the entire system in a single transaction.
 
@@ -732,6 +733,7 @@ def bootstrap(
     - Organization with Administration role
     - Admin user with Administration role
     - Reset token for admin registration
+    - Config (if provided)
 
     This is the only way to create a new database file.
     All data is created atomically - if any step fails, nothing is written.
@@ -741,6 +743,7 @@ def bootstrap(
         admin_name: Display name for the admin user (default: "Admin")
         reset_passphrase: Passphrase for the reset token (generated if not provided)
         reset_expiry: Expiry datetime for the reset token (default: 14 days)
+        config: Configuration to store (rp_id, rp_name, origins, etc.)
 
     Returns:
         The reset passphrase for admin registration.
@@ -820,6 +823,10 @@ def bootstrap(
             passphrase=reset_passphrase,
         )
         _db.reset_tokens[reset_token.key] = reset_token
+
+        # Set config if provided
+        if config is not None:
+            _db.config = config
 
     return reset_passphrase
 

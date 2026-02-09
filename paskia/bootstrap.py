@@ -10,6 +10,7 @@ import asyncio
 import logging
 
 from paskia import authsession, db, globals
+from paskia.db.structs import Config
 from paskia.util import hostutil
 
 logger = logging.getLogger(__name__)
@@ -30,15 +31,18 @@ def _log_reset_link(passphrase: str, message: str | None = None) -> str:
     return reset_link
 
 
-async def bootstrap_system() -> None:
+async def bootstrap_system(config: Config | None = None) -> None:
     """
     Bootstrap the entire system with default data.
 
     Uses db.bootstrap() which performs all operations in a single transaction.
     The transaction log will show a single "bootstrap" action with all changes.
+
+    Args:
+        config: Configuration to store (rp_id, rp_name, origins, etc.)
     """
     # Call the single-transaction bootstrap function
-    reset_passphrase = db.bootstrap()
+    reset_passphrase = db.bootstrap(config=config)
 
     # Log the reset link (this is separate from the transaction log)
     _log_reset_link(reset_passphrase, "✅ Bootstrap completed!")
@@ -89,9 +93,12 @@ async def check_admin_credentials() -> bool:
         return False
 
 
-async def bootstrap_if_needed() -> bool:
+async def bootstrap_if_needed(config: Config | None = None) -> bool:
     """
     Check if system needs bootstrapping and perform it if necessary.
+
+    Args:
+        config: Configuration to store during bootstrap (rp_id, rp_name, origins, etc.)
 
     Returns:
         bool: True if bootstrapping was performed, False if system was already set up
@@ -105,7 +112,7 @@ async def bootstrap_if_needed() -> bool:
 
     # No admin permission found, need to bootstrap
     # Bootstrap creates the admin user AND the reset link, so no need to check credentials after
-    await bootstrap_system()
+    await bootstrap_system(config=config)
     return True
 
 
