@@ -8,6 +8,7 @@ This module provides a unified interface for WebAuthn operations including:
 """
 
 import json
+import re
 from urllib.parse import urlparse
 from uuid import UUID
 
@@ -62,6 +63,7 @@ class Passkey:
             ValueError: If any origin domain doesn't match or isn't a subdomain of rp_id.
         """
         self.rp_id = rp_id
+        self._validate_rp_id(rp_id)
         self.rp_name = rp_name or rp_id
         self.allowed_origins: set[str] | None = None
         if origins:
@@ -74,6 +76,21 @@ class Passkey:
             COSEAlgorithmIdentifier.ECDSA_SHA_256,
             COSEAlgorithmIdentifier.RSASSA_PKCS1_v1_5_SHA_256,
         ]
+
+    def _validate_rp_id(self, rp_id: str) -> None:
+        """Validate that rp_id is a valid domain name."""
+        if not rp_id:
+            raise ValueError("rp_id cannot be empty")
+        # Allow localhost, or domain-like strings
+        if rp_id == "localhost":
+            return
+        # Regex for valid domain: letters, digits, hyphens, dots, but not starting/ending with hyphen, etc.
+        # Simplified: alphanumeric, dots, hyphens
+        if not re.match(
+            r"^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$",
+            rp_id,
+        ):
+            raise ValueError(f"rp_id '{rp_id}' is not a valid domain name")
 
     def _validate_origin(self, origin: str, rp_id: str) -> None:
         """Validate an origin URL against the rp_id."""

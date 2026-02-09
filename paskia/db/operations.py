@@ -17,7 +17,6 @@ import uuid7
 
 from paskia.config import SESSION_LIFETIME
 from paskia.db.jsonl import (
-    DB_PATH_DEFAULT,
     JsonlStore,
 )
 from paskia.db.structs import (
@@ -42,15 +41,14 @@ _db._store = _store
 _initialized = False
 
 
-async def init(*args, **kwargs):
+async def init(rp_id: str = "localhost", *args, **kwargs):
     """Load database from JSONL file."""
     global _db, _initialized
     if _initialized:
         _logger.debug("Database already initialized, skipping reload")
         return
-    db_path = os.environ.get("PASKIA_DB", DB_PATH_DEFAULT)
-    if db_path.startswith("json:"):
-        db_path = db_path[5:]
+    default_path = f"{rp_id}.paskiadb"
+    db_path = os.environ.get("PASKIA_DB", default_path)
     await _store.load(db_path)
     _db = _store.db
     _initialized = True
