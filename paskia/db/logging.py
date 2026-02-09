@@ -3,14 +3,26 @@ Database change logging with pretty-printed diffs.
 
 Provides a logger for JSONL database changes that formats diffs
 in a human-readable path.notation style with color coding.
+
+UUIDs are replaced with display names where available, or the last
+section of the UUID hex for types without display names.
 """
 
 import logging
 import re
 import sys
-from typing import Any
+from typing import TYPE_CHECKING, Any
+from uuid import UUID
+
+if TYPE_CHECKING:
+    from paskia.db.structs import DB
 
 logger = logging.getLogger("paskia.db")
+
+# UUID regex pattern (8-4-4-4-12 hex format)
+_UUID_PATTERN = re.compile(
+    r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+)
 
 # Pattern to match control characters and bidirectional overrides
 _UNSAFE_CHARS = re.compile(
@@ -32,13 +44,139 @@ _ACTION = "\033[1;34m"  # Bold blue for action name
 _USER = "\033[0;34m"  # Blue for user display
 
 
+def _is_uuid(value: str) -> bool:
+    """Check if a string is a UUID."""
+    return bool(_UUID_PATTERN.match(value))
+
+
+def _uuid_suffix(uuid_str: str) -> str:
+    """Get the last section of a UUID (after the last hyphen)."""
+    return uuid_str.rsplit("-", 1)[-1]
+
+
+class UuidResolver:
+    """Resolve UUIDs to display names or short suffixes.
+
+    Uses the previous state for lookups to show the name before any changes.
+    """
+
+    def __init__(self, db: "DB | None" = None, previous: dict | None = None):
+        self._db = db
+        self._previous = previous
+
+    def resolve(self, uuid_str: str) -> str:
+        """Resolve a UUID to its display name or short suffix."""
+        display = self._get_display_name(uuid_str)
+        if display:
+            return display
+        return _uuid_suffix(uuid_str)
+
+    def _get_display_name(self, uuid_str: str) -> str | None:
+        """Look up display name for a UUID.
+
+        First checks the previous state (to show names before changes),
+        then falls back to the current database.
+        """
+        # Try previous state first (for showing name before a change)
+        name = self._lookup_in_previous(uuid_str)
+        if name:
+            return name
+
+        # Fall back to current database
+        return self._lookup_in_db(uuid_str)
+
+    def _lookup_in_previous(self, uuid_str: str) -> str | None:
+        """Look up display name in the previous state dict."""
+        if not self._previous:
+            return None
+
+        # Check users
+        if "users" in self._previous and uuid_str in self._previous["users"]:
+            user_data = self._previous["users"][uuid_str]
+            if isinstance(user_data, dict) and "display_name" in user_data:
+                return user_data["display_name"]
+
+        # Check orgs
+        if "orgs" in self._previous and uuid_str in self._previous["orgs"]:
+            org_data = self._previous["orgs"][uuid_str]
+            if isinstance(org_data, dict) and "display_name" in org_data:
+                return org_data["display_name"]
+
+        # Check roles
+        if "roles" in self._previous and uuid_str in self._previous["roles"]:
+            role_data = self._previous["roles"][uuid_str]
+            if isinstance(role_data, dict) and "display_name" in role_data:
+                return role_data["display_name"]
+
+        # Check permissions
+        if "permissions" in self._previous and uuid_str in self._previous["permissions"]:
+            perm_data = self._previous["permissions"][uuid_str]
+            if isinstance(perm_data, dict) and "display_name" in perm_data:
+                return perm_data["display_name"]
+
+        # Check credentials - look up user name
+        if "credentials" in self._previous and uuid_str in self._previous["credentials"]:
+            cred_data = self._previous["credentials"][uuid_str]
+            if isinstance(cred_data, dict) and "user" in cred_data:
+                user_uuid = cred_data["user"]
+                if "users" in self._previous and user_uuid in self._previous["users"]:
+                    user_data = self._previous["users"][user_uuid]
+                    if isinstance(user_data, dict) and "display_name" in user_data:
+                        return f"credential of {user_data['display_name']}"
+
+        return None
+
+    def _lookup_in_db(self, uuid_str: str) -> str | None:
+        """Look up display name in the current database."""
+        if not self._db:
+            return None
+
+        try:
+            uuid_obj = UUID(uuid_str)
+        except ValueError:
+            return None
+
+        # Check users
+        if uuid_obj in self._db.users:
+            return self._db.users[uuid_obj].display_name
+
+        # Check orgs
+        if uuid_obj in self._db.orgs:
+            return self._db.orgs[uuid_obj].display_name
+
+        # Check roles
+        if uuid_obj in self._db.roles:
+            return self._db.roles[uuid_obj].display_name
+
+        # Check permissions
+        if uuid_obj in self._db.permissions:
+            return self._db.permissions[uuid_obj].display_name
+
+        # Check credentials - identify by user name
+        if uuid_obj in self._db.credentials:
+            cred = self._db.credentials[uuid_obj]
+            if cred.user_uuid in self._db.users:
+                user_name = self._db.users[cred.user_uuid].display_name
+                return f"credential of {user_name}"
+
+        return None
+
+
 def _use_color() -> bool:
     """Check if we should use color output."""
     return sys.stderr.isatty()
 
 
-def _format_value(value: Any, use_color: bool, max_len: int = 60) -> str:
-    """Format a value for display, truncating if needed."""
+def _format_value(
+    value: Any,
+    use_color: bool,
+    max_len: int = 60,
+    resolver: UuidResolver | None = None,
+) -> str:
+    """Format a value for display, truncating if needed.
+
+    If resolver is provided, UUIDs are replaced with display names or short suffixes.
+    """
     if value is None:
         return "null"
 
@@ -49,6 +187,9 @@ def _format_value(value: Any, use_color: bool, max_len: int = 60) -> str:
         return str(value)
 
     if isinstance(value, str):
+        # Check if it's a UUID and resolve to display name
+        if resolver and _is_uuid(value):
+            return resolver.resolve(value)
         # Filter out control characters and bidirectional overrides
         value = _UNSAFE_CHARS.sub("", value)
         # Truncate long strings
@@ -59,13 +200,25 @@ def _format_value(value: Any, use_color: bool, max_len: int = 60) -> str:
     if isinstance(value, dict):
         if not value:
             return "{}"
-        parts = [f"{k}: {_format_value(v, use_color, max_len=30)}" for k, v in value.items()]
+        # Check if all values are True - render as set-like {key1, key2}
+        all_true = all(v is True for v in value.values())
+        parts = []
+        for k, v in value.items():
+            # Replace UUID keys with display names
+            key_display = resolver.resolve(k) if resolver and _is_uuid(k) else k
+            if all_true:
+                parts.append(key_display)
+            else:
+                val_display = _format_value(v, use_color, max_len=30, resolver=resolver)
+                parts.append(f"{key_display}: {val_display}")
         return "{" + ", ".join(parts) + "}"
 
     if isinstance(value, list):
         if not value:
             return "[]"
-        parts = [_format_value(v, use_color, max_len=30) for v in value]
+        parts = [
+            _format_value(v, use_color, max_len=30, resolver=resolver) for v in value
+        ]
         return "[" + ", ".join(parts) + "]"
 
     # Fallback for other types
@@ -75,10 +228,20 @@ def _format_value(value: Any, use_color: bool, max_len: int = 60) -> str:
     return text
 
 
-def _format_path(path: list[str], use_color: bool) -> str:
-    """Format a path as dot notation with prefix in dark grey, final in default."""
+def _format_path(
+    path: list[str], use_color: bool, resolver: UuidResolver | None = None
+) -> str:
+    """Format a path as dot notation with prefix in dark grey, final in default.
+
+    If resolver is provided, UUIDs in the path are replaced with display names.
+    """
     if not path:
         return ""
+
+    # Replace UUIDs in path with display names
+    if resolver:
+        path = [resolver.resolve(p) if _is_uuid(p) else p for p in path]
+
     if not use_color:
         return ".".join(path)
     if len(path) == 1:
@@ -172,16 +335,32 @@ def _collect_changes(
 
 
 def _format_change_lines(
-    change_type: str, path: list[str], value: Any, use_color: bool
+    change_type: str,
+    path: list[str],
+    value: Any,
+    use_color: bool,
+    resolver: UuidResolver | None = None,
 ) -> list[str]:
-    """Format a single change as one or more lines."""
+    """Format a single change as one or more lines.
+
+    If resolver is provided, UUIDs are replaced with display names.
+    """
+
+    # Helper to format path with UUID replacement
+    def fmt_path(p: list[str]) -> list[str]:
+        if resolver:
+            return [resolver.resolve(x) if _is_uuid(x) else x for x in p]
+        return p
+
+    formatted_path = fmt_path(path)
+
     if change_type == "delete":
         if not use_color:
-            return [f"  {'.'.join(path)} ✗"]
-        if len(path) == 1:
-            return [f"  {_DELETE}{path[0]} ✗{_RESET}"]
-        prefix = ".".join(path[:-1])
-        final = path[-1]
+            return [f"  {'.'.join(formatted_path)} ✗"]
+        if len(formatted_path) == 1:
+            return [f"  {_DELETE}{formatted_path[0]} ✗{_RESET}"]
+        prefix = ".".join(formatted_path[:-1])
+        final = formatted_path[-1]
         return [f"  {_PATH_PREFIX}{prefix}.{_RESET}{_DELETE}{final} ✗{_RESET}"]
 
     if change_type == "add":
@@ -191,56 +370,66 @@ def _format_change_lines(
             lines = []
             # First line: path with green final element and grey =
             if not use_color:
-                lines.append(f"  {'.'.join(path)} =")
-            elif len(path) == 1:
-                lines.append(f"  {_ADD}{path[0]}{_RESET} {_DIM}={_RESET}")
+                lines.append(f"  {'.'.join(formatted_path)} =")
+            elif len(formatted_path) == 1:
+                lines.append(f"  {_ADD}{formatted_path[0]}{_RESET} {_DIM}={_RESET}")
             else:
-                prefix = ".".join(path[:-1])
-                final = path[-1]
+                prefix = ".".join(formatted_path[:-1])
+                final = formatted_path[-1]
                 lines.append(
                     f"  {_PATH_PREFIX}{prefix}.{_RESET}{_ADD}{final}{_RESET} {_DIM}={_RESET}"
                 )
             # Child lines: indented key: value, with aligned values
-            max_key_len = max(len(k) for k in value.keys())
-            field_width = max(max_key_len, 12)  # minimum 12 chars
+            # Format keys (may contain UUIDs)
+            formatted_items = []
             for k, v in value.items():
-                v_str = _format_value(v, use_color)
-                padding = " " * (field_width - len(k))
+                k_display = resolver.resolve(k) if resolver and _is_uuid(k) else k
+                v_str = _format_value(v, use_color, resolver=resolver)
+                formatted_items.append((k_display, v_str))
+            max_key_len = max(len(k) for k, _ in formatted_items)
+            field_width = max(max_key_len, 12)  # minimum 12 chars
+            for k_display, v_str in formatted_items:
+                padding = " " * (field_width - len(k_display))
                 if use_color:
-                    lines.append(f"    {k}{_DIM}:{_RESET}{padding} {v_str}")
+                    lines.append(f"    {k_display}{_DIM}:{_RESET}{padding} {v_str}")
                 else:
-                    lines.append(f"    {k}:{padding} {v_str}")
+                    lines.append(f"    {k_display}:{padding} {v_str}")
             return lines
         else:
-            value_str = _format_value(value, use_color)
+            value_str = _format_value(value, use_color, resolver=resolver)
             if not use_color:
-                return [f"  {'.'.join(path)} = {value_str}"]
-            if len(path) == 1:
-                return [f"  {_ADD}{path[0]}{_RESET} {_DIM}={_RESET} {value_str}"]
-            prefix = ".".join(path[:-1])
-            final = path[-1]
+                return [f"  {'.'.join(formatted_path)} = {value_str}"]
+            if len(formatted_path) == 1:
+                return [
+                    f"  {_ADD}{formatted_path[0]}{_RESET} {_DIM}={_RESET} {value_str}"
+                ]
+            prefix = ".".join(formatted_path[:-1])
+            final = formatted_path[-1]
             return [
                 f"  {_PATH_PREFIX}{prefix}.{_RESET}{_ADD}{final}{_RESET} {_DIM}={_RESET} {value_str}"
             ]
 
     # update: Existing item being updated - normal path colors
-    value_str = _format_value(value, use_color)
-    path_str = _format_path(path, use_color)
+    value_str = _format_value(value, use_color, resolver=resolver)
+    path_str = _format_path(path, use_color, resolver=resolver)
     if use_color:
         return [f"  {path_str} {_DIM}={_RESET} {value_str}"]
     return [f"  {path_str} = {value_str}"]
 
 
-def format_diff(diff: dict, previous: dict | None = None) -> list[str]:
+def format_diff(
+    diff: dict, previous: dict | None = None, db: "DB | None" = None
+) -> list[str]:
     """
     Format a JSON diff as human-readable lines.
 
     Args:
         diff: The JSON diff dict
         previous: The previous state dict (for determining add vs update)
+        db: Optional database for looking up display names
 
     Returns a list of formatted lines (without newlines).
-    Single changes return one line, multiple changes return multiple lines.
+    UUIDs are replaced with display names (using previous state for lookups).
     """
     use_color = _use_color()
     changes: list[tuple[str, list[str], Any]] = []
@@ -249,10 +438,15 @@ def format_diff(diff: dict, previous: dict | None = None) -> list[str]:
     if not changes:
         return []
 
+    # Create resolver for UUID replacement (uses previous state for lookups)
+    resolver = UuidResolver(db, previous)
+
     # Format each change
     lines = []
     for change_type, path, value in changes:
-        lines.extend(_format_change_lines(change_type, path, value, use_color))
+        lines.extend(
+            _format_change_lines(change_type, path, value, use_color, resolver)
+        )
 
     return lines
 
@@ -278,18 +472,23 @@ def log_change(
     diff: dict,
     user_display: str | None = None,
     previous: dict | None = None,
+    db: "DB | None" = None,
 ) -> None:
     """
     Log a database change with pretty-printed diff.
+
+    UUIDs are replaced with display names for readability. For types without
+    display names (e.g., credentials), the last section of the UUID is used.
 
     Args:
         action: The action name (e.g., "login", "admin:delete_user")
         diff: The JSON diff dict
         user_display: Optional display name of the user who performed the action
         previous: The previous state dict (for determining add vs update)
+        db: Optional database for looking up display names
     """
     header = format_action_header(action, user_display)
-    diff_lines = format_diff(diff, previous)
+    diff_lines = format_diff(diff, previous, db)
 
     if not diff_lines:
         logger.info(header)

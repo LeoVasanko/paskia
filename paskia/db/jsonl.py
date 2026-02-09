@@ -220,7 +220,7 @@ class JsonlStore:
             except (ValueError, KeyError):
                 user_display = user
 
-        log_change(action, diff, user_display, self._previous_builtins)
+        log_change(action, diff, user_display, self._previous_builtins, self.db)
         self._previous_builtins = copy.deepcopy(current)
 
     @contextmanager
