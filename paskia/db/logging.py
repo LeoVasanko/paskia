@@ -59,18 +59,14 @@ def _format_value(value: Any, use_color: bool, max_len: int = 60) -> str:
     if isinstance(value, dict):
         if not value:
             return "{}"
-        # For small dicts, show inline
-        if len(value) == 1:
-            k, v = next(iter(value.items()))
-            return "{" + f"{k}: {_format_value(v, use_color, max_len=30)}" + "}"
-        return f"{{...{len(value)} keys}}"
+        parts = [f"{k}: {_format_value(v, use_color, max_len=30)}" for k, v in value.items()]
+        return "{" + ", ".join(parts) + "}"
 
     if isinstance(value, list):
         if not value:
             return "[]"
-        if len(value) == 1:
-            return "[" + _format_value(value[0], use_color, max_len=30) + "]"
-        return f"[...{len(value)} items]"
+        parts = [_format_value(v, use_color, max_len=30) for v in value]
+        return "[" + ", ".join(parts) + "]"
 
     # Fallback for other types
     text = str(value)
