@@ -54,14 +54,16 @@ class Permission(msgspec.Struct, dict=True, omit_defaults=True):
         scope: str,
         display_name: str,
         domain: str | None = None,
+        created_at: datetime | None = None,
     ) -> Permission:
         """Create a new Permission with auto-generated uuid7."""
+        now = created_at or datetime.now(UTC)
         perm = cls(
             scope=scope,
             display_name=display_name,
             domain=domain,
         )
-        perm.uuid = uuid7.create()
+        perm.uuid = uuid7.create(now)
         return perm
 
 
@@ -85,10 +87,11 @@ class Org(msgspec.Struct, dict=True):
         return [p for p in db.data().permissions.values() if self.uuid in p.orgs]
 
     @classmethod
-    def create(cls, display_name: str) -> Org:
+    def create(cls, display_name: str, created_at: datetime | None = None) -> Org:
         """Create a new Org with auto-generated uuid7."""
+        now = created_at or datetime.now(UTC)
         org = cls(display_name=display_name)
-        org.uuid = uuid7.create()
+        org.uuid = uuid7.create(now)
         return org
 
 
@@ -138,15 +141,17 @@ class Role(msgspec.Struct, dict=True, omit_defaults=True):
         org: UUID | Org,
         display_name: str,
         permissions: set[UUID] | None = None,
+        created_at: datetime | None = None,
     ) -> Role:
         """Create a new Role with auto-generated uuid7."""
+        now = created_at or datetime.now(UTC)
         org_uuid = org if isinstance(org, UUID) else org.uuid
         role = cls(
             org_uuid=org_uuid,
             display_name=display_name,
             permissions={p: True for p in (permissions or set())},
         )
-        role.uuid = uuid7.create()
+        role.uuid = uuid7.create(now)
         return role
 
 
@@ -309,7 +314,7 @@ class Session(msgspec.Struct, dict=True):
             "expiry": self.expiry.isoformat(),
         }
 
-    def store(self, now: datetime) -> None:
+    def store(self, last_seen: datetime) -> None:
         """Store this session in the database and record a visit.
 
         Updates user.last_seen and user.visits. Must be called inside
@@ -317,7 +322,7 @@ class Session(msgspec.Struct, dict=True):
         """
         _data = db.data()
         _data.sessions[self.key] = self
-        _data.users[self.user_uuid].last_seen = now
+        _data.users[self.user_uuid].last_seen = last_seen
         _data.users[self.user_uuid].visits += 1
 
     @classmethod
