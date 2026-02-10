@@ -9,7 +9,7 @@ Write operations: Functions that validate and commit, or raise ValueError.
 import hashlib
 import logging
 import os
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 import uuid7
@@ -456,7 +456,7 @@ def create_session(
     host: str,
     ip: str,
     user_agent: str,
-    expiry: datetime,
+    duration: timedelta = SESSION_LIFETIME,
     *,
     ctx: SessionContext | None = None,
 ) -> str:
@@ -465,18 +465,19 @@ def create_session(
         raise ValueError(f"User {user_uuid} not found")
     if credential_uuid not in _db.credentials:
         raise ValueError(f"Credential {credential_uuid} not found")
+    now = datetime.now(UTC)
     session = Session.create(
         user=user_uuid,
         credential=credential_uuid,
         host=host,
         ip=ip,
         user_agent=user_agent,
-        expiry=expiry,
+        expiry=now + duration,
     )
     if session.key in _db.sessions:
         raise ValueError("Session already exists")
     with _db.transaction("create_session", ctx):
-        session.store()
+        session.store(now)
     return session.key
 
 
@@ -613,7 +614,7 @@ def login(
     host: str,
     ip: str,
     user_agent: str,
-    expiry: datetime,
+    duration: timedelta = SESSION_LIFETIME,
 ) -> str:
     """Update user/credential on login and create session in a single transaction.
 
@@ -639,11 +640,11 @@ def login(
         host=host,
         ip=ip,
         user_agent=user_agent,
-        expiry=expiry,
+        expiry=now + duration,
     )
     user_str = str(user_uuid)
     with _db.transaction("login", user=user_str):
-        session.store()
+        session.store(now)
         # Update credential
         _db.credentials[credential_uuid].sign_count = sign_count
         _db.credentials[credential_uuid].last_used = now
@@ -671,7 +672,6 @@ def create_credential_session(
     """
 
     now = datetime.now(UTC)
-    expiry = now + SESSION_LIFETIME
 
     if user_uuid not in _db.users:
         raise ValueError(f"User {user_uuid} not found")
@@ -682,7 +682,7 @@ def create_credential_session(
         host=host,
         ip=ip,
         user_agent=user_agent,
-        expiry=expiry,
+        expiry=now + SESSION_LIFETIME,
     )
     user_str = str(user_uuid)
     with _db.transaction("create_credential_session", user=user_str):
@@ -694,7 +694,7 @@ def create_credential_session(
         _db.credentials[credential.uuid] = credential
 
         # Store session and record visit
-        session.store()
+        session.store(now)
 
         # Delete reset token if provided
         if reset_key:

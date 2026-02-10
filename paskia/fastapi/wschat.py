@@ -7,7 +7,6 @@ from uuid import UUID
 from fastapi import WebSocket
 
 from paskia import db
-from paskia.authsession import expires
 from paskia.db import Credential, SessionContext
 from paskia.fastapi.session import infodict
 from paskia.fastapi.wsutil import validate_origin
@@ -105,7 +104,6 @@ async def authenticate_and_login(
         host=normalized_host,
         ip=metadata["ip"],
         user_agent=metadata["user_agent"],
-        expiry=expires(),
     )
 
     # Fetch and return the full session context

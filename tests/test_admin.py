@@ -22,7 +22,6 @@ import pytest_asyncio
 import uuid7
 
 from paskia import db
-from paskia.authsession import expires
 from paskia.db import (
     Credential,
     Org,
@@ -104,7 +103,6 @@ async def second_org_session_token(
         host="localhost",
         ip="127.0.0.1",
         user_agent="pytest",
-        expiry=expires(),
     )
 
 
@@ -161,7 +159,6 @@ async def org_admin_session_token(
         host="localhost",
         ip="127.0.0.1",
         user_agent="pytest",
-        expiry=expires(),
     )
 
 
@@ -1299,7 +1296,6 @@ class TestAdminSessions:
             host="other.host:4401",
             ip="192.168.1.1",
             user_agent="other-agent",
-            expiry=expires(),
         )
 
         response = await client.delete(
