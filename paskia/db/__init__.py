@@ -27,10 +27,10 @@ from paskia.db.background import (
     stop_cleanup,
 )
 from paskia.db.bootstrap import bootstrap
+from paskia.db.lifecycle import cleanup_expired, init
 from paskia.db.operations import (
     add_permission_to_org,
     add_permission_to_role,
-    cleanup_expired,
     create_credential,
     create_credential_session,
     create_org,
@@ -52,7 +52,6 @@ from paskia.db.operations import (
     get_reset_token,
     get_user_credential_ids,
     get_user_organization,
-    init,
     login,
     remove_permission_from_org,
     remove_permission_from_role,

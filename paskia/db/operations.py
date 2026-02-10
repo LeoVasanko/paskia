@@ -8,7 +8,6 @@ Write operations: Functions that validate and commit, or raise ValueError.
 
 import hashlib
 import logging
-import os
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
@@ -39,19 +38,6 @@ _db = DB()
 _store = JsonlStore(_db)
 _db._store = _store
 _initialized = False
-
-
-async def init(rp_id: str = "localhost", *args, **kwargs):
-    """Load database from JSONL file."""
-    global _db, _initialized
-    if _initialized:
-        _logger.debug("Database already initialized, skipping reload")
-        return
-    default_path = f"{rp_id}.paskiadb"
-    db_path = os.environ.get("PASKIA_DB", default_path)
-    await _store.load(db_path, rp_id=rp_id)
-    _db = _store.db
-    _initialized = True
 
 
 # -------------------------------------------------------------------------
@@ -553,27 +539,6 @@ def delete_reset_token(key: bytes, *, ctx: SessionContext | None = None) -> None
         raise ValueError("Reset token not found")
     with _db.transaction("delete_reset_token", ctx):
         _db.reset_tokens[key].delete()
-
-
-# -------------------------------------------------------------------------
-# Cleanup (called by background task)
-# -------------------------------------------------------------------------
-
-
-def cleanup_expired() -> int:
-    """Remove expired sessions and reset tokens. Returns count removed."""
-    now = datetime.now(UTC)
-    count = 0
-    with _db.transaction("expiry"):
-        expired_sessions = [k for k, s in _db.sessions.items() if s.expiry < now]
-        for k in expired_sessions:
-            del _db.sessions[k]
-            count += 1
-        expired_tokens = [k for k, t in _db.reset_tokens.items() if t.expiry < now]
-        for k in expired_tokens:
-            del _db.reset_tokens[k]
-            count += 1
-    return count
 
 
 # -------------------------------------------------------------------------
