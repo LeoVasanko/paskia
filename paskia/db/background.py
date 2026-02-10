@@ -8,7 +8,8 @@ import asyncio
 import logging
 from datetime import UTC, datetime
 
-from paskia.db.operations import _store, cleanup_expired
+import paskia.db.operations as _ops
+from paskia.db.lifecycle import cleanup_expired
 
 FLUSH_INTERVAL = 0.1  # Flush to disk
 CLEANUP_INTERVAL = 1  # Expired item cleanup
@@ -20,11 +21,11 @@ _background_task: asyncio.Task | None = None
 
 async def flush() -> None:
     """Write all pending database changes to disk."""
-
-    if _store is None:
+    store = _ops._store
+    if store is None:
         _logger.warning("flush() called but _store is None")
         return
-    await _store.flush()
+    await store.flush()
 
 
 async def _background_loop():
