@@ -9,7 +9,6 @@ Write operations: Functions that validate and commit, or raise ValueError.
 import hashlib
 import logging
 import os
-import secrets
 from datetime import UTC, datetime
 from uuid import UUID
 
@@ -477,7 +476,7 @@ def create_session(
     if session.key in _db.sessions:
         raise ValueError("Session already exists")
     with _db.transaction("create_session", ctx):
-        _db.sessions[session.key] = session
+        session.store()
     return session.key
 
 
@@ -607,11 +606,6 @@ def cleanup_expired() -> int:
 # -------------------------------------------------------------------------
 
 
-def _create_token() -> str:
-    """Generate a 16-character URL-safe session token."""
-    return secrets.token_urlsafe(12)
-
-
 def login(
     user_uuid: UUID,
     credential_uuid: UUID,
@@ -649,14 +643,10 @@ def login(
     )
     user_str = str(user_uuid)
     with _db.transaction("login", user=user_str):
-        # Update user
-        _db.users[user_uuid].last_seen = now
-        _db.users[user_uuid].visits += 1
+        session.store()
         # Update credential
         _db.credentials[credential_uuid].sign_count = sign_count
         _db.credentials[credential_uuid].last_used = now
-        # Create session
-        _db.sessions[session.key] = session
     return session.key
 
 
@@ -703,8 +693,8 @@ def create_credential_session(
         # Create credential
         _db.credentials[credential.uuid] = credential
 
-        # Create session
-        _db.sessions[session.key] = session
+        # Store session and record visit
+        session.store()
 
         # Delete reset token if provided
         if reset_key:

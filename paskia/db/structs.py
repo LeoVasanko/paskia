@@ -309,6 +309,18 @@ class Session(msgspec.Struct, dict=True):
             "expiry": self.expiry.isoformat(),
         }
 
+    def store(self) -> None:
+        """Store this session in the database and record a visit.
+
+        Updates user.last_seen and user.visits. Must be called inside
+        a database transaction.
+        """
+        _data = db.data()
+        _data.sessions[self.key] = self
+        now = datetime.now(UTC)
+        _data.users[self.user_uuid].last_seen = now
+        _data.users[self.user_uuid].visits += 1
+
     @classmethod
     def create(
         cls,
