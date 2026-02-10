@@ -128,7 +128,7 @@ def create_permission(perm: Permission, *, ctx: SessionContext | None = None) ->
     if perm.uuid in _db.permissions:
         raise ValueError(f"Permission {perm.uuid} already exists")
     with _db.transaction("admin:create_permission", ctx):
-        _db.permissions[perm.uuid] = perm
+        perm.store()
 
 
 def update_permission(
@@ -156,10 +156,7 @@ def delete_permission(uuid: UUID, *, ctx: SessionContext | None = None) -> None:
     if uuid not in _db.permissions:
         raise ValueError(f"Permission {uuid} not found")
     with _db.transaction("admin:delete_permission", ctx):
-        # Remove this permission from all roles
-        for role in _db.roles.values():
-            role.permissions.pop(uuid, None)
-        del _db.permissions[uuid]
+        _db.permissions[uuid].delete()
 
 
 def create_org(org: Org, *, ctx: SessionContext | None = None) -> None:
@@ -173,7 +170,7 @@ def create_org(org: Org, *, ctx: SessionContext | None = None) -> None:
     with _db.transaction("admin:create_org", ctx):
         new_org = Org.create(display_name=org.display_name, created_at=now)
         new_org.uuid = org.uuid
-        _db.orgs[org.uuid] = new_org
+        new_org.store()
         # Create Administration role with org admin permission
 
         admin_role_uuid = uuid7.create(now)
@@ -190,7 +187,7 @@ def create_org(org: Org, *, ctx: SessionContext | None = None) -> None:
             permissions=role_permissions,
         )
         admin_role.uuid = admin_role_uuid
-        _db.roles[admin_role_uuid] = admin_role
+        admin_role.store()
 
 
 def update_org_name(
@@ -211,16 +208,7 @@ def delete_org(uuid: UUID, *, ctx: SessionContext | None = None) -> None:
     if uuid not in _db.orgs:
         raise ValueError(f"Organization {uuid} not found")
     with _db.transaction("admin:delete_org", ctx):
-        org = _db.orgs[uuid]
-        # Remove org from all permissions
-        for p in _db.permissions.values():
-            p.orgs.pop(uuid, None)
-        # Delete roles in this org and their users
-        for role in org.roles:
-            for user in role.users:
-                del _db.users[user.uuid]
-            del _db.roles[role.uuid]
-        del _db.orgs[uuid]
+        _db.orgs[uuid].delete()
 
 
 def add_permission_to_org(
@@ -264,7 +252,7 @@ def create_role(role: Role, *, ctx: SessionContext | None = None) -> None:
     if role.org_uuid not in _db.orgs:
         raise ValueError(f"Organization {role.org_uuid} not found")
     with _db.transaction("admin:create_role", ctx):
-        _db.roles[role.uuid] = role
+        role.store()
 
 
 def update_role_name(
@@ -317,7 +305,7 @@ def delete_role(uuid: UUID, *, ctx: SessionContext | None = None) -> None:
     if role.users:
         raise ValueError(f"Cannot delete role {uuid}: users still assigned")
     with _db.transaction("admin:delete_role", ctx):
-        del _db.roles[uuid]
+        _db.roles[uuid].delete()
 
 
 def create_user(new_user: User, *, ctx: SessionContext | None = None) -> None:
@@ -327,7 +315,7 @@ def create_user(new_user: User, *, ctx: SessionContext | None = None) -> None:
     if new_user.role_uuid not in _db.roles:
         raise ValueError(f"Role {new_user.role_uuid} not found")
     with _db.transaction("admin:create_user", ctx):
-        _db.users[new_user.uuid] = new_user
+        new_user.store()
 
 
 def update_user_display_name(
@@ -386,19 +374,8 @@ def delete_user(uuid: UUID, *, ctx: SessionContext | None = None) -> None:
     """Delete user and their credentials/sessions."""
     if uuid not in _db.users:
         raise ValueError(f"User {uuid} not found")
-    user = _db.users[uuid]
     with _db.transaction("admin:delete_user", ctx):
-        # Delete credentials
-        for cred in user.credentials:
-            del _db.credentials[cred.uuid]
-        # Delete sessions
-        for sess in user.sessions:
-            del _db.sessions[sess.key]
-        # Delete reset tokens (iterate over dict items to get correct keys)
-        for key, token in list(_db.reset_tokens.items()):
-            if token.user_uuid == uuid:
-                del _db.reset_tokens[key]
-        del _db.users[uuid]
+        _db.users[uuid].delete()
 
 
 def create_credential(cred: Credential, *, ctx: SessionContext | None = None) -> None:
@@ -408,7 +385,7 @@ def create_credential(cred: Credential, *, ctx: SessionContext | None = None) ->
     if cred.user_uuid not in _db.users:
         raise ValueError(f"User {cred.user_uuid} not found")
     with _db.transaction("create_credential", ctx):
-        _db.credentials[cred.uuid] = cred
+        cred.store()
 
 
 def update_credential_sign_count(
@@ -444,11 +421,7 @@ def delete_credential(
         if cred.user_uuid != user_uuid:
             raise ValueError(f"Credential {uuid} does not belong to user {user_uuid}")
     with _db.transaction("delete_credential", ctx):
-        # Delete all sessions using this credential
-        for sess in cred.sessions:
-            print(sess, repr(sess.key))
-            del _db.sessions[sess.key]
-        del _db.credentials[uuid]
+        cred.delete()
 
 
 def create_session(
@@ -523,7 +496,7 @@ def delete_session(
     if key not in _db.sessions:
         raise ValueError("Session not found")
     with _db.transaction(action, ctx):
-        del _db.sessions[key]
+        _db.sessions[key].delete()
 
 
 def delete_sessions_for_user(
@@ -540,7 +513,7 @@ def delete_sessions_for_user(
         return
     with _db.transaction("admin:delete_sessions_for_user", ctx):
         for sess in user.sessions:
-            del _db.sessions[sess.key]
+            sess.delete()
 
 
 def create_reset_token(
@@ -570,7 +543,7 @@ def create_reset_token(
     if token.key in _db.reset_tokens:
         raise ValueError("Reset token already exists")
     with _db.transaction("create_reset_token", ctx, user=user):
-        _db.reset_tokens[token.key] = token
+        token.store()
     return passphrase
 
 
@@ -579,7 +552,7 @@ def delete_reset_token(key: bytes, *, ctx: SessionContext | None = None) -> None
     if key not in _db.reset_tokens:
         raise ValueError("Reset token not found")
     with _db.transaction("delete_reset_token", ctx):
-        del _db.reset_tokens[key]
+        _db.reset_tokens[key].delete()
 
 
 # -------------------------------------------------------------------------
@@ -697,15 +670,16 @@ def create_credential_session(
         credential.last_verified = now
 
         # Create credential
-        _db.credentials[credential.uuid] = credential
+        credential.store()
 
         # Store session and record visit
         session.store(now)
 
         # Delete reset token if provided
         if reset_key:
-            if reset_key in _db.reset_tokens:
-                del _db.reset_tokens[reset_key]
+            token = _db.reset_tokens.get(reset_key)
+            if token:
+                token.delete()
     return session.key
 
 
