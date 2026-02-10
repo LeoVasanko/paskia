@@ -11,7 +11,7 @@ These tests cover:
 """
 
 import secrets
-from datetime import UTC, datetime, timedelta
+from datetime import timedelta
 
 import httpx
 import pytest
@@ -521,15 +521,14 @@ class TestValidateSessionRefresh:
     ):
         """Validate should return 401 if session disappears during refresh."""
 
-        # Create a session with an old expiry time to trigger refresh
-        old_expiry = datetime.now(UTC) + EXPIRES - timedelta(minutes=10)
+        # Create a session with a short remaining duration to trigger refresh
         token = create_session(
             user_uuid=test_user.uuid,
             credential_uuid=test_credential.uuid,
             host="localhost",
             ip="127.0.0.1",
             user_agent="pytest",
-            expiry=old_expiry,
+            duration=EXPIRES - timedelta(minutes=10),
         )
 
         # Delete the session right before validate tries to refresh

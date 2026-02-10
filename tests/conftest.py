@@ -21,7 +21,7 @@ import pytest_asyncio
 
 import paskia.db.operations as ops_db
 from paskia import globals as paskia_globals
-from paskia.authsession import expires, reset_expires
+from paskia.authsession import reset_expires
 from paskia.db import (
     Credential,
     Org,
@@ -183,7 +183,6 @@ async def session_token(
         host="localhost",
         ip="127.0.0.1",
         user_agent="pytest",
-        expiry=expires(),
     )
 
 
@@ -198,7 +197,6 @@ async def regular_session_token(
         host="localhost",
         ip="127.0.0.1",
         user_agent="pytest",
-        expiry=expires(),
     )
 
 
