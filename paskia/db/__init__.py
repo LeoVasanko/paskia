@@ -48,7 +48,6 @@ from paskia.db.operations import (
     delete_sessions_for_user,
     delete_user,
     get_config,
-    get_organization_users,
     get_reset_token,
     get_user_credential_ids,
     get_user_organization,
@@ -112,7 +111,6 @@ __all__ = [
     "build_user",
     # Read ops
     "get_config",
-    "get_organization_users",
     "get_reset_token",
     "get_user_credential_ids",
     "get_user_organization",

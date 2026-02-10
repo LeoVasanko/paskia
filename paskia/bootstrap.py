@@ -56,17 +56,24 @@ async def check_admin_credentials() -> bool:
         bool: True if a reset link was created, False if admin already has credentials
     """
     try:
-        # Get permission organizations to find admin users
+        # Find the auth:admin permission
         p = next(
             (p for p in db.data().permissions.values() if p.scope == "auth:admin"), None
         )
-        if not p or not p.orgs:
+        if not p:
             return False
 
-        # Get users from the first organization with admin permission
-        first_org_uuid = next(iter(p.orgs))
-        org_users = db.get_organization_users(first_org_uuid)
-        admin_users = [user for user, role in org_users if role == "Administration"]
+        perm_uuid = p.uuid
+
+        # Find all roles that have the auth:admin permission
+        admin_roles = [
+            r for r in db.data().roles.values() if perm_uuid in r.permissions
+        ]
+
+        # Collect all users from those roles
+        admin_users = []
+        for role in admin_roles:
+            admin_users.extend(role.users)
 
         if not admin_users:
             return False
