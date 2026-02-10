@@ -26,10 +26,10 @@ from paskia.db.background import (
     stop_background,
     stop_cleanup,
 )
+from paskia.db.bootstrap import bootstrap
 from paskia.db.operations import (
     add_permission_to_org,
     add_permission_to_role,
-    bootstrap,
     cleanup_expired,
     create_credential,
     create_credential_session,

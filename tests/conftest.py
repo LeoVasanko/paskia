@@ -28,6 +28,7 @@ from paskia.db import (
     Permission,
     Role,
     User,
+    bootstrap,
     create_credential,
     create_reset_token,
     create_role,
@@ -67,7 +68,7 @@ async def test_db() -> AsyncGenerator[DB, None]:
         ops_db._db = db
         ops_db._store = store
         # Bootstrap creates the initial permissions, org, role, and admin user
-        ops_db.bootstrap(
+        bootstrap(
             org_name="Test Organization",
             admin_name="Test Admin",
         )
