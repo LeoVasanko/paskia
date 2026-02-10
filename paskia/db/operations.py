@@ -6,7 +6,6 @@ Context lookup: _db.session_ctx() returns full SessionContext with effective per
 Write operations: Functions that validate and commit, or raise ValueError.
 """
 
-import hashlib
 import logging
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
@@ -29,7 +28,6 @@ from paskia.db.structs import (
     SessionContext,
     User,
 )
-from paskia.util.passphrase import is_well_formed as _is_passphrase
 
 _logger = logging.getLogger(__name__)
 
@@ -38,61 +36,6 @@ _db = DB()
 _store = JsonlStore(_db)
 _db._store = _store
 _initialized = False
-
-
-# -------------------------------------------------------------------------
-# Read/lookup functions
-# -------------------------------------------------------------------------
-
-
-def get_user_organization(user_uuid: UUID) -> tuple[Org, str]:
-    """Get the organization a user belongs to and their role name.
-
-    Raises ValueError if user not found.
-
-    Call sites:
-    - admin_create_user_registration_link: org only
-    - admin_get_user_detail: org and role
-    - admin_update_user_display_name: org only
-    - admin_delete_user_credential: org only
-    - admin_delete_user_session: org only
-    - admin_update_user_role: org only
-    """
-    if user_uuid not in _db.users:
-        raise ValueError(f"User {user_uuid} not found")
-    user = _db.users[user_uuid]
-    role = user.role
-    return role.org, role.display_name
-
-
-def get_user_credential_ids(user_uuid: UUID) -> list[bytes]:
-    """Get credential IDs for a user (for WebAuthn exclude lists).
-
-    Returns empty list if user has no credentials.
-    """
-    assert user_uuid
-    return [c.credential_id for c in _db.users[user_uuid].credentials]
-
-
-def _reset_key(passphrase: str) -> bytes:
-    """Hash a passphrase to bytes for reset token storage."""
-    if not _is_passphrase(passphrase):
-        raise ValueError(
-            "Trying to reset with a session token in place of a passphrase"
-            if len(passphrase) == 16
-            else "Invalid passphrase format"
-        )
-    return hashlib.sha512(passphrase.encode()).digest()[:9]
-
-
-def get_reset_token(passphrase: str) -> ResetToken | None:
-    """Get reset token by passphrase.
-
-    Call sites:
-    - Get reset token to validate it (authsession.py:34)
-    """
-    key = _reset_key(passphrase)
-    return _db.reset_tokens.get(key)
 
 
 # -------------------------------------------------------------------------

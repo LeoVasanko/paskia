@@ -462,8 +462,8 @@ async def admin_update_user_role(
     auth=AUTH_COOKIE,
 ):
     try:
-        user_org, _current_role = db.get_user_organization(user_uuid)
-    except ValueError:
+        user = db.data().users[user_uuid]
+    except KeyError:
         raise HTTPException(status_code=404, detail="User not found")
     ctx = await authz.verify(
         auth,
@@ -471,7 +471,7 @@ async def admin_update_user_role(
         match=permutil.has_any,
         host=request.headers.get("host"),
     )
-    if not can_manage_org(ctx, user_org.uuid):
+    if not can_manage_org(ctx, user.org.uuid):
         raise authz.AuthException(
             status_code=403, detail="Insufficient permissions", mode="forbidden"
         )
@@ -483,7 +483,7 @@ async def admin_update_user_role(
     except (ValueError, TypeError):
         raise ValueError("Invalid role UUID")
     new_role = db.data().roles.get(new_role_uuid)
-    if not new_role or new_role.org_uuid != user_org.uuid:
+    if not new_role or new_role.org_uuid != user.org.uuid:
         raise ValueError("Role not found in organization")
 
     # Sanity check: prevent admin from removing their own access
@@ -511,8 +511,8 @@ async def admin_create_user_registration_link(
     auth=AUTH_COOKIE,
 ):
     try:
-        user_org, _role_name = db.get_user_organization(user_uuid)
-    except ValueError:
+        user = db.data().users[user_uuid]
+    except KeyError:
         raise HTTPException(status_code=404, detail="User not found")
     ctx = await authz.verify(
         auth,
@@ -521,13 +521,13 @@ async def admin_create_user_registration_link(
         host=request.headers.get("host"),
         max_age="5m",
     )
-    if not can_manage_org(ctx, user_org.uuid):
+    if not can_manage_org(ctx, user.org.uuid):
         raise authz.AuthException(
             status_code=403, detail="Insufficient permissions", mode="forbidden"
         )
 
     # Check if user has existing credentials
-    has_credentials = db.get_user_credential_ids(user_uuid)
+    has_credentials = db.data().users[user_uuid].credential_ids
     token_type = "user registration" if not has_credentials else "account recovery"
 
     expiry = reset_expires()
@@ -552,8 +552,9 @@ async def admin_get_user_detail(
     auth=AUTH_COOKIE,
 ):
     try:
-        user_org, role_name = db.get_user_organization(user_uuid)
-    except ValueError:
+        user = db.data().users[user_uuid]
+        role_name = user.role.display_name
+    except KeyError:
         raise HTTPException(status_code=404, detail="User not found")
     ctx = await authz.verify(
         auth,
@@ -561,17 +562,16 @@ async def admin_get_user_detail(
         match=permutil.has_any,
         host=request.headers.get("host"),
     )
-    if not can_manage_org(ctx, user_org.uuid):
+    if not can_manage_org(ctx, user.org.uuid):
         raise authz.AuthException(
             status_code=403, detail="Insufficient permissions", mode="forbidden"
         )
-    user = db.data().users.get(user_uuid)
     normalized_host = hostutil.normalize_host(request.headers.get("host"))
 
     return MsgspecResponse(
         {
             "display_name": user.display_name,
-            "org": {"display_name": user_org.display_name},
+            "org": {"display_name": user.org.display_name},
             "role": role_name,
             "visits": user.visits,
             "created_at": user.created_at,
@@ -609,8 +609,8 @@ async def admin_update_user_display_name(
     auth=AUTH_COOKIE,
 ):
     try:
-        user_org, _role_name = db.get_user_organization(user_uuid)
-    except ValueError:
+        user = db.data().users[user_uuid]
+    except KeyError:
         raise HTTPException(status_code=404, detail="User not found")
     ctx = await authz.verify(
         auth,
@@ -618,7 +618,7 @@ async def admin_update_user_display_name(
         match=permutil.has_any,
         host=request.headers.get("host"),
     )
-    if not can_manage_org(ctx, user_org.uuid):
+    if not can_manage_org(ctx, user.org.uuid):
         raise authz.AuthException(
             status_code=403, detail="Insufficient permissions", mode="forbidden"
         )
@@ -639,8 +639,8 @@ async def admin_delete_user(
 ):
     """Delete a user and all their credentials/sessions."""
     try:
-        user_org, _role_name = db.get_user_organization(user_uuid)
-    except ValueError:
+        user = db.data().users[user_uuid]
+    except KeyError:
         raise HTTPException(status_code=404, detail="User not found")
     ctx = await authz.verify(
         auth,
@@ -649,7 +649,7 @@ async def admin_delete_user(
         host=request.headers.get("host"),
         max_age="5m",
     )
-    if not can_manage_org(ctx, user_org.uuid):
+    if not can_manage_org(ctx, user.org.uuid):
         raise authz.AuthException(
             status_code=403, detail="Insufficient permissions", mode="forbidden"
         )
@@ -668,8 +668,8 @@ async def admin_delete_user_credential(
     auth=AUTH_COOKIE,
 ):
     try:
-        user_org, _role_name = db.get_user_organization(user_uuid)
-    except ValueError:
+        user = db.data().users[user_uuid]
+    except KeyError:
         raise HTTPException(status_code=404, detail="User not found")
     ctx = await authz.verify(
         auth,
@@ -678,7 +678,7 @@ async def admin_delete_user_credential(
         host=request.headers.get("host"),
         max_age="5m",
     )
-    if not can_manage_org(ctx, user_org.uuid):
+    if not can_manage_org(ctx, user.org.uuid):
         raise authz.AuthException(
             status_code=403, detail="Insufficient permissions", mode="forbidden"
         )
@@ -694,8 +694,8 @@ async def admin_delete_user_session(
     auth=AUTH_COOKIE,
 ):
     try:
-        user_org, _role_name = db.get_user_organization(user_uuid)
-    except ValueError:
+        user = db.data().users[user_uuid]
+    except KeyError:
         raise HTTPException(status_code=404, detail="User not found")
     ctx = await authz.verify(
         auth,
@@ -703,7 +703,7 @@ async def admin_delete_user_session(
         match=permutil.has_any,
         host=request.headers.get("host"),
     )
-    if not can_manage_org(ctx, user_org.uuid):
+    if not can_manage_org(ctx, user.org.uuid):
         raise authz.AuthException(
             status_code=403, detail="Insufficient permissions", mode="forbidden"
         )
