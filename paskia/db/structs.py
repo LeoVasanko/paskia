@@ -10,13 +10,8 @@ import uuid7
 from msgspec import field
 
 from paskia import db
-from paskia.util.hostutil import normalize_host
-from paskia.util.passphrase import (
-    generate as generate_passphrase,
-)
-from paskia.util.passphrase import (
-    is_well_formed as _is_passphrase,
-)
+from paskia.util import hostutil
+from paskia.util import passphrase as passphrase_util
 
 # Sentinel for uuid fields before they are set by create() or DB post init
 _UUID_UNSET = UUID(int=0)
@@ -462,16 +457,21 @@ class ResetToken(msgspec.Struct, dict=True):
         """Store this reset token in the database. Must be called inside a transaction."""
         db.data().reset_tokens[self.key] = self
 
-    @classmethod
-    def by_passphrase(cls, passphrase: str) -> ResetToken | None:
-        """Get a reset token by passphrase."""
-        if not _is_passphrase(passphrase):
+    @staticmethod
+    def hash(passphrase: str) -> bytes:
+        """Hash a passphrase to bytes for reset token storage."""
+        if not passphrase_util.is_well_formed(passphrase):
             raise ValueError(
                 "Trying to reset with a session token in place of a passphrase"
                 if len(passphrase) == 16
                 else "Invalid passphrase format"
             )
-        key = hashlib.sha512(passphrase.encode()).digest()[:9]
+        return hashlib.sha512(passphrase.encode()).digest()[:9]
+
+    @classmethod
+    def by_passphrase(cls, passphrase: str) -> ResetToken | None:
+        """Get a reset token by passphrase."""
+        key = cls.hash(passphrase)
         return db.data().reset_tokens.get(key)
 
     @classmethod
@@ -495,8 +495,8 @@ class ResetToken(msgspec.Struct, dict=True):
             code to give to the user.
         """
         if passphrase is None:
-            passphrase = generate_passphrase()
-        key = hashlib.sha512(passphrase.encode()).digest()[:9]
+            passphrase = passphrase_util.generate()
+        key = cls.hash(passphrase)
         user_uuid = user if isinstance(user, UUID) else user.uuid
         token = cls(
             user_uuid=user_uuid,
@@ -584,7 +584,7 @@ class DB(msgspec.Struct, dict=True, omit_defaults=False):
             return None
 
         # Normalize host for comparison (stored hosts are already normalized)
-        normalized_input = normalize_host(host)
+        normalized_input = hostutil.normalize_host(host)
 
         # Validate host matches (sessions are always created with a host)
         if s.host != normalized_input:
