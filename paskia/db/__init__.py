@@ -47,12 +47,11 @@ from paskia.db.operations import (
     delete_session,
     delete_sessions_for_user,
     delete_user,
-    get_config,
     login,
     remove_permission_from_org,
     remove_permission_from_role,
-    set_config,
     set_session_host,
+    update_config,
     update_credential_sign_count,
     update_org_name,
     update_permission,
@@ -64,6 +63,7 @@ from paskia.db.operations import (
 )
 from paskia.db.structs import (
     DB,
+    Config,
     Credential,
     Org,
     Permission,
@@ -82,6 +82,7 @@ def data() -> DB:
 
 __all__ = [
     # Types
+    "Config",
     "Credential",
     "DB",
     "Org",
@@ -107,7 +108,6 @@ __all__ = [
     "build_session",
     "build_user",
     # Read ops
-    "get_config",
     # Write ops
     "add_permission_to_org",
     "add_permission_to_role",
@@ -132,8 +132,8 @@ __all__ = [
     "login",
     "remove_permission_from_org",
     "remove_permission_from_role",
-    "set_config",
     "set_session_host",
+    "update_config",
     "update_credential_sign_count",
     "update_org_name",
     "update_permission",

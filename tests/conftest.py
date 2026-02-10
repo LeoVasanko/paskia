@@ -23,6 +23,7 @@ import paskia.db.operations as ops_db
 from paskia import globals as paskia_globals
 from paskia.authsession import reset_expires
 from paskia.db import (
+    Config,
     Credential,
     Org,
     Permission,
@@ -61,7 +62,7 @@ async def test_db() -> AsyncGenerator[DB, None]:
     """
 
     with tempfile.NamedTemporaryFile(suffix=".jsonl", delete=True) as f:
-        db = DB()
+        db = DB(config=Config(rp_id="test.example.com"))
         store = JsonlStore(db, f.name)
         db._store = store
         await store.load()
