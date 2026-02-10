@@ -48,6 +48,20 @@ class Permission(msgspec.Struct, dict=True, omit_defaults=True):
             if org_uuid in db.data().orgs
         ]
 
+    def store(self) -> None:
+        """Store this permission in the database. Must be called inside a transaction."""
+        db.data().permissions[self.uuid] = self
+
+    def delete(self) -> None:
+        """Delete this permission and remove it from all roles.
+
+        Must be called inside a transaction.
+        """
+        _data = db.data()
+        for role in _data.roles.values():
+            role.permissions.pop(self.uuid, None)
+        del _data.permissions[self.uuid]
+
     @classmethod
     def create(
         cls,
@@ -85,6 +99,24 @@ class Org(msgspec.Struct, dict=True):
     def permissions(self) -> list[Permission]:
         """Get all permissions that this organization can grant."""
         return [p for p in db.data().permissions.values() if self.uuid in p.orgs]
+
+    def store(self) -> None:
+        """Store this organization in the database. Must be called inside a transaction."""
+        db.data().orgs[self.uuid] = self
+
+    def delete(self) -> None:
+        """Delete this org and cascade to roles, users. Remove from permissions.
+
+        Must be called inside a transaction.
+        """
+        _data = db.data()
+        for p in _data.permissions.values():
+            p.orgs.pop(self.uuid, None)
+        for role in self.roles:
+            for user in role.users:
+                del _data.users[user.uuid]
+            del _data.roles[role.uuid]
+        del _data.orgs[self.uuid]
 
     @classmethod
     def create(cls, display_name: str, created_at: datetime | None = None) -> Org:
@@ -134,6 +166,14 @@ class Role(msgspec.Struct, dict=True, omit_defaults=True):
     def users(self) -> list[User]:
         """Get all users that have this role."""
         return [u for u in db.data().users.values() if u.role_uuid == self.uuid]
+
+    def store(self) -> None:
+        """Store this role in the database. Must be called inside a transaction."""
+        db.data().roles[self.uuid] = self
+
+    def delete(self) -> None:
+        """Delete this role from the database. Must be called inside a transaction."""
+        del db.data().roles[self.uuid]
 
     @classmethod
     def create(
@@ -199,6 +239,24 @@ class User(msgspec.Struct, dict=True, omit_defaults=True):
         """Get all reset tokens for this user."""
         return [t for t in db.data().reset_tokens.values() if t.user_uuid == self.uuid]
 
+    def store(self) -> None:
+        """Store this user in the database. Must be called inside a transaction."""
+        db.data().users[self.uuid] = self
+
+    def delete(self) -> None:
+        """Delete this user and cascade to credentials, sessions, reset tokens.
+
+        Must be called inside a transaction.
+        """
+        _data = db.data()
+        for cred in self.credentials:
+            del _data.credentials[cred.uuid]
+        for sess in self.sessions:
+            del _data.sessions[sess.key]
+        for token in self.reset_tokens:
+            del _data.reset_tokens[token.key]
+        del _data.users[self.uuid]
+
     @classmethod
     def create(
         cls,
@@ -249,6 +307,20 @@ class Credential(msgspec.Struct, dict=True):
         return [
             s for s in db.data().sessions.values() if s.credential_uuid == self.uuid
         ]
+
+    def store(self) -> None:
+        """Store this credential in the database. Must be called inside a transaction."""
+        db.data().credentials[self.uuid] = self
+
+    def delete(self) -> None:
+        """Delete this credential and all its sessions.
+
+        Must be called inside a transaction.
+        """
+        _data = db.data()
+        for sess in self.sessions:
+            del _data.sessions[sess.key]
+        del _data.credentials[self.uuid]
 
     @classmethod
     def create(
@@ -325,6 +397,10 @@ class Session(msgspec.Struct, dict=True):
         _data.users[self.user_uuid].last_seen = last_seen
         _data.users[self.user_uuid].visits += 1
 
+    def delete(self) -> None:
+        """Delete this session from the database. Must be called inside a transaction."""
+        del db.data().sessions[self.key]
+
     @classmethod
     def create(
         cls,
@@ -371,6 +447,14 @@ class ResetToken(msgspec.Struct, dict=True):
     def user(self) -> User:
         """Get the User object for this reset token."""
         return db.data().users[self.user_uuid]
+
+    def store(self) -> None:
+        """Store this reset token in the database. Must be called inside a transaction."""
+        db.data().reset_tokens[self.key] = self
+
+    def delete(self) -> None:
+        """Delete this reset token from the database. Must be called inside a transaction."""
+        del db.data().reset_tokens[self.key]
 
     @classmethod
     def create(

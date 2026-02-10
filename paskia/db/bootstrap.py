@@ -70,7 +70,7 @@ def bootstrap(
             orgs={org_uuid: True},  # Grant to org
         )
         perm_admin.uuid = perm_admin_uuid
-        _ops._db.permissions[perm_admin_uuid] = perm_admin
+        perm_admin.store()
 
         # Create auth:org:admin permission
         perm_org_admin = Permission(
@@ -79,12 +79,12 @@ def bootstrap(
             orgs={org_uuid: True},  # Grant to org
         )
         perm_org_admin.uuid = perm_org_admin_uuid
-        _ops._db.permissions[perm_org_admin_uuid] = perm_org_admin
+        perm_org_admin.store()
 
         # Create organization
         new_org = Org.create(display_name=org_name)
         new_org.uuid = org_uuid
-        _ops._db.orgs[org_uuid] = new_org
+        new_org.store()
 
         # Create Administration role with both permissions
         admin_role = Role(
@@ -93,7 +93,7 @@ def bootstrap(
             permissions={perm_admin_uuid: True, perm_org_admin_uuid: True},
         )
         admin_role.uuid = role_uuid
-        _ops._db.roles[role_uuid] = admin_role
+        admin_role.store()
 
         # Create admin user
         admin_user = User(
@@ -104,7 +104,7 @@ def bootstrap(
             visits=0,
         )
         admin_user.uuid = user_uuid
-        _ops._db.users[user_uuid] = admin_user
+        admin_user.store()
 
         # Create reset token
         reset_token, reset_passphrase = ResetToken.create(
@@ -113,7 +113,7 @@ def bootstrap(
             token_type="admin bootstrap",
             passphrase=reset_passphrase,
         )
-        _ops._db.reset_tokens[reset_token.key] = reset_token
+        reset_token.store()
 
         # Set config if provided
         if config is not None:
