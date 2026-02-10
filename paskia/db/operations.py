@@ -65,15 +65,6 @@ def get_user_organization(user_uuid: UUID) -> tuple[Org, str]:
     return role.org, role.display_name
 
 
-def get_organization_users(org_uuid: UUID) -> list[tuple[User, str]]:
-    """Get all users in an organization with their role names.
-
-    Returns list of (User, role_display_name) tuples.
-    """
-    org = _db.orgs[org_uuid]
-    return [(u, u.role.display_name) for role in org.roles for u in role.users]
-
-
 def get_user_credential_ids(user_uuid: UUID) -> list[bytes]:
     """Get credential IDs for a user (for WebAuthn exclude lists).
 

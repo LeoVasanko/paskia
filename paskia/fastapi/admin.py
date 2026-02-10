@@ -83,7 +83,6 @@ async def admin_list_orgs(request: Request, auth=AUTH_COOKIE):
         orgs = [o for o in orgs if o.uuid == ctx.org.uuid]
 
     def org_to_dict(o):
-        users = db.get_organization_users(o.uuid)
         return {
             "uuid": o.uuid,
             "display_name": o.display_name,
@@ -101,12 +100,13 @@ async def admin_list_orgs(request: Request, auth=AUTH_COOKIE):
                 {
                     "uuid": u.uuid,
                     "display_name": u.display_name,
-                    "role": role_name,
+                    "role": r.display_name,
                     "role_uuid": u.role_uuid,
                     "visits": u.visits,
                     "last_seen": u.last_seen,
                 }
-                for (u, role_name) in users
+                for r in o.roles
+                for u in r.users
             ],
         }
 
