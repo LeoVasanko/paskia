@@ -32,7 +32,7 @@ from paskia.db.structs import (
 _logger = logging.getLogger(__name__)
 
 # Global database instance (empty until init() loads data)
-_db = DB()
+_db = DB(config=Config(rp_id="uninitialized.invalid"))
 _store = JsonlStore(_db)
 _db._store = _store
 _initialized = False
@@ -41,6 +41,12 @@ _initialized = False
 # -------------------------------------------------------------------------
 # Write operations (validate, modify, commit or raise ValueError)
 # -------------------------------------------------------------------------
+
+
+async def update_config(config: Config) -> None:
+    """Update the stored configuration."""
+    with _db.transaction("update_config"):
+        _db.config = config
 
 
 def create_permission(perm: Permission, *, ctx: SessionContext | None = None) -> None:
@@ -580,19 +586,3 @@ def create_credential_session(
             if token:
                 token.delete()
     return session.key
-
-
-# -------------------------------------------------------------------------
-# Config operations
-# -------------------------------------------------------------------------
-
-
-def get_config() -> Config:
-    """Get the stored configuration."""
-    return _db.config
-
-
-async def set_config(config: Config) -> None:
-    """Update the stored configuration."""
-    with _db.transaction("update_config"):
-        _db.config = config

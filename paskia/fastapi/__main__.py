@@ -10,10 +10,10 @@ from uvicorn import Config as UvicornConfig
 from uvicorn import Server
 from uvicorn import run as uvicorn_run
 
+from paskia import db
 from paskia import globals as _globals
 from paskia.bootstrap import bootstrap_if_needed
 from paskia.config import PaskiaConfig
-from paskia.db import get_config, set_config
 from paskia.db import init as db_init
 from paskia.db.background import flush
 from paskia.db.structs import Config
@@ -107,7 +107,7 @@ def main():
 
     # Init db and load stored config
     asyncio.run(db_init(rp_id=args.rp_id))
-    stored_config = get_config()
+    stored_config = db.data().config
 
     # Apply defaults from stored config
     if args.rp_name is None and stored_config.rp_name is not None:
@@ -232,7 +232,7 @@ def main():
         await bootstrap_if_needed(config=cli_config)
         # Also save config if --save was explicitly used (even without bootstrap)
         if args.save:
-            await set_config(cli_config)
+            await db.update_config(cli_config)
         await flush()
 
         if len(endpoints) > 1:

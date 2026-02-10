@@ -7,7 +7,6 @@ from uuid import UUID
 
 import msgspec
 import uuid7
-from msgspec import field
 
 from paskia import db
 from paskia.util import hostutil
@@ -534,6 +533,7 @@ class Config(msgspec.Struct, frozen=True, dict=True, omit_defaults=True):
 class DB(msgspec.Struct, dict=True, omit_defaults=False):
     """In-memory database. Access fields directly for reads."""
 
+    config: Config
     permissions: dict[UUID, Permission] = {}
     orgs: dict[UUID, Org] = {}
     roles: dict[UUID, Role] = {}
@@ -541,7 +541,6 @@ class DB(msgspec.Struct, dict=True, omit_defaults=False):
     credentials: dict[UUID, Credential] = {}
     sessions: dict[str, Session] = {}
     reset_tokens: dict[bytes, ResetToken] = {}
-    config: Config = field(default_factory=lambda: Config(rp_id="localhost"))
 
     def __post_init__(self):
         # Store reference for persistence (not serialized)
