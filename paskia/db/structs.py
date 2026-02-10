@@ -11,7 +11,12 @@ from msgspec import field
 
 from paskia import db
 from paskia.util.hostutil import normalize_host
-from paskia.util.passphrase import generate as generate_passphrase
+from paskia.util.passphrase import (
+    generate as generate_passphrase,
+)
+from paskia.util.passphrase import (
+    is_well_formed as _is_passphrase,
+)
 
 # Sentinel for uuid fields before they are set by create() or DB post init
 _UUID_UNSET = UUID(int=0)
@@ -228,6 +233,11 @@ class User(msgspec.Struct, dict=True, omit_defaults=True):
     def credentials(self) -> list[Credential]:
         """Get all credentials for this user."""
         return [c for c in db.data().credentials.values() if c.user_uuid == self.uuid]
+
+    @property
+    def credential_ids(self) -> list[bytes]:
+        """Get credential IDs for this user (for WebAuthn exclude lists)."""
+        return [c.credential_id for c in self.credentials]
 
     @property
     def sessions(self) -> list[Session]:
@@ -452,9 +462,17 @@ class ResetToken(msgspec.Struct, dict=True):
         """Store this reset token in the database. Must be called inside a transaction."""
         db.data().reset_tokens[self.key] = self
 
-    def delete(self) -> None:
-        """Delete this reset token from the database. Must be called inside a transaction."""
-        del db.data().reset_tokens[self.key]
+    @classmethod
+    def by_passphrase(cls, passphrase: str) -> ResetToken | None:
+        """Get a reset token by passphrase."""
+        if not _is_passphrase(passphrase):
+            raise ValueError(
+                "Trying to reset with a session token in place of a passphrase"
+                if len(passphrase) == 16
+                else "Invalid passphrase format"
+            )
+        key = hashlib.sha512(passphrase.encode()).digest()[:9]
+        return db.data().reset_tokens.get(key)
 
     @classmethod
     def create(

@@ -52,7 +52,7 @@ async def websocket_register_add(
         stripped = name.strip()
         if stripped:
             user_name = stripped
-    credential_ids = db.get_user_credential_ids(user_uuid) or None
+    credential_ids = user.credential_ids or None
 
     # WebAuthn registration
     credential = await register_chat(ws, user_uuid, user_name, origin, credential_ids)

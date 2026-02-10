@@ -92,7 +92,7 @@ async def authenticate_and_login(
     if auth:
         existing_ctx = db.data().session_ctx(auth, host)
         if existing_ctx:
-            credential_ids = db.get_user_credential_ids(existing_ctx.user.uuid) or None
+            credential_ids = existing_ctx.user.credential_ids or None
 
     cred, new_sign_count = await authenticate_chat(ws, credential_ids)
 

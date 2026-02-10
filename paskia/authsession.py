@@ -14,6 +14,7 @@ from uuid import UUID
 
 from paskia import db
 from paskia.config import RESET_LIFETIME, SESSION_LIFETIME
+from paskia.db.structs import ResetToken
 from paskia.util import hostutil
 
 if TYPE_CHECKING:
@@ -33,7 +34,7 @@ def reset_expires() -> datetime:
 def get_reset(token: str) -> "ResetToken":
     """Validate a credential reset token."""
 
-    record = db.get_reset_token(token)
+    record = ResetToken.by_passphrase(token)
     if record:
         return record
     raise ValueError("This authentication link is no longer valid.")

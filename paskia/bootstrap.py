@@ -81,7 +81,7 @@ async def check_admin_credentials() -> bool:
         # Check first admin user for credentials
         admin_user = admin_users[0]
 
-        if not db.get_user_credential_ids(admin_user.uuid):
+        if not admin_user.credential_ids:
             # Admin exists but has no credentials, create reset link
             logger.info("⚠️  Admin user has no credentials!")
 
