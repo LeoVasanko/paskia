@@ -5,23 +5,20 @@ import logging
 import os
 from urllib.parse import urlparse
 
+from fastapi_vue import server
 from fastapi_vue.hostutil import parse_endpoint
-from uvicorn import Config as UvicornConfig
-from uvicorn import Server
-from uvicorn import run as uvicorn_run
 
 from paskia import db
 from paskia import globals as _globals
 from paskia.bootstrap import bootstrap_if_needed
 from paskia.config import PaskiaConfig
-from paskia.db import init as db_init
 from paskia.db.background import flush
 from paskia.db.structs import Config
 from paskia.util import startupbox
 from paskia.util.hostutil import normalize_origin
 
 DEFAULT_PORT = 4401
-DEVMODE = bool(os.getenv("PASKIA_FRONTEND_URL"))
+DEVMODE = os.getenv("PASKIA_DEV") == "1"
 
 EPILOG = """\
 Example:
@@ -87,6 +84,7 @@ def main():
     parser.add_argument(
         "-l",
         "--listen",
+        action="append",
         metavar="LISTEN",
         help=(
             "Endpoint to listen on (default: localhost:4401). "
@@ -106,7 +104,7 @@ def main():
         args.listen = None
 
     # Init db and load stored config
-    asyncio.run(db_init(rp_id=args.rp_id))
+    asyncio.run(db.init(rp_id=args.rp_id))
     stored_config = db.data().config
 
     # Apply defaults from stored config
@@ -119,8 +117,9 @@ def main():
     if args.listen is None and stored_config.listen is not None:
         args.listen = stored_config.listen
 
-    # Parse endpoint using fastapi_vue.hostutil
-    endpoints = parse_endpoint(args.listen, DEFAULT_PORT)
+    # Parse first endpoint for config display and site_url
+    first_listen = args.listen[0] if isinstance(args.listen, list) else args.listen
+    endpoints = parse_endpoint(first_listen, DEFAULT_PORT)
 
     # Extract host/port/uds from first endpoint for config display and site_url
     ep = endpoints[0] if endpoints else {}
@@ -208,20 +207,7 @@ def main():
         listen=args.listen,
     )
 
-    run_kwargs: dict = {
-        "log_level": "warning",  # Suppress startup messages; we use custom logging
-        "access_log": False,  # We use custom AccessLogMiddleware instead
-    }
-
-    if DEVMODE:
-        # Security: dev mode must run on localhost:4402 to prevent
-        # accidental public exposure of the Vite dev server
-        if host != "localhost" or port != 4402:
-            raise SystemExit(f"Dev mode requires localhost:4402, got {host}:{port}")
-        run_kwargs["reload"] = True
-        run_kwargs["reload_dirs"] = ["paskia"]
-
-    async def async_main():
+    async def startup():
         await _globals.init(
             rp_id=config.rp_id,
             rp_name=config.rp_name,
@@ -235,28 +221,17 @@ def main():
             await db.update_config(cli_config)
         await flush()
 
-        if len(endpoints) > 1:
-            async with asyncio.TaskGroup() as tg:
-                for ep in endpoints:
-                    tg.create_task(
-                        Server(
-                            UvicornConfig(app="paskia.fastapi:app", **run_kwargs, **ep)
-                        ).serve()
-                    )
-        elif DEVMODE:
-            # Use uvicorn.run for proper reload support (it handles subprocess spawning)
-            ep = endpoints[0]
-            uvicorn_run("paskia.fastapi:app", **run_kwargs, **ep)
-        else:
-            server = Server(
-                UvicornConfig(app="paskia.fastapi:app", **run_kwargs, **endpoints[0])
-            )
-            await server.serve()
+    asyncio.run(startup())
 
-    try:
-        asyncio.run(async_main())
-    except KeyboardInterrupt:
-        pass
+    dev = {"reload": True, "reload_dirs": ["paskia"]} if DEVMODE else {}
+    server.run(
+        "paskia.fastapi.mainapp:app",
+        listen=args.listen,
+        default_port=DEFAULT_PORT,
+        log_level="warning",
+        access_log=False,
+        **dev,
+    )
 
 
 if __name__ == "__main__":
