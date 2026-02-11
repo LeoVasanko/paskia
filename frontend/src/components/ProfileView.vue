@@ -107,8 +107,11 @@
           <button @click="logoutEverywhere" class="btn-danger" :disabled="authStore.isLoading" @keydown="handleLogoutButtonKeydown">All</button>
         </template>
       </div>
-      <p class="logout-note" v-if="!hasMultipleSessions"><strong>Logout</strong> from {{ currentSessionHost }}.</p>
-      <p class="logout-note" v-else><strong>Logout</strong> this session on {{ currentSessionHost }}, or <strong>All</strong> sessions across all sites and devices for {{ rpName }}. You'll need to log in again with your passkey afterwards.</p>
+      <div class="logout-footer">
+        <p class="logout-note" v-if="!hasMultipleSessions"><strong>Logout</strong> from {{ currentSessionHost }}.</p>
+        <p class="logout-note" v-else><strong>Logout</strong> this session on {{ currentSessionHost }}, or <strong>All</strong> sessions across all sites and devices for {{ rpName }}. You'll need to log in again with your passkey afterwards.</p>
+        <a class="paskia-version" href="https://git.zi.fi/leovasanko/paskia" target="_blank" rel="noopener noreferrer">Paskia {{ paskiaVersion }}</a>
+      </div>
     </section>
     <RegistrationLinkModal
       v-if="showRegLink"
@@ -308,6 +311,7 @@ const handleDelete = async (credential) => {
 }
 
 const rpName = computed(() => authStore.settings?.rp_name || 'this service')
+const paskiaVersion = computed(() => authStore.settings?.version || '')
 const sessions = computed(() => authStore.userInfo?.sessions || [])
 const currentSessionHost = computed(() => {
   const currentSession = sessions.value.find(session => session.is_current)
@@ -371,7 +375,10 @@ const saveName = async () => {
 <style scoped>
 .section-header { display: flex; flex-direction: column; gap: 0.4rem; }
 .empty-state { margin: 0; color: var(--color-text-muted); text-align: center; padding: 1rem 0; }
-.logout-note { margin: 0.75rem 0 0; color: var(--color-text-muted); font-size: 0.875rem; }
+.logout-note { margin: 0; color: var(--color-text-muted); }
+.logout-footer { display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; margin-top: 0.75rem; }
+.paskia-version { color: var(--color-text-muted); text-decoration: none; white-space: nowrap; font-weight: 700; }
+.paskia-version:hover { color: var(--color-link-hover); }
 .remote-auth-inline { display: flex; flex-direction: column; gap: 0.5rem; }
 .remote-auth-label { display: block; margin: 0; font-size: 0.875rem; color: var(--color-text-muted); font-weight: 500; }
 .remote-auth-description { font-size: 0.75rem; color: var(--color-text-muted); }
