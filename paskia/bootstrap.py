@@ -6,10 +6,9 @@ including creating default admin user, organization, permissions, and
 generating a reset link for initial admin setup.
 """
 
-import asyncio
 import logging
 
-from paskia import authsession, db, globals
+from paskia import authsession, db
 from paskia.db.structs import Config
 from paskia.util import hostutil
 
@@ -121,16 +120,3 @@ async def bootstrap_if_needed(config: Config | None = None) -> bool:
     # Bootstrap creates the admin user AND the reset link, so no need to check credentials after
     await bootstrap_system(config=config)
     return True
-
-
-# CLI interface
-async def main():
-    """Main CLI entry point for bootstrapping."""
-    # Configure logging for CLI usage
-    logging.basicConfig(level=logging.INFO, format="%(message)s", force=True)
-
-    await globals.init()
-
-
-if __name__ == "__main__":
-    asyncio.run(main())
