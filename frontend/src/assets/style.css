@@ -9,8 +9,9 @@
   --font-sans: "Inter", "Inter var", "Segoe UI", system-ui, -apple-system, "Helvetica Neue", sans-serif;
   --font-mono: "DM Mono", "JetBrains Mono", "SFMono-Regular", Menlo, Monaco, Consolas, "Liberation Mono", monospace;
   --color-canvas: white;
-  --color-surface: oklch(0.97 0.005 var(--hue));
-  --color-surface-subtle: oklch(0.94 0.01 var(--hue));
+  --color-surface: oklch(0.95 0.03 var(--hue));
+  --color-surface-subtle: oklch(0.9 0.03 var(--hue));
+  --color-surface-hover: white;
   --color-dialog: white;
   --color-border: oklch(0.8 0.02 var(--hue));
   --color-border-strong: oklch(0.55 0.15 var(--hue));
@@ -31,30 +32,35 @@
   --color-info-text: oklch(0.45 0.15 var(--hue));
   --color-info-bg: oklch(0.95 0.02 var(--hue));
   --color-danger: oklch(0.55 0.22 0.07turn);
+  --color-primary: oklch(0.55 0.2 var(--hue));
+  --color-error: oklch(0.45 0.2 0.07turn);
+  --color-success: oklch(0.4 0.15 0.4turn);
+  --color-bg: oklch(0.97 0.005 var(--hue));
+  --color-accent-soft: oklch(0.95 0.08 var(--hue));
   --shadow-soft: 0 0 .2rem black;
-  --radius-none: 0;
+  --shadow-xl: 0 10px 40px rgba(0, 0, 0, 0.15);
   --radius-sm: 4px;
   --radius-md: 6px;
   --radius-lg: 10px;
-  --space-xxs: 0.25rem;
   --space-xs: 0.5rem;
   --space-sm: 0.75rem;
   --space-md: 1rem;
   --space-lg: 1.5rem;
   --space-xl: 2.25rem;
-  --space-xxl: 3.5rem;
+  --space-3xl: 5rem;
   --layout-padding: clamp(1.5rem, 3vw + 1rem, 3.25rem);
   --transition-base: 160ms ease;
   --focus-ring: 0 0 0 2px var(--color-accent);
 }
 
 :root.dark {
-  --color-canvas: oklch(0.15 0.03 var(--hue));
-  --color-surface: oklch(0.18 0.03 var(--hue));
-  --color-surface-subtle: oklch(0.22 0.03 var(--hue));
-  --color-dialog: oklch(0.22 0.03 var(--hue));
-  --color-border: oklch(0.3 0.03 var(--hue));
-  --color-border-strong: oklch(0.4 0.04 var(--hue));
+  --color-canvas: oklch(0.17 0.05 var(--hue));
+  --color-surface: oklch(0.22 0.05 var(--hue));
+  --color-surface-subtle: oklch(0.25 0.05 var(--hue));
+  --color-surface-hover: oklch(0.28 0.05 var(--hue));
+  --color-dialog: oklch(0.22 0.05 var(--hue));
+  --color-border: oklch(0.3 0.05 var(--hue));
+  --color-border-strong: oklch(0.4 0.05 var(--hue));
   --color-heading: white;
   --color-text: oklch(0.9 0.01 var(--hue));
   --color-text-muted: oklch(0.7 0.02 var(--hue));
@@ -72,7 +78,13 @@
   --color-info-text: oklch(0.8 0.1 var(--hue));
   --color-info-bg: oklch(0.3 0.05 var(--hue));
   --color-danger: oklch(0.7 0.18 0.07turn);
+  --color-primary: oklch(0.7 0.15 var(--hue));
+  --color-error: oklch(0.8 0.12 0.07turn);
+  --color-success: oklch(0.75 0.15 0.4turn);
+  --color-bg: oklch(0.18 0.03 var(--hue));
+  --color-accent-soft: oklch(0.25 0.08 var(--hue));
   --shadow-soft: 0 0 0 black;
+  --shadow-xl: 0 10px 40px rgba(0, 0, 0, 0.4);
 }
 
 *,
@@ -160,6 +172,25 @@ a:focus-visible {
   max-width: 540px;
 }
 
+.view-root--profile .view-header-wrapper {
+  width: 100%;
+  max-width: calc(1200px - 2 * var(--layout-padding));
+  margin: 0 auto;
+  position: relative;
+}
+
+.view-root--profile .theme-toggle {
+  position: absolute;
+  top: 0;
+  right: 0;
+}
+
+.section-block--constrained {
+  width: 100%;
+  max-width: calc(1200px - 2 * var(--layout-padding));
+  margin: 0 auto;
+}
+
 .view-header {
   display: flex;
   flex-direction: column;
@@ -207,6 +238,7 @@ a:focus-visible {
   flex-wrap: nowrap;
   gap: 0.75rem;
   justify-content: flex-start;
+  width: 100%;
 }
 
 .button-row button {
@@ -340,8 +372,116 @@ th {
   text-align: left;
 }
 
+/* Permission matrix styles */
+.matrix-wrapper {
+  margin: var(--space-md) 0;
+  padding: var(--space-lg);
+}
+
+.matrix-scroll {
+  overflow-x: auto;
+}
+
+.matrix-hint {
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+}
+
+.perm-matrix-grid {
+  display: inline-grid;
+  gap: 0.25rem;
+  align-items: stretch;
+}
+
+.perm-matrix-grid > * {
+  padding: 0.35rem 0.45rem;
+  font-size: 0.75rem;
+}
+
+.perm-matrix-grid .grid-head {
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+}
+
+.perm-matrix-grid .perm-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-start;
+  padding: 0.35rem 0.45rem;
+  font-size: 0.75rem;
+}
+
+.perm-matrix-grid .rotated-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+
+.perm-matrix-grid .rotated-head span {
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  font-size: 0.65rem;
+}
+
+.perm-name {
+  font-weight: 600;
+  color: var(--color-heading);
+  padding: 0.35rem 0.45rem;
+  font-size: 0.75rem;
+}
+
 .center {
   text-align: center;
+}
+
+/* Utility classes */
+.muted {
+  color: var(--color-text-muted);
+}
+
+.error {
+  color: var(--color-danger-text);
+}
+
+.small {
+  font-size: 0.9rem;
+}
+
+.icon-btn {
+  background: none;
+  border: none;
+  color: var(--color-text-muted);
+  padding: 0.2rem;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background 0.2s ease, color 0.2s ease;
+}
+
+.icon-btn:hover {
+  color: var(--color-heading);
+  background: var(--color-surface-subtle);
+}
+
+.delete-icon {
+  color: var(--color-danger);
+}
+
+.delete-icon:hover {
+  background: var(--color-error-bg);
+  color: var(--color-error-text);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+  align-items: center;
+}
+
+.button-row--center {
+  justify-content: center;
 }
 
 .badge {
@@ -367,6 +507,10 @@ th {
   min-width: min(520px, calc(100% - 2rem));
   max-width: calc(100% - 2rem);
   display: none;
+}
+
+.global-status.show {
+  display: block;
 }
 
 .global-status .status {
@@ -742,7 +886,7 @@ th {
 
 .slot-machine {
   padding: 0.875rem 1rem;
-  background: var(--color-surface-hover, rgba(0, 0, 0, 0.03));
+  background: var(--color-surface-hover);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
   font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
@@ -762,4 +906,29 @@ th {
   min-width: 0;
   height: 1.8em;
   position: relative;
+}
+
+/* Spinner utilities */
+.spinner {
+  border: 3px solid var(--color-border);
+  border-top-color: var(--color-primary);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+.spinner--sm {
+  width: 16px;
+  height: 16px;
+  border-width: 2px;
+}
+
+.spinner--md {
+  width: 40px;
+  height: 40px;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 }

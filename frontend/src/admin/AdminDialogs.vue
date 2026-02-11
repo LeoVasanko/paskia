@@ -110,8 +110,5 @@ const rpId = computed(() => props.settings?.rp_id || 'the configured domain')
 </template>
 
 <style scoped>
-.error { color: var(--color-danger-text); }
-.small { font-size: 0.9rem; }
-.muted { color: var(--color-text-muted); }
 .optional { font-weight: normal; color: var(--color-text-muted); font-size: 0.85em; }
 </style>

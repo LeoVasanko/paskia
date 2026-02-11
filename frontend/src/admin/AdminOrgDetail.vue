@@ -381,25 +381,15 @@ defineExpose({ focusFirstElement })
 .card.surface { padding: var(--space-lg); }
 .org-title { display: flex; align-items: center; gap: var(--space-sm); margin-bottom: var(--space-lg); }
 .org-name { font-size: 1.5rem; font-weight: 600; color: var(--color-heading); }
-.icon-btn { background: none; border: none; color: var(--color-text-muted); padding: 0.2rem; border-radius: var(--radius-sm); cursor: pointer; transition: background 0.2s ease, color 0.2s ease; }
-.icon-btn:hover { color: var(--color-heading); background: var(--color-surface-muted); }
-.matrix-wrapper { margin: var(--space-md) 0; padding: var(--space-lg); }
-.matrix-scroll { overflow-x: auto; }
-.matrix-hint { font-size: 0.8rem; color: var(--color-text-muted); }
-.perm-matrix-grid { display: inline-grid; gap: 0.25rem; align-items: stretch; }
-.perm-matrix-grid > * { padding: 0.35rem 0.45rem; font-size: 0.75rem; }
-.perm-matrix-grid .grid-head { color: var(--color-text-muted); text-transform: uppercase; font-weight: 600; letter-spacing: 0.05em; }
-.perm-matrix-grid .perm-head { display: flex; align-items: flex-end; justify-content: flex-start; padding: 0.35rem 0.45rem; font-size: 0.75rem; }
 .perm-matrix-grid .role-head { display: flex; align-items: flex-end; justify-content: center; }
 .perm-matrix-grid .role-head span { writing-mode: vertical-rl; transform: rotate(180deg); font-size: 0.65rem; }
 .perm-matrix-grid .add-role-head { cursor: pointer; }
-.perm-name { font-weight: 600; color: var(--color-heading); padding: 0.35rem 0.45rem; font-size: 0.75rem; }
 .roles-grid { display: flex; gap: var(--space-lg); margin-top: var(--space-lg); }
 .role-column { flex: 1; min-width: 200px; border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: var(--space-md); }
 .role-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--space-md); }
 .role-name { display: flex; align-items: center; gap: var(--space-xs); font-size: 1.1rem; color: var(--color-heading); }
 .role-actions { display: flex; gap: var(--space-xs); }
-.plus-btn { background: var(--color-accent-soft); color: var(--color-accent); border: none; border-radius: var(--radius-sm); padding: 0.25rem 0.45rem; font-size: 1.1rem; cursor: pointer; }
+.plus-btn { background: none; color: var(--color-accent); border: none; border-radius: var(--radius-sm); padding: 0.25rem 0.45rem; font-size: 1.1rem; cursor: pointer; }
 .plus-btn:hover { background: rgba(37, 99, 235, 0.18); }
 .user-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: var(--space-xs); }
 .user-chip { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: 0.45rem 0.6rem; display: flex; justify-content: space-between; gap: var(--space-sm); cursor: grab; }
@@ -407,9 +397,6 @@ defineExpose({ focusFirstElement })
 .user-chip .meta { font-size: 0.7rem; color: var(--color-text-muted); }
 .empty-role { border: 1px dashed var(--color-border-strong); border-radius: var(--radius-md); padding: var(--space-sm); display: flex; flex-direction: column; gap: var(--space-xs); align-items: flex-start; }
 .empty-text { margin: 0; }
-.delete-icon { color: var(--color-danger); }
-.delete-icon:hover { background: var(--color-danger-bg); color: var(--color-danger-text); }
-.muted { color: var(--color-text-muted); }
 
 @media (max-width: 720px) {
   .roles-grid { flex-direction: column; }

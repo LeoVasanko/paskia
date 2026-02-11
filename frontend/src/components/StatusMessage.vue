@@ -1,5 +1,5 @@
 <template>
-  <div v-if="authStore.status.show" class="global-status" style="display: block;">
+  <div v-if="authStore.status.show" class="global-status show">
     <div :class="['status', authStore.status.type]">
       {{ authStore.status.message }}
     </div>

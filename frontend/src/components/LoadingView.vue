@@ -27,15 +27,10 @@ defineProps({
 .loading-spinner {
   width: 40px;
   height: 40px;
-  border: 4px solid var(--color-border);
-  border-top: 4px solid var(--color-primary);
+  border: 3px solid var(--color-border);
+  border-top-color: var(--color-primary);
   border-radius: 50%;
   animation: spin 1s linear infinite;
-}
-
-@keyframes spin {
-  0% { transform: rotate(0deg); }
-  100% { transform: rotate(360deg); }
 }
 
 .loading-container p {

@@ -84,12 +84,4 @@ function handleCancel() {
   flex-direction: column;
   gap: var(--space-md);
 }
-
-.error {
-  color: var(--color-danger-text);
-}
-
-.small {
-  font-size: 0.9rem;
-}
 </style>

@@ -1,5 +1,5 @@
 <template>
-  <section class="section-block" data-component="session-list-section">
+  <section :class="['section-block', sectionClass]" data-component="session-list-section">
     <div class="section-header">
       <h2>Active Sessions</h2>
       <p class="section-description">{{ sectionDescription }}</p>
@@ -75,6 +75,7 @@ const props = defineProps({
   terminatingSessions: { type: Object, default: () => ({}) },
   hoveredCredentialUuid: { type: String, default: null },
   navigationDisabled: { type: Boolean, default: false },
+  sectionClass: { type: String, default: '' },
 })
 
 const emit = defineEmits(['terminate', 'sessionHover', 'navigate-out'])

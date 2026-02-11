@@ -841,7 +841,6 @@ async function submitDialog() {
 
 <style scoped>
 .view-admin { padding-bottom: var(--space-3xl); }
-.view-header { display: flex; flex-direction: column; gap: var(--space-sm); }
 .admin-section { margin-top: var(--space-xl); }
 .admin-section-body { display: flex; flex-direction: column; gap: var(--space-xl); }
 .admin-panels { display: flex; flex-direction: column; gap: var(--space-xl); }

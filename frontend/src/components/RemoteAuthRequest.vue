@@ -8,7 +8,7 @@
     <!-- Error state -->
     <div v-else-if="error" class="error-section">
       <p class="error-message">{{ error }}</p>
-      <button class="btn-primary" @click="retry" style="margin-top: 0.75rem;">Try Again</button>
+      <button class="btn-primary" @click="retry">Try Again</button>
     </div>
 
     <!-- Connecting phase -->
@@ -293,10 +293,6 @@ defineExpose({ retry, cancel })
   animation: spin 0.8s linear infinite;
 }
 
-@keyframes spin {
-  to { transform: rotate(360deg); }
-}
-
 .auth-display {
   display: flex;
   flex-direction: column;
@@ -497,6 +493,10 @@ defineExpose({ retry, cancel })
   margin: 0;
   font-size: 0.95rem;
   color: var(--color-error, #ef4444);
+}
+
+.error-section button {
+  margin-top: 0.75rem;
 }
 
 /* Responsive adjustments */

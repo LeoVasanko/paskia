@@ -1,5 +1,5 @@
 <template>
-  <section class="view-root host-view" data-view="host-profile">
+  <section class="view-root view-root--wide host-view" data-view="host-profile">
     <header class="view-header">
       <h1>{{ headingTitle }}</h1>
       <p class="view-lede">{{ subheading }}</p>
@@ -125,12 +125,3 @@ const handleButtonRowKeydown = (event) => {
   // Down does nothing (no elements below to navigate to)
 }
 </script>
-
-<style scoped>
-.host-view { padding: 3rem 1.5rem 4rem; }
-.host-actions { display: flex; flex-direction: column; gap: 0.75rem; }
-.host-actions .button-row { gap: 0.75rem; flex-wrap: wrap; }
-.host-actions .button-row button { flex: 1 1 0; }
-.note { margin: 0; color: var(--color-text-muted); }
-.empty-state { margin: 0; color: var(--color-text-muted); }
-</style>
