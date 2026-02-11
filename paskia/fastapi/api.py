@@ -14,6 +14,7 @@ from fastapi.responses import JSONResponse
 from fastapi.security import HTTPBearer
 
 from paskia import db
+from paskia._version import __version__
 from paskia.authsession import EXPIRES, expires, get_reset
 from paskia.fastapi import authz, session, user
 from paskia.fastapi.response import MsgspecResponse
@@ -195,6 +196,7 @@ async def get_settings():
         "auth_host": hostutil.dedicated_auth_host(),
         "auth_site_url": hostutil.auth_site_url(),
         "session_cookie": AUTH_COOKIE_NAME,
+        "version": __version__,
     }
 
 
