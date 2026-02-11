@@ -1,28 +1,5 @@
 #!/usr/bin/env -S uv run
-"""Run Vite development server for frontend and Paskia backend with auto-reload.
-
-This script is only available when running from the git repository source,
-not from the installed package. It starts both the Vite frontend dev server
-and the Paskia backend with auto-reload enabled.
-
-Usage:
-    uv run scripts/devserver.py [-l host:port] [options...]
-
-The optional -l/--listen argument sets where the Vite frontend listens.
-All other options are forwarded to `paskia`.
-Backend always listens on localhost:4402.
-
-Environment:
-    PASKIA_FRONTEND_URL    Set by this script for the backend to know where Vite is.
-    PASKIA_BACKEND_URL     Set by this script for Vite to know where to proxy API calls.
-    PASKIA_SITE_URL        User-facing URL for reset links (Caddy HTTPS or Vite HTTP).
-
-Options:
-    --caddy         Run Caddy as HTTPS proxy on port 443 (requires sudo)
-    --rp-id HOST    Relying Party ID (used as hostname for Caddy)
-    --origin URL    Allowed origin(s), passed to backend
-    --auth-host H   Dedicated auth host, passed to backend
-"""
+"""Run Vite development server for Vue app and FastAPI backend with auto-reload."""
 
 import argparse
 import asyncio
@@ -45,26 +22,26 @@ from devutil import (  # noqa: E402
     setup_vite,
 )
 
-DEFAULT_VITE_PORT = 4403  # overrides by CLI option
-BACKEND_PORT = 4402  # hardcoded, also in vite.config.ts
+DEFAULT_VITE_PORT = 4403
+DEFAULT_DEV_PORT = 4402
 CADDY_PORT = 443  # HTTPS port for Caddy proxy
 CADDY_HTTP_PORT = 80  # HTTP port for ACME challenges
 
 CADDYFILE_SITE_BLOCK = """\
 SITE_ADDR {
-    # WebSockets bypass directly to backend (workaround for bun proxy bug)
+	# WebSockets bypass directly to backend (workaround for bun proxy bug)
 	handle /auth/ws/* {
-		reverse_proxy localhost:BACKEND_PORT
+		reverse_proxy BACKEND_ADDR
 	}
 	# Everything else goes to or via Vite
 	handle {
-		reverse_proxy localhost:VITE_PORT
+		reverse_proxy VITE_ADDR
 	}
 }
 """
 
 
-def build_caddyfile(origins: list[str], vite_port: int) -> str:
+def build_caddyfile(origins: list[str], viteurl: str, backurl: str) -> str:
     """Build a Caddyfile for the given origins."""
     caddyfile_parts = []
     for origin in origins:
@@ -78,21 +55,23 @@ def build_caddyfile(origins: list[str], vite_port: int) -> str:
             site_addr = f"{scheme}://{host}:{port}"
         block = (
             CADDYFILE_SITE_BLOCK.replace("SITE_ADDR", site_addr)
-            .replace("BACKEND_PORT", str(BACKEND_PORT))
-            .replace("VITE_PORT", str(vite_port))
+            .replace("BACKEND_ADDR", backurl)
+            .replace("VITE_ADDR", viteurl)
         )
         caddyfile_parts.append(block)
     return "\n".join(caddyfile_parts)
 
 
-async def run_caddy(origins: list[str], vite_port: int) -> asyncio.subprocess.Process:
+async def run_caddy(
+    origins: list[str], viteurl: str, backurl: str
+) -> asyncio.subprocess.Process:
     """Start Caddy as HTTPS reverse proxy, wait for ready signal."""
     caddy_path = shutil.which("caddy")
     if not caddy_path:
         logger.warning("Caddy not found. Install it to use --caddy option.")
         raise SystemExit(1)
 
-    caddyfile = build_caddyfile(origins, vite_port)
+    caddyfile = build_caddyfile(origins, viteurl, backurl)
     cmd = ["sudo", caddy_path, "run", "--config", "-", "--adapter", "caddyfile"]
 
     logger.info(">>> sudo caddy @ %s", " ".join(origins))
@@ -163,10 +142,7 @@ async def run_devserver(args: argparse.Namespace, remaining: list[str]) -> None:
         raise SystemExit(1)
 
     viteurl, npm_install, vite = setup_vite(args.listen, DEFAULT_VITE_PORT)
-    backurl, paskia = setup_cli("paskia", f"localhost:{BACKEND_PORT}", BACKEND_PORT)
-
-    # Extract vite port for Caddy config
-    vite_port = int(viteurl.rsplit(":", 1)[1])
+    backurl, paskia = setup_cli("paskia", args.backend, DEFAULT_DEV_PORT)
 
     # Build paskia command with options
     paskia.extend(["--rp-id", args.rp_id])
@@ -197,16 +173,17 @@ async def run_devserver(args: argparse.Namespace, remaining: list[str]) -> None:
     caddy_origins = [x for x in caddy_origins if not (x in seen or seen.add(x))]
 
     # Set environment for subprocesses
-    os.environ["PASKIA_FRONTEND_URL"] = viteurl
+    os.environ["PASKIA_VITE_URL"] = viteurl
     os.environ["PASKIA_BACKEND_URL"] = backurl
     os.environ["PASKIA_SITE_URL"] = caddy_origins[0] if args.caddy else viteurl
+    os.environ["PASKIA_DEV"] = "1"
     if args.auth_host:
         os.environ["PASKIA_AUTH_HOST"] = args.auth_host
 
     async with ProcessGroup() as pg:
         # Start Caddy first if requested (needs to bind ports)
         if args.caddy:
-            caddy_proc = await run_caddy(caddy_origins, vite_port)
+            caddy_proc = await run_caddy(caddy_origins, viteurl, backurl)
             pg._procs.append(caddy_proc)
             pg._cmds[caddy_proc.pid] = "caddy"
 
@@ -222,9 +199,13 @@ def main():
     parser.add_argument(
         "-l",
         "--listen",
-        metavar="ENDPOINT",
-        default=None,
-        help="Vite frontend endpoint (default: localhost:4403)",
+        metavar="addr",
+        help=f"Vite (default: localhost:{DEFAULT_VITE_PORT})",
+    )
+    parser.add_argument(
+        "--backend",
+        metavar="addr",
+        help=f"FastAPI (default: localhost:{DEFAULT_DEV_PORT})",
     )
     parser.add_argument("--caddy", action="store_true", help="Run Caddy as HTTPS proxy")
     parser.add_argument("--rp-id", default="localhost", help="Relying Party ID")
@@ -236,6 +217,14 @@ def main():
 
     with suppress(KeyboardInterrupt):
         asyncio.run(run_devserver(args, remaining))
+
+
+HELP_EPILOG = """
+  Other options are forwarded to paskia [args]
+
+  JS_RUNTIME environment variable can be used to select the JS runtime:
+  npm, deno, bun, or full path to the runtime executable (node maps to npm).
+"""
 
 
 if __name__ == "__main__":
