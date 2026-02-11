@@ -55,15 +55,14 @@
         <p class="device-permit-text">Permit {{ deviceInfo.action === 'register' ? 'registration' : 'login' }} to <strong>{{ deviceInfo.host }}</strong></p>
         <p class="device-meta">{{ deviceInfo.user_agent_pretty || '—' }}</p>
 
-        <p v-if="error" class="error-message" style="margin-top: 0.5rem;">{{ error }}</p>
+        <p v-if="error" class="error-message">{{ error }}</p>
 
-        <div class="button-row" style="margin-top: 0.75rem; display: flex; gap: 0.5rem;">
+        <div class="button-row device-actions">
           <button
             type="button"
             class="btn-secondary"
             :disabled="loading"
             @click="deny"
-            style="flex: 1;"
           >
             Deny
           </button>
@@ -72,7 +71,6 @@
             type="submit"
             :disabled="loading"
             class="btn-primary"
-            style="flex: 1;"
           >
             {{ loading ? 'Authenticating…' : 'Authorize' }}
           </button>
@@ -921,10 +919,6 @@ defineExpose({ reset, deny, code, handleInput, loading, error })
   animation: spin 0.8s linear infinite;
 }
 
-@keyframes spin {
-  to { transform: rotate(360deg); }
-}
-
 .device-info {
   display: flex;
   flex-direction: column;
@@ -945,9 +939,18 @@ defineExpose({ reset, deny, code, handleInput, loading, error })
 }
 
 .error-message {
-  margin: 0;
+  margin: 0.5rem 0 0;
   font-size: 0.875rem;
   color: var(--color-error, #ef4444);
-  margin-bottom: 1rem;
+}
+
+.device-actions {
+  margin-top: 0.75rem;
+  display: flex;
+  gap: 0.5rem;
+}
+
+.device-actions button {
+  flex: 1;
 }
 </style>

@@ -256,11 +256,5 @@ defineExpose({ focusFirstElement })
 <style scoped>
 .user-detail { display: flex; flex-direction: column; gap: var(--space-lg); }
 .admin-actions { display: flex; gap: 0.5rem; }
-.actions { display: flex; flex-wrap: wrap; gap: var(--space-sm); align-items: center; }
 .ancillary-actions { margin-top: -0.5rem; }
-.icon-btn { background: none; border: none; color: var(--color-text-muted); padding: 0.2rem; border-radius: var(--radius-sm); cursor: pointer; transition: background 0.2s ease, color 0.2s ease; }
-.icon-btn:hover { color: var(--color-heading); background: var(--color-surface-muted); }
-.error { color: var(--color-danger-text); }
-.small { font-size: 0.9rem; }
-.muted { color: var(--color-text-muted); }
 </style>

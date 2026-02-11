@@ -1,15 +1,17 @@
 <template>
-  <section class="view-root" data-view="profile">
-    <div class="theme-toggle">
-      <ThemeSelector />
+  <section class="view-root view-root--profile" data-view="profile">
+    <div class="view-header-wrapper">
+      <div class="theme-toggle">
+        <ThemeSelector />
+      </div>
+      <header class="view-header">
+        <h1>User Profile</h1>
+        <Breadcrumbs ref="breadcrumbs" :entries="breadcrumbEntries" @keydown="handleBreadcrumbKeydown" />
+        <p class="view-lede">Account dashboard for managing credentials and authenticating with other devices.</p>
+      </header>
     </div>
-    <header class="view-header">
-      <h1>User Profile</h1>
-      <Breadcrumbs ref="breadcrumbs" :entries="breadcrumbEntries" @keydown="handleBreadcrumbKeydown" />
-      <p class="view-lede">Account dashboard for managing credentials and authenticating with other devices.</p>
-    </header>
 
-    <section class="section-block" ref="userInfoSection">
+    <section class="section-block section-block--constrained" ref="userInfoSection">
       <UserBasicInfo
         v-if="authStore.userInfo?.ctx"
         ref="userBasicInfo"
@@ -38,7 +40,7 @@
       </UserBasicInfo>
     </section>
 
-    <section class="section-block">
+    <section :class="['section-block', { 'section-block--constrained': !useWideLayout }]">
       <div class="section-header">
         <h2>Your Passkeys</h2>
         <p class="section-description">Ideally have at least two passkeys in case you lose one. More than one user can be registered on the same device, giving you a choice at login. <a href="https://bitwarden.com/pricing/" target="_blank" rel="noopener noreferrer">Bitwarden</a> can sync one passkey to all your devices. Other secure options include <b>local passkeys</b>, as well as hardware keys such as <a href="https://www.yubico.com" target="_blank" rel="noopener noreferrer">YubiKey</a>. Cloud sync via Google, Microsoft or iCloud is discouraged.</p>
@@ -70,6 +72,7 @@
       :terminating-sessions="terminatingSessions"
       :hovered-credential-uuid="hoveredCredentialUuid"
       :navigation-disabled="hasActiveModal"
+      :section-class="useWideLayout ? '' : 'section-block--constrained'"
       @terminate="terminateSession"
       @session-hover="hoveredSession = $event"
       @navigate-out="handleSessionNavigateOut"
@@ -88,7 +91,7 @@
       </form>
     </Modal>
 
-    <section class="section-block">
+    <section :class="['section-block', { 'section-block--constrained': !useWideLayout }]">
       <div class="button-row" ref="logoutButtons">
         <button
           type="button"
@@ -333,6 +336,8 @@ const isAdmin = computed(() => {
   return perms.includes('auth:admin') || perms.includes('auth:org:admin')
 })
 const hasMultipleSessions = computed(() => sessions.value.length > 1)
+const credentials = computed(() => authStore.userInfo?.credentials || [])
+const useWideLayout = computed(() => sessions.value.length > 4 || credentials.value.length > 4)
 const breadcrumbEntries = computed(() => { const entries = [{ label: 'Auth', href: makeUiHref() }]; if (isAdmin.value) entries.push({ label: 'Admin', href: adminUiPath() }); return entries })
 
 const saveName = async () => {
@@ -350,7 +355,6 @@ const saveName = async () => {
 </script>
 
 <style scoped>
-.view-lede { margin: 0; color: var(--color-text-muted); font-size: 1rem; }
 .section-header { display: flex; flex-direction: column; gap: 0.4rem; }
 .empty-state { margin: 0; color: var(--color-text-muted); text-align: center; padding: 1rem 0; }
 .logout-note { margin: 0.75rem 0 0; color: var(--color-text-muted); font-size: 0.875rem; }

@@ -1,6 +1,6 @@
 <template>
   <div class="app-shell">
-    <div v-if="status.show" class="global-status" style="display: block;">
+    <div v-if="status.show" class="global-status show">
       <div :class="['status', status.type]">
         {{ status.message }}
       </div>
@@ -18,7 +18,7 @@
           <div class="section-body center">
             <!-- Local passkey authentication view -->
             <div v-if="authView === 'local'" class="auth-view">
-              <div class="button-row center" ref="buttonRow">
+              <div class="button-row button-row--center" ref="buttonRow">
                 <slot name="actions"
                   :loading="loading"
                   :can-authenticate="canAuthenticate"
@@ -284,7 +284,6 @@ defineExpose({
 </script>
 
 <style scoped>
-.button-row.center { display: flex; justify-content: center; gap: 0.75rem; flex-wrap: wrap; }
 .user-line { margin: 0.5rem 0 0; font-weight: 500; color: var(--color-text); }
 main.view-root { min-height: 100vh; align-items: center; justify-content: center; padding: 2rem 1rem; }
 .surface.surface--tight {

@@ -1,14 +1,14 @@
 <template>
   <div class="app-shell">
-    <div v-if="status.show" class="global-status" style="display: block;">
+    <div v-if="status.show" class="global-status show">
       <div :class="['status', status.type]">
         {{ status.message }}
       </div>
     </div>
 
     <main class="view-root">
-      <div class="surface surface--tight" style="max-width: 560px; margin: 0 auto; width: 100%;">
-        <header class="view-header" style="text-align: center;">
+      <div class="surface surface--tight reset-container">
+        <header class="view-header reset-header">
           <h1>🔑 Registration</h1>
           <p class="view-lede">
             {{ subtitleMessage }}
@@ -23,7 +23,7 @@
 
         <section class="section-block" v-else-if="!canRegister">
           <div class="section-body center">
-            <div class="button-row center" style="justify-content: center;">
+            <div class="button-row button-row--center">
               <button class="btn-secondary" @click="goHome">Return to sign-in</button>
             </div>
           </div>
@@ -203,13 +203,14 @@ onMounted(async () => {
 </script>
 
 <style scoped>
-.center {
-  text-align: center;
+.reset-container {
+  max-width: 560px;
+  margin: 0 auto;
+  width: 100%;
 }
 
-.button-row.center {
-  display: flex;
-  justify-content: center;
+.reset-header {
+  text-align: center;
 }
 
 .section-body {

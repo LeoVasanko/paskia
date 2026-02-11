@@ -353,8 +353,6 @@ defineExpose({ focusFirstElement })
 <style scoped>
 .permissions-section { margin-bottom: var(--space-xl); }
 .permissions-section h2 { margin-bottom: var(--space-md); }
-.actions { display: flex; flex-wrap: wrap; gap: var(--space-sm); align-items: center; }
-.actions button { width: auto; }
 .org-table a { text-decoration: none; color: var(--color-link); }
 .org-table a:hover { text-decoration: underline; }
 .org-table .center { width: 6rem; min-width: 6rem; }
@@ -363,24 +361,10 @@ defineExpose({ focusFirstElement })
 .perm-title { font-weight: 600; color: var(--color-heading); }
 .perm-id-info { font-size: 0.8rem; color: var(--color-text-muted); display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
 .perm-domain { color: var(--color-text-muted); font-size: 0.9rem; }
-.icon-btn { background: none; border: none; color: var(--color-text-muted); padding: 0.2rem; border-radius: var(--radius-sm); cursor: pointer; transition: background 0.2s ease, color 0.2s ease; }
-.icon-btn:hover { color: var(--color-heading); background: var(--color-surface-muted); }
-.delete-icon { color: var(--color-danger); }
-.delete-icon:hover { background: var(--color-danger-bg); color: var(--color-danger-text); }
-.matrix-wrapper { margin: var(--space-md) 0; padding: var(--space-lg); }
-.matrix-scroll { overflow-x: auto; }
-.matrix-hint { font-size: 0.8rem; color: var(--color-text-muted); }
-.perm-matrix-grid { display: inline-grid; gap: 0.25rem; align-items: stretch; }
-.perm-matrix-grid > * { padding: 0.35rem 0.45rem; font-size: 0.75rem; }
-.perm-matrix-grid .grid-head { color: var(--color-text-muted); text-transform: uppercase; font-weight: 600; letter-spacing: 0.05em; }
-.perm-matrix-grid .perm-head { display: flex; align-items: flex-end; justify-content: flex-start; padding: 0.35rem 0.45rem; font-size: 0.75rem; }
 .perm-matrix-grid .org-head { display: flex; align-items: flex-end; justify-content: center; }
 .perm-matrix-grid .org-head span { writing-mode: vertical-rl; transform: rotate(180deg); font-size: 0.65rem; }
-.perm-name { font-weight: 600; color: var(--color-heading); padding: 0.35rem 0.45rem; font-size: 0.75rem; }
 .display-text { margin-right: var(--space-xs); }
 .edit-display-btn { padding: 0.1rem 0.2rem; font-size: 0.8rem; }
 .edit-org-btn { padding: 0.1rem 0.2rem; font-size: 0.8rem; margin-left: var(--space-xs); }
 .perm-actions { text-align: center; }
-.center { text-align: center; }
-.muted { color: var(--color-text-muted); }
 </style>

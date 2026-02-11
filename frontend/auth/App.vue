@@ -148,6 +148,3 @@ onUnmounted(() => {
   removeAuthIframe()
 })
 </script>
-
-<style scoped>
-</style>
