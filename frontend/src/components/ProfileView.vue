@@ -337,7 +337,21 @@ const isAdmin = computed(() => {
 })
 const hasMultipleSessions = computed(() => sessions.value.length > 1)
 const credentials = computed(() => authStore.userInfo?.credentials || [])
-const useWideLayout = computed(() => sessions.value.length > 4 || credentials.value.length > 4)
+const useWideLayout = computed(() => {
+  // Check if any single site has more than 8 sessions
+  const groups = {}
+  for (const session of sessions.value) {
+    const host = session.host || ''
+    if (!groups[host]) groups[host] = []
+    groups[host].push(session)
+  }
+  const hasLargeSessionGroup = Object.values(groups).some(group => group.length > 8)
+
+  // Check if passkeys exceed 8
+  const hasManyCredentials = credentials.value.length > 8
+
+  return hasLargeSessionGroup || hasManyCredentials
+})
 const breadcrumbEntries = computed(() => { const entries = [{ label: 'Auth', href: makeUiHref() }]; if (isAdmin.value) entries.push({ label: 'Admin', href: adminUiPath() }); return entries })
 
 const saveName = async () => {
