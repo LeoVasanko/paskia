@@ -12,7 +12,7 @@ from paskia import globals
 from paskia.db import start_background, stop_background
 from paskia.db.logging import configure_db_logging
 from paskia.fastapi import admin, api, auth_host, ws
-from paskia.fastapi.__main__ import DEVMODE
+from paskia.__main__ import DEVMODE
 from paskia.fastapi.logging import AccessLogMiddleware, configure_access_logging
 from paskia.fastapi.session import AUTH_COOKIE
 from paskia.util import hostutil, passphrase, vitedev
