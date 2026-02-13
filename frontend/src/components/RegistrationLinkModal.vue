@@ -14,6 +14,7 @@
         </p>
 
         <QRCodeDisplay
+          v-if="linkUrl"
           :url="linkUrl"
           :show-link="true"
           @copied="onCopied"

@@ -21,6 +21,7 @@ from paskia.fastapi.response import MsgspecResponse
 from paskia.fastapi.session import AUTH_COOKIE, AUTH_COOKIE_NAME, get_client_ip
 from paskia.globals import passkey as global_passkey
 from paskia.util import hostutil, htmlutil, passphrase, userinfo, vitedev
+from paskia.util.apistructs import ApiSettings, ApiTokenInfo, ApiValidateResponse
 
 bearer_auth = HTTPBearer(auto_error=True)
 
@@ -100,11 +101,11 @@ async def validate_token(
             session.set_session_cookie(response, auth)
             renewed = True
     return MsgspecResponse(
-        {
-            "valid": True,
-            "renewed": renewed,
-            "ctx": userinfo.build_session_context(ctx),
-        }
+        ApiValidateResponse(
+            valid=True,
+            renewed=renewed,
+            ctx=userinfo.build_session_context(ctx),
+        )
     )
 
 
@@ -189,15 +190,17 @@ async def forward_authentication(
 async def get_settings():
     pk = global_passkey.instance
     base_path = hostutil.ui_base_path()
-    return {
-        "rp_id": pk.rp_id,
-        "rp_name": pk.rp_name,
-        "ui_base_path": base_path,
-        "auth_host": hostutil.dedicated_auth_host(),
-        "auth_site_url": hostutil.auth_site_url(),
-        "session_cookie": AUTH_COOKIE_NAME,
-        "version": __version__,
-    }
+    return MsgspecResponse(
+        ApiSettings(
+            rp_id=pk.rp_id,
+            rp_name=pk.rp_name,
+            ui_base_path=base_path,
+            auth_host=hostutil.dedicated_auth_host(),
+            auth_site_url=hostutil.auth_site_url(),
+            session_cookie=AUTH_COOKIE_NAME,
+            version=__version__,
+        )
+    )
 
 
 @app.post("/user-info")
@@ -223,6 +226,7 @@ async def api_user_info(
             auth=auth,
             session_record=ctx.session,
             request_host=request.headers.get("host"),
+            ctx=ctx,
         )
     )
 
@@ -239,10 +243,12 @@ async def token_info(credentials=Depends(bearer_auth)):
         raise HTTPException(401, str(e))
 
     u = reset_token.user
-    return {
-        "token_type": reset_token.token_type,
-        "display_name": u.display_name,
-    }
+    return MsgspecResponse(
+        ApiTokenInfo(
+            token_type=reset_token.token_type,
+            display_name=u.display_name,
+        )
+    )
 
 
 @app.post("/logout")

@@ -5,16 +5,16 @@
     <template v-else>
       <div
         v-for="credential in credentials"
-        :key="credential.credential"
+        :key="credential.uuid"
         :class="['credential-item', {
           'current-session': credential.is_current_session && !hoveredCredentialUuid && !hoveredSessionCredentialUuid,
-          'is-hovered': hoveredCredentialUuid === credential.credential,
-          'is-linked-session': hoveredSessionCredentialUuid === credential.credential
+          'is-hovered': hoveredCredentialUuid === credential.uuid,
+          'is-linked-session': hoveredSessionCredentialUuid === credential.uuid
         }]"
         tabindex="-1"
         @mousedown.prevent
         @click.capture="handleCardClick"
-        @focusin="handleCredentialFocus(credential.credential)"
+        @focusin="handleCredentialFocus(credential.uuid)"
         @focusout="handleCredentialBlur($event)"
         @keydown="handleItemKeydown($event, credential)"
       >
@@ -33,8 +33,8 @@
           <h4 class="item-title">{{ getCredentialAuthName(credential) }}</h4>
           <div class="item-actions">
             <span v-if="credential.is_current_session && !hoveredCredentialUuid && !hoveredSessionCredentialUuid" class="badge badge-current">Current</span>
-            <span v-else-if="hoveredCredentialUuid === credential.credential" class="badge badge-current">Selected</span>
-            <span v-else-if="hoveredSessionCredentialUuid === credential.credential" class="badge badge-current">Linked</span>
+            <span v-else-if="hoveredCredentialUuid === credential.uuid" class="badge badge-current">Selected</span>
+            <span v-else-if="hoveredSessionCredentialUuid === credential.uuid" class="badge badge-current">Linked</span>
             <button
               v-if="allowDelete"
               @click="$emit('delete', credential)"
@@ -147,9 +147,9 @@ const getCredentialAuthName = (credential) => {
 const getCredentialAuthIcon = (credential) => {
   const info = props.aaguidInfo?.[credential.aaguid]
   if (!info) return null
-  const isDarkMode = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches
+  const isDarkMode = document.documentElement.classList.contains('dark')
   const iconKey = isDarkMode ? 'icon_dark' : 'icon_light'
-  return info[iconKey] || null
+  return info[iconKey] || info.icon || null
 }
 </script>
 

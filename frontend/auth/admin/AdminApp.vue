@@ -79,11 +79,11 @@ onUnmounted(() => {
 const permissionSummary = computed(() => {
   const summary = {}
   for (const o of orgs.value) {
-    const orgBase = { uuid: o.uuid, display_name: o.display_name }
-    const orgPerms = new Set(o.permissions || [])
+    const orgBase = { uuid: o.uuid, display_name: o.org.display_name }
+    const orgPerms = new Set(Object.keys(o.permissions))
 
     // Org-level permissions (direct) - only count if org can grant them
-    for (const pid of o.permissions || []) {
+    for (const pid of Object.keys(o.permissions)) {
       if (!summary[pid]) summary[pid] = { orgs: [], orgSet: new Set(), userCount: 0 }
       if (!summary[pid].orgSet.has(o.uuid)) {
         summary[pid].orgs.push(orgBase)
@@ -92,8 +92,8 @@ const permissionSummary = computed(() => {
     }
 
     // Role-based permissions (inheritance) - only count if org can grant them
-    for (const r of o.roles) {
-      for (const pid of r.permissions) {
+    for (const [roleUuid, r] of Object.entries(o.roles)) {
+      for (const pid of Object.keys(r.permissions || {})) {
         // Only count if the org can grant this permission
         if (!orgPerms.has(pid)) continue
 
@@ -102,7 +102,7 @@ const permissionSummary = computed(() => {
           summary[pid].orgs.push(orgBase)
           summary[pid].orgSet.add(o.uuid)
         }
-        summary[pid].userCount += r.users.length
+        summary[pid].userCount += roleUserCount(o, roleUuid)
       }
     }
   }
@@ -129,18 +129,32 @@ function parseHash() {
 
 async function loadOrgs() {
   const data = await apiJson('/auth/api/admin/orgs')
-  orgs.value = data.map(o => {
-    const roles = o.roles.map(r => ({ ...r, org: o.uuid, users: [] }))
-    const roleMap = Object.fromEntries(roles.map(r => [r.display_name, r]))
-    for (const u of o.users || []) {
-      if (roleMap[u.role]) roleMap[u.role].users.push(u)
-    }
-    return { ...o, roles }
-  })
+  orgs.value = Object.entries(data).map(([uuid, o]) => ({ uuid, ...o }))
+}
+
+// Helper to get users for a role as sorted array of [uuid, user]
+function roleUsers(org, roleUuid) {
+  return Object.entries(org.users)
+    .filter(([_, u]) => u.role === roleUuid)
+    .sort(([, a], [, b]) => {
+      const nameA = a.display_name.toLowerCase()
+      const nameB = b.display_name.toLowerCase()
+      return nameA.localeCompare(nameB)
+    })
+}
+
+// Helper to count users in a role
+function roleUserCount(org, roleUuid) {
+  return Object.values(org.users).filter(u => u.role === roleUuid).length
+}
+
+// Helper to count total users in an org
+function orgUserCount(org) {
+  return Object.keys(org.users).length
 }
 
 async function loadPermissions() {
-  permissions.value = await apiJson('/auth/api/admin/permissions')
+  permissions.value = Object.values(await apiJson('/auth/api/admin/permissions'))
 }
 
 async function loadUserInfo() {
@@ -186,7 +200,6 @@ async function load() {
       if (!window.location.hash || window.location.hash === '#overview') {
         currentOrgId.value = orgs.value[0].uuid
         window.location.hash = `#org/${currentOrgId.value}`
-        authStore.showMessage(`Navigating to ${orgs.value[0].display_name} Administration`, 'info', 3000)
       } else {
         parseHash()
       }
@@ -201,7 +214,7 @@ async function load() {
 // Org actions
 function createOrg() { openDialog('org-create', {}) }
 
-function updateOrg(org) { openDialog('org-update', { org, name: org.display_name }) }
+function updateOrg(org) { openDialog('org-update', { org, name: org.org.display_name }) }
 
 function editUserName(user) { openDialog('user-update-name', { user, name: user.display_name }) }
 
@@ -211,13 +224,13 @@ async function performOrgDeletion(orgUuid) {
 }
 
 function deleteOrg(org) {
-  const userCount = org.roles.reduce((acc, r) => acc + r.users.length, 0)
+  const userCount = orgUserCount(org)
 
   if (userCount === 0) {
     // No users in the organization, safe to delete directly
     performOrgDeletion(org.uuid)
       .then(() => {
-        authStore.showMessage(`Organization "${org.display_name}" deleted.`, 'success', 2500)
+        authStore.showMessage(`Organization "${org.org.display_name}" deleted.`, 'success', 2500)
       })
       .catch(e => {
         authStore.showMessage(e.message || 'Failed to delete organization', 'error')
@@ -226,13 +239,14 @@ function deleteOrg(org) {
   }
 
   // Build detailed breakdown of users by role
-  const roleParts = org.roles
-    .filter(r => r.users.length > 0)
-    .map(r => `${r.users.length} ${r.display_name}`)
+  const roleParts = Object.entries(org.roles)
+    .map(([uuid, r]) => [roleUserCount(org, uuid), r.display_name])
+    .filter(([count]) => count > 0)
+    .map(([count, name]) => `${count} ${name}`)
 
   const affects = roleParts.join(', ')
 
-  openDialog('confirm', { message: `Delete organization "${org.display_name}", including accounts of ${affects})?`, action: async () => {
+  openDialog('confirm', { message: `Delete organization "${org.org.display_name}", including accounts of ${affects})?`, action: async () => {
     await performOrgDeletion(org.uuid)
   } })
 }
@@ -240,7 +254,7 @@ function deleteOrg(org) {
 function createUserInRole(org, role) { openDialog('user-create', { org, role }) }
 
 function deleteUser(user, userDetail) {
-  const credentialCount = userDetail?.credentials?.length || 0
+  const credentialCount = Object.keys(userDetail?.credentials || {}).length
   const userUuid = user.uuid
   const userName = user.display_name
   const orgUuid = user.org  // org UUID is stored in selectedUser
@@ -271,10 +285,10 @@ async function performUserDeletion(userUuid, userName, orgUuid) {
   }
 }
 
-async function moveUserToRole(user, targetRoleUuid) {
-  if (user.role_uuid === targetRoleUuid) return
+async function moveUserToRole(userUuid, user, targetRoleUuid) {
+  if (user.role === targetRoleUuid) return
   try {
-    await apiJson(`/auth/api/admin/users/${user.uuid}/role`, {
+    await apiJson(`/auth/api/admin/users/${userUuid}/role`, {
       method: 'PATCH',
       body: { role_uuid: targetRoleUuid }
     })
@@ -284,9 +298,9 @@ async function moveUserToRole(user, targetRoleUuid) {
   }
 }
 
-function onUserDragStart(e, user, org) {
+function onUserDragStart(e, userUuid, org) {
   e.dataTransfer.effectAllowed = 'move'
-  e.dataTransfer.setData('text/plain', JSON.stringify({ user_uuid: user.uuid, org }))
+  e.dataTransfer.setData('text/plain', JSON.stringify({ user_uuid: userUuid, org }))
 }
 
 function onRoleDragOver(e) {
@@ -294,13 +308,13 @@ function onRoleDragOver(e) {
   e.dataTransfer.dropEffect = 'move'
 }
 
-function onRoleDrop(e, org, role) {
+function onRoleDrop(e, org, roleUuid) {
   e.preventDefault()
   try {
     const data = JSON.parse(e.dataTransfer.getData('text/plain'))
     if (data.org !== org.uuid) return // only within same org
-    const user = org.roles.flatMap(r => r.users).find(u => u.uuid === data.user_uuid)
-    if (user) moveUserToRole(user, role.uuid)
+    const user = org.users[data.user_uuid]
+    if (user) moveUserToRole(data.user_uuid, user, roleUuid)
   } catch (_) { /* ignore */ }
 }
 
@@ -309,9 +323,9 @@ function createRole(org) { openDialog('role-create', { org }) }
 
 function updateRole(role) { openDialog('role-update', { role, name: role.display_name }) }
 
-function deleteRole(role) {
+function deleteRole(roleUuid, role) {
   // UI only allows deleting empty roles, so no confirmation needed
-  apiJson(`/auth/api/admin/roles/${role.uuid}`, { method: 'DELETE' })
+  apiJson(`/auth/api/admin/roles/${roleUuid}`, { method: 'DELETE' })
     .then(() => {
       authStore.showMessage(`Role "${role.display_name}" deleted.`, 'success', 2500)
       loadOrgs()
@@ -321,17 +335,20 @@ function deleteRole(role) {
     })
 }
 
-async function toggleRolePermission(role, pid, checked) {
+async function toggleRolePermission(roleUuid, role, pid, checked) {
   // Optimistic update
-  const prevPermissions = [...role.permissions]
-  const newPermissions = checked
-    ? [...role.permissions, pid]
-    : role.permissions.filter(p => p !== pid)
+  const prevPermissions = { ...(role.permissions || {}) }
+  const newPermissions = { ...(role.permissions || {}) }
+  if (checked) {
+    newPermissions[pid] = true
+  } else {
+    delete newPermissions[pid]
+  }
   role.permissions = newPermissions
 
   try {
     const method = checked ? 'POST' : 'DELETE'
-    await apiJson(`/auth/api/admin/roles/${role.uuid}/permissions/${pid}`, {
+    await apiJson(`/auth/api/admin/roles/${roleUuid}/permissions/${pid}`, {
       method
     })
     await loadOrgs()
@@ -354,8 +371,8 @@ function deletePermission(p) {
   // Count roles that have this permission
   let roleCount = 0
   for (const org of orgs.value) {
-    for (const role of org.roles) {
-      if (role.permissions.includes(p.uuid)) {
+    for (const role of Object.values(org.roles)) {
+      if (p.uuid in (role.permissions || {})) {
         roleCount++
       }
     }
@@ -400,25 +417,19 @@ function openUser(u) {
 const selectedUser = computed(() => {
   if (!currentUserId.value) return null
   for (const o of orgs.value) {
-    for (const r of o.roles) {
-      const u = r.users.find(x => x.uuid === currentUserId.value)
-      if (u) return { ...u, org: o.uuid, role_display_name: r.display_name }
+    const u = o.users[currentUserId.value]
+    if (u) {
+      const role = o.roles[u.role]
+      return { ...u, uuid: currentUserId.value, org: o.uuid, role_display_name: role?.display_name }
     }
   }
   return null
 })
 
-const pageHeading = computed(() => {
-  if (selectedUser.value) return 'Admin: User'
-  if (selectedOrg.value) return 'Admin: Org'
-  return ((authStore.settings?.rp_name) || 'Master') + ' Admin'
-})
-
 // Breadcrumb entries for admin app.
 const breadcrumbEntries = computed(() => {
   const entries = [
-    { label: 'Auth', href: makeUiHref() },
-    { label: 'Admin', href: adminUiPath() }
+    { label: 'My Profile', href: makeUiHref() }
   ]
   // Determine organization for user view if selectedOrg not explicitly chosen.
   let orgForUser = null
@@ -426,8 +437,15 @@ const breadcrumbEntries = computed(() => {
     orgForUser = orgs.value.find(o => o.uuid === selectedUser.value.org) || null
   }
   const orgToShow = selectedOrg.value || orgForUser
-  if (orgToShow) {
-    entries.push({ label: orgToShow.display_name, href: `#org/${orgToShow.uuid}` })
+  if (orgToShow && isOrgAdmin.value && !isMasterAdmin.value) {
+    // For org admins, combine Admin and org name into one link
+    entries.push({ label: `Admin: ${orgToShow.org.display_name}`, href: `#org/${orgToShow.uuid}` })
+  } else {
+    // For master admins or when not showing an org, separate Admin link
+    entries.push({ label: 'Admin', href: isMasterAdmin.value ? adminUiPath() : (orgs.value.length === 1 ? `#org/${orgs.value[0].uuid}` : adminUiPath()) })
+    if (orgToShow) {
+      entries.push({ label: orgToShow.org.display_name, href: `#org/${orgToShow.uuid}` })
+    }
   }
   if (selectedUser.value) {
     entries.push({ label: selectedUser.value.display_name, href: `#user/${selectedUser.value.uuid}` })
@@ -450,13 +468,18 @@ function generateUserRegistrationLink(u) {
 }
 
 async function toggleOrgPermission(org, permId, checked) {
-  // Build next permission list
-  const has = org.permissions.includes(permId)
+  // Build next permission dict
+  const has = permId in org.permissions
   if (checked && has) return
   if (!checked && !has) return
-  const next = checked ? [...org.permissions, permId] : org.permissions.filter(p => p !== permId)
+  const next = { ...org.permissions }
+  if (checked) {
+    next[permId] = true  // Placeholder, real data comes from loadOrgs
+  } else {
+    delete next[permId]
+  }
   // Optimistic update
-  const prev = [...org.permissions]
+  const prev = { ...org.permissions }
   org.permissions = next
   try {
     const params = new URLSearchParams({ permission_uuid: permId })
@@ -760,7 +783,6 @@ async function submitDialog() {
       />
       <section v-else-if="authenticated && (isMasterAdmin || isOrgAdmin)" class="view-root view-root--wide view-admin">
         <header class="view-header">
-          <h1>{{ pageHeading }}</h1>
           <Breadcrumbs ref="breadcrumbsRef" :entries="breadcrumbEntries" @keydown="handleBreadcrumbKeydown" />
         </header>
 

@@ -5,7 +5,6 @@
         <ThemeSelector />
       </div>
       <header class="view-header">
-        <h1>User Profile</h1>
         <Breadcrumbs ref="breadcrumbs" :entries="breadcrumbEntries" @keydown="handleBreadcrumbKeydown" />
         <p class="view-lede">Account dashboard for managing credentials and authenticating with other devices.</p>
       </header>
@@ -13,12 +12,12 @@
 
     <section class="section-block section-block--constrained" ref="userInfoSection">
       <UserBasicInfo
-        v-if="authStore.userInfo?.ctx"
+        v-if="authStore.userInfo?.user"
         ref="userBasicInfo"
-        :name="authStore.userInfo.ctx.user.display_name"
-        :visits="authStore.userInfo.visits"
-        :created-at="authStore.userInfo.created_at"
-        :last-seen="authStore.userInfo.last_seen"
+        :name="authStore.userInfo.user.display_name"
+        :visits="authStore.userInfo.user.visits"
+        :created-at="authStore.userInfo.user.created_at"
+        :last-seen="authStore.userInfo.user.last_seen"
         :loading="authStore.isLoading"
         update-endpoint="/auth/api/user/display-name"
         @saved="authStore.loadUserInfo()"
@@ -48,11 +47,11 @@
       <div class="section-body">
         <CredentialList
           ref="credentialList"
-          :credentials="authStore.userInfo?.credentials || []"
+          :credentials="credentials"
           :aaguid-info="authStore.userInfo?.aaguid_info || {}"
           :loading="authStore.isLoading"
           :hovered-credential-uuid="hoveredCredentialUuid"
-          :hovered-session-credential-uuid="hoveredSession?.credential"
+          :hovered-session-credential-uuid="hoveredSessionCredential"
           :navigation-disabled="hasActiveModal"
           allow-delete
           @delete="handleDelete"
@@ -69,12 +68,11 @@
     <SessionList
       ref="sessionList"
       :sessions="sessions"
-      :terminating-sessions="terminatingSessions"
       :hovered-credential-uuid="hoveredCredentialUuid"
       :navigation-disabled="hasActiveModal"
       :section-class="useWideLayout ? '' : 'section-block--constrained'"
       @terminate="terminateSession"
-      @session-hover="hoveredSession = $event"
+      @session-hover="handleSessionHover"
       @navigate-out="handleSessionNavigateOut"
       section-description="You are currently signed in to the following sessions. If you don't recognize something, consider deleting not only the session but the associated passkey you suspect is compromised, as only this terminates all linked sessions and prevents logging in again."
     />
@@ -148,6 +146,7 @@ const newName = ref('')
 const saving = ref(false)
 const hoveredCredentialUuid = ref(null)
 const hoveredSession = ref(null)
+const hoveredSessionCredential = ref(null)
 const showDeviceInfo = ref(false)
 const pairingEntry = ref(null)
 const credentialList = ref(null)
@@ -168,6 +167,11 @@ onMounted(() => {
 })
 
 onUnmounted(() => { if (updateInterval.value) clearInterval(updateInterval.value) })
+
+const handleSessionHover = (session) => {
+  hoveredSession.value = session
+  hoveredSessionCredential.value = session?.credential || null
+}
 
 const addNewCredential = async () => {
   try {
@@ -302,7 +306,7 @@ const handleLogoutButtonKeydown = (event) => {
 }
 
 const handleDelete = async (credential) => {
-  const credentialId = credential?.credential
+  const credentialId = credential?.uuid
   if (!credentialId) return
   try {
     await authStore.deleteCredential(credentialId)
@@ -312,35 +316,33 @@ const handleDelete = async (credential) => {
 
 const rpName = computed(() => authStore.settings?.rp_name || 'this service')
 const paskiaVersion = computed(() => authStore.settings?.version || '')
+const credentials = computed(() => {
+  const creds = authStore.userInfo?.credentials || {}
+  return Object.entries(creds).map(([uuid, c]) => ({ ...c, uuid })).sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
+})
 const sessions = computed(() => authStore.userInfo?.sessions || [])
 const currentSessionHost = computed(() => {
   const currentSession = sessions.value.find(session => session.is_current)
   return currentSession?.host || 'this host'
 })
-const terminatingSessions = ref({})
 
 const terminateSession = async (session) => {
-  const sessionId = session?.id
-  if (!sessionId) return
-  terminatingSessions.value = { ...terminatingSessions.value, [sessionId]: true }
-  try { await authStore.terminateSession(sessionId) }
-  catch (error) { authStore.showMessage(error.message || 'Failed to terminate session', 'error', 5000) }
-  finally {
-    const next = { ...terminatingSessions.value }
-    delete next[sessionId]
-    terminatingSessions.value = next
+  if (session.is_current) {
+    await logout()
+  } else {
+    try { await authStore.deleteCredential(session.credential) }
+    catch (error) { authStore.showMessage(error.message || 'Failed to delete credential', 'error', 5000) }
   }
 }
 
 const logoutEverywhere = async () => { await authStore.logoutEverywhere() }
 const logout = async () => { await authStore.logout() }
-const openNameDialog = () => { newName.value = authStore.userInfo?.ctx.user.display_name ?? ''; showNameDialog.value = true }
+const openNameDialog = () => { newName.value = authStore.userInfo?.user.display_name ?? ''; showNameDialog.value = true }
 const isAdmin = computed(() => {
-  const perms = authStore.userInfo?.ctx.permissions
-  return perms.includes('auth:admin') || perms.includes('auth:org:admin')
+  const perms = authStore.ctx?.permissions
+  return perms?.includes('auth:admin') || perms?.includes('auth:org:admin')
 })
 const hasMultipleSessions = computed(() => sessions.value.length > 1)
-const credentials = computed(() => authStore.userInfo?.credentials || [])
 const useWideLayout = computed(() => {
   // Check if any single site has more than 8 sessions
   const groups = {}
@@ -356,7 +358,7 @@ const useWideLayout = computed(() => {
 
   return hasLargeSessionGroup || hasManyCredentials
 })
-const breadcrumbEntries = computed(() => { const entries = [{ label: 'Auth', href: makeUiHref() }]; if (isAdmin.value) entries.push({ label: 'Admin', href: adminUiPath() }); return entries })
+const breadcrumbEntries = computed(() => { const entries = [{ label: 'My Profile', href: makeUiHref() }]; if (isAdmin.value) entries.push({ label: 'Admin', href: adminUiPath() }); return entries })
 
 const saveName = async () => {
   const name = newName.value.trim()

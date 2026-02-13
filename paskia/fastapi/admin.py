@@ -21,7 +21,17 @@ from paskia.util import (
     querysafe,
     vitedev,
 )
-from paskia.util.apistructs import ApiPermission, ApiSession, format_datetime
+from paskia.util.apistructs import (
+    ApiAaguidInfo,
+    ApiCreateLinkResponse,
+    ApiOrgResponse,
+    ApiPermission,
+    ApiUser,
+    ApiUserDetail,
+    ApiUserSession,
+    ApiUuidResponse,
+    format_datetime,
+)
 from paskia.util.hostutil import normalize_host
 
 app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
@@ -83,34 +93,15 @@ async def admin_list_orgs(request: Request, auth=AUTH_COOKIE):
         orgs = [o for o in orgs if o.uuid == ctx.org.uuid]
 
     def org_to_dict(o):
-        return {
-            "uuid": o.uuid,
-            "display_name": o.display_name,
-            "permissions": {p.uuid for p in o.permissions},
-            "roles": [
-                {
-                    "uuid": r.uuid,
-                    "org": r.org_uuid,
-                    "display_name": r.display_name,
-                    "permissions": list(r.permissions.keys()),
-                }
-                for r in o.roles
-            ],
-            "users": [
-                {
-                    "uuid": u.uuid,
-                    "display_name": u.display_name,
-                    "role": r.display_name,
-                    "role_uuid": u.role_uuid,
-                    "visits": u.visits,
-                    "last_seen": u.last_seen,
-                }
-                for r in o.roles
-                for u in r.users
-            ],
-        }
+        roles = o.roles
+        return ApiOrgResponse(
+            org=o,
+            permissions={p.uuid: p for p in o.permissions},
+            roles={r.uuid: r for r in roles},
+            users={u.uuid: u for r in roles for u in r.users},
+        )
 
-    return MsgspecResponse([org_to_dict(o) for o in orgs])
+    return MsgspecResponse({o.uuid: org_to_dict(o) for o in orgs})
 
 
 @app.post("/orgs")
@@ -129,7 +120,7 @@ async def admin_create_org(
     for perm in permissions:
         db.add_permission_to_org(str(org.uuid), perm, ctx=ctx)
 
-    return {"uuid": str(org.uuid)}
+    return MsgspecResponse(ApiUuidResponse(uuid=str(org.uuid)))
 
 
 @app.patch("/orgs/{org_uuid}")
@@ -278,7 +269,7 @@ async def admin_create_role(
         permissions=permission_uuids,
     )
     db.create_role(role, ctx=ctx)
-    return {"uuid": str(role.uuid)}
+    return MsgspecResponse(ApiUuidResponse(uuid=str(role.uuid)))
 
 
 @app.patch("/roles/{role_uuid}")
@@ -451,7 +442,7 @@ async def admin_create_user(
         role=role_obj.uuid,
     )
     db.create_user(user, ctx=ctx)
-    return {"uuid": str(user.uuid)}
+    return MsgspecResponse(ApiUuidResponse(uuid=str(user.uuid)))
 
 
 @app.patch("/users/{user_uuid}/role")
@@ -538,11 +529,13 @@ async def admin_create_user_registration_link(
         ctx=ctx,
     )
     url = hostutil.reset_link_url(token)
-    return {
-        "url": url,
-        "expires": format_datetime(expiry),
-        "token_type": token_type,
-    }
+    return MsgspecResponse(
+        ApiCreateLinkResponse(
+            url=url,
+            expires=format_datetime(expiry),
+            token_type=token_type,
+        )
+    )
 
 
 @app.get("/users/{user_uuid}")
@@ -553,7 +546,6 @@ async def admin_get_user_detail(
 ):
     try:
         user = db.data().users[user_uuid]
-        role_name = user.role.display_name
     except KeyError:
         raise HTTPException(status_code=404, detail="User not found")
     ctx = await authz.verify(
@@ -568,36 +560,28 @@ async def admin_get_user_detail(
         )
     normalized_host = hostutil.normalize_host(request.headers.get("host"))
 
+    sessions = [
+        ApiUserSession.from_db(
+            s,
+            current_key=auth,
+            normalized_host=normalized_host,
+            expires_delta=EXPIRES,
+        )
+        for s in user.sessions
+    ]
+
     return MsgspecResponse(
-        {
-            "display_name": user.display_name,
-            "org": {"display_name": user.org.display_name},
-            "role": role_name,
-            "visits": user.visits,
-            "created_at": user.created_at,
-            "last_seen": user.last_seen,
-            "credentials": [
-                {
-                    "credential": c.uuid,
-                    "aaguid": c.aaguid,
-                    "created_at": c.created_at,
-                    "last_used": c.last_used,
-                    "last_verified": c.last_verified,
-                    "sign_count": c.sign_count,
-                }
-                for c in user.credentials
-            ],
-            "aaguid_info": aaguid_mod.filter(c.aaguid for c in user.credentials),
-            "sessions": [
-                ApiSession.from_db(
-                    s,
-                    current_key=auth,
-                    normalized_host=normalized_host,
-                    expires_delta=EXPIRES,
-                )
-                for s in user.sessions
-            ],
-        }
+        ApiUserDetail(
+            user=ApiUser.from_db(user),
+            credentials={c.uuid: c for c in user.credentials},
+            aaguid_info={
+                k: ApiAaguidInfo(**v)
+                for k, v in aaguid_mod.filter(
+                    c.aaguid for c in user.credentials
+                ).items()
+            },
+            sessions=sessions,
+        )
     )
 
 
@@ -813,7 +797,7 @@ async def admin_list_permissions(request: Request, auth=AUTH_COOKIE):
         host=request.headers.get("host"),
     )
     perms = db.data().permissions.values() if master_admin(ctx) else ctx.org.permissions
-    return MsgspecResponse([ApiPermission.from_db(p) for p in perms])
+    return MsgspecResponse({p.uuid: ApiPermission.from_db(p) for p in perms})
 
 
 @app.post("/permissions")

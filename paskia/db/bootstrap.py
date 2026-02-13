@@ -102,6 +102,7 @@ def bootstrap(
             created_at=now,
             last_seen=None,
             visits=0,
+            theme="",
         )
         admin_user.uuid = user_uuid
         admin_user.store()

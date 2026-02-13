@@ -16,8 +16,10 @@ from paskia.authsession import (
     expires,
 )
 from paskia.fastapi import authz, session
+from paskia.fastapi.response import MsgspecResponse
 from paskia.fastapi.session import AUTH_COOKIE
 from paskia.util import hostutil
+from paskia.util.apistructs import ApiCreateLinkResponse
 
 app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
 
@@ -157,13 +159,15 @@ async def api_create_link(
         ctx=ctx,
     )
     url = hostutil.reset_link_url(token)
-    return {
-        "message": "Registration link generated successfully",
-        "url": url,
-        "expires": (
-            expiry.astimezone(UTC).isoformat().replace("+00:00", "Z")
-            if expiry.tzinfo
-            else expiry.replace(tzinfo=UTC).isoformat().replace("+00:00", "Z")
-        ),
-        "token_type": "device addition",
-    }
+    return MsgspecResponse(
+        ApiCreateLinkResponse(
+            message="Registration link generated successfully",
+            url=url,
+            expires=(
+                expiry.astimezone(UTC).isoformat().replace("+00:00", "Z")
+                if expiry.tzinfo
+                else expiry.replace(tzinfo=UTC).isoformat().replace("+00:00", "Z")
+            ),
+            token_type="device addition",
+        )
+    )
