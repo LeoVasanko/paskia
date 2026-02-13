@@ -86,7 +86,7 @@ dev = [
 ]
 
 [project.scripts]
-paskia = "paskia.fastapi.__main__:main"
+paskia = "paskia.__main__:main"
 
 [tool.hatch.build]
 artifacts = ["paskia/frontend-build"]
