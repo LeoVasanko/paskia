@@ -9,10 +9,10 @@ from fastapi.responses import FileResponse, RedirectResponse
 from fastapi_vue import Frontend
 
 from paskia import globals
+from paskia.__main__ import DEVMODE
 from paskia.db import start_background, stop_background
 from paskia.db.logging import configure_db_logging
 from paskia.fastapi import admin, api, auth_host, ws
-from paskia.__main__ import DEVMODE
 from paskia.fastapi.logging import AccessLogMiddleware, configure_access_logging
 from paskia.fastapi.session import AUTH_COOKIE
 from paskia.util import hostutil, passphrase, vitedev

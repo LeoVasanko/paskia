@@ -15,11 +15,11 @@
             </span>
             <div class="session-list">
               <div
-                v-for="session in group.sessions"
-                :key="session.id"
+                v-for="(session, index) in group.sessions"
+                :key="index"
                 :class="['session-item', {
                   'is-current': session.is_current && !hoveredIp && !hoveredCredentialUuid,
-                  'is-hovered': hoveredSession?.id === session.id,
+                  'is-hovered': hoveredSession === session,
                   'is-linked-credential': hoveredCredentialUuid === session.credential
                 }]"
                 tabindex="-1"
@@ -33,14 +33,13 @@
                   <h4 class="item-title">{{ session.user_agent || '—' }}</h4>
                   <div class="item-actions">
                     <span v-if="session.is_current && !hoveredIp && !hoveredCredentialUuid" class="badge badge-current">Current</span>
-                    <span v-else-if="hoveredSession?.id === session.id" class="badge badge-current">Selected</span>
+                    <span v-else-if="hoveredSession === session" class="badge badge-current">Selected</span>
                     <span v-else-if="hoveredCredentialUuid === session.credential" class="badge badge-current">Linked</span>
                     <span v-else-if="!hoveredCredentialUuid && isSameHost(session.ip)" class="badge">Same IP</span>
                     <button
                       @click="$emit('terminate', session)"
                       class="btn-card-delete"
-                      :disabled="isTerminating(session.id)"
-                      :title="isTerminating(session.id) ? 'Terminating...' : 'Terminate session'"
+                      :title="'Delete associated passkey'"
                       tabindex="-1"
                     >❌</button>
                   </div>
@@ -72,7 +71,6 @@ const props = defineProps({
   sessions: { type: Array, default: () => [] },
   emptyMessage: { type: String, default: 'You currently have no other active sessions.' },
   sectionDescription: { type: String, default: "Review where you're signed in and end any sessions you no longer recognize." },
-  terminatingSessions: { type: Object, default: () => ({}) },
   hoveredCredentialUuid: { type: String, default: null },
   navigationDisabled: { type: Boolean, default: false },
   sectionClass: { type: String, default: '' },
@@ -106,8 +104,6 @@ const handleCardClick = (event) => {
     event.stopPropagation()
   }
 }
-
-const isTerminating = (sessionId) => !!props.terminatingSessions[sessionId]
 
 const handleGroupKeydown = (event, host) => {
   const group = event.currentTarget

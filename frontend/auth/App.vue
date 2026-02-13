@@ -54,7 +54,7 @@ function terminateSession() {
   viewState.value = 'terminal'
 }
 
-const userUuidGetter = () => store.userInfo?.ctx.user.uuid
+const userUuidGetter = () => store.ctx?.user.uuid
 const sessionValidator = new SessionValidator(userUuidGetter, terminateSession)
 
 onMounted(() => sessionValidator.start())
@@ -62,11 +62,23 @@ onUnmounted(() => sessionValidator.stop())
 
 async function loadUserInfo() {
   try {
-    store.userInfo = await apiJson('/auth/api/user-info', { method: 'POST' })
+    const [validateData, userInfoData] = await Promise.all([
+      apiJson('/auth/api/validate', { method: 'POST' }),
+      apiJson('/auth/api/user-info', { method: 'POST' })
+    ])
+    store.userInfo = userInfoData
+    store.ctx = validateData.ctx
+    // Verify that the user UUIDs match between user-info and validate responses
+    if (store.userInfo.user.uuid !== store.ctx.user.uuid) {
+      console.error('User UUID mismatch between user-info and validate responses')
+      window.location.reload()
+      return false
+    }
     viewState.value = 'profile'
     return true
   } catch {
     store.userInfo = null
+    store.ctx = null
     return false
   }
 }

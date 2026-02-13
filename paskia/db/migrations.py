@@ -20,6 +20,12 @@ def migrate_v2(d: dict, *, rp_id: str = "localhost") -> None:
         d["config"] = {"rp_id": rp_id}
 
 
+def migrate_v3(d: dict, **kwargs) -> None:
+    """Ensure all users have visits field."""
+    for user_data in d["users"].values():
+        user_data.setdefault("visits", 0)
+
+
 migrations = sorted(
     [f for n, f in globals().items() if n.startswith("migrate_v")],
     key=lambda f: int(f.__name__.removeprefix("migrate_v")),

@@ -30,4 +30,16 @@ def filter(aaguids: Iterable[UUID]) -> dict[str, dict]:
         Dictionary mapping AAGUID string to authenticator information for only
         the AAGUIDs that the user has and that we have data for
     """
-    return {(s := str(a)): AAGUID[s] for a in aaguids if (s := str(a)) in AAGUID}
+    result = {}
+    for a in aaguids:
+        s = str(a)
+        if s in AAGUID:
+            info = AAGUID[s].copy()
+            # Rename icon_light to icon
+            if "icon_light" in info:
+                info["icon"] = info.pop("icon_light")
+            # If icons are the same, set dark to None to save space
+            if info.get("icon") == info.get("icon_dark"):
+                info["icon_dark"] = None
+            result[s] = info
+    return result

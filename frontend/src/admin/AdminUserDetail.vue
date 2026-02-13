@@ -20,7 +20,6 @@ const props = defineProps({
 const emit = defineEmits(['generateUserRegistrationLink', 'goOverview', 'openOrg', 'onUserNameSaved', 'closeRegModal', 'editUserName', 'refreshUserDetail', 'navigateOut', 'deleteUser'])
 
 const authStore = useAuthStore()
-const terminatingSessions = ref({})
 const hoveredCredentialUuid = ref(null)
 const hoveredSession = ref(null)
 
@@ -45,7 +44,7 @@ function handleEditName() {
 
 async function handleDelete(credential) {
   try {
-    const data = await apiJson(`/auth/api/admin/users/${props.selectedUser.uuid}/credentials/${credential.credential}`, { method: 'DELETE' })
+    const data = await apiJson(`/auth/api/admin/users/${props.selectedUser.uuid}/credentials/${credential.uuid}`, { method: 'DELETE' })
     if (data.status === 'ok') {
       emit('onUserNameSaved') // Reuse to refresh user detail
     } else {
@@ -57,29 +56,15 @@ async function handleDelete(credential) {
 }
 
 async function handleTerminateSession(session) {
-  const sessionId = session?.id
-  if (!sessionId) return
-  terminatingSessions.value = { ...terminatingSessions.value, [sessionId]: true }
+  const credentialUuid = session?.credential
+  if (!credentialUuid) return
   try {
-    const data = await apiJson(`/auth/api/admin/users/${props.selectedUser.uuid}/sessions/${sessionId}`, { method: 'DELETE' })
-    if (data.status === 'ok') {
-      if (data.current_session_terminated) {
-        sessionStorage.clear()
-        location.reload()
-        return
-      }
-      emit('refreshUserDetail') // Refresh without showing rename message
-      authStore.showMessage('Session terminated', 'success', 2500)
-    } else {
-      authStore.showMessage(data.detail || 'Failed to terminate session', 'error')
-    }
+    await apiJson(`/auth/api/admin/users/${props.selectedUser.uuid}/credentials/${credentialUuid}`, { method: 'DELETE' })
+    emit('refreshUserDetail')
+    authStore.showMessage('Credential deleted', 'success', 2500)
   } catch (err) {
-    console.error('Terminate session error', err)
-    authStore.showMessage(err.message || 'Failed to terminate session', 'error')
-  } finally {
-    const next = { ...terminatingSessions.value }
-    delete next[sessionId]
-    terminatingSessions.value = next
+    console.error('Delete credential error', err)
+    authStore.showMessage(err.message || 'Failed to delete credential', 'error')
   }
 }
 
@@ -180,13 +165,13 @@ defineExpose({ focusFirstElement })
     <div ref="userInfoRef" @keydown="handleUserInfoKeydown">
       <UserBasicInfo
         v-if="userDetail && !userDetail.error"
-        :name="userDetail.display_name || selectedUser.display_name"
-        :visits="userDetail.visits"
-        :created-at="userDetail.created_at"
-        :last-seen="userDetail.last_seen"
+        :name="userDetail.user.display_name"
+        :visits="userDetail.user.visits"
+        :created-at="userDetail.user.created_at"
+        :last-seen="userDetail.user.last_seen"
         :loading="loading"
-        :org-display-name="userDetail.org.display_name"
-        :role-name="userDetail.role"
+        :org-display-name="selectedOrg?.org?.display_name"
+        :role-name="selectedUser?.role_display_name"
         :update-endpoint="`/auth/api/admin/users/${selectedUser.uuid}/display-name`"
         @saved="$emit('onUserNameSaved')"
         @edit-name="handleEditName"
@@ -196,7 +181,7 @@ defineExpose({ focusFirstElement })
             class="btn-primary"
             @click="$emit('generateUserRegistrationLink', selectedUser)"
             :disabled="loading"
-          >{{ userDetail?.credentials?.length ? 'Recovery Link' : 'Registration Link' }}</button>
+          >{{ Object.keys(userDetail?.credentials || {}).length ? 'Recovery Link' : 'Registration Link' }}</button>
           <button
             class="btn-danger"
             @click="handleDeleteUser"
@@ -215,11 +200,11 @@ defineExpose({ focusFirstElement })
         <div class="section-body">
           <CredentialList
             ref="credentialListRef"
-            :credentials="userDetail.credentials"
+            :credentials="Object.entries(userDetail.credentials).map(([uuid, c]) => ({ ...c, uuid })).sort((a, b) => new Date(a.created_at) - new Date(b.created_at))"
             :aaguid-info="userDetail.aaguid_info"
             :allow-delete="true"
             :hovered-credential-uuid="hoveredCredentialUuid"
-            :hovered-session-credential-uuid="hoveredSession?.credential"
+            :hovered-session-credential-uuid="hoveredSession?.credential || null"
             :navigation-disabled="hasActiveModal"
             @delete="handleDelete"
             @credential-hover="hoveredCredentialUuid = $event"
@@ -229,8 +214,7 @@ defineExpose({ focusFirstElement })
       </section>
       <SessionList
         ref="sessionListRef"
-        :sessions="userDetail.sessions || []"
-        :terminating-sessions="terminatingSessions"
+        :sessions="userDetail.sessions"
         :hovered-credential-uuid="hoveredCredentialUuid"
         :navigation-disabled="hasActiveModal"
         :empty-message="'This user has no active sessions.'"
@@ -246,7 +230,7 @@ defineExpose({ focusFirstElement })
     <RegistrationLinkModal
       v-if="showRegModal"
       :endpoint="`/auth/api/admin/users/${selectedUser.uuid}/create-link`"
-      :user-name="userDetail?.display_name || selectedUser.display_name"
+      :user-name="userDetail?.user.display_name || selectedUser.display_name"
       @close="$emit('closeRegModal')"
       @copied="onLinkCopied"
     />

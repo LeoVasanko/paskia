@@ -21,7 +21,7 @@ const permActionsRef = ref(null)
 const permTableRef = ref(null)
 
 const sortedOrgs = computed(() => [...props.orgs].sort((a,b)=> {
-  const nameCompare = a.display_name.localeCompare(b.display_name)
+  const nameCompare = a.org.display_name.localeCompare(b.org.display_name)
   return nameCompare !== 0 ? nameCompare : a.uuid.localeCompare(b.uuid)
 }))
 const sortedPermissions = computed(() => [...props.permissions].sort((a,b)=> a.scope.localeCompare(b.scope)))
@@ -35,11 +35,15 @@ function permissionDisplayName(scope) {
 }
 
 function getRoleNames(org) {
-  return org.roles
+  return Object.values(org.roles)
     .slice()
     .sort((a, b) => a.display_name.localeCompare(b.display_name))
     .map(r => r.display_name)
     .join(', ')
+}
+
+function orgUserCount(org) {
+  return Object.keys(org.users).length
 }
 
 // Table navigation for both org and permissions tables
@@ -265,11 +269,11 @@ defineExpose({ focusFirstElement })
       <tbody>
         <tr v-for="o in sortedOrgs" :key="o.uuid">
           <td>
-            <a href="#org/{{o.uuid}}" @click.prevent="$emit('openOrg', o)">{{ o.display_name }}</a>
+            <a href="#org/{{o.uuid}}" @click.prevent="$emit('openOrg', o)">{{ o.org.display_name }}</a>
             <button v-if="isMasterAdmin || isOrgAdmin" @click="$emit('updateOrg', o)" class="icon-btn edit-org-btn" aria-label="Rename organization" title="Rename organization">✏️</button>
           </td>
           <td class="role-names">{{ getRoleNames(o) }}</td>
-          <td class="center">{{ o.roles.reduce((acc,r)=>acc + r.users.length,0) }}</td>
+          <td class="center">{{ orgUserCount(o) }}</td>
           <td v-if="isMasterAdmin" class="center">
             <button @click="$emit('deleteOrg', o)" class="icon-btn delete-icon" aria-label="Delete organization" title="Delete organization">❌</button>
           </td>
@@ -291,9 +295,9 @@ defineExpose({ focusFirstElement })
             v-for="o in sortedOrgs"
             :key="'head-' + o.uuid"
             class="grid-head org-head"
-            :title="o.display_name"
+            :title="o.org.display_name"
           >
-            <span>{{ o.display_name }}</span>
+            <span>{{ o.org.display_name }}</span>
           </div>
 
           <template v-for="p in sortedPermissions" :key="p.uuid">
@@ -307,7 +311,7 @@ defineExpose({ focusFirstElement })
             >
               <input
                 type="checkbox"
-                :checked="o.permissions.includes(p.uuid)"
+                :checked="p.uuid in o.permissions"
                 @change="e => $emit('toggleOrgPermission', o, p.uuid, e.target.checked)"
               />
             </div>
