@@ -70,7 +70,7 @@ def set_session_cookie(response: Response, token: str) -> None:
         httponly=True,
         secure=True,
         path="/",
-        samesite="lax",
+        samesite="strict",
     )
 
 
