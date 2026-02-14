@@ -387,6 +387,7 @@ defineExpose({ focusFirstElement })
         </div>
       </div>
     </div>
+    <p v-if="sortedRoles.length >= 2" class="roles-hint muted">Members can be drag&dropped to different roles.</p>
 </template>
 
 <style scoped>
@@ -397,7 +398,7 @@ defineExpose({ focusFirstElement })
 .perm-matrix-grid .role-head span { writing-mode: vertical-rl; transform: rotate(180deg); font-size: 0.65rem; }
 .perm-matrix-grid .add-role-head { cursor: pointer; }
 .roles-grid { display: flex; gap: var(--space-lg); margin-top: var(--space-lg); }
-.role-column { flex: 1; min-width: 200px; border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: var(--space-md); }
+.role-column { flex: 1; min-width: 200px; border-radius: var(--radius-md); padding: var(--space-md); }
 .role-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--space-md); }
 .role-name { display: flex; align-items: center; gap: var(--space-xs); font-size: 1.1rem; color: var(--color-heading); }
 .role-actions { display: flex; gap: var(--space-xs); }

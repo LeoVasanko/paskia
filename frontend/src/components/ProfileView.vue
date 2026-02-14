@@ -77,18 +77,6 @@
       section-description="You are currently signed in to the following sessions. If you don't recognize something, consider deleting not only the session but the associated passkey you suspect is compromised, as only this terminates all linked sessions and prevents logging in again."
     />
 
-    <Modal v-if="showNameDialog" @close="showNameDialog = false">
-      <h3>Edit Display Name</h3>
-      <form @submit.prevent="saveName" class="modal-form">
-        <NameEditForm
-          label="Display Name"
-          v-model="newName"
-          :busy="saving"
-          @cancel="showNameDialog = false"
-        />
-      </form>
-    </Modal>
-
     <section :class="['section-block', { 'section-block--constrained': !useWideLayout }]">
       <div class="button-row" ref="logoutButtons">
         <button
@@ -107,10 +95,23 @@
       </div>
       <div class="logout-footer">
         <p class="logout-note" v-if="!hasMultipleSessions"><strong>Logout</strong> from {{ currentSessionHost }}.</p>
-        <p class="logout-note" v-else><strong>Logout</strong> this session on {{ currentSessionHost }}, or <strong>All</strong> sessions across all sites and devices for {{ rpName }}. You'll need to log in again with your passkey afterwards.</p>
+        <p class="logout-note" v-else><strong>Logout</strong> this session on {{ currentSessionHost }}, or <strong>All</strong> sessions across all sites and devices for {{ rpName }}.</p>
         <a class="paskia-version" href="https://git.zi.fi/leovasanko/paskia" target="_blank" rel="noopener noreferrer">Paskia {{ paskiaVersion }}</a>
       </div>
     </section>
+
+    <Modal v-if="showNameDialog" @close="showNameDialog = false">
+      <h3>Edit Display Name</h3>
+      <form @submit.prevent="saveName" class="modal-form">
+        <NameEditForm
+          label="Display Name"
+          v-model="newName"
+          :busy="saving"
+          @cancel="showNameDialog = false"
+        />
+      </form>
+    </Modal>
+
     <RegistrationLinkModal
       v-if="showRegLink"
       endpoint="/auth/api/user/create-link"

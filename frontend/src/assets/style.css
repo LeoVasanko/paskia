@@ -9,34 +9,34 @@
   --font-sans: "Inter", "Inter var", "Segoe UI", system-ui, -apple-system, "Helvetica Neue", sans-serif;
   --font-mono: "DM Mono", "JetBrains Mono", "SFMono-Regular", Menlo, Monaco, Consolas, "Liberation Mono", monospace;
   --color-canvas: white;
-  --color-surface: oklch(0.95 0.03 var(--hue));
-  --color-surface-subtle: oklch(0.9 0.03 var(--hue));
-  --color-surface-hover: white;
-  --color-dialog: white;
-  --color-border: oklch(0.8 0.02 var(--hue));
-  --color-border-strong: oklch(0.55 0.15 var(--hue));
-  --color-heading: oklch(0.3 0.05 var(--hue));
-  --color-text: oklch(0.25 0.02 var(--hue));
-  --color-text-muted: oklch(0.5 0.02 var(--hue));
-  --color-link: oklch(0.5 0.18 var(--hue));
-  --color-link-hover: oklch(0.45 0.2 var(--hue));
-  --color-accent: oklch(0.55 0.2 var(--hue));
-  --color-accent-strong: oklch(0.45 0.2 var(--hue));
+  --color-surface: white;
+  --color-surface-subtle: white;
+  --color-surface-hover: oklab(0.97 -0.01 -0.02);
+  --color-dialog: oklab(0.96 -0.01 -0.03);
+  --color-border: oklab(0.82 -0.02 -0.06);
+  --color-border-strong: oklab(0.55 -0.05 -0.14);
+  --color-heading: oklab(0.22 -0.03 -0.09);
+  --color-text: oklab(0.2 -0.02 -0.05);
+  --color-text-muted: oklab(0.42 -0.02 -0.06);
+  --color-link: oklab(0.5 -0.06 -0.17);
+  --color-link-hover: oklab(0.45 -0.06 -0.19);
+  --color-accent: oklab(0.55 -0.06 -0.19);
+  --color-accent-strong: oklab(0.45 -0.06 -0.19);
   --color-accent-contrast: white;
-  --color-secondary: oklch(0.55 0.05 var(--hue));
-  --color-secondary-strong: oklch(0.45 0.05 var(--hue));
-  --color-success-text: oklch(0.4 0.15 0.4turn);
-  --color-success-bg: oklch(0.95 0.03 0.4turn);
-  --color-error-text: oklch(0.45 0.2 0.07turn);
-  --color-error-bg: oklch(0.95 0.03 0.07turn);
-  --color-info-text: oklch(0.45 0.15 var(--hue));
-  --color-info-bg: oklch(0.95 0.02 var(--hue));
-  --color-danger: oklch(0.55 0.22 0.07turn);
-  --color-primary: oklch(0.55 0.2 var(--hue));
-  --color-error: oklch(0.45 0.2 0.07turn);
-  --color-success: oklch(0.4 0.15 0.4turn);
-  --color-bg: oklch(0.97 0.005 var(--hue));
-  --color-accent-soft: oklch(0.95 0.08 var(--hue));
+  --color-secondary: oklab(0.55 -0.02 -0.05);
+  --color-secondary-strong: oklab(0.45 -0.02 -0.05);
+  --color-success-text: oklab(0.4 -0.12 0.09);
+  --color-success-bg: oklab(0.95 -0.02 0.02);
+  --color-error-text: oklab(0.45 0.18 0.09);
+  --color-error-bg: oklab(0.95 0.03 0.01);
+  --color-info-text: oklab(0.45 -0.05 -0.14);
+  --color-info-bg: oklab(0.95 -0.01 -0.02);
+  --color-danger: oklab(0.55 0.20 0.09);
+  --color-primary: oklab(0.55 -0.06 -0.19);
+  --color-error: oklab(0.45 0.18 0.09);
+  --color-success: oklab(0.4 -0.12 0.09);
+  --color-bg: oklab(0.94 -0.01 -0.03);
+  --color-accent-soft: oklab(0.92 -0.03 -0.08);
   --shadow-soft: 0 0 .2rem black;
   --shadow-xl: 0 10px 40px rgba(0, 0, 0, 0.15);
   --radius-sm: 4px;
@@ -54,35 +54,35 @@
 }
 
 :root.dark {
-  --color-canvas: oklch(0.17 0.05 var(--hue));
-  --color-surface: oklch(0.22 0.05 var(--hue));
-  --color-surface-subtle: oklch(0.25 0.05 var(--hue));
-  --color-surface-hover: oklch(0.28 0.05 var(--hue));
-  --color-dialog: oklch(0.22 0.05 var(--hue));
-  --color-border: oklch(0.3 0.05 var(--hue));
-  --color-border-strong: oklch(0.4 0.05 var(--hue));
+  --color-canvas: oklab(0.17 -0.02 -0.05);
+  --color-surface: oklab(0.22 -0.02 -0.05);
+  --color-surface-subtle: oklab(0.25 -0.02 -0.05);
+  --color-surface-hover: oklab(0.28 -0.02 -0.05);
+  --color-dialog: oklab(0.22 -0.02 -0.05);
+  --color-border: oklab(0.3 -0.02 -0.05);
+  --color-border-strong: oklab(0.4 -0.02 -0.05);
   --color-heading: white;
-  --color-text: oklch(0.9 0.01 var(--hue));
-  --color-text-muted: oklch(0.7 0.02 var(--hue));
-  --color-link: oklch(0.7 0.15 var(--hue));
-  --color-link-hover: oklch(0.8 0.12 var(--hue));
-  --color-accent: oklch(0.7 0.15 var(--hue));
-  --color-accent-strong: oklch(0.6 0.18 var(--hue));
-  --color-accent-contrast: oklch(0.12 0.03 var(--hue));
-  --color-secondary: oklch(0.6 0.05 var(--hue));
-  --color-secondary-strong: oklch(0.5 0.05 var(--hue));
-  --color-success-text: oklch(0.75 0.15 0.4turn);
-  --color-success-bg: oklch(0.3 0.08 0.4turn);
-  --color-error-text: oklch(0.8 0.12 0.07turn);
-  --color-error-bg: oklch(0.3 0.08 0.07turn);
-  --color-info-text: oklch(0.8 0.1 var(--hue));
-  --color-info-bg: oklch(0.3 0.05 var(--hue));
-  --color-danger: oklch(0.7 0.18 0.07turn);
-  --color-primary: oklch(0.7 0.15 var(--hue));
-  --color-error: oklch(0.8 0.12 0.07turn);
-  --color-success: oklch(0.75 0.15 0.4turn);
-  --color-bg: oklch(0.18 0.03 var(--hue));
-  --color-accent-soft: oklch(0.25 0.08 var(--hue));
+  --color-text: oklab(0.9 0.00 -0.01);
+  --color-text-muted: oklab(0.7 -0.01 -0.02);
+  --color-link: oklab(0.7 -0.05 -0.14);
+  --color-link-hover: oklab(0.8 -0.04 -0.11);
+  --color-accent: oklab(0.7 -0.05 -0.14);
+  --color-accent-strong: oklab(0.6 -0.06 -0.17);
+  --color-accent-contrast: oklab(0.12 -0.01 -0.03);
+  --color-secondary: oklab(0.6 -0.02 -0.05);
+  --color-secondary-strong: oklab(0.5 -0.02 -0.05);
+  --color-success-text: oklab(0.75 -0.12 0.09);
+  --color-success-bg: oklab(0.3 -0.07 0.05);
+  --color-error-text: oklab(0.8 0.11 0.05);
+  --color-error-bg: oklab(0.3 0.07 0.03);
+  --color-info-text: oklab(0.8 -0.03 -0.10);
+  --color-info-bg: oklab(0.3 -0.02 -0.05);
+  --color-danger: oklab(0.7 0.16 0.08);
+  --color-primary: oklab(0.7 -0.05 -0.14);
+  --color-error: oklab(0.8 0.11 0.05);
+  --color-success: oklab(0.75 -0.12 0.09);
+  --color-bg: oklab(0.18 -0.01 -0.03);
+  --color-accent-soft: oklab(0.25 -0.03 -0.08);
   --shadow-soft: 0 0 0 black;
   --shadow-xl: 0 10px 40px rgba(0, 0, 0, 0.4);
 }
@@ -280,39 +280,39 @@ button:disabled {
 }
 
 .btn-primary {
-  background: linear-gradient(to bottom, oklch(1 0 0 / 0.15), transparent 60%) var(--color-accent);
+  background: linear-gradient(to bottom, oklab(1 0 0 / 0.15), transparent 60%) var(--color-accent);
   color: var(--color-accent-contrast);
   border-color: var(--color-accent);
 }
 
 .btn-primary:hover:not(:disabled),
 .btn-primary:focus-visible {
-  background: linear-gradient(to bottom, oklch(1 0 0 / 0.15), transparent 60%) var(--color-accent-strong);
+  background: linear-gradient(to bottom, oklab(1 0 0 / 0.15), transparent 60%) var(--color-accent-strong);
   border-color: var(--color-accent-strong);
   box-shadow: var(--shadow-soft);
 }
 
 .btn-secondary {
-  background: linear-gradient(to bottom, oklch(1 0 0 / 0.15), transparent 60%) var(--color-secondary);
+  background: linear-gradient(to bottom, oklab(1 0 0 / 0.15), transparent 60%) var(--color-secondary);
   color: var(--color-accent-contrast);
   border-color: transparent;
 }
 
 .btn-secondary:hover:not(:disabled),
 .btn-secondary:focus-visible {
-  background: linear-gradient(to bottom, oklch(1 0 0 / 0.15), transparent 60%) var(--color-secondary-strong);
+  background: linear-gradient(to bottom, oklab(1 0 0 / 0.15), transparent 60%) var(--color-secondary-strong);
   box-shadow: var(--shadow-soft);
 }
 
 .btn-danger {
-  background: linear-gradient(to bottom, oklch(1 0 0 / 0.15), transparent 60%) var(--color-danger);
+  background: linear-gradient(to bottom, oklab(1 0 0 / 0.15), transparent 60%) var(--color-danger);
   color: var(--color-accent-contrast);
   border-color: transparent;
 }
 
 .btn-danger:hover:not(:disabled),
 .btn-danger:focus-visible {
-  background: linear-gradient(to bottom, oklch(1 0 0 / 0.15), transparent 60%) var(--color-danger);
+  background: linear-gradient(to bottom, oklab(1 0 0 / 0.15), transparent 60%) var(--color-danger);
   filter: brightness(0.92);
   box-shadow: var(--shadow-soft);
 }
@@ -583,7 +583,6 @@ th {
 .qr-code {
   padding: 1rem;
   background: white;
-  box-shadow: var(--shadow-soft);
 }
 
 .link-container,
@@ -640,9 +639,18 @@ th {
 
 .record-item.is-current,
 .credential-item.current-session,
+.session-item.is-current {
+  border-color: var(--color-accent);
+  background-color: var(--color-surface-subtle);
+}
+
 .credential-item.is-hovered,
-.session-item.is-current,
-.session-item.is-hovered { border-color: var(--color-accent); background-color: var(--color-surface-subtle); }
+.session-item.is-hovered {
+  border-color: var(--color-accent);
+  background-color: var(--color-surface-subtle);
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.12);
+  transform: translateY(-1px);
+}
 
 .credential-item.is-linked-session,
 .session-item.is-linked-credential { border-color: var(--color-accent); background-color: var(--color-surface-subtle); }
