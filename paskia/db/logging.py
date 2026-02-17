@@ -4,8 +4,8 @@ Database change logging with pretty-printed diffs.
 Provides a logger for JSONL database changes that formats diffs
 in a human-readable path.notation style with color coding.
 
-UUIDs are replaced with display names where available, or the last
-section of the UUID hex for types without display names.
+UUIDs are replaced with display names where available, or the full UUID string
+for types without display names.
 """
 
 import logging
@@ -65,11 +65,11 @@ class UuidResolver:
         self._previous = previous
 
     def resolve(self, uuid_str: str) -> str:
-        """Resolve a UUID to its display name or short suffix."""
+        """Resolve a UUID to its display name or the full UUID string."""
         display = self._get_display_name(uuid_str)
         if display:
             return display
-        return _uuid_suffix(uuid_str)
+        return uuid_str
 
     def _get_display_name(self, uuid_str: str) -> str | None:
         """Look up display name for a UUID.
@@ -117,19 +117,6 @@ class UuidResolver:
             if isinstance(perm_data, dict) and "display_name" in perm_data:
                 return perm_data["display_name"]
 
-        # Check credentials - look up user name
-        if (
-            "credentials" in self._previous
-            and uuid_str in self._previous["credentials"]
-        ):
-            cred_data = self._previous["credentials"][uuid_str]
-            if isinstance(cred_data, dict) and "user" in cred_data:
-                user_uuid = cred_data["user"]
-                if "users" in self._previous and user_uuid in self._previous["users"]:
-                    user_data = self._previous["users"][user_uuid]
-                    if isinstance(user_data, dict) and "display_name" in user_data:
-                        return f"credential of {user_data['display_name']}"
-
         return None
 
     def _lookup_in_db(self, uuid_str: str) -> str | None:
@@ -157,13 +144,6 @@ class UuidResolver:
         # Check permissions
         if uuid_obj in self._db.permissions:
             return self._db.permissions[uuid_obj].display_name
-
-        # Check credentials - identify by user name
-        if uuid_obj in self._db.credentials:
-            cred = self._db.credentials[uuid_obj]
-            if cred.user_uuid in self._db.users:
-                user_name = self._db.users[cred.user_uuid].display_name
-                return f"credential of {user_name}"
 
         return None
 
@@ -484,7 +464,7 @@ def log_change(
     Log a database change with pretty-printed diff.
 
     UUIDs are replaced with display names for readability. For types without
-    display names (e.g., credentials), the last section of the UUID is used.
+    display names, the full UUID string is used.
 
     Args:
         action: The action name (e.g., "login", "admin:delete_user")
