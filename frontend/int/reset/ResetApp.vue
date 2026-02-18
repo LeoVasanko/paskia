@@ -8,7 +8,7 @@
 
     <main class="view-root">
       <div class="surface surface--tight reset-container">
-        <header class="view-header reset-header">
+        <header class="view-header center">
           <h1>🔑 Registration</h1>
           <p class="view-lede">
             {{ subtitleMessage }}
@@ -80,7 +80,7 @@ const sessionDescriptor = computed(() => tokenInfo.value?.token_type || 'your en
 const subtitleMessage = computed(() => {
   if (initializing.value) return 'Preparing your secure enrollment…'
   if (!canRegister.value) return 'This authentication link is no longer valid.'
-  return `Finish up ${sessionDescriptor.value}. You may edit the name below if needed, and it will be saved to your passkey.`
+  return `Finish up ${sessionDescriptor.value}. The name entered will be stored on your passkey and on our system.`
 })
 
 const basePath = computed(() => uiBasePath())
@@ -201,14 +201,14 @@ onMounted(async () => {
 </script>
 
 <style scoped>
+main.view-root { min-height: 100vh; align-items: center; justify-content: center; padding: 2rem 1rem; }
 .reset-container {
-  max-width: 560px;
+  max-width: 520px;
   margin: 0 auto;
   width: 100%;
-}
-
-.reset-header {
-  text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: 1.75rem;
 }
 
 .section-body {
