@@ -15,6 +15,7 @@ import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import { apiJson, SessionValidator, createAuthIframe, removeAuthIframe } from 'paskia'
 import { getAuthIframeUrl } from '@/utils/api'
+import { updateThemeFromSession } from '@/utils/theme'
 import StatusMessage from '@/components/StatusMessage.vue'
 import ProfileView from '@/components/ProfileView.vue'
 import HostProfileView from '@/components/HostProfileView.vue'
@@ -67,6 +68,7 @@ async function loadUserInfo() {
     ])
     store.userInfo = userInfoData
     store.ctx = validateData.ctx
+    updateThemeFromSession(store.userInfo)
     // Verify that the user UUIDs match between user-info and validate responses
     if (store.userInfo.user.uuid !== store.ctx.user.uuid) {
       console.error('User UUID mismatch between user-info and validate responses')

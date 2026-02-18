@@ -244,6 +244,7 @@ async def token_info(credentials=Depends(bearer_auth)):
         ApiTokenInfo(
             token_type=reset_token.token_type,
             display_name=u.display_name,
+            theme=u.theme,
         )
     )
 
