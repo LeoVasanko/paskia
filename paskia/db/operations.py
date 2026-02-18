@@ -14,6 +14,7 @@ from uuid import UUID
 import base64url
 import uuid7
 
+from paskia import oidc_notify
 from paskia.config import SESSION_LIFETIME
 from paskia.db.jsonl import (
     JsonlStore,
@@ -484,7 +485,6 @@ def delete_session(
     """
     if key not in _db.sessions:
         raise ValueError("Session not found")
-    from paskia import oidc_notify  # noqa: PLC0415
 
     oidc_notify.schedule_notifications([key])
     with _db.transaction(action, ctx):
@@ -503,7 +503,6 @@ def delete_sessions_for_user(
     user = _db.users.get(user_uuid)
     if not user:
         return
-    from paskia import oidc_notify  # noqa: PLC0415
 
     keys = [s.key for s in user.sessions]
     oidc_notify.schedule_notifications(keys)
