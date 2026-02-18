@@ -216,7 +216,7 @@ test.describe('API Mode - 401 Login Flow', () => {
     await clearSessionCookie(page)
 
     // Make API call that triggers 401 (don't await - it blocks until iframe resolves)
-    const apiCallPromise = makeApiCall(page, '/auth/api/user-info', 'POST').catch(e => e)
+    const apiCallPromise = makeApiCall(page, '/auth/api/user-info', 'GET').catch(e => e)
     console.log('✓ Auth iframe appeared on 401')
 
     // Verify it's in login mode (not reauth)
@@ -268,7 +268,7 @@ test.describe('API Mode - 401 Login Flow', () => {
     await setupTestHarness(page)
 
     // Make API call that triggers 401
-    const apiCallPromise = makeApiCall(page, '/auth/api/user-info', 'POST')
+    const apiCallPromise = makeApiCall(page, '/auth/api/user-info', 'GET')
 
     // Wait for auth iframe to appear
     await waitForAuthIframe(page)

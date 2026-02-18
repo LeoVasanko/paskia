@@ -1,4 +1,4 @@
-import { spawn } from 'child_process'
+import { execSync, spawn } from 'child_process'
 import { join, dirname } from 'path'
 import { existsSync, mkdirSync, writeFileSync } from 'fs'
 import { fileURLToPath } from 'url'
@@ -30,6 +30,11 @@ export default async function globalSetup() {
   if (!existsSync(testDataDir)) {
     mkdirSync(testDataDir, { recursive: true })
   }
+
+  // Build the package first
+  console.log('  Building package with uv build...')
+  execSync('uv build', { cwd: projectRoot, stdio: 'inherit' })
+  console.log('  ✅ Build complete\n')
 
   console.log('  Starting server with in-memory database...')
   if (COLLECT_COVERAGE) {
