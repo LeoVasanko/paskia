@@ -1,17 +1,15 @@
 import hashlib
 
+import base64url
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 
-def hash_secret(*data) -> bytes:
-    """A custom HMAC that securily combines and hashes the given data (context, secrets). The first argument should be a namespacing string."""
-    inner = bytearray(len(data).to_bytes(8, "big"))
-    for d in data:
-        if isinstance(d, str):
-            d = d.encode()
-        inner += hashlib.sha256(d).digest()
-    return hashlib.sha256(inner).digest()[:12]
+def hash_secret(*data: str | bytes, length=12) -> str:
+    """A custom HMAC that securily combines and hashes the given data. The first argument should be a namespacing string."""
+    p = [d.encode() if hasattr(d, "encode") else d for d in data]
+    p += [len(x).to_bytes(8, "little") for x in [p, *p]]
+    return base64url.enc(hashlib.sha256(b"".join(p)).digest()[:length])
 
 
 def secret_key() -> bytes:

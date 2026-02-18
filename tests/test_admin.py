@@ -16,7 +16,6 @@ import secrets
 from datetime import UTC, datetime
 from uuid import UUID
 
-import base64url
 import httpx
 import pytest
 import pytest_asyncio
@@ -1301,7 +1300,7 @@ class TestAdminSessions:
         test_user,
     ):
         """Admin can delete their own current session."""
-        session_db_key = base64url.enc(hash_secret("cookie", session_token))
+        session_db_key = hash_secret("cookie", session_token)
         response = await client.delete(
             f"/auth/api/admin/users/{test_user.uuid}/sessions/{session_db_key}",
             headers={**auth_headers(session_token), "Host": "localhost:4401"},

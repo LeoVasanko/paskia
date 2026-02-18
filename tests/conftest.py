@@ -19,7 +19,6 @@ from collections.abc import AsyncGenerator
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
-import base64url
 import httpx
 import pytest
 import pytest_asyncio
@@ -268,7 +267,7 @@ def create_test_session(
 
     # Generate token and derive key
     token = secrets.token_urlsafe(12)
-    key = base64url.enc(hash_secret("cookie", token))
+    key = hash_secret("cookie", token)
 
     session = Session.create(
         user=user_uuid,

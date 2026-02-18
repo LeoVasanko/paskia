@@ -40,7 +40,7 @@ def _oidc_session_by_token(
     token: str, client_uuid: UUID | None = None
 ) -> Session | None:
     """Look up an OIDC session by token (refresh token value)."""
-    key = base64url.enc(hash_secret("oidc", token))
+    key = hash_secret("oidc", token)
     s = db.data().sessions.get(key)
     if not s or s.client_uuid is None:
         return None
