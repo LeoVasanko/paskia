@@ -57,6 +57,7 @@ export class AuthCancelledError extends Error {
 }
 
 export function holdGlobalBackdrop(): void {
+  injectStyles()
   backdropHolders++
   document.body.classList.add('paskia-backdrop')
 }

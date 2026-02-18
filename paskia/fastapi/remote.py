@@ -10,12 +10,14 @@ Endpoints:
 """
 
 import asyncio
+from datetime import UTC, datetime
 from uuid import UUID
 
 import base64url
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 
-from paskia import db, remoteauth
+from paskia import authcode, db, remoteauth
+from paskia.authcode import CookieCode
 from paskia.authsession import expires
 from paskia.fastapi.session import AUTH_COOKIE, infodict
 from paskia.fastapi.wschat import authenticate_and_login
@@ -183,7 +185,7 @@ async def websocket_remote_auth_request(ws: WebSocket):
                                 "user": str(result_data["user_uuid"]),
                             }
                             if result_data.get("session_token"):
-                                response["session_token"] = result_data["session_token"]
+                                response["exchange_code"] = result_data["session_token"]
                             if result_data.get("reset_token"):
                                 response["reset_token"] = result_data["reset_token"]
                             await ws.send_json(response)
@@ -310,9 +312,8 @@ async def websocket_remote_auth_permit(ws: WebSocket, auth=AUTH_COOKIE):
 
             # Handle authenticate request (no PoW needed - already validated during lookup)
             if msg.get("authenticate") and request is not None:
-                ctx = await authenticate_and_login(ws, auth)
+                ctx, secret = await authenticate_and_login(ws, auth)
 
-                session_token = ctx.session.key
                 reset_token = None
 
                 if request.action == "register":
@@ -325,11 +326,19 @@ async def websocket_remote_auth_permit(ws: WebSocket, auth=AUTH_COOKIE):
                         user=str(ctx.user.uuid),
                     )
 
+                # Create exchange code for the session (don't expose raw secret)
+                exchange_code = authcode.store_cookie(
+                    CookieCode(
+                        session_key=secret,
+                        created=datetime.now(UTC),
+                    )
+                )
+
                 # Complete the remote auth request (notifies the waiting device)
                 cred = db.data().credentials[ctx.session.credential_uuid]
                 completed = await remoteauth.instance.complete_request(
                     token=request.key,
-                    session_token=session_token,
+                    session_token=exchange_code,
                     user_uuid=ctx.user.uuid,
                     credential_uuid=cred.uuid,
                     reset_token=reset_token,

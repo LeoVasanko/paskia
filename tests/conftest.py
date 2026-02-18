@@ -9,12 +9,17 @@ Since we can't emulate WebAuthn passkeys, we create sessions directly
 in the database to test authenticated endpoints.
 """
 
+from __future__ import annotations
+
 import asyncio
 import os
+import secrets
 import tempfile
 from collections.abc import AsyncGenerator
+from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
+import base64url
 import httpx
 import pytest
 import pytest_asyncio
@@ -22,6 +27,7 @@ import pytest_asyncio
 import paskia.db.operations as ops_db
 from paskia import globals as paskia_globals
 from paskia.authsession import reset_expires
+from paskia.config import SESSION_LIFETIME
 from paskia.db import (
     Config,
     Credential,
@@ -33,14 +39,15 @@ from paskia.db import (
     create_credential,
     create_reset_token,
     create_role,
-    create_session,
     create_user,
 )
 from paskia.db.jsonl import JsonlStore
 from paskia.db.operations import DB
+from paskia.db.structs import Session
 from paskia.fastapi.mainapp import app
 from paskia.fastapi.session import AUTH_COOKIE_NAME
 from paskia.sansio import Passkey
+from paskia.util.crypto import hash_secret
 
 
 @pytest.fixture(scope="session")
@@ -60,7 +67,6 @@ async def test_db() -> AsyncGenerator[DB, None]:
     - A default organization with Administration role
     - An admin user with the Administration role
     """
-
     with tempfile.NamedTemporaryFile(suffix=".jsonl", delete=True) as f:
         db = DB(config=Config(rp_id="test.example.com"))
         store = JsonlStore(db, f.name)
@@ -179,13 +185,11 @@ async def session_token(
     test_db: DB, test_user: User, test_credential: Credential
 ) -> str:
     """Create a session for the admin user and return the token."""
-    return create_session(
+    _db_key, secret = create_test_session(
         user_uuid=test_user.uuid,
         credential_uuid=test_credential.uuid,
-        host="localhost",
-        ip="127.0.0.1",
-        user_agent="pytest",
     )
+    return secret
 
 
 @pytest_asyncio.fixture(scope="function")
@@ -193,13 +197,11 @@ async def regular_session_token(
     test_db: DB, regular_user: User, regular_credential: Credential
 ) -> str:
     """Create a session for a regular user and return the token."""
-    return create_session(
+    _db_key, secret = create_test_session(
         user_uuid=regular_user.uuid,
         credential_uuid=regular_credential.uuid,
-        host="localhost",
-        ip="127.0.0.1",
-        user_agent="pytest",
     )
+    return secret
 
 
 @pytest_asyncio.fixture(scope="function")
@@ -241,3 +243,44 @@ def auth_cookie(token: str) -> httpx.Cookies:
     cookies = httpx.Cookies()
     cookies.set(AUTH_COOKIE_NAME, token, domain="localhost")
     return cookies
+
+
+def create_test_session(
+    user_uuid: UUID,
+    credential_uuid: UUID,
+    host: str = "localhost",
+    ip: str = "127.0.0.1",
+    user_agent: str = "pytest",
+    duration: timedelta | None = None,
+) -> tuple[str, str]:
+    """Create a test session. Returns (key, token) tuple.
+
+    - key: str used for session lookup (base64url encoded)
+    - token: stored in cookie/sent to client
+    """
+    if duration is None:
+        duration = SESSION_LIFETIME
+    if user_uuid not in ops_db._db.users:
+        raise ValueError(f"User {user_uuid} not found")
+    if credential_uuid not in ops_db._db.credentials:
+        raise ValueError(f"Credential {credential_uuid} not found")
+    now = datetime.now(UTC)
+
+    # Generate token and derive key
+    token = secrets.token_urlsafe(12)
+    key = base64url.enc(hash_secret("cookie", token))
+
+    session = Session.create(
+        user=user_uuid,
+        credential=credential_uuid,
+        key=key,
+        host=host,
+        ip=ip,
+        user_agent=user_agent,
+        validated=now,
+    )
+    if session.key in ops_db._db.sessions:
+        raise ValueError("Session already exists")
+    with ops_db._db.transaction("create_test_session"):
+        session.store(now)
+    return session.key, token

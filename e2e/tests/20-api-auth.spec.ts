@@ -10,6 +10,12 @@ import {
   logout,
 } from './fixtures/passkey-helpers'
 import type { Page, Frame } from '@playwright/test'
+import { readFileSync } from 'fs'
+import { join, dirname } from 'path'
+import { fileURLToPath } from 'url'
+
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = dirname(__filename)
 
 /**
  * E2E tests for API mode authentication flows.
@@ -55,8 +61,18 @@ async function clearSessionCookie(page: Page): Promise<void> {
 /**
  * Set up the test page using the examples page directly.
  * The examples page already has iframe handling - we just add a Promise wrapper.
+ * We route the paskia-js module request to serve from the local dist.
  */
 async function setupTestHarness(page: Page): Promise<void> {
+  // Serve paskia.js from the local filesystem since the server doesn't serve /paskia-js/
+  const paskiaJsPath = join(__dirname, '..', '..', 'paskia-js', 'dist', 'paskia.js')
+  await page.route('**/paskia-js/dist/paskia.js', async route => {
+    const body = readFileSync(paskiaJsPath, 'utf-8')
+    await route.fulfill({
+      body,
+      contentType: 'application/javascript',
+    })
+  })
   // Navigate to the examples page which already has the auth iframe handling
   await page.goto(`${baseUrl}/auth/examples/`)
 }
@@ -143,8 +159,8 @@ async function makeApiCall(page: Page, url: string, method = 'GET'): Promise<{ s
  * Wait for auth iframe to appear and return a reference to it.
  */
 async function waitForAuthIframe(page: Page, timeout = 5000): Promise<Frame> {
-  await page.waitForSelector('#auth-iframe', { timeout })
-  const iframe = page.frameLocator('#auth-iframe')
+  await page.waitForSelector('#paskia-iframe', { timeout })
+  const iframe = page.frameLocator('#paskia-iframe')
   // Wait for iframe content to load
   await iframe.locator('.view-root').waitFor({ timeout })
   return page.frame({ url: /\/auth\/restricted\// })!
@@ -154,14 +170,14 @@ async function waitForAuthIframe(page: Page, timeout = 5000): Promise<Frame> {
  * Wait for auth iframe to disappear.
  */
 async function waitForAuthIframeHidden(page: Page, timeout = 5000): Promise<void> {
-  await page.waitForSelector('#auth-iframe', { state: 'detached', timeout })
+  await page.waitForSelector('#paskia-iframe', { state: 'detached', timeout })
 }
 
 /**
  * Click Back button in auth iframe.
  */
 async function clickBackInIframe(page: Page): Promise<void> {
-  const iframe = page.frameLocator('#auth-iframe')
+  const iframe = page.frameLocator('#paskia-iframe')
   await iframe.getByRole('button', { name: 'Back' }).click()
 }
 
@@ -169,7 +185,7 @@ async function clickBackInIframe(page: Page): Promise<void> {
  * Click Login button in auth iframe.
  */
 async function clickLoginInIframe(page: Page): Promise<void> {
-  const iframe = page.frameLocator('#auth-iframe')
+  const iframe = page.frameLocator('#paskia-iframe')
   await iframe.getByRole('button', { name: 'Login' }).click()
 }
 
@@ -177,7 +193,7 @@ async function clickLoginInIframe(page: Page): Promise<void> {
  * Click Verify button in auth iframe (for reauth mode).
  */
 async function clickVerifyInIframe(page: Page): Promise<void> {
-  const iframe = page.frameLocator('#auth-iframe')
+  const iframe = page.frameLocator('#paskia-iframe')
   await iframe.getByRole('button', { name: 'Verify' }).click()
 }
 
@@ -185,7 +201,7 @@ async function clickVerifyInIframe(page: Page): Promise<void> {
  * Click Logout button in auth iframe (for forbidden mode).
  */
 async function clickLogoutInIframe(page: Page): Promise<void> {
-  const iframe = page.frameLocator('#auth-iframe')
+  const iframe = page.frameLocator('#paskia-iframe')
   await iframe.getByRole('button', { name: 'Logout' }).click()
 }
 
@@ -204,7 +220,7 @@ test.describe('API Mode - 401 Login Flow', () => {
     console.log('✓ Auth iframe appeared on 401')
 
     // Verify it's in login mode (not reauth)
-    const iframe = page.frameLocator('#auth-iframe')
+    const iframe = page.frameLocator('#paskia-iframe')
     await expect(iframe.locator('h1')).toContainText('🔐')
     await expect(iframe.getByRole('button', { name: 'Login' })).toBeVisible()
 
@@ -268,7 +284,7 @@ test.describe('API Mode - 401 Login Flow', () => {
     // Wait for API call to complete and verify result
     const result = await apiCallPromise
     expect(result.status).toBe(200)
-    expect(result.data.ctx).toBeDefined()
+    expect(result.data.user).toBeDefined()
     console.log('✓ API call succeeded after authentication')
 
     // Save the session for other tests
@@ -314,7 +330,7 @@ test.describe('API Mode - 401 Reauth Flow', () => {
     console.log('✓ Reauth iframe appeared (session older than max_age)')
 
     // Verify it's in reauth mode
-    const iframe = page.frameLocator('#auth-iframe')
+    const iframe = page.frameLocator('#paskia-iframe')
     await expect(iframe.locator('h1')).toContainText('Additional Authentication')
     await expect(iframe.getByRole('button', { name: 'Verify' })).toBeVisible()
 
@@ -362,7 +378,7 @@ test.describe('API Mode - 401 Reauth Flow', () => {
     await waitForAuthIframe(page)
     console.log('✓ Reauth iframe appeared')
 
-    const iframe = page.frameLocator('#auth-iframe')
+    const iframe = page.frameLocator('#paskia-iframe')
     await expect(iframe.locator('h1')).toContainText('Additional Authentication')
 
     // Click Verify - virtual authenticator handles passkey
@@ -394,7 +410,7 @@ test.describe('API Mode - 403 Forbidden Flow', () => {
     const apiCallPromise = makeApiCall(page, '/auth/api/forward?perm=auth:admin', 'GET').catch(e => e)
 
     // Check if auth iframe appeared
-    const iframeAppeared = await page.waitForSelector('#auth-iframe', { timeout: 3000 }).then(() => true).catch(() => false)
+    const iframeAppeared = await page.waitForSelector('#paskia-iframe', { timeout: 3000 }).then(() => true).catch(() => false)
 
     if (!iframeAppeared) {
       // User might already have admin permission
@@ -410,7 +426,7 @@ test.describe('API Mode - 403 Forbidden Flow', () => {
 
     // Wait for view to stabilize and check mode
     await page.waitForTimeout(500)
-    const iframe = page.frameLocator('#auth-iframe')
+    const iframe = page.frameLocator('#paskia-iframe')
     const headingText = await iframe.locator('h1').textContent()
     console.log(`  Heading: ${headingText}`)
 
@@ -459,7 +475,7 @@ test.describe('API Mode - 403 Forbidden Flow', () => {
     const apiCallPromise = makeApiCall(page, '/auth/api/forward?perm=auth:admin', 'GET').catch(e => e)
 
     // Check if auth iframe appeared
-    const iframeAppeared = await page.waitForSelector('#auth-iframe', { timeout: 3000 }).then(() => true).catch(() => false)
+    const iframeAppeared = await page.waitForSelector('#paskia-iframe', { timeout: 3000 }).then(() => true).catch(() => false)
 
     if (!iframeAppeared) {
       const result = await apiCallPromise
@@ -470,7 +486,7 @@ test.describe('API Mode - 403 Forbidden Flow', () => {
     }
 
     await waitForAuthIframe(page)
-    const iframe = page.frameLocator('#auth-iframe')
+    const iframe = page.frameLocator('#paskia-iframe')
     await page.waitForTimeout(500)
 
     const headingText = await iframe.locator('h1').textContent()
@@ -534,7 +550,7 @@ test.describe('API Mode - Direct API Response Format', () => {
     expect(data.auth).toBeDefined()
     expect(data.auth.iframe).toBeDefined()
     expect(data.auth.mode).toBe('login')
-    expect(data.auth.iframe).toContain('/auth/restricted/')
+    expect(data.auth.iframe).toContain('/auth/restricted/iframe')
 
     console.log(`✓ 401 response includes auth.iframe: ${data.auth.iframe}`)
   })

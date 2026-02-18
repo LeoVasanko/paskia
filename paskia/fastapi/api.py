@@ -13,9 +13,9 @@ from fastapi import (
 from fastapi.responses import JSONResponse
 from fastapi.security import HTTPBearer
 
-from paskia import db
+from paskia import authcode, db
 from paskia._version import __version__
-from paskia.authsession import EXPIRES, expires, get_reset
+from paskia.authsession import EXPIRES, get_reset
 from paskia.fastapi import authz, session, user
 from paskia.fastapi.response import MsgspecResponse
 from paskia.fastapi.session import AUTH_COOKIE, AUTH_COOKIE_NAME, get_client_ip
@@ -23,7 +23,7 @@ from paskia.globals import passkey as global_passkey
 from paskia.util import hostutil, htmlutil, passphrase, userinfo, vitedev
 from paskia.util.apistructs import ApiSettings, ApiTokenInfo, ApiValidateResponse
 
-bearer_auth = HTTPBearer(auto_error=True)
+bearer_auth = HTTPBearer(auto_error=False)
 
 app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
 
@@ -89,13 +89,13 @@ async def validate_token(
         raise
     renewed = False
     if auth:
-        consumed = EXPIRES - (ctx.session.expiry - datetime.now(UTC))
+        consumed = datetime.now(UTC) - ctx.session.validated
         if not timedelta(0) < consumed < _REFRESH_INTERVAL:
             db.update_session(
-                auth,
+                ctx.session.key,
                 ip=get_client_ip(request),
                 user_agent=request.headers.get("user-agent") or "",
-                expiry=expires(),
+                validated=datetime.now(UTC),
                 ctx=ctx,
             )
             session.set_session_cookie(response, auth)
@@ -129,7 +129,7 @@ async def forward_authentication(
         - If Accept header contains "text/html": HTML page for authentication
           with data attributes for mode and other metadata.
         - Otherwise: JSON response with error details and an `iframe` field
-          pointing to /auth/restricted/?mode=... for iframe-based authentication.
+          pointing to /auth/restricted/iframe#mode=... for iframe-based authentication.
     """
     try:
         ctx = await authz.verify(
@@ -152,11 +152,7 @@ async def forward_authentication(
             "Remote-Role": str(ctx.role.uuid),
             "Remote-Role-Name": ctx.role.display_name,
             "Remote-Session-Expires": (
-                ctx.session.expiry.astimezone(UTC).isoformat().replace("+00:00", "Z")
-                if ctx.session.expiry.tzinfo
-                else ctx.session.expiry.replace(tzinfo=UTC)
-                .isoformat()
-                .replace("+00:00", "Z")
+                (ctx.session.validated + EXPIRES).isoformat().replace("+00:00", "Z")
             ),
             "Remote-Credential": str(ctx.session.credential),
         }
@@ -203,7 +199,7 @@ async def get_settings():
     )
 
 
-@app.post("/user-info")
+@app.get("/user-info")
 async def api_user_info(
     request: Request,
     response: Response,
@@ -223,8 +219,7 @@ async def api_user_info(
     return MsgspecResponse(
         await userinfo.build_user_info(
             user_uuid=ctx.user.uuid,
-            auth=auth,
-            session_record=ctx.session,
+            session_key=ctx.session.key,
             request_host=request.headers.get("host"),
             ctx=ctx,
         )
@@ -234,6 +229,8 @@ async def api_user_info(
 @app.get("/token-info")
 async def token_info(credentials=Depends(bearer_auth)):
     """Get reset/device-add token info. Pass token via Bearer header."""
+    if not credentials or not credentials.credentials:
+        raise HTTPException(401, "Bearer token required")
     token = credentials.credentials
     if not passphrase.is_well_formed(token):
         raise HTTPException(400, "Invalid token format")
@@ -260,7 +257,7 @@ async def api_logout(request: Request, response: Response, auth=AUTH_COOKIE):
     if not ctx:
         return {"message": "Already logged out"}
     with suppress(Exception):
-        db.delete_session(auth, ctx=ctx, action="logout")
+        db.delete_session(ctx.session.key, ctx=ctx, action="logout")
     session.clear_session_cookie(response)
     return {"message": "Logged out successfully"}
 
@@ -269,11 +266,29 @@ async def api_logout(request: Request, response: Response, auth=AUTH_COOKIE):
 async def api_set_session(
     request: Request, response: Response, auth=Depends(bearer_auth)
 ):
-    ctx = db.data().session_ctx(auth.credentials, request.headers.get("host"))
+    """Exchange an auth code for setting the session cookie.
+
+    Called by frontend after WebSocket authentication.
+    The code is ephemeral (60s TTL) and can only be used once.
+    """
+    if not auth or not auth.credentials:
+        raise HTTPException(400, "Bearer token required")
+
+    # Verify host is provided
+    host = hostutil.normalize_host(request.headers.get("host", ""))
+    if not host:
+        raise HTTPException(400, "Host header required")
+
+    a = authcode.consume_cookie(auth.credentials)
+    if not a:
+        raise HTTPException(401, "Code expired or already used")
+
+    secret = a.session_key
+
+    # Verify the session exists
+    ctx = db.data().session_ctx(secret, host)
     if not ctx:
-        raise HTTPException(401, "Session expired")
-    session.set_session_cookie(response, auth.credentials)
-    return {
-        "message": "Session cookie set successfully",
-        "user": str(ctx.user.uuid),
-    }
+        raise HTTPException(401, f"Session not found on {host}")
+
+    session.set_session_cookie(response, secret)
+    return {"status": "ok", "user": str(ctx.user.uuid)}

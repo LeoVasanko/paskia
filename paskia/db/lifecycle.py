@@ -7,6 +7,7 @@ import os
 from datetime import UTC, datetime
 
 import paskia.db.operations as _ops
+from paskia.authsession import EXPIRES
 
 _logger = logging.getLogger(__name__)
 
@@ -27,8 +28,13 @@ def cleanup_expired() -> int:
     """Remove expired sessions and reset tokens. Returns count removed."""
     now = datetime.now(UTC)
     count = 0
+    limit = now - EXPIRES
+    expired_sessions = [k for k, s in _ops._db.sessions.items() if s.validated < limit]
+    if expired_sessions:
+        from paskia import oidc_notify  # noqa: PLC0415
+
+        oidc_notify.schedule_notifications(expired_sessions)
     with _ops._db.transaction("expiry"):
-        expired_sessions = [k for k, s in _ops._db.sessions.items() if s.expiry < now]
         for k in expired_sessions:
             del _ops._db.sessions[k]
             count += 1

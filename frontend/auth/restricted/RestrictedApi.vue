@@ -2,6 +2,7 @@
   <RestrictedAuth
     :mode="authMode"
     :remote-auth-token="remoteAuthToken"
+    :oidc-query-string="oidcQueryString"
     @authenticated="handleAuthenticated"
     @back="handleBack"
   />
@@ -14,6 +15,9 @@ import RestrictedAuth from '@/components/RestrictedAuth.vue'
 // Check if this is a remote auth URL: /auth/{token}
 // The token is a 5-word passphrase like "word1.word2.word3.word4.word5"
 const remoteAuthToken = ref(null)
+
+// For OIDC flow, pass the raw query string to preserve exact param values
+const oidcQueryString = window.location.search.includes('client_id=') ? window.location.search : null
 
 function extractRemoteToken() {
   const path = window.location.pathname
@@ -32,7 +36,18 @@ function extractRemoteToken() {
 
 // Parse URL hash fragment
 const hashParams = new URLSearchParams(window.location.hash.slice(1))
-const authMode = ['reauth', 'forbidden'].includes(hashParams.get('mode')) ? hashParams.get('mode') : 'login'
+
+// Determine auth mode based on URL path
+// - /auth/restricted/oidc: OIDC flow, no session dependency
+// - /auth/restricted/iframe: iframe embedding, mode from hash params
+// - Other paths: forward auth, mode from hash params
+let authMode
+if (window.location.pathname === '/auth/restricted/oidc') {
+  authMode = 'oidc'
+} else {
+  // Both iframe and forward auth use hash params for mode (forbidden/login/reauth)
+  authMode = ['reauth', 'forbidden'].includes(hashParams.get('mode')) ? hashParams.get('mode') : 'login'
+}
 
 function postToParent(message) {
   if (window.parent && window.parent !== window) {
@@ -41,10 +56,15 @@ function postToParent(message) {
 }
 
 function handleAuthenticated(result) {
+  if (result.redirect_url) {
+    // OIDC flow: redirect to client with auth code
+    window.location.href = result.redirect_url
+    return
+  }
   postToParent({
     type: 'auth-success',
     authenticated: true,
-    sessionToken: result.session_token
+    exchangeCode: result.exchange_code
   })
 }
 

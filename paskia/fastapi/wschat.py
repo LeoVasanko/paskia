@@ -68,13 +68,13 @@ async def authenticate_chat(
 async def authenticate_and_login(
     ws: WebSocket,
     auth: str | None = None,
-) -> SessionContext:
+) -> tuple[SessionContext, str]:
     """Run WebAuthn authentication flow, create session, and return the session context.
 
     If auth is provided, restrict authentication to credentials of that session's user.
 
     Returns:
-        SessionContext for the authenticated session
+        Tuple of (SessionContext for the authenticated session, session secret)
     """
     origin = validate_origin(ws)
     host = origin.split("://", 1)[1]
@@ -97,7 +97,7 @@ async def authenticate_and_login(
     cred, new_sign_count = await authenticate_chat(ws, credential_ids)
 
     # Create session and update user/credential
-    token = db.login(
+    secret = db.login(
         user_uuid=cred.user_uuid,
         credential_uuid=cred.uuid,
         sign_count=new_sign_count,
@@ -107,7 +107,7 @@ async def authenticate_and_login(
     )
 
     # Fetch and return the full session context
-    ctx = db.data().session_ctx(token, normalized_host)
+    ctx = db.data().session_ctx(secret, normalized_host)
     if not ctx:
         raise ValueError("Failed to create session context")
-    return ctx
+    return ctx, secret

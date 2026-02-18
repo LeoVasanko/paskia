@@ -5,7 +5,10 @@ Migrations are applied during database load based on the version field.
 Each migration should be idempotent and only run when needed.
 """
 
+import base64
 from collections.abc import Awaitable, Callable
+
+from paskia.util.crypto import secret_key
 
 
 def migrate_v1(d: dict, **kwargs) -> None:
@@ -24,6 +27,14 @@ def migrate_v3(d: dict, **kwargs) -> None:
     """Ensure all users have visits field."""
     for user_data in d["users"].values():
         user_data.setdefault("visits", 0)
+
+
+def migrate_v4(d: dict, **kwargs) -> None:
+    """OpenID Connect support and hardened session keys."""
+    # Session keys changed to hashes, drop old sessions
+    d["sessions"] = {}
+    # Create OIDC structure with a generated new key
+    d["oidc"] = {"clients": {}, "key": base64.standard_b64encode(secret_key()).decode()}
 
 
 migrations = sorted(

@@ -66,7 +66,11 @@ const props = defineProps({
   mode: {
     type: String,
     default: 'login',
-    validator: (value) => ['login', 'reauth', 'forbidden'].includes(value)
+    validator: (value) => ['login', 'reauth', 'forbidden', 'oidc'].includes(value)
+  },
+  oidcQueryString: {
+    type: String,
+    default: null
   }
 })
 
@@ -163,7 +167,7 @@ async function authenticateUser() {
   loading.value = true
   showMessage('Starting authentication…', 'info')
   let result
-  try { result = await passkey.authenticate() } catch (error) {
+  try { result = await passkey.authenticate(props.oidcQueryString) } catch (error) {
     loading.value = false
     const message = error?.message || 'Passkey authentication cancelled'
     const cancelled = message === 'Passkey authentication cancelled'
@@ -171,7 +175,13 @@ async function authenticateUser() {
     emit('auth-error', { message, cancelled })
     return
   }
-  try { await setSessionCookie(result) } catch (error) {
+  // OIDC flow: no session cookie, just emit the redirect_url
+  if (result.redirect_url) {
+    loading.value = false
+    emit('authenticated', result)
+    return
+  }
+  try { await exchangeCode(result) } catch (error) {
     loading.value = false
     const message = error?.message || 'Failed to establish session'
     showMessage(message, 'error', 4000)
@@ -202,13 +212,13 @@ function openProfile() {
   if (profileWindow) profileWindow.focus()
 }
 
-async function setSessionCookie(result) {
-  if (!result?.session_token) {
-    console.error('setSessionCookie called with missing session_token:', result)
-    throw new Error('Authentication response missing session_token')
+async function exchangeCode(result) {
+  if (!result?.exchange_code) {
+    console.error('exchangeCode called with missing exchange_code:', result)
+    throw new Error('Authentication response missing exchange_code')
   }
   return await fetchJson('/auth/api/set-session', {
-    method: 'POST', headers: { Authorization: `Bearer ${result.session_token}` }
+    method: 'POST', headers: { 'Authorization': `Bearer ${result.exchange_code}` }
   })
 }
 
@@ -223,7 +233,7 @@ function switchToLocal() {
 async function handleRemoteAuthenticated(result) {
   showMessage('Authenticated from another device!', 'success', 2000)
   try {
-    await setSessionCookie(result)
+    await exchangeCode(result)
   } catch (error) {
     const message = error?.message || 'Failed to establish session'
     showMessage(message, 'error', 4000)
@@ -265,7 +275,12 @@ watch(initializing, (newVal) => {
 
 onMounted(async () => {
   await fetchSettings()
-  await validateSession()
+  // OIDC mode doesn't depend on session state - skip validation
+  if (props.mode !== 'oidc') {
+    await validateSession()
+  } else {
+    currentView.value = 'login'
+  }
   initializing.value = false
 
   // Add click handler for inline links

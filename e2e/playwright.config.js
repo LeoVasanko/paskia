@@ -4,7 +4,7 @@ import { defineConfig, devices } from '@playwright/test'
  * Playwright configuration for Paskia E2E tests.
  * Uses Chrome's Virtual Authenticator for automated passkey testing.
  *
- * Run with: bun run test
+ * Run with: npm test
  */
 
 export default defineConfig({

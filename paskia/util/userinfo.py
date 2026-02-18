@@ -1,7 +1,6 @@
 """User information formatting and retrieval logic."""
 
 from paskia import aaguid, db
-from paskia.authsession import EXPIRES
 from paskia.db import SessionContext
 from paskia.util import hostutil
 from paskia.util.apistructs import (
@@ -37,8 +36,7 @@ def build_session_context(ctx: SessionContext) -> ApiSessionContext:
 async def build_user_info(
     *,
     user_uuid,
-    auth: str,
-    session_record,
+    session_key: str,
     request_host: str | None,
     ctx: SessionContext | None = None,
 ) -> ApiUserDetail:
@@ -46,15 +44,14 @@ async def build_user_info(
     user = db.data().users[user_uuid]
     normalized_host = hostutil.normalize_host(request_host)
 
-    sessions = [
-        ApiUserSession.from_db(
+    sessions = {
+        s.key: ApiUserSession.from_db(
             s,
-            current_key=auth,
+            current_key=session_key,
             normalized_host=normalized_host,
-            expires_delta=EXPIRES,
         )
         for s in user.sessions
-    ]
+    }
 
     return ApiUserDetail(
         user=ApiUser.from_db(user),

@@ -91,7 +91,7 @@ if (response.status === 401 || response.status === 403) {
 Get current user details:
 
 ```js
-const user = await apiJson('/auth/api/user-info', { method: 'POST' })
+const user = await apiJson('/auth/api/user-info', { method: 'GET' })
 // Returns: { uuid, display_name, credentials, sessions, permissions, ... }
 ```
 

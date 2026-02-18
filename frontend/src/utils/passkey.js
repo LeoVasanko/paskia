@@ -54,8 +54,13 @@ export async function register(resetToken = null, displayName = null, onstartreg
   }
 }
 
-export async function authenticate() {
-  const ws = await aWebSocket(await makeUrl('/auth/ws/authenticate'))
+export async function authenticate(queryString = null) {
+  // Build URL, optionally appending raw query string (e.g. for OIDC params)
+  let url = await makeUrl('/auth/ws/authenticate')
+  if (queryString) {
+    url += queryString.startsWith('?') ? queryString : `?${queryString}`
+  }
+  const ws = await aWebSocket(url)
   try {
     let res = await ws.receive_json()
     if (res.status >= 400) throw new Error(res.detail || `Authentication failed: ${res.status}`)

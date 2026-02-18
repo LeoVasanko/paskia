@@ -1,12 +1,15 @@
 <template>
-  <dialog ref="dialog" @close="$emit('close')" @keydown="handleDialogKeydown">
-    <slot />
-  </dialog>
+  <div class="dialog-overlay" @click="$emit('close')">
+    <div ref="dialog" class="modal-panel" @keydown="handleDialogKeydown" @click.stop>
+      <slot />
+    </div>
+  </div>
 </template>
 
 <script setup>
 import { ref, onMounted, onUnmounted, nextTick } from 'vue'
 import { navigateButtonRow, getDirection, focusPreferred, focusDialogDefault } from '@/utils/keynav'
+import { holdGlobalBackdrop, releaseGlobalBackdrop } from 'paskia'
 
 const props = defineProps({
   // Optional: provide a fallback element to focus if original element is gone
@@ -17,7 +20,7 @@ const props = defineProps({
   focusSiblingSelector: { type: String, default: '' }
 })
 
-defineEmits(['close'])
+const emit = defineEmits(['close'])
 
 // Dialog element reference
 const dialog = ref(null)
@@ -76,6 +79,13 @@ const restoreFocus = () => {
 }
 
 const handleDialogKeydown = (event) => {
+  // ESC to close (previously handled by <dialog> natively)
+  if (event.key === 'Escape') {
+    event.preventDefault()
+    emit('close')
+    return
+  }
+
   const direction = getDirection(event)
   if (!direction) return
 
@@ -111,11 +121,11 @@ onMounted(() => {
   // Save currently focused element before modal takes focus
   previouslyFocusedElement.value = document.activeElement
 
-  // Show the dialog as a modal
+  holdGlobalBackdrop()
+
+  // Focus the most appropriate element
   nextTick(() => {
     if (dialog.value) {
-      dialog.value.showModal()
-
       // Autofocus the most appropriate element:
       // - For form dialogs (rename, edit): focus first input and select text
       // - For other dialogs: focus primary button (or fallback)
@@ -131,14 +141,16 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  releaseGlobalBackdrop()
   // Restore focus when modal closes
   restoreFocus()
 })
 </script>
 
 <style scoped>
-dialog {
-  background: var(--color-surface);
+.modal-panel {
+  background: var(--color-dialog);
+  color: var(--color-text);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-xl);
@@ -147,65 +159,36 @@ dialog {
   width: min(500px, 90vw);
   max-height: 90vh;
   overflow-y: auto;
-  position: fixed;
-  inset: 0;
-  margin: auto;
-  height: fit-content;
 }
 
-dialog::backdrop {
-  background: transparent;
-  backdrop-filter: blur(.1rem) brightness(0.7);
-  -webkit-backdrop-filter: blur(.1rem) brightness(0.7);
-}
-
-dialog :deep(.modal-title),
-dialog :deep(h3) {
+.modal-panel :deep(.modal-title),
+.modal-panel :deep(h3) {
   margin: 0 0 var(--space-md);
   font-size: 1.25rem;
   font-weight: 600;
   color: var(--color-heading);
 }
 
-dialog :deep(form) {
+.modal-panel :deep(form) {
   display: flex;
   flex-direction: column;
   gap: var(--space-md);
 }
 
-dialog :deep(.modal-form) {
+.modal-panel :deep(.modal-form) {
   display: flex;
   flex-direction: column;
   gap: var(--space-md);
 }
 
-dialog :deep(.modal-form label) {
+.modal-panel :deep(.modal-form label) {
   display: flex;
   flex-direction: column;
   gap: var(--space-xs);
   font-weight: 500;
 }
 
-dialog :deep(.modal-form input),
-dialog :deep(.modal-form textarea) {
-  padding: var(--space-md);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  background: var(--color-bg);
-  color: var(--color-text);
-  font-size: 1rem;
-  line-height: 1.4;
-  min-height: 2.5rem;
-}
-
-dialog :deep(.modal-form input:focus),
-dialog :deep(.modal-form textarea:focus) {
-  outline: none;
-  border-color: var(--color-accent);
-  box-shadow: 0 0 0 2px #c7d2fe;
-}
-
-dialog :deep(.modal-actions) {
+.modal-panel :deep(.modal-actions) {
   display: flex;
   justify-content: flex-end;
   gap: var(--space-sm);

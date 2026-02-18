@@ -6,7 +6,7 @@
       </div>
       <header class="view-header">
         <Breadcrumbs ref="breadcrumbs" :entries="breadcrumbEntries" @keydown="handleBreadcrumbKeydown" />
-        <p class="view-lede">Account dashboard for managing credentials and authenticating with other devices.</p>
+        <p class="view-lede">Account dashboard to manage your profile and authentications.</p>
       </header>
     </div>
 
@@ -15,13 +15,18 @@
         v-if="authStore.userInfo?.user"
         ref="userBasicInfo"
         :name="authStore.userInfo.user.display_name"
+        :email="authStore.userInfo.user.email"
+        :preferred_username="authStore.userInfo.user.preferred_username"
+        :telephone="authStore.userInfo.user.telephone"
         :visits="authStore.userInfo.user.visits"
         :created-at="authStore.userInfo.user.created_at"
         :last-seen="authStore.userInfo.user.last_seen"
         :loading="authStore.isLoading"
-        update-endpoint="/auth/api/user/display-name"
+        :org-display-name="authStore.ctx?.org.display_name"
+        :role-name="authStore.ctx?.role.display_name"
+        update-endpoint="/auth/api/user/info"
         @saved="authStore.loadUserInfo()"
-        @edit-name="openNameDialog"
+        @edit="openEditDialog"
         @keydown="handleUserInfoKeydown"
       >
         <div class="remote-auth-inline">
@@ -35,7 +40,7 @@
             @device-info-visible="showDeviceInfo = $event"
           />
         </div>
-        <p class="remote-auth-description">Provided by another device requesting remote auth.</p>
+        <p class="remote-auth-description">Login from another device</p>
       </UserBasicInfo>
     </section>
 
@@ -51,7 +56,7 @@
           :aaguid-info="authStore.userInfo?.aaguid_info || {}"
           :loading="authStore.isLoading"
           :hovered-credential-uuid="hoveredCredentialUuid"
-          :hovered-session-credential-uuid="hoveredSessionCredential"
+          :hovered-session-credential-uuid="hoveredSession?.credential"
           :navigation-disabled="hasActiveModal"
           allow-delete
           @delete="handleDelete"
@@ -68,11 +73,12 @@
     <SessionList
       ref="sessionList"
       :sessions="sessions"
+      :terminating-sessions="terminatingSessions"
       :hovered-credential-uuid="hoveredCredentialUuid"
       :navigation-disabled="hasActiveModal"
       :section-class="useWideLayout ? '' : 'section-block--constrained'"
       @terminate="terminateSession"
-      @session-hover="handleSessionHover"
+      @session-hover="hoveredSession = $event"
       @navigate-out="handleSessionNavigateOut"
       section-description="You are currently signed in to the following sessions. If you don't recognize something, consider deleting not only the session but the associated passkey you suspect is compromised, as only this terminates all linked sessions and prevents logging in again."
     />
@@ -100,15 +106,28 @@
       </div>
     </section>
 
-    <Modal v-if="showNameDialog" @close="showNameDialog = false">
-      <h3>Edit Display Name</h3>
-      <form @submit.prevent="saveName" class="modal-form">
-        <NameEditForm
-          label="Display Name"
-          v-model="newName"
-          :busy="saving"
-          @cancel="showNameDialog = false"
-        />
+    <Modal v-if="showEditDialog" @close="showEditDialog = false">
+      <h3>Edit Profile</h3>
+      <form @submit.prevent="saveProfile" class="modal-form">
+        <div class="profile-edit-form">
+          <label for="edit-display-name">Display Name
+            <input id="edit-display-name" type="text" v-model="editName" :disabled="saving" required />
+          </label>
+          <label for="edit-email">Email
+            <input id="edit-email" type="email" v-model="editEmail" :disabled="saving" />
+          </label>
+          <label for="edit-username">Preferred Username
+            <input id="edit-username" type="text" v-model="editUsername" :disabled="saving" placeholder="username" />
+          </label>
+          <label for="edit-telephone">Telephone
+            <input id="edit-telephone" type="tel" v-model="editTelephone" :disabled="saving" />
+          </label>
+          <div v-if="editError" class="error small">{{ editError }}</div>
+          <div class="modal-actions">
+            <button type="button" class="btn-secondary" @click="showEditDialog = false" :disabled="saving">Cancel</button>
+            <button type="submit" class="btn-primary" :disabled="saving" data-nav-primary>Save</button>
+          </div>
+        </div>
       </form>
     </Modal>
 
@@ -128,7 +147,6 @@ import CredentialList from '@/components/CredentialList.vue'
 import ThemeSelector from '@/components/ThemeSelector.vue'
 import UserBasicInfo from '@/components/UserBasicInfo.vue'
 import Modal from '@/components/Modal.vue'
-import NameEditForm from '@/components/NameEditForm.vue'
 import SessionList from '@/components/SessionList.vue'
 import RegistrationLinkModal from '@/components/RegistrationLinkModal.vue'
 import RemoteAuthPermit from '@/components/RemoteAuthPermit.vue'
@@ -141,13 +159,16 @@ import { navigateButtonRow, focusPreferred, focusAtIndex, getDirection } from '@
 
 const authStore = useAuthStore()
 const updateInterval = ref(null)
-const showNameDialog = ref(false)
+const showEditDialog = ref(false)
 const showRegLink = ref(false)
-const newName = ref('')
+const editName = ref('')
+const editEmail = ref('')
+const editUsername = ref('')
+const editTelephone = ref('')
 const saving = ref(false)
+const editError = ref('')
 const hoveredCredentialUuid = ref(null)
 const hoveredSession = ref(null)
-const hoveredSessionCredential = ref(null)
 const showDeviceInfo = ref(false)
 const pairingEntry = ref(null)
 const credentialList = ref(null)
@@ -159,20 +180,23 @@ const userBasicInfo = ref(null)
 const userInfoSection = ref(null)
 
 // Check if any modal/dialog is open (blocks arrow key navigation)
-const hasActiveModal = computed(() => showNameDialog.value || showRegLink.value)
+const hasActiveModal = computed(() => showEditDialog.value || showRegLink.value)
 
-watch(showNameDialog, (newVal) => { if (newVal) newName.value = authStore.userInfo?.ctx.user.display_name ?? '' })
+watch(showEditDialog, (open) => {
+  if (!open) return
+  const user = authStore.userInfo?.user
+  editName.value = user?.display_name ?? ''
+  editEmail.value = user?.email ?? ''
+  editUsername.value = user?.preferred_username ?? ''
+  editTelephone.value = user?.telephone ?? ''
+  editError.value = ''
+})
 
 onMounted(() => {
   updateInterval.value = setInterval(() => { if (authStore.userInfo) authStore.userInfo = { ...authStore.userInfo } }, 60000)
 })
 
 onUnmounted(() => { if (updateInterval.value) clearInterval(updateInterval.value) })
-
-const handleSessionHover = (session) => {
-  hoveredSession.value = session
-  hoveredSessionCredential.value = session?.credential || null
-}
 
 const addNewCredential = async () => {
   try {
@@ -307,7 +331,7 @@ const handleLogoutButtonKeydown = (event) => {
 }
 
 const handleDelete = async (credential) => {
-  const credentialId = credential?.uuid
+  const credentialId = credential?.credential
   if (!credentialId) return
   try {
     await authStore.deleteCredential(credentialId)
@@ -317,37 +341,41 @@ const handleDelete = async (credential) => {
 
 const rpName = computed(() => authStore.settings?.rp_name || 'this service')
 const paskiaVersion = computed(() => authStore.settings?.version || '')
-const credentials = computed(() => {
-  const creds = authStore.userInfo?.credentials || {}
-  return Object.entries(creds).map(([uuid, c]) => ({ ...c, uuid })).sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
-})
-const sessions = computed(() => authStore.userInfo?.sessions || [])
+const sessions = computed(() => authStore.userInfo?.sessions || {})
 const currentSessionHost = computed(() => {
-  const currentSession = sessions.value.find(session => session.is_current)
+  const currentSession = Object.values(sessions.value).find(session => session.is_current)
   return currentSession?.host || 'this host'
 })
+const terminatingSessions = ref({})
 
 const terminateSession = async (session) => {
-  if (session.is_current) {
-    await logout()
-  } else {
-    try { await authStore.deleteCredential(session.credential) }
-    catch (error) { authStore.showMessage(error.message || 'Failed to delete credential', 'error', 5000) }
+  const sessionKey = session?.key
+  if (!sessionKey) return
+  terminatingSessions.value = { ...terminatingSessions.value, [sessionKey]: true }
+  try { await authStore.terminateSession(sessionKey) }
+  catch (error) { authStore.showMessage(error.message || 'Failed to terminate session', 'error', 5000) }
+  finally {
+    const next = { ...terminatingSessions.value }
+    delete next[sessionKey]
+    terminatingSessions.value = next
   }
 }
 
 const logoutEverywhere = async () => { await authStore.logoutEverywhere() }
 const logout = async () => { await authStore.logout() }
-const openNameDialog = () => { newName.value = authStore.userInfo?.user.display_name ?? ''; showNameDialog.value = true }
+const openEditDialog = () => { showEditDialog.value = true }
 const isAdmin = computed(() => {
   const perms = authStore.ctx?.permissions
   return perms?.includes('auth:admin') || perms?.includes('auth:org:admin')
 })
-const hasMultipleSessions = computed(() => sessions.value.length > 1)
+const hasMultipleSessions = computed(() => Object.keys(sessions.value).length > 1)
+const credentials = computed(() =>
+  Object.entries(authStore.userInfo?.credentials || {}).map(([uuid, c]) => ({ ...c, credential: uuid }))
+)
 const useWideLayout = computed(() => {
   // Check if any single site has more than 8 sessions
   const groups = {}
-  for (const session of sessions.value) {
+  for (const session of Object.values(sessions.value)) {
     const host = session.host || ''
     if (!groups[host]) groups[host] = []
     groups[host].push(session)
@@ -361,17 +389,30 @@ const useWideLayout = computed(() => {
 })
 const breadcrumbEntries = computed(() => { const entries = [{ label: 'My Profile', href: makeUiHref() }]; if (isAdmin.value) entries.push({ label: 'Admin', href: adminUiPath() }); return entries })
 
-const saveName = async () => {
-  const name = newName.value.trim()
-  if (!name) { authStore.showMessage('Name cannot be empty', 'error'); return }
+const saveProfile = async () => {
+  const name = editName.value.trim()
+  if (!name) { editError.value = 'Name cannot be empty'; return }
+  const user = authStore.userInfo.user
+  const emailVal = editEmail.value.trim() || null
+  const usernameVal = editUsername.value.trim() || null
+  const telephoneVal = editTelephone.value.trim() || null
   try {
+    editError.value = ''
     saving.value = true
-    await apiJson('/auth/api/user/display-name', { method: 'PATCH', body: { display_name: name } })
-    showNameDialog.value = false
-    await authStore.loadUserInfo()
-    authStore.showMessage('Name updated successfully!', 'success', 3000)
-  } catch (e) { authStore.showMessage(e.message || 'Failed to update name', 'error') }
-  finally { saving.value = false }
+    const body = {}
+    if (name !== user.display_name) body.display_name = name
+    if (emailVal !== (user.email || null)) body.email = emailVal
+    if (usernameVal !== (user.preferred_username || null)) body.preferred_username = usernameVal
+    if (telephoneVal !== (user.telephone || null)) body.telephone = telephoneVal
+    if (Object.keys(body).length) {
+      await apiJson('/auth/api/user/info', { method: 'PATCH', body })
+      await authStore.loadUserInfo()
+      authStore.showMessage('Profile updated!', 'success', 3000)
+    }
+    showEditDialog.value = false
+  } catch (e) {
+    editError.value = e.message || 'Failed to update profile'
+  } finally { saving.value = false }
 }
 </script>
 
@@ -386,4 +427,5 @@ const saveName = async () => {
 .remote-auth-label { display: block; margin: 0; font-size: 0.875rem; color: var(--color-text-muted); font-weight: 500; }
 .remote-auth-description { font-size: 0.75rem; color: var(--color-text-muted); }
 .theme-toggle { position: absolute; top: var(--layout-padding); right: var(--layout-padding); }
+.profile-edit-form { display: flex; flex-direction: column; gap: var(--space-md); }
 </style>

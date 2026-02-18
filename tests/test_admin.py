@@ -16,6 +16,7 @@ import secrets
 from datetime import UTC, datetime
 from uuid import UUID
 
+import base64url
 import httpx
 import pytest
 import pytest_asyncio
@@ -33,11 +34,11 @@ from paskia.db import (
     create_org,
     create_permission,
     create_role,
-    create_session,
     create_user,
 )
 from paskia.db.operations import DB
-from tests.conftest import auth_headers
+from paskia.util.crypto import hash_secret
+from tests.conftest import auth_headers, create_test_session
 
 # -------------------- Additional Fixtures --------------------
 
@@ -97,13 +98,11 @@ async def second_org_session_token(
     test_db: DB, second_org_user: User, second_org_credential: Credential
 ) -> str:
     """Create a session for the second org admin user."""
-    return create_session(
+    _db_key, secret = create_test_session(
         user_uuid=second_org_user.uuid,
         credential_uuid=second_org_credential.uuid,
-        host="localhost",
-        ip="127.0.0.1",
-        user_agent="pytest",
     )
+    return secret
 
 
 @pytest_asyncio.fixture(scope="function")
@@ -153,13 +152,11 @@ async def org_admin_session_token(
     test_db: DB, org_admin_user: User, org_admin_credential: Credential
 ) -> str:
     """Create a session for the org admin user."""
-    return create_session(
+    _db_key, secret = create_test_session(
         user_uuid=org_admin_user.uuid,
         credential_uuid=org_admin_credential.uuid,
-        host="localhost",
-        ip="127.0.0.1",
-        user_agent="pytest",
     )
+    return secret
 
 
 @pytest_asyncio.fixture(scope="function")
@@ -182,7 +179,7 @@ class TestExceptionHandlers:
     async def test_auth_exception_handler(self, client: httpx.AsyncClient):
         """AuthException should return proper JSON with auth info."""
         # Accessing admin without auth triggers AuthException
-        response = await client.get("/auth/api/admin/orgs")
+        response = await client.get("/auth/api/admin/info")
         assert response.status_code == 401
         data = response.json()
         assert "detail" in data
@@ -219,7 +216,7 @@ class TestAdminOrganizations:
     @pytest.mark.asyncio
     async def test_list_orgs_requires_auth(self, client: httpx.AsyncClient):
         """List orgs without auth should return 401."""
-        response = await client.get("/auth/api/admin/orgs")
+        response = await client.get("/auth/api/admin/info")
         assert response.status_code == 401
 
     @pytest.mark.asyncio
@@ -228,7 +225,7 @@ class TestAdminOrganizations:
     ):
         """List orgs without admin permission should return 403."""
         response = await client.get(
-            "/auth/api/admin/orgs",
+            "/auth/api/admin/info",
             headers={
                 **auth_headers(regular_session_token),
                 "Host": "localhost:4401",
@@ -242,19 +239,24 @@ class TestAdminOrganizations:
     ):
         """Admin user should be able to list organizations."""
         response = await client.get(
-            "/auth/api/admin/orgs",
+            "/auth/api/admin/info",
             headers={**auth_headers(session_token), "Host": "localhost:4401"},
         )
         assert response.status_code == 200
         data = response.json()
-        assert isinstance(data, list)
-        assert len(data) >= 1
+        assert isinstance(data, dict)
+        assert "orgs" in data
+        orgs_data = data["orgs"]
+        assert isinstance(orgs_data, dict)
+        assert len(orgs_data) >= 1
         # Check org structure
-        org = data[0]
+        org_data = list(orgs_data.values())[0]
+        assert "org" in org_data
+        org = org_data["org"]
         assert "uuid" in org
         assert "display_name" in org
-        assert "roles" in org
-        assert "users" in org
+        assert "roles" in org_data
+        assert "users" in org_data
 
     @pytest.mark.asyncio
     async def test_list_orgs_with_org_admin(
@@ -266,13 +268,13 @@ class TestAdminOrganizations:
     ):
         """Org admin should only see their own organization."""
         response = await client.get(
-            "/auth/api/admin/orgs",
+            "/auth/api/admin/info",
             headers={**auth_headers(org_admin_session_token), "Host": "localhost:4401"},
         )
         assert response.status_code == 200
         data = response.json()
         # Should only see their own org, not the second org
-        org_uuids = [o["uuid"] for o in data]
+        org_uuids = [org_data["org"]["uuid"] for org_data in data["orgs"].values()]
         assert str(test_org.uuid) in org_uuids
 
     @pytest.mark.asyncio
@@ -794,7 +796,8 @@ class TestAdminUsersInOrg:
         )
         assert response.status_code == 200
         data = response.json()
-        assert "display_name" in data
+        assert "user" in data
+        assert "display_name" in data["user"]
         assert "credentials" in data
         assert "sessions" in data
         assert "aaguid_info" in data
@@ -845,7 +848,8 @@ class TestAdminUsersInOrg:
         )
         assert response.status_code == 200
         data = response.json()
-        assert "display_name" in data
+        assert "user" in data
+        assert "display_name" in data["user"]
 
     @pytest.mark.asyncio
     async def test_update_user_display_name_in_org(
@@ -853,7 +857,7 @@ class TestAdminUsersInOrg:
     ):
         """Admin should be able to update user display name."""
         response = await client.patch(
-            f"/auth/api/admin/users/{test_user.uuid}/display-name",
+            f"/auth/api/admin/users/{test_user.uuid}/info",
             json={"display_name": "Updated Admin Name"},
             headers={**auth_headers(session_token), "Host": "localhost:4401"},
         )
@@ -866,7 +870,7 @@ class TestAdminUsersInOrg:
         """Updating non-existent user should return 404."""
         fake_uuid = uuid7.create()
         response = await client.patch(
-            f"/auth/api/admin/users/{fake_uuid}/display-name",
+            f"/auth/api/admin/users/{fake_uuid}/info",
             json={"display_name": "New Name"},
             headers={**auth_headers(session_token), "Host": "localhost:4401"},
         )
@@ -884,7 +888,7 @@ class TestAdminUsersInOrg:
     ):
         """Org admin cannot update user from another org."""
         response = await client.patch(
-            f"/auth/api/admin/users/{second_org_user.uuid}/display-name",
+            f"/auth/api/admin/users/{second_org_user.uuid}/info",
             json={"display_name": "New Name"},
             headers={**auth_headers(org_admin_session_token), "Host": "localhost:4401"},
         )
@@ -896,13 +900,13 @@ class TestAdminUsersInOrg:
     ):
         """Updating user with empty display name should fail."""
         response = await client.patch(
-            f"/auth/api/admin/users/{test_user.uuid}/display-name",
+            f"/auth/api/admin/users/{test_user.uuid}/info",
             json={"display_name": "   "},
             headers={**auth_headers(session_token), "Host": "localhost:4401"},
         )
         assert response.status_code == 400
         data = response.json()
-        assert "display_name required" in data["detail"]
+        assert "display_name cannot be empty" in data["detail"]
 
     @pytest.mark.asyncio
     async def test_update_user_display_name_too_long(
@@ -910,13 +914,13 @@ class TestAdminUsersInOrg:
     ):
         """Updating user with too long display name should fail."""
         response = await client.patch(
-            f"/auth/api/admin/users/{test_user.uuid}/display-name",
-            json={"display_name": "x" * 100},
+            f"/auth/api/admin/users/{test_user.uuid}/info",
+            json={"display_name": "x" * 65},
             headers={**auth_headers(session_token), "Host": "localhost:4401"},
         )
         assert response.status_code == 400
         data = response.json()
-        assert "too long" in data["detail"]
+        assert "display_name too long" in data["detail"]
 
     @pytest.mark.asyncio
     async def test_update_user_role_in_org(
@@ -1290,7 +1294,7 @@ class TestAdminSessions:
     ):
         """Admin should be able to delete a user's session."""
         # Create an additional session to delete
-        extra_token = create_session(
+        extra_db_key, _extra_secret = create_test_session(
             user_uuid=test_user.uuid,
             credential_uuid=test_credential.uuid,
             host="other.host:4401",
@@ -1299,7 +1303,7 @@ class TestAdminSessions:
         )
 
         response = await client.delete(
-            f"/auth/api/admin/users/{test_user.uuid}/sessions/{extra_token}",
+            f"/auth/api/admin/users/{test_user.uuid}/sessions/{extra_db_key}",
             headers={**auth_headers(session_token), "Host": "localhost:4401"},
         )
         assert response.status_code == 200
@@ -1316,8 +1320,9 @@ class TestAdminSessions:
         test_user,
     ):
         """Admin can delete their own current session."""
+        session_db_key = base64url.enc(hash_secret("cookie", session_token))
         response = await client.delete(
-            f"/auth/api/admin/users/{test_user.uuid}/sessions/{session_token}",
+            f"/auth/api/admin/users/{test_user.uuid}/sessions/{session_db_key}",
             headers={**auth_headers(session_token), "Host": "localhost:4401"},
         )
         assert response.status_code == 200
@@ -1394,14 +1399,17 @@ class TestAdminPermissions:
     ):
         """Admin should be able to list all permissions."""
         response = await client.get(
-            "/auth/api/admin/permissions",
+            "/auth/api/admin/info",
             headers={**auth_headers(session_token), "Host": "localhost:4401"},
         )
         assert response.status_code == 200
         data = response.json()
-        assert isinstance(data, list)
+        assert isinstance(data, dict)
+        assert "permissions" in data
+        permissions_data = data["permissions"]
+        assert isinstance(permissions_data, dict)
         # Should include at least auth:admin
-        perm_scopes = [p["scope"] for p in data]
+        perm_scopes = [p["scope"] for p in permissions_data.values()]
         assert "auth:admin" in perm_scopes
 
     @pytest.mark.asyncio
@@ -1414,13 +1422,13 @@ class TestAdminPermissions:
     ):
         """Org admin should only see permissions their org can grant."""
         response = await client.get(
-            "/auth/api/admin/permissions",
+            "/auth/api/admin/info",
             headers={**auth_headers(org_admin_session_token), "Host": "localhost:4401"},
         )
         assert response.status_code == 200
         data = response.json()
         # Should only see permissions the org can grant
-        perm_scopes = [p["scope"] for p in data]
+        perm_scopes = [p["scope"] for p in data["permissions"].values()]
         assert grantable_permission.scope in perm_scopes
         # test_org CAN grant auth:admin (it's in org.permissions), so org admin sees it
         assert "auth:admin" in perm_scopes
@@ -1704,7 +1712,7 @@ class TestOrgAdminAuthExceptions:
     ):
         """Regular user trying to update display name should get 403."""
         response = await client.patch(
-            f"/auth/api/admin/users/{test_user.uuid}/display-name",
+            f"/auth/api/admin/users/{test_user.uuid}/info",
             json={"display_name": "New Name"},
             headers={**auth_headers(regular_session_token), "Host": "localhost:4401"},
         )

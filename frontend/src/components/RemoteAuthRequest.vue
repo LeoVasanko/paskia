@@ -196,7 +196,7 @@ async function startRemoteAuth() {
       } else if (msg.status === 'authenticated') {
         // Success
         completed.value = true
-        emit('authenticated', { session_token: msg.session_token })
+        emit('authenticated', { exchange_code: msg.exchange_code })
         break
       } else if (msg.status === 'denied') {
         // Explicitly denied by the authenticating device

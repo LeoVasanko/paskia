@@ -1,6 +1,7 @@
 <template>
-  <dialog ref="dialog" @close="$emit('close')" @keydown="handleDialogKeydown">
-    <div class="device-dialog" role="dialog" aria-modal="true" aria-labelledby="regTitle">
+  <div v-if="linkUrl" class="dialog-overlay" @click="$emit('close')">
+    <div ref="dialog" class="modal-panel" @keydown="handleDialogKeydown" @click.stop>
+      <div class="device-dialog" role="dialog" aria-modal="true" aria-labelledby="regTitle">
       <div class="reg-header-row">
         <h2 id="regTitle" class="reg-title">
           📱 <span v-if="userName">{{ tokenType === 'account recovery' ? 'Recovery' : 'Registration' }} for {{ userName }}</span><span v-else>Add Another Device</span>
@@ -14,7 +15,6 @@
         </p>
 
         <QRCodeDisplay
-          v-if="linkUrl"
           :url="linkUrl"
           :show-link="true"
           @copied="onCopied"
@@ -29,14 +29,15 @@
       <div class="reg-actions" ref="actionsRow" @keydown="handleActionsKeydown">
         <button class="btn-secondary" @click="$emit('close')">Close</button>
       </div>
+      </div>
     </div>
-  </dialog>
+  </div>
 </template>
 
 <script setup>
 import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import QRCodeDisplay from '@/components/QRCodeDisplay.vue'
-import { apiJson } from 'paskia'
+import { apiJson, holdGlobalBackdrop, releaseGlobalBackdrop } from 'paskia'
 import { formatDate } from '@/utils/helpers'
 import { getDirection } from '@/utils/keynav'
 import { useAuthStore } from '@/stores/auth'
@@ -78,16 +79,13 @@ async function generateLink() {
       expiresAt.value = data.expires ? new Date(data.expires) : null
       tokenType.value = data.token_type || null
 
-      // Show the dialog as modal
-      await nextTick()
-      if (dialog.value) {
-        dialog.value.showModal()
+      holdGlobalBackdrop()
 
-        // Focus primary button (or first button if no primary) after content renders
-        const actions = actionsRow.value
-        const target = actions?.querySelector('.btn-primary') || actions?.querySelector('button')
-        target?.focus()
-      }
+      // Focus primary button (or first button if no primary) after content renders
+      await nextTick()
+      const actions = actionsRow.value
+      const target = actions?.querySelector('.btn-primary') || actions?.querySelector('button')
+      target?.focus()
     } else {
       emit('close')
     }
@@ -102,7 +100,12 @@ function onCopied() {
 }
 
 const handleDialogKeydown = (event) => {
-  // ESC is handled automatically by <dialog>
+  // ESC to close
+  if (event.key === 'Escape') {
+    event.preventDefault()
+    emit('close')
+    return
+  }
   // Handle other key navigation
   const direction = getDirection(event)
   if (!direction) return
@@ -148,6 +151,7 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  if (linkUrl.value) releaseGlobalBackdrop()
   // Restore focus when modal closes
   const prev = previouslyFocusedElement.value
   if (prev && document.body.contains(prev) && !prev.disabled) {
@@ -157,23 +161,6 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-dialog {
-  border: none;
-  background: transparent;
-  padding: 0;
-  max-width: none;
-  width: fit-content;
-  height: fit-content;
-  position: fixed;
-  inset: 0;
-  margin: auto;
-}
-
-dialog::backdrop {
-  -webkit-backdrop-filter: blur(.2rem) brightness(0.5);
-  backdrop-filter: blur(.2rem) brightness(0.5);
-}
-
 .icon-btn { background: none; border: none; cursor: pointer; font-size: 1rem; opacity: .6; }
 .icon-btn:hover { opacity: 1; }
 .reg-header-row { display: flex; justify-content: space-between; align-items: center; gap: .75rem; margin-bottom: .75rem; }

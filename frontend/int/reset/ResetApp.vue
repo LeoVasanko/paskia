@@ -144,7 +144,7 @@ async function registerPasskey() {
   }
 
   try {
-    await setSessionCookie(result)
+    await exchangeCode(result)
   } catch (error) {
     loading.value = false
     const message = error?.message || 'Failed to establish session'
@@ -156,15 +156,13 @@ async function registerPasskey() {
   setTimeout(() => { loading.value = false; goHome() }, 800)
 }
 
-async function setSessionCookie(result) {
-  if (!result?.session_token) {
-    throw new Error('Registration response missing session_token')
+async function exchangeCode(result) {
+  if (!result?.exchange_code) {
+    throw new Error('Registration response missing exchange_code')
   }
   return await apiJson('/auth/api/set-session', {
     method: 'POST',
-    headers: {
-      Authorization: `Bearer ${result.session_token}`
-    }
+    headers: { 'Authorization': `Bearer ${result.exchange_code}` }
   })
 }
 

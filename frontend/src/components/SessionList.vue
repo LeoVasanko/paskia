@@ -6,20 +6,21 @@
     </div>
     <div class="section-body">
       <div>
-        <template v-if="Array.isArray(sessions) && sessions.length">
-          <div v-for="(group, host) in groupedSessions" :key="host" class="session-group" tabindex="0" @keydown="handleGroupKeydown($event, host)">
+        <template v-if="sessionsArray.length">
+          <div v-for="(group, key) in groupedSessions" :key="key" class="session-group" tabindex="0" @keydown="handleGroupKeydown($event, key)">
             <span :class="['session-group-host', { 'is-current-site': group.isCurrentSite }]">
-              <span class="session-group-icon">🌐</span>
-              <a v-if="host" :href="hostUrl(host)" tabindex="-1" target="_blank" rel="noopener noreferrer">{{ host }}</a>
+              <span class="session-group-icon">{{ group.isOIDC ? '🪪' : '🌐' }}</span>
+              <template v-if="group.isOIDC">{{ group.displayName }}</template>
+              <a v-else-if="key" :href="hostUrl(key)" tabindex="-1" target="_blank" rel="noopener noreferrer">{{ key }}</a>
               <template v-else>Unbound host</template>
             </span>
             <div class="session-list">
               <div
-                v-for="(session, index) in group.sessions"
-                :key="index"
+                v-for="session in group.sessions"
+                :key="session.key"
                 :class="['session-item', {
                   'is-current': session.is_current && !hoveredIp && !hoveredCredentialUuid,
-                  'is-hovered': hoveredSession === session,
+                  'is-hovered': hoveredSession?.key === session.key,
                   'is-linked-credential': hoveredCredentialUuid === session.credential
                 }]"
                 tabindex="-1"
@@ -33,13 +34,14 @@
                   <h4 class="item-title">{{ session.user_agent || '—' }}</h4>
                   <div class="item-actions">
                     <span v-if="session.is_current && !hoveredIp && !hoveredCredentialUuid" class="badge badge-current">Current</span>
-                    <span v-else-if="hoveredSession === session" class="badge badge-current">Selected</span>
+                    <span v-else-if="hoveredSession?.key === session.key" class="badge badge-current">Selected</span>
                     <span v-else-if="hoveredCredentialUuid === session.credential" class="badge badge-current">Linked</span>
                     <span v-else-if="!hoveredCredentialUuid && isSameHost(session.ip)" class="badge">Same IP</span>
                     <button
                       @click="$emit('terminate', session)"
                       class="btn-card-delete"
-                      :title="'Delete associated passkey'"
+                      :disabled="isTerminating(session.key)"
+                      :title="isTerminating(session.key) ? 'Terminating...' : 'Terminate session'"
                       tabindex="-1"
                     >❌</button>
                   </div>
@@ -68,9 +70,10 @@ import { hostIP } from '@/utils/helpers'
 import { navigateGrid, handleDeleteKey, handleEscape, getDirection } from '@/utils/keynav'
 
 const props = defineProps({
-  sessions: { type: Array, default: () => [] },
+  sessions: { type: Object, default: () => ({}) },
   emptyMessage: { type: String, default: 'You currently have no other active sessions.' },
   sectionDescription: { type: String, default: "Review where you're signed in and end any sessions you no longer recognize." },
+  terminatingSessions: { type: Object, default: () => ({}) },
   hoveredCredentialUuid: { type: String, default: null },
   navigationDisabled: { type: Boolean, default: false },
   sectionClass: { type: String, default: '' },
@@ -104,6 +107,8 @@ const handleCardClick = (event) => {
     event.stopPropagation()
   }
 }
+
+const isTerminating = (sessionKey) => !!props.terminatingSessions[sessionKey]
 
 const handleGroupKeydown = (event, host) => {
   const group = event.currentTarget
@@ -146,7 +151,7 @@ const handleGroupKeydown = (event, host) => {
 const handleItemKeydown = (event, session) => {
   // Handle delete (always allowed even with modal)
   handleDeleteKey(event, () => {
-    if (!isTerminating(session.id)) emit('terminate', session)
+    if (!isTerminating(session.key)) emit('terminate', session)
   })
   if (event.defaultPrevented) return
 
@@ -205,9 +210,14 @@ const copyIp = async (ip) => {
 
 const displayIp = ip => hostIP(ip) ?? ip
 
+// Convert sessions dict to array with key attached
+const sessionsArray = computed(() =>
+  Object.entries(props.sessions || {}).map(([key, session]) => ({ ...session, key }))
+)
+
 const currentHostIP = computed(() => {
   if (hoveredIp.value) return hostIP(hoveredIp.value)
-  const current = props.sessions.find(s => s.is_current)
+  const current = sessionsArray.value.find(s => s.is_current)
   return current ? hostIP(current.ip) : null
 })
 
@@ -215,27 +225,20 @@ const isSameHost = ip => currentHostIP.value && hostIP(ip) === currentHostIP.val
 
 const groupedSessions = computed(() => {
   const groups = {}
-  for (const session of props.sessions) {
-    const host = session.host || ''
-    if (!groups[host]) {
-      groups[host] = { sessions: [], isCurrentSite: false }
+  for (const session of sessionsArray.value) {
+    const groupKey = session.client || session.host || ''
+    if (!groups[groupKey]) {
+      groups[groupKey] = { sessions: [], isCurrentSite: false, isOIDC: !!session.client, displayName: session.client_name || groupKey }
     }
-    groups[host].sessions.push(session)
-    if (session.is_current_host) {
-      groups[host].isCurrentSite = true
-    }
+    groups[groupKey].sessions.push(session)
+    if (session.is_current_host) groups[groupKey].isCurrentSite = true
   }
-  // Sort sessions within each group by last_renewed descending
-  for (const host in groups) {
-    groups[host].sessions.sort((a, b) => new Date(b.last_renewed) - new Date(a.last_renewed))
-  }
-  // Sort groups by host name (natural sort)
+  for (const groupKey in groups) groups[groupKey].sessions.sort((a, b) => new Date(b.last_renewed) - new Date(a.last_renewed))
   const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' })
-  const sortedHosts = Object.keys(groups).sort(collator.compare)
-  const sortedGroups = {}
-  for (const host of sortedHosts) {
-    sortedGroups[host] = groups[host]
-  }
-  return sortedGroups
+  const sorted = Object.entries(groups).sort(([, a], [, b]) => {
+    if (a.isOIDC !== b.isOIDC) return a.isOIDC ? 1 : -1
+    return collator.compare(a.displayName, b.displayName) || collator.compare(a.sessions[0]?.client || '', b.sessions[0]?.client || '')
+  })
+  return Object.fromEntries(sorted)
 })
 </script>

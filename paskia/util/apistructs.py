@@ -1,36 +1,19 @@
-from __future__ import annotations
-
 """API response utilities using msgspec for JSON serialization.
 
 msgspec handles UUID and datetime conversion automatically.
 API structs inherit from db structs with kw_only=True to add uuid/key fields.
 """
 
-from datetime import UTC, datetime
+from __future__ import annotations
+
+from datetime import datetime
 from uuid import UUID
 
 import msgspec
 
+from paskia import db
 from paskia.db.structs import Credential, Org, Permission, Role, User
 from paskia.util import useragent
-
-
-def _utc_datetime(dt: datetime | None) -> datetime | None:
-    """Convert datetime to UTC, handling both aware and naive datetimes."""
-    if dt is None:
-        return None
-    if dt.tzinfo:
-        return dt.astimezone(UTC)
-    return dt.replace(tzinfo=UTC)
-
-
-def format_datetime(dt: datetime | None) -> str | None:
-    """Format a datetime to ISO 8601 string with Z suffix for UTC."""
-    if dt is None:
-        return None
-    utc_dt = _utc_datetime(dt)
-    return utc_dt.isoformat().replace("+00:00", "Z") if utc_dt else None
-
 
 # -------------------------------------------------------------------------
 # API structs - inherit from db structs, add uuid for serialization
@@ -83,6 +66,24 @@ class ApiPermission(msgspec.Struct, kw_only=True):
         )
 
 
+class ApiOidcClient(msgspec.Struct, kw_only=True):
+    """OIDC Client for API responses."""
+
+    name: str
+    redirect_uris: list[str]
+    backchannel_logout_uri: str | None = None
+    active_sessions: int = 0
+
+    @classmethod
+    def from_db(cls, c, active_sessions: int = 0):
+        return cls(
+            name=c.name,
+            redirect_uris=c.redirect_uris,
+            backchannel_logout_uri=c.backchannel_logout_uri,
+            active_sessions=active_sessions,
+        )
+
+
 class ApiAaguidInfo(msgspec.Struct, kw_only=True, omit_defaults=True):
     """AAGUID information for authenticators."""
 
@@ -91,17 +92,19 @@ class ApiAaguidInfo(msgspec.Struct, kw_only=True, omit_defaults=True):
     icon_dark: str | None = None
 
 
-class ApiUserSession(msgspec.Struct):
+class ApiUserSession(msgspec.Struct, omit_defaults=True):
     """Session for user info responses with computed fields."""
 
     credential_uuid: UUID = msgspec.field(name="credential")
     host: str
     ip: str
     user_agent: str
-    expiry: datetime
+    validated: datetime
     last_renewed: datetime
     is_current: bool = False
     is_current_host: bool = False
+    client_uuid: UUID | None = msgspec.field(name="client", default=None)
+    client_name: str | None = None
 
     @classmethod
     def from_db(
@@ -110,19 +113,23 @@ class ApiUserSession(msgspec.Struct):
         *,
         current_key: str,
         normalized_host: str | None,
-        expires_delta,  # timedelta
     ) -> ApiUserSession:
+        client_name = None
+        if s.client_uuid:
+            c = db.data().oidc.clients.get(s.client_uuid)
+            client_name = c.name if c else str(s.client_uuid)
         return cls(
             credential_uuid=s.credential_uuid,
             host=s.host,
             ip=s.ip,
             user_agent=useragent.compact_user_agent(s.user_agent),
-            expiry=s.expiry,
-            last_renewed=s.expiry - expires_delta,
+            validated=s.validated,
+            last_renewed=s.validated,
             is_current=s.key == current_key,
-            is_current_host=bool(
-                normalized_host and s.host and s.host == normalized_host
-            ),
+            is_current_host=not s.client_uuid
+            and bool(normalized_host and s.host and s.host == normalized_host),
+            client_uuid=s.client_uuid,
+            client_name=client_name,
         )
 
 
@@ -132,8 +139,10 @@ class ApiUserDetail(msgspec.Struct, kw_only=True):
     user: ApiUser
     credentials: dict[UUID, Credential]
     aaguid_info: dict[str, ApiAaguidInfo]
-    sessions: list[ApiUserSession]
+    sessions: dict[bytes, ApiUserSession]
     permissions: dict[UUID, ApiPermission] = {}
+    org: ApiOrg | None = None
+    role: ApiRole | None = None
 
 
 # -------------------------------------------------------------------------
@@ -144,7 +153,7 @@ class ApiUserDetail(msgspec.Struct, kw_only=True):
 class ApiOrgResponse(msgspec.Struct, kw_only=True):
     """Org response containing Org with roles and users as UUID-keyed dicts."""
 
-    org: Org
+    org: ApiOrg
     permissions: dict[UUID, Permission]
     roles: dict[UUID, Role]
     users: dict[UUID, User]
@@ -179,7 +188,7 @@ class ApiCreateLinkResponse(msgspec.Struct):
     """Response struct for create-link endpoints."""
 
     url: str
-    expires: str
+    expires: datetime
     token_type: str
     message: str | None = None
 
@@ -187,7 +196,7 @@ class ApiCreateLinkResponse(msgspec.Struct):
 class ApiUserContext(msgspec.Struct, omit_defaults=True):
     """User context for session validation."""
 
-    uuid: str
+    uuid: UUID
     display_name: str
     theme: str = ""
 
@@ -195,14 +204,14 @@ class ApiUserContext(msgspec.Struct, omit_defaults=True):
 class ApiOrgContext(msgspec.Struct):
     """Org context for session validation."""
 
-    uuid: str
+    uuid: UUID
     display_name: str
 
 
 class ApiRoleContext(msgspec.Struct):
     """Role context for session validation."""
 
-    uuid: str
+    uuid: UUID
     display_name: str
 
 
@@ -221,3 +230,11 @@ class ApiValidateResponse(msgspec.Struct):
     valid: bool
     renewed: bool
     ctx: ApiSessionContext
+
+
+class ApiAdminInfo(msgspec.Struct, kw_only=True):
+    """Combined admin info response."""
+
+    orgs: dict[UUID, ApiOrgResponse]
+    permissions: dict[UUID, ApiPermission]
+    oidc_clients: dict[UUID, ApiOidcClient] = {}

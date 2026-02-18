@@ -68,7 +68,7 @@ The JSON variants set headers automatically, with body and response in JSON.
 
 Normally you use apiJson/apiFetch and they handle this automatically. If you need to wire it yourself, on a 401/403 response that includes `auth.iframe`, call `showAuthIframe(...)` and then retry the original request.
 
-The backend returns 401/403 responses with the correct URL for proper user feedback. Alternatively you may use `/auth/restricted/#mode=login`, `mode=reauth` or `mode=forbidden` to trigger the UX flow you need.
+The backend returns 401/403 responses with the correct URL for proper user feedback. Alternatively you may use `/auth/restricted/iframe#mode=login`, `mode=reauth` or `mode=forbidden` to trigger the UX flow you need.
 
 ```js
 import { showAuthIframe, AuthCancelledError } from 'paskia'

@@ -279,6 +279,10 @@ button:disabled {
   filter: opacity(0.6);
 }
 
+output[title="Click to copy"] {
+  cursor: pointer;
+}
+
 .btn-primary {
   background: linear-gradient(to bottom, oklab(1 0 0 / 0.15), transparent 60%) var(--color-accent);
   color: var(--color-accent-contrast);
@@ -317,9 +321,11 @@ button:disabled {
   box-shadow: var(--shadow-soft);
 }
 
+input:not([type]),
 input[type="text"],
 input[type="search"],
 input[type="email"],
+input[type="tel"],
 textarea,
 select {
   font: inherit;
@@ -330,6 +336,18 @@ select {
   background: var(--color-surface);
   color: var(--color-text);
   transition: border-color var(--transition-base), box-shadow var(--transition-base);
+}
+
+input:not([type]):focus,
+input[type="text"]:focus,
+input[type="search"]:focus,
+input[type="email"]:focus,
+input[type="tel"]:focus,
+textarea:focus,
+select:focus {
+  outline: none;
+  border-color: var(--color-accent);
+  box-shadow: var(--focus-ring);
 }
 
 label {
@@ -502,7 +520,7 @@ th {
   left: 0;
   right: 0;
   margin: 0 auto;
-  z-index: 1200;
+  z-index: 2000;
   width: fit-content;
   min-width: min(520px, calc(100% - 2rem));
   max-width: calc(100% - 2rem);
@@ -807,7 +825,7 @@ th {
   display: grid;
   border-radius: var(--radius-md);
   background: var(--color-surface);
-  padding: 1.1rem 1.25rem;
+  padding: 1rem;
 }
 
 .user-details {

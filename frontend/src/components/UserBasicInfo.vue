@@ -1,23 +1,38 @@
 <template>
   <div v-if="userLoaded" class="user-info" :class="{ 'has-extra': $slots.default }">
-    <h3 class="user-name-heading">
-      <span class="icon">👤</span>
-      <span class="user-name-row">
-        <span class="display-name" :title="name">{{ name }}</span>
-        <button v-if="canEdit && updateEndpoint" class="mini-btn" @click="emit('editName')" title="Edit name">✏️</button>
-      </span>
-    </h3>
-    <div v-if="orgDisplayName || roleName" class="org-role-sub">
-      <div class="org-line" v-if="orgDisplayName">{{ orgDisplayName }}</div>
-      <div class="role-line" v-if="roleName">{{ roleName }}</div>
-    </div>
-    <div class="user-details">
-      <span class="date-label"><strong>Visits:</strong></span>
-      <span class="date-value">{{ visits || 0 }}</span>
-      <span class="date-label"><strong>Registered:</strong></span>
-      <span class="date-value">{{ formatDate(createdAt) }}</span>
-      <span class="date-label"><strong>Last seen:</strong></span>
-      <span class="date-value">{{ formatDate(lastSeen) }}</span>
+    <div class="user-info-content">
+      <div class="user-picture">
+        <span>👤</span>
+      </div>
+      <h3 class="user-name-heading">
+        <span class="user-name-row">
+          <span class="display-name" :title="name">{{ name }}</span>
+          <button v-if="canEdit && updateEndpoint" class="mini-btn" @click="emit('edit')" title="Edit profile">✏️</button>
+        </span>
+      </h3>
+      <div v-if="orgDisplayName || roleName" class="org-role-sub">
+        <div class="org-line" v-if="orgDisplayName">{{ orgDisplayName }}</div>
+        <div class="role-line" v-if="roleName">{{ roleName }}</div>
+      </div>
+      <div class="info-fields-block">
+        <div v-if="preferred_username" class="contact-item">🆔 {{ preferred_username }}</div>
+        <a v-if="email" :href="`mailto:${email}`" class="contact-link">✉️ {{ email }}</a>
+        <a v-if="telephone" :href="`tel:${telephone}`" class="contact-link">📞 {{ telephone }}</a>
+      </div>
+      <div class="info-line">
+        <span v-if="visits">
+          <span class="info-date">{{ formatDate(createdAt) }}</span>
+          <span class="info-punct"> – </span>
+          <span class="info-date">{{ formatDate(lastSeen) }}</span>
+          <span class="info-punct"> ×</span>
+          <span class="info-count">{{ visits }}</span>
+        </span>
+        <span v-else>
+          <span class="info-label">Created </span>
+          <span class="info-date">{{ formatDate(createdAt) }}</span>
+          <span class="info-punct"> — Never signed in</span>
+        </span>
+      </div>
     </div>
     <div v-if="$slots.default" class="user-info-extra">
       <slot></slot>
@@ -26,12 +41,15 @@
 </template>
 
 <script setup>
-import { ref, computed, watch } from 'vue'
+import { computed } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import { formatDate } from '@/utils/helpers'
 
 const props = defineProps({
   name: { type: String, required: true },
+  email: { type: String, default: null },
+  preferred_username: { type: String, default: null },
+  telephone: { type: String, default: null },
   visits: { type: [Number, String], default: 0 },
   createdAt: { type: [String, Number, Date], default: null },
   lastSeen: { type: [String, Number, Date], default: null },
@@ -42,7 +60,7 @@ const props = defineProps({
   roleName: { type: String, default: '' }
 })
 
-const emit = defineEmits(['saved', 'editName'])
+const emit = defineEmits(['saved', 'edit'])
 const authStore = useAuthStore()
 
 const userLoaded = computed(() => !!props.name)
@@ -50,55 +68,56 @@ const userLoaded = computed(() => !!props.name)
 
 <style scoped>
 .user-info.has-extra {
-  grid-template-columns: auto 1fr 2fr;
+  grid-template-columns: minmax(0, 1fr) 14rem;
   grid-template-areas:
-    "heading heading extra"
-    "org org extra"
-    "label1 value1 extra"
-    "label2 value2 extra"
-    "label3 value3 extra";
+    "content extra";
+  gap: 1.5rem;
 }
 
 .user-info:not(.has-extra) {
-  grid-template-columns: auto 1fr;
+  grid-template-columns: minmax(0, 1fr);
   grid-template-areas:
-    "heading heading"
-    "org org"
-    "label1 value1"
-    "label2 value2"
-    "label3 value3";
+    "content";
 }
 
 @media (max-width: 720px) {
   .user-info.has-extra {
-    grid-template-columns: auto 1fr;
+    grid-template-columns: 1fr;
     grid-template-areas:
-      "heading heading"
-      "org org"
-      "label1 value1"
-      "label2 value2"
-      "label3 value3"
-      "extra extra";
+      "content"
+      "extra";
   }
 }
 
-.user-name-heading { grid-area: heading; display: flex; align-items: center; flex-wrap: wrap; margin: 0 0 0.25rem 0; }
-.org-role-sub { grid-area: org; display:flex; flex-direction:column; margin: -0.15rem 0 0.25rem; }
-.org-line { font-size: .7rem; font-weight:600; line-height:1.1; color: var(--color-text-muted); text-transform: uppercase; letter-spacing: 0.05em; }
-.role-line { font-size:.65rem; color: var(--color-text-muted); line-height:1.1; }
-.info-label:nth-of-type(1) { grid-area: label1; }
-.info-value:nth-of-type(2) { grid-area: value1; }
-.info-label:nth-of-type(3) { grid-area: label2; }
-.info-value:nth-of-type(4) { grid-area: value2; }
-.info-label:nth-of-type(5) { grid-area: label3; }
-.info-value:nth-of-type(6) { grid-area: value3; }
-.user-info-extra { grid-area: extra; padding-left: 2rem; border-left: 1px solid var(--color-border); }
-.user-name-row { display: inline-flex; align-items: center; gap: 0.35rem; max-width: 100%; }
-.user-name-row.editing { flex: 1 1 auto; }
-.display-name { font-weight: 600; font-size: 1.05em; line-height: 1.2; max-width: 14ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.name-input { width: auto; flex: 1 1 140px; min-width: 120px; padding: 6px 8px; font-size: 0.9em; border: 1px solid var(--color-border-strong); border-radius: 6px; background: var(--color-surface); color: var(--color-text); }
-.user-name-heading .name-input { width: auto; }
-.name-input:focus { outline: none; border-color: var(--color-accent); box-shadow: var(--focus-ring); }
+.user-info-content {
+  grid-area: content;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-areas:
+    "picture heading fields"
+    "picture org fields"
+    ". info info";
+  gap: 0 1rem;
+  min-width: 0;
+}
+
+.user-picture { grid-area: picture; display: flex; align-items: flex-start; font-size: 2em; line-height: 1; }
+.user-name-heading { grid-area: heading; display: flex; align-items: center; flex-wrap: wrap; margin: 0 0 0.25rem 0; min-width: 0; }
+.org-role-sub { grid-area: org; display: flex; flex-direction: column; min-width: 0; }
+.org-line { font-size: .7rem; font-weight: 600; line-height: 1.1; color: var(--color-text-muted); text-transform: uppercase; letter-spacing: 0.05em; }
+.role-line { font-size: .65rem; color: var(--color-text-muted); line-height: 1.1; }
+.info-fields-block { grid-area: fields; display: flex; flex-direction: column; gap: 0.25rem; min-width: 0; }
+.contact-item { display: block; color: var(--color-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.contact-link { color: var(--color-text); text-decoration: none; display: block; transition: transform 0.1s ease; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.contact-link:hover { transform: scale(1.01); }
+.info-line { grid-area: info; line-height: 1.4; font-size: 0.9em; }
+.info-date { color: var(--color-text) !important; }
+.info-label { color: var(--color-text) !important; }
+.info-punct { color: var(--color-text-muted) !important; }
+.info-count { color: var(--color-text-muted) !important; }
+.user-info-extra { grid-area: extra; padding-left: 1rem; border-left: 1px solid var(--color-border); flex-shrink: 0; }
+.user-name-row { display: inline-flex; align-items: center; gap: 0.35rem; max-width: 100%; min-width: 0; }
+.display-name { font-weight: 600; font-size: 1.05em; line-height: 1.2; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .mini-btn { width: auto; padding: 4px 6px; margin: 0; font-size: 0.75em; line-height: 1; cursor: pointer; }
 .mini-btn:hover:not(:disabled) { background: var(--color-accent-soft); color: var(--color-accent); }
 .mini-btn:active:not(:disabled) { transform: translateY(1px); }

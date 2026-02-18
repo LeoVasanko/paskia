@@ -60,7 +60,7 @@ export default async function globalTeardown() {
   }
 
   // Clean up test database
-  const testDbFile = join(testDataDir, 'test-db.jsonl')
+  const testDbFile = join(testDataDir, 'test.paskiadb')
   if (existsSync(testDbFile)) {
     console.log('  Removing test database...')
     rmSync(testDbFile)

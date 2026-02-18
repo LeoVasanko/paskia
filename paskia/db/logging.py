@@ -49,11 +49,6 @@ def _is_uuid(value: str) -> bool:
     return bool(_UUID_PATTERN.match(value))
 
 
-def _uuid_suffix(uuid_str: str) -> str:
-    """Get the last section of a UUID (after the last hyphen)."""
-    return uuid_str.rsplit("-", 1)[-1]
-
-
 class UuidResolver:
     """Resolve UUIDs to display names or short suffixes.
 
@@ -148,14 +143,8 @@ class UuidResolver:
         return None
 
 
-def _use_color() -> bool:
-    """Check if we should use color output."""
-    return sys.stderr.isatty()
-
-
 def _format_value(
     value: Any,
-    use_color: bool,
     max_len: int = 60,
     resolver: UuidResolver | None = None,
 ) -> str:
@@ -195,16 +184,14 @@ def _format_value(
             if all_true:
                 parts.append(key_display)
             else:
-                val_display = _format_value(v, use_color, max_len=30, resolver=resolver)
+                val_display = _format_value(v, max_len=30, resolver=resolver)
                 parts.append(f"{key_display}: {val_display}")
         return "{" + ", ".join(parts) + "}"
 
     if isinstance(value, list):
         if not value:
             return "[]"
-        parts = [
-            _format_value(v, use_color, max_len=30, resolver=resolver) for v in value
-        ]
+        parts = [_format_value(v, max_len=30, resolver=resolver) for v in value]
         return "[" + ", ".join(parts) + "]"
 
     # Fallback for other types
@@ -214,9 +201,7 @@ def _format_value(
     return text
 
 
-def _format_path(
-    path: list[str], use_color: bool, resolver: UuidResolver | None = None
-) -> str:
+def _format_path(path: list[str], resolver: UuidResolver | None = None) -> str:
     """Format a path as dot notation with prefix in dark grey, final in default.
 
     If resolver is provided, UUIDs in the path are replaced with display names.
@@ -228,8 +213,6 @@ def _format_path(
     if resolver:
         path = [resolver.resolve(p) if _is_uuid(p) else p for p in path]
 
-    if not use_color:
-        return ".".join(path)
     if len(path) == 1:
         return f"{_PATH_FINAL}{path[0]}{_RESET}"
     prefix = ".".join(path[:-1])
@@ -324,13 +307,18 @@ def _format_change_lines(
     change_type: str,
     path: list[str],
     value: Any,
-    use_color: bool,
     resolver: UuidResolver | None = None,
 ) -> list[str]:
     """Format a single change as one or more lines.
 
     If resolver is provided, UUIDs are replaced with display names.
     """
+
+    # Helper to format a value, checking for censored paths
+    def fmt_value(v: Any, child_path: list[str]) -> str:
+        if child_path[-2:] == ["oidc", "key"]:
+            return f"{_DIM}<hidden>{_RESET}"
+        return _format_value(v, resolver=resolver)
 
     # Helper to format path with UUID replacement
     def fmt_path(p: list[str]) -> list[str]:
@@ -341,8 +329,6 @@ def _format_change_lines(
     formatted_path = fmt_path(path)
 
     if change_type == "delete":
-        if not use_color:
-            return [f"  {'.'.join(formatted_path)} ✗"]
         if len(formatted_path) == 1:
             return [f"  {_DELETE}{formatted_path[0]} ✗{_RESET}"]
         prefix = ".".join(formatted_path[:-1])
@@ -355,9 +341,7 @@ def _format_change_lines(
         if isinstance(value, dict) and value:
             lines = []
             # First line: path with green final element and grey =
-            if not use_color:
-                lines.append(f"  {'.'.join(formatted_path)} =")
-            elif len(formatted_path) == 1:
+            if len(formatted_path) == 1:
                 lines.append(f"  {_ADD}{formatted_path[0]}{_RESET} {_DIM}={_RESET}")
             else:
                 prefix = ".".join(formatted_path[:-1])
@@ -370,21 +354,16 @@ def _format_change_lines(
             formatted_items = []
             for k, v in value.items():
                 k_display = resolver.resolve(k) if resolver and _is_uuid(k) else k
-                v_str = _format_value(v, use_color, resolver=resolver)
+                v_str = fmt_value(v, path + [k])
                 formatted_items.append((k_display, v_str))
             max_key_len = max(len(k) for k, _ in formatted_items)
             field_width = max(max_key_len, 12)  # minimum 12 chars
             for k_display, v_str in formatted_items:
                 padding = " " * (field_width - len(k_display))
-                if use_color:
-                    lines.append(f"    {k_display}{_DIM}:{_RESET}{padding} {v_str}")
-                else:
-                    lines.append(f"    {k_display}:{padding} {v_str}")
+                lines.append(f"    {k_display}{_DIM}:{_RESET}{padding} {v_str}")
             return lines
         else:
-            value_str = _format_value(value, use_color, resolver=resolver)
-            if not use_color:
-                return [f"  {'.'.join(formatted_path)} = {value_str}"]
+            value_str = fmt_value(value, path)
             if len(formatted_path) == 1:
                 return [
                     f"  {_ADD}{formatted_path[0]}{_RESET} {_DIM}={_RESET} {value_str}"
@@ -396,11 +375,9 @@ def _format_change_lines(
             ]
 
     # update: Existing item being updated - normal path colors
-    value_str = _format_value(value, use_color, resolver=resolver)
-    path_str = _format_path(path, use_color, resolver=resolver)
-    if use_color:
-        return [f"  {path_str} {_DIM}={_RESET} {value_str}"]
-    return [f"  {path_str} = {value_str}"]
+    value_str = fmt_value(value, path)
+    path_str = _format_path(path, resolver=resolver)
+    return [f"  {path_str} {_DIM}={_RESET} {value_str}"]
 
 
 def format_diff(
@@ -417,7 +394,6 @@ def format_diff(
     Returns a list of formatted lines (without newlines).
     UUIDs are replaced with display names (using previous state for lookups).
     """
-    use_color = _use_color()
     changes: list[tuple[str, list[str], Any]] = []
     _collect_changes(diff, [], changes, previous)
 
@@ -430,27 +406,18 @@ def format_diff(
     # Format each change
     lines = []
     for change_type, path, value in changes:
-        lines.extend(
-            _format_change_lines(change_type, path, value, use_color, resolver)
-        )
+        lines.extend(_format_change_lines(change_type, path, value, resolver))
 
     return lines
 
 
 def format_action_header(action: str, user_display: str | None = None) -> str:
     """Format the action header line."""
-    use_color = _use_color()
-
-    if use_color:
-        action_str = f"{_ACTION}{action}{_RESET}"
-        if user_display:
-            user_str = f"{_USER}{user_display}{_RESET}"
-            return f"{action_str} by {user_str}"
-        return action_str
-    else:
-        if user_display:
-            return f"{action} by {user_display}"
-        return action
+    action_str = f"{_ACTION}{action}{_RESET}"
+    if user_display:
+        user_str = f"{_USER}{user_display}{_RESET}"
+        return f"{action_str} by {user_str}"
+    return action_str
 
 
 def log_change(

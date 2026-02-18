@@ -8,11 +8,11 @@ from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import FileResponse, RedirectResponse
 from fastapi_vue import Frontend
 
-from paskia import globals
+from paskia import authcode, globals
 from paskia.__main__ import DEVMODE
 from paskia.db import start_background, stop_background
 from paskia.db.logging import configure_db_logging
-from paskia.fastapi import admin, api, auth_host, ws
+from paskia.fastapi import admin, api, auth_host, oid, ws
 from paskia.fastapi.logging import AccessLogMiddleware, configure_access_logging
 from paskia.fastapi.session import AUTH_COOKIE
 from paskia.util import hostutil, passphrase, vitedev
@@ -67,6 +67,7 @@ async def lifespan(app: FastAPI):  # pragma: no cover - startup path
     await start_background()
     yield
     await stop_background()
+    await authcode.stop()
 
 
 app = FastAPI(
@@ -87,11 +88,51 @@ app.middleware("http")(auth_host.redirect_middleware)
 app.mount("/auth/api/admin/", admin.app)
 app.mount("/auth/api/", api.app)
 app.mount("/auth/ws/", ws.app)
+app.mount("/auth/oidc/", oid.app)
 
 
-@app.get("/auth/restricted/")
+# OIDC Well-Known endpoints (must be at site root)
+@app.get("/.well-known/openid-configuration")
+async def openid_configuration(request: Request):
+    """OpenID Connect Discovery document."""
+    # Build issuer URL from request
+    scheme = request.headers.get("x-forwarded-proto", request.url.scheme)
+    host = request.headers.get("host", request.url.netloc)
+    issuer = f"{scheme}://{host}"
+
+    return {
+        "issuer": issuer,
+        "authorization_endpoint": f"{issuer}/auth/restricted/oidc",
+        "token_endpoint": f"{issuer}/auth/oidc/token",
+        "userinfo_endpoint": f"{issuer}/auth/oidc/userinfo",
+        "jwks_uri": f"{issuer}/auth/oidc/keys",
+        "backchannel_logout_supported": True,
+        "backchannel_logout_session_supported": True,
+        "response_types_supported": ["code"],
+        "grant_types_supported": ["authorization_code", "refresh_token"],
+        "subject_types_supported": ["public"],
+        "id_token_signing_alg_values_supported": ["EdDSA"],
+        "scopes_supported": ["openid", "profile", "email"],
+        "token_endpoint_auth_methods_supported": [
+            "client_secret_post",
+            "client_secret_basic",
+        ],
+        "code_challenge_methods_supported": ["S256"],
+        "claims_supported": [
+            "sub",
+            "name",
+            "preferred_username",
+            "email",
+            "groups",
+            "sid",
+        ],
+    }
+
+
+@app.get("/auth/restricted/iframe")
+@app.get("/auth/restricted/oidc")
 async def restricted_view():
-    """Serve the restricted/authentication UI for iframe embedding."""
+    """Serve the restricted/authentication UI for iframe or OpenID Connect."""
     return Response(*await vitedev.read("/auth/restricted/index.html"))
 
 

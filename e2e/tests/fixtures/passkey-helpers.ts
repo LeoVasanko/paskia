@@ -44,7 +44,7 @@ export interface UserInfo {
     sign_count: number
     is_current_session: boolean
   }>
-  aaguid_info: Record<string, { name: string; icon_light?: string; icon_dark?: string }>
+  aaguid_info: Record<string, { name: string; icon?: string; icon_dark?: string }>
   sessions: Array<{
     id: string
     credential: string
@@ -193,7 +193,8 @@ export async function registerPasskey(
   baseUrl: string,
   options: { resetToken?: string; displayName?: string } = {}
 ): Promise<RegistrationResult> {
-  return await page.evaluate(async ({ baseUrl, resetToken, displayName }) => {
+  // Step 1: Do WebSocket registration + exchange code in browser context
+  const wsResult = await page.evaluate(async ({ baseUrl, resetToken, displayName }) => {
     // Build WebSocket URL with query parameters
     let wsUrl = `${baseUrl.replace('http', 'ws')}/auth/ws/register`
     const params: string[] = []
@@ -203,6 +204,7 @@ export async function registerPasskey(
 
     return new Promise<any>((resolve, reject) => {
       const ws = new WebSocket(wsUrl)
+      let done = false
 
       ws.onopen = () => {
         console.log('WebSocket connected for registration')
@@ -213,15 +215,31 @@ export async function registerPasskey(
 
         // Check for error response
         if (data.detail) {
+          done = true
           ws.close()
           reject(new Error(data.detail))
           return
         }
 
-        // Check if this is the final success response
-        if (data.session_token) {
+        // Check if this is the final success response (exchange_code flow)
+        if (data.exchange_code) {
+          done = true
           ws.close()
-          resolve(data)
+          // Exchange the code for a session cookie
+          try {
+            const resp = await fetch(`${baseUrl}/auth/api/set-session`, {
+              method: 'POST',
+              headers: { 'Authorization': `Bearer ${data.exchange_code}` },
+            })
+            if (!resp.ok) throw new Error(`Exchange failed: ${resp.status}`)
+            resolve({
+              user: data.user,
+              credential: data.credential,
+              message: data.message || 'Registration successful',
+            })
+          } catch (err: any) {
+            reject(new Error(`Code exchange failed: ${err.message}`))
+          }
           return
         }
 
@@ -293,12 +311,21 @@ export async function registerPasskey(
       }
 
       ws.onclose = (event) => {
-        if (!event.wasClean && event.code !== 1000) {
+        if (!done && !event.wasClean && event.code !== 1000) {
           reject(new Error(`WebSocket closed unexpectedly: ${event.code}`))
         }
       }
     })
   }, { baseUrl, resetToken: options.resetToken, displayName: options.displayName })
+
+  // Step 2: Extract the session token from the cookie set by the exchange
+  const cookies = await page.context().cookies()
+  const cookieName = getSessionCookieName()
+  const sessionCookie = cookies.find(c => c.name === cookieName)
+  return {
+    ...wsResult,
+    session_token: sessionCookie?.value || '',
+  }
 }
 
 /**
@@ -309,11 +336,13 @@ export async function authenticatePasskey(
   page: Page,
   baseUrl: string
 ): Promise<AuthenticationResult> {
-  return await page.evaluate(async ({ baseUrl }) => {
+  // Step 1: Do WebSocket authentication + exchange code in browser context
+  const wsResult = await page.evaluate(async ({ baseUrl }) => {
     const wsUrl = `${baseUrl.replace('http', 'ws')}/auth/ws/authenticate`
 
     return new Promise<any>((resolve, reject) => {
       const ws = new WebSocket(wsUrl)
+      let done = false
 
       ws.onopen = () => {
         console.log('WebSocket connected for authentication')
@@ -324,15 +353,27 @@ export async function authenticatePasskey(
 
         // Check for error response
         if (data.detail) {
+          done = true
           ws.close()
           reject(new Error(data.detail))
           return
         }
 
-        // Check if this is the final success response
-        if (data.session_token) {
+        // Check if this is the final success response (exchange_code flow)
+        if (data.exchange_code) {
+          done = true
           ws.close()
-          resolve(data)
+          // Exchange the code for a session cookie
+          try {
+            const resp = await fetch(`${baseUrl}/auth/api/set-session`, {
+              method: 'POST',
+              headers: { 'Authorization': `Bearer ${data.exchange_code}` },
+            })
+            if (!resp.ok) throw new Error(`Exchange failed: ${resp.status}`)
+            resolve({ user: data.user })
+          } catch (err: any) {
+            reject(new Error(`Code exchange failed: ${err.message}`))
+          }
           return
         }
 
@@ -395,12 +436,21 @@ export async function authenticatePasskey(
       }
 
       ws.onclose = (event) => {
-        if (!event.wasClean && event.code !== 1000) {
+        if (!done && !event.wasClean && event.code !== 1000) {
           reject(new Error(`WebSocket closed unexpectedly: ${event.code}`))
         }
       }
     })
   }, { baseUrl })
+
+  // Step 2: Extract the session token from the cookie set by the exchange
+  const cookies = await page.context().cookies()
+  const cookieName = getSessionCookieName()
+  const sessionCookie = cookies.find(c => c.name === cookieName)
+  return {
+    ...wsResult,
+    session_token: sessionCookie?.value || '',
+  }
 }
 
 /**
@@ -429,7 +479,7 @@ export async function getUserInfo(
   sessionToken: string
 ): Promise<UserInfo> {
   const cookieName = getSessionCookieName()
-  const response = await page.request.post(`${baseUrl}/auth/api/user-info`, {
+  const response = await page.request.get(`${baseUrl}/auth/api/user-info`, {
     headers: {
       'Cookie': `${cookieName}=${sessionToken}`,
     },

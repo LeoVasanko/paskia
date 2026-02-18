@@ -13,6 +13,8 @@
           :visits="authStore.userInfo?.visits || 0"
           :created-at="authStore.userInfo?.created_at"
           :last-seen="authStore.userInfo?.last_seen"
+          :email="ctx.user.email"
+          :telephone="ctx.user.telephone"
           :org-display-name="orgDisplayName"
           :role-name="roleDisplayName"
           :can-edit="false"
@@ -78,9 +80,9 @@ const currentHost = window.location.host
 const userInfoSection = ref(null)
 const buttonRow = ref(null)
 
-const ctx = computed(() => authStore.userInfo?.ctx || null)
-const orgDisplayName = computed(() => ctx.value?.org.display_name ?? '')
-const roleDisplayName = computed(() => ctx.value?.role.display_name ?? '')
+const ctx = computed(() => authStore.userInfo || null)
+const orgDisplayName = computed(() => ctx.value?.org?.display_name ?? '')
+const roleDisplayName = computed(() => ctx.value?.role?.display_name ?? '')
 
 const headingTitle = computed(() => {
   const service = authStore.settings?.rp_name
