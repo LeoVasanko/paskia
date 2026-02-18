@@ -214,7 +214,12 @@ async def api_user_info(
         )
     ctx = db.data().session_ctx(auth, request.headers.get("host"))
     if not ctx:
-        raise HTTPException(401, "Session expired")
+        raise authz.AuthException(
+            status_code=401,
+            detail="Session expired",
+            mode="login",
+            clear_session=True,
+        )
 
     return MsgspecResponse(
         await userinfo.build_user_info(
