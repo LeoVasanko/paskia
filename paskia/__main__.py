@@ -6,7 +6,7 @@ import os
 from urllib.parse import urlparse
 
 from fastapi_vue import server
-from fastapi_vue.hostutil import parse_endpoint
+from fastapi_vue.hostutil import parse_endpoints
 
 from paskia import db
 from paskia import globals as _globals
@@ -56,6 +56,7 @@ def add_common_options(p: argparse.ArgumentParser) -> None:
         "--origin",
         action="append",
         dest="origins",
+        default=[],
         metavar="URL",
         help="Allowed origin URL(s). May be specified multiple times. If any are specified, only those origins are permitted for WebSocket authentication.",
     )
@@ -118,42 +119,25 @@ def main():
         args.listen = stored_config.listen
 
     # Parse first endpoint for config display and site_url
-    first_listen = args.listen[0] if isinstance(args.listen, list) else args.listen
-    endpoints = parse_endpoint(first_listen, DEFAULT_PORT)
+    ep = next(iter(parse_endpoints(args.listen, DEFAULT_PORT)), {})
+    host, port, uds = ep.get("host"), ep.get("port"), ep.get("uds")
 
-    # Extract host/port/uds from first endpoint for config display and site_url
-    ep = endpoints[0] if endpoints else {}
-    host = ep.get("host")
-    port = ep.get("port")
-    uds = ep.get("uds")
-
-    # Collect and normalize origins, handle auth_host
-    origins = [normalize_origin(o) for o in (getattr(args, "origins", None) or [])]
+    # Process and normalize auth_host
     if args.auth_host:
-        # Normalize auth_host with scheme
         if "://" not in args.auth_host:
             args.auth_host = f"https://{args.auth_host}"
-
+        args.auth_host = args.auth_host.rstrip("/")
         validate_auth_host(args.auth_host, args.rp_id)
+        args.origins.insert(0, args.auth_host)  # Ensure first in origins
 
-        # If origins are configured, ensure auth_host is included at top
-        if origins:
-            # Insert auth_host at the beginning
-            origins.insert(0, args.auth_host)
-
-    # Remove duplicates while preserving order
-    seen = set()
-    origins = [x for x in origins if not (x in seen or seen.add(x))]
+    # Normalize, strip trailing slashes, and deduplicate while preserving order
+    origins = list({normalize_origin(o).rstrip("/"): ... for o in (args.origins)})
 
     # Compute site_url and site_path for reset links
-    # Priority: PASKIA_SITE_URL (explicit) > auth_host > first origin with localhost > http://localhost:port
-    explicit_site_url = os.environ.get("PASKIA_SITE_URL")
-    if explicit_site_url:
-        # Explicit site URL from devserver or deployment config
-        site_url = explicit_site_url.rstrip("/")
-        site_path = "/" if args.auth_host else "/auth/"
-    elif args.auth_host:
-        site_url = args.auth_host.rstrip("/")
+    # Priority: auth_host > first configured origin > PASKIA_VITE_URL (devserver) > http://localhost:port > https://rp_id
+    site_path = "/auth/"
+    if args.auth_host:
+        site_url = args.auth_host
         site_path = "/"
     elif origins:
         # Find localhost origin if rp_id is localhost, else use first origin
@@ -162,15 +146,13 @@ def main():
             if args.rp_id == "localhost"
             else None
         )
-        site_url = (localhost_origin or origins[0]).rstrip("/")
-        site_path = "/auth/"
+        site_url = localhost_origin or origins[0]
+    elif vite_url := os.environ.get("PASKIA_VITE_URL"):
+        site_url = vite_url.rstrip("/")  # Devserver
     elif args.rp_id == "localhost" and port:
-        # Dev mode: use http with port
-        site_url = f"http://localhost:{port}"
-        site_path = "/auth/"
+        site_url = f"http://localhost:{port}"  # Backend directly if we can
     else:
-        site_url = f"https://{args.rp_id}"
-        site_path = "/auth/"
+        site_url = f"https://{args.rp_id}"  # Assume external reverse proxy
 
     # Build runtime configuration
     config = PaskiaConfig(
