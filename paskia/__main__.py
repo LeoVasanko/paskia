@@ -8,12 +8,8 @@ from urllib.parse import urlparse
 from fastapi_vue import server
 from fastapi_vue.hostutil import parse_endpoints
 
-from paskia import db
-from paskia import globals as _globals
-from paskia.bootstrap import bootstrap_if_needed
 from paskia.config import PaskiaConfig
-from paskia.db.background import flush
-from paskia.db.structs import Config
+from paskia.db.jsonl import load_readonly
 from paskia.util import startupbox
 from paskia.util.hostutil import normalize_origin
 
@@ -104,9 +100,10 @@ def main():
     if getattr(args, "listen", None) == "":
         args.listen = None
 
-    # Init db and load stored config
-    asyncio.run(db.init(rp_id=args.rp_id))
-    stored_config = db.data().config
+    # Read-only load to get stored config (no writes, no global state)
+    db_path = os.environ.get("PASKIA_DB", f"{args.rp_id}.paskiadb")
+    stored_db = asyncio.run(load_readonly(db_path, rp_id=args.rp_id))
+    stored_config = stored_db.config
 
     # Apply defaults from stored config
     if args.rp_name is None and stored_config.rp_name is not None:
@@ -168,6 +165,14 @@ def main():
     )
 
     # Export configuration via single JSON env variable for worker processes
+    # Include cli_config and save flag so lifespan can handle bootstrap/persistence
+    cli_config = {
+        "rp_id": args.rp_id,
+        "rp_name": args.rp_name,
+        "origins": args.origins,
+        "auth_host": args.auth_host,
+        "listen": args.listen,
+    }
     config_json = {
         "rp_id": config.rp_id,
         "rp_name": config.rp_name,
@@ -175,35 +180,12 @@ def main():
         "auth_host": config.auth_host,
         "site_url": config.site_url,
         "site_path": config.site_path,
+        "save": args.save,
+        "cli_config": cli_config,
     }
     os.environ["PASKIA_CONFIG"] = json.dumps(config_json)
 
     startupbox.print_startup_config(config)
-
-    # Build config to save (for bootstrap or explicit --save)
-    cli_config = Config(
-        rp_id=args.rp_id,
-        rp_name=args.rp_name,
-        origins=args.origins,
-        auth_host=args.auth_host,
-        listen=args.listen,
-    )
-
-    async def startup():
-        await _globals.init(
-            rp_id=config.rp_id,
-            rp_name=config.rp_name,
-            origins=config.origins,
-            bootstrap=False,
-        )
-        # Pass config to bootstrap - it will be saved within the bootstrap transaction
-        await bootstrap_if_needed(config=cli_config)
-        # Also save config if --save was explicitly used (even without bootstrap)
-        if args.save:
-            await db.update_config(cli_config)
-        await flush()
-
-    asyncio.run(startup())
 
     dev = {"reload": True, "reload_dirs": ["paskia"]} if DEVMODE else {}
     server.run(

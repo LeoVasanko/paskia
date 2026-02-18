@@ -90,7 +90,7 @@ async def start_background():
 
 
 async def stop_background():
-    """Stop the background task and flush any pending changes."""
+    """Stop the background task, flush pending changes, and release the file lock."""
     global _background_task
     if _background_task:
         _background_task.cancel()
@@ -99,6 +99,7 @@ async def stop_background():
         except asyncio.CancelledError:
             pass
         _background_task = None
+    _ops._store.close()
 
 
 # Aliases for backwards compatibility

@@ -45,6 +45,22 @@ migrations = sorted(
 DBVER = len(migrations)  # Used by bootstrap to set initial version
 
 
+def apply_migrations_readonly(
+    data_dict: dict,
+    current_version: int,
+    *,
+    rp_id: str = "localhost",
+) -> int:
+    """Apply migration functions in-place without persistence.
+
+    Returns the new version after all migrations.
+    """
+    while current_version < DBVER:
+        migrations[current_version](data_dict, rp_id=rp_id)
+        current_version += 1
+    return current_version
+
+
 async def apply_all_migrations(
     data_dict: dict,
     current_version: int,

@@ -18,13 +18,54 @@ import jsondiff
 import msgspec
 
 from paskia.db.logging import log_change
-from paskia.db.migrations import DBVER, apply_all_migrations
-from paskia.db.structs import DB, SessionContext
+from paskia.db.migrations import DBVER, apply_all_migrations, apply_migrations_readonly
+from paskia.db.structs import DB, Config, SessionContext
 
 _logger = logging.getLogger(__name__)
 
 # Default database path
 DB_PATH_DEFAULT = "paskia.jsonl"
+
+
+async def load_readonly(db_path: str, *, rp_id: str = "localhost") -> DB:
+    """Replay JSONL and apply migrations to produce a DB, without writing anything.
+
+    This is suitable for reading settings before the server starts.
+    Migrations are applied in-memory only; nothing is queued or flushed.
+    """
+    path = Path(db_path)
+    if not path.exists():
+        return DB(config=Config(rp_id=rp_id))
+
+    data_dict: dict = {}
+    version = 0
+    try:
+        async with aiofiles.open(path, "rb") as f:
+            content = await f.read()
+        for line_num, line in enumerate(content.split(b"\n"), 1):
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                change = msgspec.json.decode(line)
+                data_dict = jsondiff.patch(data_dict, change["diff"], marshal=True)
+                version = change.get("v", 0)
+            except Exception as e:
+                raise ValueError(f"Error parsing line {line_num}: {e}")
+    except OSError as e:
+        raise SystemExit(f"Failed to load database: {e}")
+    except (ValueError, msgspec.DecodeError) as e:
+        raise SystemExit(f"Failed to load database: {e}")
+
+    if not data_dict:
+        return DB(config=Config(rp_id=rp_id))
+
+    # Apply migrations in-memory (no persistence)
+    apply_migrations_readonly(data_dict, version, rp_id=rp_id)
+
+    # Decode to msgspec struct
+    db = msgspec.json.decode(msgspec.json.encode(data_dict), type=DB)
+    return db
 
 
 class _ChangeRecord(msgspec.Struct, omit_defaults=True):
