@@ -27,6 +27,7 @@ from paskia.db.background import (
     stop_cleanup,
 )
 from paskia.db.bootstrap import bootstrap
+from paskia.db.jsonl import load_readonly
 from paskia.db.lifecycle import cleanup_expired, init
 from paskia.db.operations import (
     add_permission_to_org,
@@ -102,6 +103,7 @@ __all__ = [
     # Instance
     "data",
     "init",
+    "load_readonly",
     # Background
     "start_background",
     "stop_background",

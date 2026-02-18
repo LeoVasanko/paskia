@@ -7,10 +7,13 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import FileResponse, RedirectResponse
 
-from paskia import authcode, globals
+from paskia import authcode, db, globals
 from paskia.__main__ import DEVMODE
+from paskia.bootstrap import bootstrap_if_needed
 from paskia.db import start_background, stop_background
+from paskia.db.background import flush
 from paskia.db.logging import configure_db_logging
+from paskia.db.structs import Config
 from paskia.fastapi import admin, api, auth_host, oid, ws
 
 # Import frontend instance
@@ -40,7 +43,6 @@ async def lifespan(app: FastAPI):  # pragma: no cover - startup path
     config = json.loads(os.environ["PASKIA_CONFIG"])
 
     try:
-        # CLI (__main__) performs bootstrap once; here we skip to avoid duplicate work
         await globals.init(
             rp_id=config["rp_id"],
             rp_name=config["rp_name"],
@@ -51,6 +53,15 @@ async def lifespan(app: FastAPI):  # pragma: no cover - startup path
         logging.error(f"⚠️ {e}")
         # Re-raise to fail fast
         raise
+
+    # Bootstrap and persist config now that the full DB is loaded
+    cli_config_data = config.get("cli_config")
+    if cli_config_data:
+        cli_config = Config(**cli_config_data)
+        await bootstrap_if_needed(config=cli_config)
+        if config.get("save"):
+            await db.update_config(cli_config)
+        await flush()
 
     # Restore uvicorn info logging (suppressed during startup in dev mode)
     # Keep uvicorn.error at WARNING to suppress WebSocket "connection open/closed" messages
