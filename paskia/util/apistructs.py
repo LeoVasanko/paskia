@@ -171,11 +171,12 @@ class ApiSettings(msgspec.Struct):
     version: str
 
 
-class ApiTokenInfo(msgspec.Struct):
+class ApiTokenInfo(msgspec.Struct, omit_defaults=True):
     """Token info response struct."""
 
     token_type: str
     display_name: str
+    theme: str = ""
 
 
 class ApiUuidResponse(msgspec.Struct):

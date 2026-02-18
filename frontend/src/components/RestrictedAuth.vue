@@ -61,6 +61,7 @@ import { getSettings, uiBasePath } from '@/utils/settings'
 import { fetchJson, getUserFriendlyErrorMessage } from 'paskia'
 import RemoteAuthRequest from '@/components/RemoteAuthRequest.vue'
 import { focusDialogButton } from '@/utils/keynav'
+import { updateThemeFromSession } from '@/utils/theme'
 
 const props = defineProps({
   mode: {
@@ -147,6 +148,7 @@ async function fetchSettings() {
 async function validateSession() {
   try {
     session.value = await fetchJson('/auth/api/validate', { method: 'POST' })
+    updateThemeFromSession(session.value?.ctx)
     if (isAuthenticated.value && props.mode !== 'reauth') {
       currentView.value = 'forbidden'
       emit('forbidden', session.value)

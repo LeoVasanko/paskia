@@ -1,9 +1,9 @@
-// Early theme for restricted app - first URL param wins, then localStorage
+// Early theme for restricted app - user preference (localStorage) wins, then URL param
 import { applyTheme, getCachedTheme } from '@/utils/theme.js'
 
 function getTheme() {
   const params = new URLSearchParams(location.hash.slice(1))
-  return params.get('theme') || getCachedTheme() || ''
+  return getCachedTheme() || params.get('theme') || ''
 }
 
 // Apply theme class to document root

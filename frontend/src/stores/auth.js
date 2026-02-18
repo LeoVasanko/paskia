@@ -88,7 +88,7 @@ export const useAuthStore = defineStore('auth', {
     async loadUserInfo() {
       try {
         this.userInfo = await apiJson('/auth/api/user-info', { method: 'GET' })
-        updateThemeFromSession(this.ctx)
+        updateThemeFromSession(this.userInfo)
         console.log('User info loaded:', this.userInfo)
       } catch (error) {
         // Suppress toast for 401/403 errors - the auth iframe will handle these

@@ -14,6 +14,7 @@ import AdminDialogs from '@/admin/AdminDialogs.vue'
 import { useAuthStore } from '@/stores/auth'
 import { adminUiPath, makeUiHref } from '@/utils/settings'
 import { apiJson, SessionValidator } from 'paskia'
+import { updateThemeFromSession } from '@/utils/theme'
 import { uuidv7 } from 'uuidv7'
 import { getDirection } from '@/utils/keynav'
 import { goBack } from '@/utils/helpers'
@@ -197,6 +198,7 @@ function orgUserCount(org) {
 async function loadUserInfo() {
   const data = await apiJson('/auth/api/validate', { method: 'POST' })
   info.value = data
+  updateThemeFromSession(data.ctx)
   authenticated.value = true
 }
 

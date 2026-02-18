@@ -60,6 +60,7 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import passkey from '@/utils/passkey'
 import { getSettings, uiBasePath } from '@/utils/settings'
 import { apiJson, ApiError, getUserFriendlyErrorMessage } from 'paskia'
+import { updateThemeFromSession } from '@/utils/theme'
 
 const status = reactive({
   show: false,
@@ -117,6 +118,7 @@ async function fetchTokenInfo() {
       headers: { 'Authorization': `Bearer ${token.value}` },
     })
     displayName.value = tokenInfo.value.display_name
+    if (tokenInfo.value.theme) updateThemeFromSession({ user: { theme: tokenInfo.value.theme } })
   } catch (error) {
     console.error('Failed to load token info', error)
     const message = error instanceof ApiError
