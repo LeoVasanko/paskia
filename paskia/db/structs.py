@@ -5,12 +5,14 @@ import secrets
 from datetime import UTC, datetime
 from uuid import UUID
 
+import base64url
 import msgspec
 import uuid7
 
 from paskia import db
 from paskia.util import hostutil
 from paskia.util import passphrase as passphrase_util
+from paskia.util.crypto import hash_secret
 
 # Sentinel for uuid fields before they are set by create() or DB post init
 _UUID_UNSET = UUID(int=0)
@@ -194,10 +196,10 @@ class Role(msgspec.Struct, dict=True, omit_defaults=True):
         return role
 
 
-class User(msgspec.Struct, dict=True, omit_defaults=False, kw_only=True):
+class User(msgspec.Struct, dict=True, omit_defaults=True, kw_only=True):
     """User data structure.
 
-    Mutable fields: display_name, role_uuid, last_seen, visits, theme
+    Mutable fields: display_name, role_uuid, last_seen, visits, theme, email, preferred_username
     Immutable fields: created_at (set at creation, never modified)
     uuid is derived from created_at using uuid7.
     """
@@ -208,6 +210,9 @@ class User(msgspec.Struct, dict=True, omit_defaults=False, kw_only=True):
     visits: int
     last_seen: datetime | None = None
     theme: str = ""
+    email: str | None = None  # OIDC email claim
+    preferred_username: str | None = None  # OIDC preferred_username claim
+    telephone: str | None = None  # Telephone number
 
     def __post_init__(self):
         if not hasattr(self, "uuid"):
@@ -356,12 +361,17 @@ class Credential(msgspec.Struct, dict=True):
         return cred
 
 
-class Session(msgspec.Struct, dict=True):
+class Session(msgspec.Struct, dict=True, omit_defaults=True):
     """Session data structure.
 
-    Mutable fields: expiry (updated on session refresh)
-    Immutable fields: user_uuid, credential_uuid, host, ip, user_agent
-    key is stored in the dict key, not in the struct.
+    Mutable fields: validated (updated on session refresh)
+    Immutable fields: user_uuid, credential_uuid, host, ip, user_agent, client_uuid
+    key is the hashed db_key, stored in the dict key, not in the struct.
+
+    If client_uuid is set, this is an OIDC session.
+
+    Security: The database stores only derived keys, never the raw secret.
+    A database leak does not expose working session credentials.
     """
 
     user_uuid: UUID = msgspec.field(name="user")
@@ -369,7 +379,8 @@ class Session(msgspec.Struct, dict=True):
     host: str
     ip: str
     user_agent: str
-    expiry: datetime
+    validated: datetime
+    client_uuid: UUID | None = msgspec.field(name="client", default=None)
 
     def __post_init__(self):
         if not hasattr(self, "key"):
@@ -390,7 +401,7 @@ class Session(msgspec.Struct, dict=True):
         return {
             "ip": self.ip,
             "user_agent": self.user_agent,
-            "expiry": self.expiry.isoformat(),
+            "validated": self.validated.isoformat(),
         }
 
     def store(self, last_seen: datetime) -> None:
@@ -413,25 +424,37 @@ class Session(msgspec.Struct, dict=True):
         cls,
         user: UUID | User,
         credential: UUID | Credential,
+        key: str,
         host: str,
         ip: str,
         user_agent: str,
-        expiry: datetime,
+        validated: datetime,
+        client: UUID | None = None,
     ) -> Session:
-        """Create a new Session with auto-generated key."""
+        """Create a new Session with the provided key.
+
+        Args:
+            key: The base64url-encoded hashed session key (derived from secret via hash_secret then base64url.enc)
+
+        Returns:
+            Session object with key set
+        """
+
         user_uuid = user if isinstance(user, UUID) else user.uuid
         credential_uuid = (
             credential if isinstance(credential, UUID) else credential.uuid
         )
+
         session = cls(
             user_uuid=user_uuid,
             credential_uuid=credential_uuid,
             host=host,
             ip=ip,
             user_agent=user_agent,
-            expiry=expiry,
+            validated=validated,
+            client_uuid=client,
         )
-        session.key = secrets.token_urlsafe(12)
+        session.key = key
         return session
 
 
@@ -458,6 +481,10 @@ class ResetToken(msgspec.Struct, dict=True):
     def store(self) -> None:
         """Store this reset token in the database. Must be called inside a transaction."""
         db.data().reset_tokens[self.key] = self
+
+    def delete(self) -> None:
+        """Delete this reset token from the database. Must be called inside a transaction."""
+        del db.data().reset_tokens[self.key]
 
     @staticmethod
     def hash(passphrase: str) -> bytes:
@@ -509,6 +536,58 @@ class ResetToken(msgspec.Struct, dict=True):
         return token, passphrase
 
 
+# -------------------------------------------------------------------------
+# OIDC Provider structures
+# -------------------------------------------------------------------------
+
+
+class Client(msgspec.Struct, dict=True, omit_defaults=True):
+    """OIDC client (relying party) registration.
+
+    client_id is the dict key (UUID).
+    """
+
+    client_secret_hash: bytes
+    name: str
+    redirect_uris: list[str]
+    backchannel_logout_uri: str | None = None
+
+    def __post_init__(self):
+        if not hasattr(self, "uuid"):
+            self.uuid: UUID = _UUID_UNSET
+
+    @classmethod
+    def create(
+        cls,
+        name: str,
+        redirect_uris: list[str],
+        client_secret: str,
+        created_at: datetime | None = None,
+        backchannel_logout_uri: str | None = None,
+    ) -> tuple[Client, str]:
+        """Create a new OIDClient with hashed secret.
+
+        Returns (client, client_secret) tuple.
+        """
+        now = created_at or datetime.now(UTC)
+        secret_hash = hashlib.sha256(client_secret.encode()).digest()
+        client = cls(
+            client_secret_hash=secret_hash,
+            name=name,
+            redirect_uris=redirect_uris,
+            backchannel_logout_uri=backchannel_logout_uri,
+        )
+        client.uuid = uuid7.create(now)
+        return client, client_secret
+
+    def verify_secret(self, client_secret: str) -> bool:
+        """Verify a client secret against stored hash."""
+        return secrets.compare_digest(
+            self.client_secret_hash,
+            hashlib.sha256(client_secret.encode()).digest(),
+        )
+
+
 class SessionContext(msgspec.Struct):
     session: Session
     user: User
@@ -516,6 +595,11 @@ class SessionContext(msgspec.Struct):
     role: Role
     credential: Credential
     permissions: list[Permission] = []
+
+
+class OIDC(msgspec.Struct, dict=True):
+    clients: dict[UUID, Client] = {}
+    key: bytes | None = None
 
 
 class Config(msgspec.Struct, frozen=True, dict=True, omit_defaults=True):
@@ -544,6 +628,8 @@ class DB(msgspec.Struct, dict=True, omit_defaults=False):
     credentials: dict[UUID, Credential] = {}
     sessions: dict[str, Session] = {}
     reset_tokens: dict[bytes, ResetToken] = {}
+    # OIDC provider data
+    oidc: OIDC = msgspec.field(default_factory=lambda: OIDC())
 
     def __post_init__(self):
         # Store reference for persistence (not serialized)
@@ -563,26 +649,35 @@ class DB(msgspec.Struct, dict=True, omit_defaults=False):
             session.key = key
         for key, token in self.reset_tokens.items():
             token.key = key
+        # OIDC
+        for uuid, client in self.oidc.clients.items():
+            client.uuid = uuid
 
     def transaction(self, action, ctx=None, *, user=None):
         """Wrap writes in transaction. Delegates to JsonlStore."""
         return self._store.transaction(action, ctx, user=user)
 
     def session_ctx(
-        self, session_key: str, host: str | None = None
+        self, session_secret: str, host: str | None = None
     ) -> SessionContext | None:
         """Get full session context with effective permissions.
 
         Args:
-            session_key: The session key string
+            session_secret: The session secret (cookie value) - will be hashed for lookup
             host: Optional host for binding/validation and domain-scoped permissions
 
         Returns:
             SessionContext if valid, None if session not found, expired, or host mismatch
         """
+
+        key = base64url.enc(hash_secret("cookie", session_secret))
         try:
-            s = self.sessions[session_key]
+            s = self.sessions[key]
         except KeyError:
+            return None
+
+        # OIDC sessions (client_uuid set) are not valid for cookie-based auth
+        if s.client_uuid is not None:
             return None
 
         # Normalize host for comparison (stored hosts are already normalized)

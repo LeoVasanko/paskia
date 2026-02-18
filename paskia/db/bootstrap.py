@@ -8,6 +8,7 @@ import uuid7
 
 import paskia.db.operations as _ops
 from paskia.db.structs import Config, Org, Permission, ResetToken, Role, User
+from paskia.util.crypto import secret_key
 
 
 def bootstrap(
@@ -119,5 +120,8 @@ def bootstrap(
         # Set config if provided
         if config is not None:
             _ops._db.config = config
+
+        # Generate OIDC signing key
+        _ops._db.oidc.key = secret_key()
 
     return reset_passphrase

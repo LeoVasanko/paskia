@@ -16,16 +16,22 @@ const permMatrixRef = ref(null)
 const rolesGridRef = ref(null)
 
 const sortedRoles = computed(() => {
-  return Object.entries(props.selectedOrg.roles)
-    .map(([uuid, r]) => ({ uuid, ...r }))
-    .sort((a, b) => {
-      const nameA = a.display_name.toLowerCase()
-      const nameB = b.display_name.toLowerCase()
-      if (nameA !== nameB) {
-        return nameA.localeCompare(nameB)
-      }
-      return a.uuid.localeCompare(b.uuid)
-    })
+  // o.roles is dict[UUID, Role], convert to array for sorting with uuid added
+  return Object.entries(props.selectedOrg.roles).map(([uuid, r]) => ({ uuid, ...r })).sort((a, b) => {
+    const nameA = a.display_name.toLowerCase()
+    const nameB = b.display_name.toLowerCase()
+    if (nameA !== nameB) {
+      return nameA.localeCompare(nameB)
+    }
+    return a.uuid.localeCompare(b.uuid)
+  })
+})
+
+// Get org's grantable permissions as full permission objects (with UUIDs)
+const orgPermissions = computed(() => {
+  // props.selectedOrg.permissions is dict[UUID, Permission]
+  const uuidSet = new Set(Object.keys(props.selectedOrg.permissions || {}))
+  return props.permissions.filter(p => uuidSet.has(p.uuid))
 })
 
 // Get users for a role as sorted array of { uuid, ...user }
@@ -44,19 +50,12 @@ function roleUserCount(roleUuid) {
   return Object.values(props.selectedOrg.users).filter(u => u.role === roleUuid).length
 }
 
-// Get org's grantable permissions as full permission objects (with UUIDs)
-const orgPermissions = computed(() => {
-  return Object.entries(props.selectedOrg.permissions)
-    .map(([uuid, p]) => ({ uuid, ...p }))
-    .sort((a, b) => a.scope.localeCompare(b.scope))
-})
-
 function permissionDisplayName(scope) {
   return props.permissions.find(p => p.scope === scope)?.display_name || scope
 }
 
-function toggleRolePermission(roleUuid, role, pid, checked) {
-  emit('toggleRolePermission', roleUuid, role, pid, checked)
+function toggleRolePermission(role, pid, checked) {
+  emit('toggleRolePermission', role, pid, checked)
 }
 
 // Handle org title header keynav
@@ -102,7 +101,7 @@ function handleMatrixKeydown(event) {
 
   // Calculate grid dimensions
   const cols = sortedRoles.value.length
-  const rows = props.selectedOrg.permissions.length
+  const rows = Object.keys(props.selectedOrg.permissions).length
 
   const currentRow = Math.floor(currentIndex / cols)
   const currentCol = currentIndex % cols
@@ -238,7 +237,7 @@ function handleRoleHeaderKeydown(event, roleIndex) {
     if (checkboxes?.length) {
       // Focus the checkbox in the corresponding column
       const cols = sortedRoles.value.length
-      const rows = props.selectedOrg.permissions.length
+      const rows = Object.keys(props.selectedOrg.permissions).length
       const targetIndex = (rows - 1) * cols + roleIndex
       if (checkboxes[targetIndex]) checkboxes[targetIndex].focus()
       else checkboxes[checkboxes.length - 1].focus()
@@ -337,7 +336,7 @@ defineExpose({ focusFirstElement })
               <input
                 type="checkbox"
                 :checked="p.uuid in (r.permissions || {})"
-                @change="e => toggleRolePermission(r.uuid, r, p.uuid, e.target.checked)"
+                @change="e => toggleRolePermission(r, p.uuid, e.target.checked)"
               />
             </div>
             <div class="matrix-cell add-role-cell" />
@@ -352,13 +351,13 @@ defineExpose({ focusFirstElement })
         :key="r.uuid"
         class="role-column"
         @dragover="$emit('onRoleDragOver', $event)"
-        @drop="e => $emit('onRoleDrop', e, selectedOrg, r.uuid)"
+        @drop="e => $emit('onRoleDrop', e, selectedOrg, r)"
       >
         <div class="role-header" @keydown="e => handleRoleHeaderKeydown(e, roleIndex)">
           <strong class="role-name" :title="r.uuid">
             <span>{{ r.display_name }}</span>
             <button @click="$emit('updateRole', r)" class="icon-btn" aria-label="Edit role" title="Edit role">✏️</button>
-            <button v-if="roleUserCount(r.uuid) === 0" @click="$emit('deleteRole', r.uuid, r)" class="icon-btn delete-icon" aria-label="Delete role" title="Delete role">❌</button>
+            <button v-if="roleUserCount(r.uuid) === 0" @click="$emit('deleteRole', r)" class="icon-btn delete-icon" aria-label="Delete role" title="Delete role">❌</button>
           </strong>
           <div class="role-actions">
             <button @click="$emit('createUserInRole', selectedOrg, r)" class="plus-btn" aria-label="Add user" title="Add user">➕</button>

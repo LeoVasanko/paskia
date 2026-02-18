@@ -15,7 +15,7 @@ For integrating Paskia with your app frontend, see [integration](Integration.md)
 | Method | Path | Used for | Notes |
 |---:|---|---|---|
 | GET | `/auth/api/settings` | Paskia configuration | Returns RP info + base paths + session cookie name |
-| POST | `/auth/api/user-info` | Full user profile | Basic information, credentials, sessions, permissions |
+| GET | `/auth/api/user-info` | Full user profile | Basic information, credentials, sessions, permissions |
 | POST | `/auth/api/logout` | Terminate session and delete session cookie | Signs out of the current site |
 | POST | `/auth/api/validate` | Validate and renew session cookie | Optional query: `perm=` (repeatable), `max_age=` |
 | GET | `/auth/api/forward` | Validate access (Caddy/Nginx) | 204 on success; 401/403 otherwise (HTML if requested) |

@@ -771,7 +771,6 @@ defineExpose({ reset, deny, code, handleInput, loading, error })
 .input-wrapper {
   position: relative;
   display: flex;
-  width: 280px;
   max-width: 100%;
 }
 

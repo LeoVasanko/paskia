@@ -1,6 +1,6 @@
 from typing import Generic, TypeVar
 
-from paskia import db, remoteauth
+from paskia import authcode, db, remoteauth
 from paskia.bootstrap import bootstrap_if_needed
 from paskia.sansio import Passkey
 
@@ -57,6 +57,9 @@ async def init(
 
     # Initialize remote auth manager
     await remoteauth.init()
+
+    # Initialize auth code manager
+    await authcode.start()
 
     if bootstrap:
         # Bootstrap system if needed

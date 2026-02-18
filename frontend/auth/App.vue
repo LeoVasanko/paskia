@@ -47,7 +47,6 @@ const isHostMode = computed(() => {
   const configuredHost = normalizeHost(authHost)
   return currentHost !== configuredHost
 })
-const userUuid = computed(() => store.userInfo?.ctx.user.uuid)
 
 function terminateSession() {
   store.userInfo = null
@@ -64,7 +63,7 @@ async function loadUserInfo() {
   try {
     const [validateData, userInfoData] = await Promise.all([
       apiJson('/auth/api/validate', { method: 'POST' }),
-      apiJson('/auth/api/user-info', { method: 'POST' })
+      apiJson('/auth/api/user-info', { method: 'GET' })
     ])
     store.userInfo = userInfoData
     store.ctx = validateData.ctx

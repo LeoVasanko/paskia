@@ -6,11 +6,13 @@ from fastapi.responses import JSONResponse
 
 from paskia import aaguid as aaguid_mod
 from paskia import db
-from paskia.authsession import EXPIRES, reset_expires
+from paskia.authsession import reset_expires
 from paskia.db import Org as OrgDC
 from paskia.db import Permission as PermDC
 from paskia.db import Role as RoleDC
 from paskia.db import User as UserDC
+from paskia.db.operations import _UNSET
+from paskia.db.structs import Client
 from paskia.fastapi import authz
 from paskia.fastapi.response import MsgspecResponse
 from paskia.fastapi.session import AUTH_COOKIE
@@ -23,14 +25,17 @@ from paskia.util import (
 )
 from paskia.util.apistructs import (
     ApiAaguidInfo,
+    ApiAdminInfo,
     ApiCreateLinkResponse,
+    ApiOidcClient,
+    ApiOrg,
     ApiOrgResponse,
     ApiPermission,
+    ApiRole,
     ApiUser,
     ApiUserDetail,
     ApiUserSession,
     ApiUuidResponse,
-    format_datetime,
 )
 from paskia.util.hostutil import normalize_host
 
@@ -77,31 +82,6 @@ async def adminapp(request: Request, auth=AUTH_COOKIE):
 
 
 # -------------------- Organizations --------------------
-
-
-@app.get("/orgs")
-async def admin_list_orgs(request: Request, auth=AUTH_COOKIE):
-    ctx = await authz.verify(
-        auth,
-        ["auth:admin", "auth:org:admin"],
-        match=permutil.has_any,
-        host=request.headers.get("host"),
-    )
-    orgs = list(db.data().orgs.values())
-    if not master_admin(ctx):
-        # Org admins can only see their own organization
-        orgs = [o for o in orgs if o.uuid == ctx.org.uuid]
-
-    def org_to_dict(o):
-        roles = o.roles
-        return ApiOrgResponse(
-            org=o,
-            permissions={p.uuid: p for p in o.permissions},
-            roles={r.uuid: r for r in roles},
-            users={u.uuid: u for r in roles for u in r.users},
-        )
-
-    return MsgspecResponse({o.uuid: org_to_dict(o) for o in orgs})
 
 
 @app.post("/orgs")
@@ -532,7 +512,7 @@ async def admin_create_user_registration_link(
     return MsgspecResponse(
         ApiCreateLinkResponse(
             url=url,
-            expires=format_datetime(expiry),
+            expires=expiry,
             token_type=token_type,
         )
     )
@@ -560,15 +540,14 @@ async def admin_get_user_detail(
         )
     normalized_host = hostutil.normalize_host(request.headers.get("host"))
 
-    sessions = [
-        ApiUserSession.from_db(
+    sessions = {
+        s.key: ApiUserSession.from_db(
             s,
-            current_key=auth,
+            current_key=ctx.session.key,
             normalized_host=normalized_host,
-            expires_delta=EXPIRES,
         )
         for s in user.sessions
-    ]
+    }
 
     return MsgspecResponse(
         ApiUserDetail(
@@ -581,17 +560,23 @@ async def admin_get_user_detail(
                 ).items()
             },
             sessions=sessions,
+            org=ApiOrg.from_db(user.org),
+            role=ApiRole.from_db(user.role),
         )
     )
 
 
-@app.patch("/users/{user_uuid}/display-name")
-async def admin_update_user_display_name(
+@app.patch("/users/{user_uuid}/info")
+async def admin_update_user_info(
     user_uuid: UUID,
     request: Request,
     payload: dict = Body(...),
     auth=AUTH_COOKIE,
 ):
+    """Update user profile info (display_name, email, preferred_username, telephone).
+
+    Pass only the fields you want to update. Use null to clear optional fields.
+    """
     try:
         user = db.data().users[user_uuid]
     except KeyError:
@@ -606,12 +591,26 @@ async def admin_update_user_display_name(
         raise authz.AuthException(
             status_code=403, detail="Insufficient permissions", mode="forbidden"
         )
-    new_name = (payload.get("display_name") or "").strip()
-    if not new_name:
-        raise HTTPException(status_code=400, detail="display_name required")
-    if len(new_name) > 64:
-        raise HTTPException(status_code=400, detail="display_name too long")
-    db.update_user_display_name(user_uuid, new_name, ctx=ctx)
+
+    kwargs = {}
+    if "display_name" in payload:
+        name = (payload["display_name"] or "").strip()
+        if not name:
+            raise HTTPException(status_code=400, detail="display_name cannot be empty")
+        if len(name) > 64:
+            raise HTTPException(status_code=400, detail="display_name too long")
+        kwargs["display_name"] = name
+    if "email" in payload:
+        kwargs["email"] = payload["email"]
+    if "preferred_username" in payload:
+        kwargs["preferred_username"] = payload["preferred_username"]
+    if "telephone" in payload:
+        kwargs["telephone"] = payload["telephone"]
+
+    if not kwargs:
+        raise HTTPException(status_code=400, detail="No fields to update")
+
+    db.update_user_info(user_uuid, **kwargs, ctx=ctx)
     return {"status": "ok"}
 
 
@@ -692,14 +691,16 @@ async def admin_delete_user_session(
             status_code=403, detail="Insufficient permissions", mode="forbidden"
         )
 
-    target_session = db.data().sessions.get(session_id)
+    session_key = session_id
+
+    target_session = db.data().sessions.get(session_key)
     if not target_session or target_session.user_uuid != user_uuid:
         raise HTTPException(status_code=404, detail="Session not found")
 
-    db.delete_session(session_id, ctx=ctx, action="admin:delete_session")
+    db.delete_session(session_key, ctx=ctx, action="admin:delete_session")
 
     # Check if admin terminated their own session
-    current_terminated = session_id == auth
+    current_terminated = session_key == ctx.session.key
     return {"status": "ok", "current_session_terminated": current_terminated}
 
 
@@ -707,14 +708,24 @@ async def admin_delete_user_session(
 
 
 def _validate_permission_domain(domain: str | None) -> None:
-    """Validate that domain is rp_id or a subdomain of it."""
+    """Validate that domain is rp_id, a subdomain of it, or an OIDC client UUID."""
     if domain is None:
         return
+
+    # Allow OIDC client UUIDs (used for groups claim)
+    try:
+        client_uuid = UUID(domain)
+        if client_uuid in db.data().oidc.clients:
+            return
+    except ValueError:
+        pass
 
     rp_id = passkey.instance.rp_id
     if domain == rp_id or domain.endswith(f".{rp_id}"):
         return
-    raise ValueError(f"Domain '{domain}' must be '{rp_id}' or its subdomain")
+    raise ValueError(
+        f"Domain '{domain}' must be '{rp_id}', its subdomain, or an OIDC client UUID"
+    )
 
 
 def _check_admin_lockout(
@@ -788,16 +799,62 @@ def _check_admin_lockout_on_delete(perm_uuid: str, current_host: str | None) -> 
     )
 
 
-@app.get("/permissions")
-async def admin_list_permissions(request: Request, auth=AUTH_COOKIE):
+@app.get("/info")
+async def admin_info(request: Request, auth=AUTH_COOKIE):
     ctx = await authz.verify(
         auth,
         ["auth:admin", "auth:org:admin"],
         match=permutil.has_any,
         host=request.headers.get("host"),
     )
+
+    # Orgs
+    orgs = list(db.data().orgs.values())
+    if not master_admin(ctx):
+        # Org admins can only see their own organization
+        orgs = [o for o in orgs if o.uuid == ctx.org.uuid]
+
+    def org_to_dict(o):
+        roles = o.roles
+        return ApiOrgResponse(
+            org=ApiOrg.from_db(o),
+            permissions={p.uuid: p for p in o.permissions},
+            roles={r.uuid: r for r in roles},
+            users={u.uuid: u for r in roles for u in r.users},
+        )
+
+    orgs_dict = {o.uuid: org_to_dict(o) for o in orgs}
+
+    # Permissions
     perms = db.data().permissions.values() if master_admin(ctx) else ctx.org.permissions
-    return MsgspecResponse({p.uuid: ApiPermission.from_db(p) for p in perms})
+    perms_dict = {p.uuid: ApiPermission.from_db(p) for p in perms}
+
+    # OIDC Clients (master admin only)
+    oidc_clients_dict = {}
+    if master_admin(ctx):
+        clients = sorted(db.data().oidc.clients.values(), key=lambda c: c.uuid)
+        sessions = db.data().sessions
+        # Count active sessions per client
+        client_session_counts = {}
+        for session in sessions.values():
+            if session.client_uuid:
+                client_session_counts[session.client_uuid] = (
+                    client_session_counts.get(session.client_uuid, 0) + 1
+                )
+        oidc_clients_dict = {
+            client.uuid: ApiOidcClient.from_db(
+                client, client_session_counts.get(client.uuid, 0)
+            )
+            for client in clients
+        }
+
+    return MsgspecResponse(
+        ApiAdminInfo(
+            orgs=orgs_dict,
+            permissions=perms_dict,
+            oidc_clients=oidc_clients_dict,
+        )
+    )
 
 
 @app.post("/permissions")
@@ -896,4 +953,225 @@ async def admin_delete_permission(
         _check_admin_lockout_on_delete(str(perm.uuid), request.headers.get("host"))
 
     db.delete_permission(permission_uuid, ctx=ctx)
+    return {"status": "ok"}
+
+
+# -------------------- OIDC Clients --------------------
+
+
+@app.post("/oidc-clients")
+async def admin_create_oidc_client(
+    request: Request,
+    payload: dict = Body(...),
+    auth=AUTH_COOKIE,
+):
+    """Create a new OIDC client (master admin only)."""
+    ctx = await authz.verify(
+        auth,
+        ["auth:admin"],
+        host=request.headers.get("host"),
+        match=permutil.has_all,
+        max_age="5m",
+    )
+    if not master_admin(ctx):
+        raise authz.AuthException(
+            status_code=403,
+            detail="Only master admin can manage OIDC clients",
+            mode="forbidden",
+        )
+
+    # Client ID and secret hash are generated client-side
+    client_id = payload.get("client_id", "").strip()
+    secret_hash_hex = payload.get("secret_hash", "").strip()
+    name = payload.get("name", "").strip()
+    redirect_uris = payload.get("redirect_uris", [])
+    backchannel_logout_uri = payload.get("backchannel_logout_uri")
+    if isinstance(backchannel_logout_uri, str):
+        backchannel_logout_uri = backchannel_logout_uri.strip() or None
+
+    if not client_id or not secret_hash_hex:
+        raise ValueError("client_id and secret_hash are required")
+
+    try:
+        client_uuid = UUID(client_id)
+    except (ValueError, AttributeError):
+        raise ValueError("client_id must be a valid UUID")
+
+    try:
+        secret_hash = bytes.fromhex(secret_hash_hex)
+    except ValueError:
+        raise ValueError("secret_hash must be a hex-encoded SHA-256 hash")
+    if len(secret_hash) != 32:
+        raise ValueError("secret_hash must be a SHA-256 hash (32 bytes)")
+
+    if not isinstance(redirect_uris, list):
+        raise ValueError("redirect_uris must be a list")
+
+    # Validate redirect URIs
+    for uri in redirect_uris:
+        if not isinstance(uri, str) or not uri.startswith("http"):
+            raise ValueError(f"Invalid redirect URI: {uri}")
+
+    if backchannel_logout_uri and not backchannel_logout_uri.startswith("http"):
+        raise ValueError("backchannel_logout_uri must be an HTTP(S) URL")
+
+    client = Client(
+        client_secret_hash=secret_hash,
+        name=name,
+        redirect_uris=redirect_uris,
+        backchannel_logout_uri=backchannel_logout_uri,
+    )
+    client.uuid = client_uuid
+
+    db.create_oid_client(client, ctx=ctx)
+
+    return {"status": "ok", "client_id": str(client.uuid)}
+
+
+@app.patch("/oidc-clients/{client_uuid}")
+async def admin_update_oidc_client(
+    client_uuid: UUID,
+    request: Request,
+    payload: dict = Body(...),
+    auth=AUTH_COOKIE,
+):
+    """Update an OIDC client's name and redirect URIs (master admin only)."""
+    ctx = await authz.verify(
+        auth,
+        ["auth:admin"],
+        host=request.headers.get("host"),
+        match=permutil.has_all,
+        max_age="5m",
+    )
+    if not master_admin(ctx):
+        raise authz.AuthException(
+            status_code=403,
+            detail="Only master admin can manage OIDC clients",
+            mode="forbidden",
+        )
+
+    name = payload.get("name", "").strip() if "name" in payload else None
+    redirect_uris = payload.get("redirect_uris") if "redirect_uris" in payload else None
+    secret_hash_hex = (
+        payload.get("secret_hash", "").strip() if "secret_hash" in payload else None
+    )
+    backchannel_logout_uri = (
+        payload.get("backchannel_logout_uri")
+        if "backchannel_logout_uri" in payload
+        else _UNSET
+    )
+    if isinstance(backchannel_logout_uri, str):
+        backchannel_logout_uri = backchannel_logout_uri.strip() or None
+
+    if name is not None and not name:
+        raise ValueError("Client name cannot be empty")
+
+    if redirect_uris is not None:
+        if not isinstance(redirect_uris, list):
+            raise ValueError("redirect_uris must be a list")
+        # Validate redirect URIs
+        for uri in redirect_uris:
+            if not isinstance(uri, str) or not uri.startswith("http"):
+                raise ValueError(f"Invalid redirect URI: {uri}")
+
+    if (
+        backchannel_logout_uri is not _UNSET
+        and backchannel_logout_uri
+        and not backchannel_logout_uri.startswith("http")
+    ):
+        raise ValueError("backchannel_logout_uri must be an HTTP(S) URL")
+
+    secret_hash = None
+    if secret_hash_hex:
+        try:
+            secret_hash = bytes.fromhex(secret_hash_hex)
+        except ValueError:
+            raise ValueError("secret_hash must be a hex-encoded SHA-256 hash")
+        if len(secret_hash) != 32:
+            raise ValueError("secret_hash must be a SHA-256 hash (32 bytes)")
+
+    try:
+        db.update_oid_client(
+            client_uuid,
+            name=name,
+            redirect_uris=redirect_uris,
+            secret_hash=secret_hash,
+            backchannel_logout_uri=backchannel_logout_uri,
+            ctx=ctx,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+    return {"status": "ok"}
+
+
+@app.post("/oidc-clients/{client_uuid}/reset-secret")
+async def admin_reset_oidc_client_secret(
+    client_uuid: UUID,
+    request: Request,
+    payload: dict = Body(...),
+    auth=AUTH_COOKIE,
+):
+    """Reset an OIDC client's secret (master admin only).
+
+    The new secret is generated client-side; only the SHA-256 hash is sent.
+    """
+    ctx = await authz.verify(
+        auth,
+        ["auth:admin"],
+        host=request.headers.get("host"),
+        match=permutil.has_all,
+        max_age="5m",
+    )
+    if not master_admin(ctx):
+        raise authz.AuthException(
+            status_code=403,
+            detail="Only master admin can manage OIDC clients",
+            mode="forbidden",
+        )
+
+    secret_hash_hex = payload.get("secret_hash", "").strip()
+    if not secret_hash_hex:
+        raise ValueError("secret_hash is required")
+    try:
+        secret_hash = bytes.fromhex(secret_hash_hex)
+    except ValueError:
+        raise ValueError("secret_hash must be a hex-encoded SHA-256 hash")
+    if len(secret_hash) != 32:
+        raise ValueError("secret_hash must be a SHA-256 hash (32 bytes)")
+
+    try:
+        db.reset_oid_client_secret(client_uuid, secret_hash, ctx=ctx)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+    return {"status": "ok"}
+
+
+@app.delete("/oidc-clients/{client_uuid}")
+async def admin_delete_oidc_client(
+    client_uuid: UUID,
+    request: Request,
+    auth=AUTH_COOKIE,
+):
+    """Delete an OIDC client (master admin only)."""
+    ctx = await authz.verify(
+        auth,
+        ["auth:admin"],
+        host=request.headers.get("host"),
+        match=permutil.has_all,
+        max_age="5m",
+    )
+    if not master_admin(ctx):
+        raise authz.AuthException(
+            status_code=403,
+            detail="Only master admin can manage OIDC clients",
+            mode="forbidden",
+        )
+
+    try:
+        db.delete_oid_client(client_uuid, ctx=ctx)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
     return {"status": "ok"}

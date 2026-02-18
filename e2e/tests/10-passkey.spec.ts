@@ -148,10 +148,10 @@ test.describe('Passkey Authentication E2E', () => {
 
     const userInfo = await getUserInfo(page, baseUrl, sessionToken)
 
-    expect(userInfo.ctx.user.uuid).toBe(userUuid)
-    expect(userInfo.ctx.user.display_name).toBe('Admin User')
+    expect(userInfo.user.uuid).toBe(userUuid)
+    expect(userInfo.user.display_name).toBe('Admin User')
     expect(userInfo.credentials).toBeDefined()
-    expect(userInfo.credentials.length).toBeGreaterThanOrEqual(1)
+    expect(Object.keys(userInfo.credentials).length).toBeGreaterThanOrEqual(1)
 
     // Navigate to profile and take screenshot
     const cookieName = getSessionCookieName()
@@ -169,8 +169,8 @@ test.describe('Passkey Authentication E2E', () => {
     await page.screenshot({ path: 'test-results/profile-view.png' })
     console.log('✓ Screenshot saved: test-results/profile-view.png')
 
-    console.log(`✓ User info retrieved: ${userInfo.ctx.user.display_name}`)
-    console.log(`✓ Credentials count: ${userInfo.credentials.length}`)
+    console.log(`✓ User info retrieved: ${userInfo.user.display_name}`)
+    console.log(`✓ Credentials count: ${Object.keys(userInfo.credentials).length}`)
   })
 
   test('should authenticate with existing passkey', async ({ page, virtualAuthenticator }) => {

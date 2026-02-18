@@ -11,15 +11,16 @@ These tests cover:
 """
 
 import secrets
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 
 import httpx
 import pytest
 
+from paskia import authcode
 from paskia.authsession import EXPIRES
-from paskia.db import create_session, delete_session
+from paskia.db import delete_session
 from paskia.util.passphrase import generate
-from tests.conftest import auth_headers
+from tests.conftest import auth_headers, create_test_session
 
 
 class TestSettingsEndpoint:
@@ -229,12 +230,12 @@ class TestLogoutEndpoint:
 
 
 class TestUserInfoEndpoint:
-    """Tests for POST /auth/api/user-info"""
+    """Tests for GET /auth/api/user-info"""
 
     @pytest.mark.asyncio
     async def test_user_info_without_auth_returns_401(self, client: httpx.AsyncClient):
         """User info without session should return 401."""
-        response = await client.post("/auth/api/user-info")
+        response = await client.get("/auth/api/user-info")
         assert response.status_code == 401
 
     @pytest.mark.asyncio
@@ -242,22 +243,22 @@ class TestUserInfoEndpoint:
         self, client: httpx.AsyncClient, session_token: str, test_user
     ):
         """User info with valid session should return user data."""
-        response = await client.post(
+        response = await client.get(
             "/auth/api/user-info",
             headers={**auth_headers(session_token), "Host": "localhost:4401"},
         )
         assert response.status_code == 200
         data = response.json()
-        assert "ctx" in data
-        assert data["ctx"]["user"]["uuid"] == str(test_user.uuid)
-        assert data["ctx"]["user"]["display_name"] == test_user.display_name
+        assert "user" in data
+        assert data["user"]["uuid"] == str(test_user.uuid)
+        assert data["user"]["display_name"] == test_user.display_name
 
     @pytest.mark.asyncio
     async def test_user_info_includes_credentials(
         self, client: httpx.AsyncClient, session_token: str
     ):
         """User info should include user's credentials."""
-        response = await client.post(
+        response = await client.get(
             "/auth/api/user-info",
             headers={**auth_headers(session_token), "Host": "localhost:4401"},
         )
@@ -271,7 +272,7 @@ class TestUserInfoEndpoint:
         self, client: httpx.AsyncClient, session_token: str
     ):
         """User info should include user's active sessions."""
-        response = await client.post(
+        response = await client.get(
             "/auth/api/user-info",
             headers={**auth_headers(session_token), "Host": "localhost:4401"},
         )
@@ -285,36 +286,42 @@ class TestUserInfoEndpoint:
         self, client: httpx.AsyncClient, session_token: str
     ):
         """User info should include user's permissions."""
-        response = await client.post(
+        response = await client.get(
             "/auth/api/user-info",
             headers={**auth_headers(session_token), "Host": "localhost:4401"},
         )
         assert response.status_code == 200
         data = response.json()
-        assert "ctx" in data
-        assert "permissions" in data["ctx"]
+        assert "permissions" in data
 
 
 class TestSetSessionEndpoint:
     """Tests for POST /auth/api/set-session"""
 
     @pytest.mark.asyncio
-    async def test_set_session_without_bearer_returns_401(
+    async def test_set_session_without_bearer_returns_400(
         self, client: httpx.AsyncClient
     ):
-        """Set session without bearer token should return 401."""
+        """Set session without bearer token should return 400."""
         response = await client.post("/auth/api/set-session")
-        assert response.status_code == 401
+        assert response.status_code == 400
 
     @pytest.mark.asyncio
     async def test_set_session_with_valid_bearer_token(
         self, client: httpx.AsyncClient, session_token: str
     ):
-        """Set session with valid bearer token should set cookie."""
+        """Set session with valid auth code as bearer should set cookie."""
+
+        code = authcode.store_cookie(
+            authcode.CookieCode(
+                session_key=session_token,
+                created=datetime.now(UTC),
+            )
+        )
         response = await client.post(
             "/auth/api/set-session",
             headers={
-                "Authorization": f"Bearer {session_token}",
+                "Authorization": f"Bearer {code}",
                 "Host": "localhost:4401",
             },
         )
@@ -522,7 +529,7 @@ class TestValidateSessionRefresh:
         """Validate should return 401 if session disappears during refresh."""
 
         # Create a session with a short remaining duration to trigger refresh
-        token = create_session(
+        db_key, secret = create_test_session(
             user_uuid=test_user.uuid,
             credential_uuid=test_credential.uuid,
             host="localhost",
@@ -532,11 +539,11 @@ class TestValidateSessionRefresh:
         )
 
         # Delete the session right before validate tries to refresh
-        delete_session(token)
+        delete_session(db_key)
 
         response = await client.post(
             "/auth/api/validate",
-            headers={**auth_headers(token), "Host": "localhost:4401"},
+            headers={**auth_headers(secret), "Host": "localhost:4401"},
         )
         # Session was found initially but disappeared during refresh
         assert response.status_code == 401

@@ -1,4 +1,3 @@
-from datetime import UTC
 from uuid import UUID
 
 from fastapi import (
@@ -40,6 +39,7 @@ async def user_update_display_name(
     payload: dict = Body(...),
     auth=AUTH_COOKIE,
 ):
+    """Update display name only. Used by registration flow (auto-fills preferred_username)."""
     if not auth:
         raise authz.AuthException(
             status_code=401, detail="Authentication Required", mode="login"
@@ -56,6 +56,49 @@ async def user_update_display_name(
     if len(new_name) > 64:
         raise HTTPException(status_code=400, detail="display_name too long")
     db.update_user_display_name(ctx.user.uuid, new_name, ctx=ctx)
+    return {"status": "ok"}
+
+
+@app.patch("/info")
+async def user_update_info(
+    request: Request,
+    payload: dict = Body(...),
+    auth=AUTH_COOKIE,
+):
+    """Update user profile info (display_name, email, preferred_username, telephone).
+
+    Pass only the fields you want to update. Use null to clear optional fields.
+    Does NOT auto-fill preferred_username (unlike /display-name endpoint).
+    """
+    if not auth:
+        raise authz.AuthException(
+            status_code=401, detail="Authentication Required", mode="login"
+        )
+    ctx = db.data().session_ctx(auth, request.headers.get("host"))
+    if not ctx:
+        raise authz.AuthException(
+            status_code=401, detail="Session expired", mode="login"
+        )
+
+    kwargs = {}
+    if "display_name" in payload:
+        name = (payload["display_name"] or "").strip()
+        if not name:
+            raise HTTPException(status_code=400, detail="display_name cannot be empty")
+        if len(name) > 64:
+            raise HTTPException(status_code=400, detail="display_name too long")
+        kwargs["display_name"] = name
+    if "email" in payload:
+        kwargs["email"] = payload["email"]
+    if "preferred_username" in payload:
+        kwargs["preferred_username"] = payload["preferred_username"]
+    if "telephone" in payload:
+        kwargs["telephone"] = payload["telephone"]
+
+    if not kwargs:
+        raise HTTPException(status_code=400, detail="No fields to update")
+
+    db.update_user_info(ctx.user.uuid, **kwargs, ctx=ctx)
     return {"status": "ok"}
 
 
@@ -77,7 +120,7 @@ async def user_update_theme(
     theme = payload.get("theme", "")
     if theme not in ("", "light", "dark"):
         raise HTTPException(status_code=400, detail="Invalid theme")
-    db.update_user_theme(ctx.user.uuid, theme, ctx=ctx)
+    db.update_user_info(ctx.user.uuid, theme=theme, ctx=ctx)
     return {"status": "ok"}
 
 
@@ -114,12 +157,14 @@ async def api_delete_session(
             status_code=401, detail="Session expired", mode="login"
         )
 
-    target_session = db.data().sessions.get(session_id)
+    session_key = session_id
+
+    target_session = db.data().sessions.get(session_key)
     if not target_session or target_session.user_uuid != ctx.user.uuid:
         raise HTTPException(status_code=404, detail="Session not found")
 
-    db.delete_session(session_id, ctx=ctx)
-    current_terminated = session_id == auth
+    db.delete_session(session_key, ctx=ctx)
+    current_terminated = session_key == ctx.session.key
     if current_terminated:
         session.clear_session_cookie(response)  # explicit because 200
     return {"status": "ok", "current_session_terminated": current_terminated}
@@ -163,11 +208,7 @@ async def api_create_link(
         ApiCreateLinkResponse(
             message="Registration link generated successfully",
             url=url,
-            expires=(
-                expiry.astimezone(UTC).isoformat().replace("+00:00", "Z")
-                if expiry.tzinfo
-                else expiry.replace(tzinfo=UTC).isoformat().replace("+00:00", "Z")
-            ),
+            expires=expiry,
             token_type="device addition",
         )
     )

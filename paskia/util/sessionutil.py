@@ -1,8 +1,7 @@
-"""Utility functions for session validation and checking."""
+"""Utility functions for session validation, derivation, and checking."""
 
 from datetime import UTC, datetime
 
-from paskia.authsession import EXPIRES
 from paskia.db import SessionContext
 from paskia.util.timeutil import parse_duration
 
@@ -32,7 +31,7 @@ def check_session_age(ctx: SessionContext, max_age: str | None) -> bool:
     if ctx.credential and ctx.credential.last_used:
         auth_time = ctx.credential.last_used
     else:
-        auth_time = ctx.session.expiry - EXPIRES
+        auth_time = ctx.session.validated
 
     time_since_auth = datetime.now(UTC) - auth_time
     return time_since_auth <= max_age_delta

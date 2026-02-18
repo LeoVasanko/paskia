@@ -9,10 +9,12 @@ import AccessDenied from '@/components/AccessDenied.vue'
 import AdminOverview from '@/admin/AdminOverview.vue'
 import AdminOrgDetail from '@/admin/AdminOrgDetail.vue'
 import AdminUserDetail from '@/admin/AdminUserDetail.vue'
+import AdminOidcDetail from '@/admin/AdminOidcDetail.vue'
 import AdminDialogs from '@/admin/AdminDialogs.vue'
 import { useAuthStore } from '@/stores/auth'
 import { adminUiPath, makeUiHref } from '@/utils/settings'
 import { apiJson, SessionValidator } from 'paskia'
+import { uuidv7 } from 'uuidv7'
 import { getDirection } from '@/utils/keynav'
 import { goBack } from '@/utils/helpers'
 
@@ -24,9 +26,12 @@ const showBackMessage = ref(false)
 const error = ref(null)
 const orgs = ref([])
 const permissions = ref([])
+const oidcClients = ref([])
 const currentOrgId = ref(null) // UUID of selected org for detail view
 const currentUserId = ref(null) // UUID for user detail view
+const currentOidcId = ref(null) // UUID for OIDC client detail view
 const userDetail = ref(null) // cached user detail object
+const editingOidcClient = ref(null) // OIDC client being edited (with local changes)
 const authStore = useAuthStore()
 const addingOrgForPermission = ref(null)
 const PERMISSION_ID_PATTERN = '^[A-Za-z0-9:._~-]+$'
@@ -43,6 +48,7 @@ const breadcrumbsRef = ref(null)
 const adminOverviewRef = ref(null)
 const adminOrgDetailRef = ref(null)
 const adminUserDetailRef = ref(null)
+const adminOidcDetailRef = ref(null)
 
 // Check if any modal/dialog is open (blocks arrow key navigation)
 const hasActiveModal = computed(() => dialog.value.type !== null || showRegModal.value)
@@ -80,10 +86,11 @@ const permissionSummary = computed(() => {
   const summary = {}
   for (const o of orgs.value) {
     const orgBase = { uuid: o.uuid, display_name: o.org.display_name }
-    const orgPerms = new Set(Object.keys(o.permissions))
+    // o.permissions is a dict[UUID, Permission]
+    const orgPermUuids = new Set(Object.keys(o.permissions || {}))
 
     // Org-level permissions (direct) - only count if org can grant them
-    for (const pid of Object.keys(o.permissions)) {
+    for (const pid of Object.keys(o.permissions || {})) {
       if (!summary[pid]) summary[pid] = { orgs: [], orgSet: new Set(), userCount: 0 }
       if (!summary[pid].orgSet.has(o.uuid)) {
         summary[pid].orgs.push(orgBase)
@@ -92,10 +99,11 @@ const permissionSummary = computed(() => {
     }
 
     // Role-based permissions (inheritance) - only count if org can grant them
-    for (const [roleUuid, r] of Object.entries(o.roles)) {
+    for (const [roleUuid, r] of Object.entries(o.roles || {})) {
+      // r.permissions is dict[UUID, bool]
       for (const pid of Object.keys(r.permissions || {})) {
         // Only count if the org can grant this permission
-        if (!orgPerms.has(pid)) continue
+        if (!orgPermUuids.has(pid)) continue
 
         if (!summary[pid]) summary[pid] = { orgs: [], orgSet: new Set(), userCount: 0 }
         if (!summary[pid].orgSet.has(o.uuid)) {
@@ -120,16 +128,49 @@ function parseHash() {
   const h = window.location.hash || ''
   currentOrgId.value = null
   currentUserId.value = null
+  currentOidcId.value = null
+  editingOidcClient.value = null
   if (h.startsWith('#org/')) {
     currentOrgId.value = h.slice(5)
   } else if (h.startsWith('#user/')) {
     currentUserId.value = h.slice(6)
+  } else if (h.startsWith('#oidc:')) {
+    const oidcUuid = h.slice(6)
+    currentOidcId.value = oidcUuid
+    // Initialize editing client data
+    if (oidcUuid === 'new') {
+      // Generate client_id and secret for new client
+      const bytes = new Uint8Array(32)
+      crypto.getRandomValues(bytes)
+      const client_secret = btoa(String.fromCharCode(...bytes))
+        .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+      editingOidcClient.value = {
+        client_id: uuidv7(),
+        client_secret,
+        isNew: true,
+        name: '',
+        redirect_uris: []
+      }
+    } else {
+      const client = oidcClients.value.find(c => c.uuid === oidcUuid)
+      if (client) {
+        editingOidcClient.value = {
+          ...client,
+          client_id: client.uuid,
+          client_secret: null,
+          isNew: false
+        }
+      }
+    }
   }
 }
 
-async function loadOrgs() {
-  const data = await apiJson('/auth/api/admin/orgs')
-  orgs.value = Object.entries(data).map(([uuid, o]) => ({ uuid, ...o }))
+async function loadAdminData() {
+  const data = await apiJson('/auth/api/admin/info')
+  // Convert dicts to arrays with uuid added
+  orgs.value = Object.entries(data.orgs).map(([uuid, o]) => ({ uuid, ...o }))
+  permissions.value = Object.entries(data.permissions).map(([uuid, p]) => ({ uuid, ...p }))
+  oidcClients.value = Object.entries(data.oidc_clients).map(([uuid, c]) => ({ uuid, ...c }))
 }
 
 // Helper to get users for a role as sorted array of [uuid, user]
@@ -153,10 +194,6 @@ function orgUserCount(org) {
   return Object.keys(org.users).length
 }
 
-async function loadPermissions() {
-  permissions.value = Object.values(await apiJson('/auth/api/admin/permissions'))
-}
-
 async function loadUserInfo() {
   const data = await apiJson('/auth/api/validate', { method: 'POST' })
   info.value = data
@@ -167,7 +204,9 @@ function clearSensitiveState() {
   info.value = null
   orgs.value = []
   permissions.value = []
+  oidcClients.value = []
   userDetail.value = null
+  editingOidcClient.value = null
   authenticated.value = false
 }
 
@@ -192,7 +231,7 @@ async function load() {
   error.value = null
   try {
     // Load admin data first - apiJson will handle 401/403 with iframe authentication
-    await Promise.all([loadOrgs(), loadPermissions()])
+    await loadAdminData()
     // If we get here, user has admin access - now fetch user info for display
     await loadUserInfo()
 
@@ -214,13 +253,13 @@ async function load() {
 // Org actions
 function createOrg() { openDialog('org-create', {}) }
 
-function updateOrg(org) { openDialog('org-update', { org, name: org.org.display_name }) }
+function updateOrg(org) { openDialog('org-update', { org, name: org.display_name }) }
 
 function editUserName(user) { openDialog('user-update-name', { user, name: user.display_name }) }
 
 async function performOrgDeletion(orgUuid) {
   await apiJson(`/auth/api/admin/orgs/${orgUuid}`, { method: 'DELETE' })
-  await Promise.all([loadOrgs(), loadPermissions()])
+  await Promise.all([loadAdminData()])
 }
 
 function deleteOrg(org) {
@@ -240,9 +279,9 @@ function deleteOrg(org) {
 
   // Build detailed breakdown of users by role
   const roleParts = Object.entries(org.roles)
-    .map(([uuid, r]) => [roleUserCount(org, uuid), r.display_name])
-    .filter(([count]) => count > 0)
-    .map(([count, name]) => `${count} ${name}`)
+    .map(([uuid, r]) => ({ role: r, count: roleUserCount(org, uuid) }))
+    .filter(x => x.count > 0)
+    .map(x => `${x.count} ${x.role.display_name}`)
 
   const affects = roleParts.join(', ')
 
@@ -254,7 +293,7 @@ function deleteOrg(org) {
 function createUserInRole(org, role) { openDialog('user-create', { org, role }) }
 
 function deleteUser(user, userDetail) {
-  const credentialCount = Object.keys(userDetail?.credentials || {}).length
+  const credentialCount = userDetail?.credentials ? Object.keys(userDetail.credentials).length : 0
   const userUuid = user.uuid
   const userName = user.display_name
   const orgUuid = user.org  // org UUID is stored in selectedUser
@@ -278,7 +317,7 @@ async function performUserDeletion(userUuid, userName, orgUuid) {
   try {
     await apiJson(`/auth/api/admin/users/${userUuid}`, { method: 'DELETE' })
     authStore.showMessage(`User "${userName}" deleted.`, 'success', 2500)
-    await loadOrgs()
+    await loadAdminData()
     window.location.hash = `#org/${orgUuid}`
   } catch (e) {
     authStore.showMessage(e.message || 'Failed to delete user', 'error')
@@ -292,7 +331,7 @@ async function moveUserToRole(userUuid, user, targetRoleUuid) {
       method: 'PATCH',
       body: { role_uuid: targetRoleUuid }
     })
-    await loadOrgs()
+    await loadAdminData()
   } catch (e) {
     authStore.showMessage(e.message || 'Failed to update user role')
   }
@@ -308,13 +347,13 @@ function onRoleDragOver(e) {
   e.dataTransfer.dropEffect = 'move'
 }
 
-function onRoleDrop(e, org, roleUuid) {
+function onRoleDrop(e, org, role) {
   e.preventDefault()
   try {
     const data = JSON.parse(e.dataTransfer.getData('text/plain'))
     if (data.org !== org.uuid) return // only within same org
     const user = org.users[data.user_uuid]
-    if (user) moveUserToRole(data.user_uuid, user, roleUuid)
+    if (user) moveUserToRole(data.user_uuid, user, role.uuid)
   } catch (_) { /* ignore */ }
 }
 
@@ -323,22 +362,22 @@ function createRole(org) { openDialog('role-create', { org }) }
 
 function updateRole(role) { openDialog('role-update', { role, name: role.display_name }) }
 
-function deleteRole(roleUuid, role) {
+function deleteRole(role) {
   // UI only allows deleting empty roles, so no confirmation needed
-  apiJson(`/auth/api/admin/roles/${roleUuid}`, { method: 'DELETE' })
+  apiJson(`/auth/api/admin/roles/${role.uuid}`, { method: 'DELETE' })
     .then(() => {
       authStore.showMessage(`Role "${role.display_name}" deleted.`, 'success', 2500)
-      loadOrgs()
+      loadAdminData()
     })
     .catch(e => {
       authStore.showMessage(e.message || 'Failed to delete role', 'error')
     })
 }
 
-async function toggleRolePermission(roleUuid, role, pid, checked) {
-  // Optimistic update
-  const prevPermissions = { ...(role.permissions || {}) }
-  const newPermissions = { ...(role.permissions || {}) }
+async function toggleRolePermission(role, pid, checked) {
+  // Optimistic update - role.permissions is dict[UUID, bool]
+  const prevPermissions = { ...role.permissions }
+  const newPermissions = { ...role.permissions }
   if (checked) {
     newPermissions[pid] = true
   } else {
@@ -348,10 +387,10 @@ async function toggleRolePermission(roleUuid, role, pid, checked) {
 
   try {
     const method = checked ? 'POST' : 'DELETE'
-    await apiJson(`/auth/api/admin/roles/${roleUuid}/permissions/${pid}`, {
+    await apiJson(`/auth/api/admin/roles/${role.uuid}/permissions/${pid}`, {
       method
     })
-    await loadOrgs()
+    await loadAdminData()
   } catch (e) {
     authStore.showMessage(e.message || 'Failed to update role permission')
     role.permissions = prevPermissions // revert
@@ -362,7 +401,7 @@ async function toggleRolePermission(roleUuid, role, pid, checked) {
 async function performPermissionDeletion(permissionUuid) {
   const params = new URLSearchParams({ permission_uuid: permissionUuid })
   await apiJson(`/auth/api/admin/permission?${params.toString()}`, { method: 'DELETE' })
-  await loadPermissions()
+  await loadAdminData()
 }
 
 function deletePermission(p) {
@@ -400,6 +439,87 @@ function deletePermission(p) {
   } })
 }
 
+// OIDC Client actions
+async function sha256Hex(text) {
+  const hash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text))
+  return [...new Uint8Array(hash)].map(b => b.toString(16).padStart(2, '0')).join('')
+}
+
+function createOidcClient() {
+  // Navigate to new OIDC client page
+  window.location.hash = '#oidc:new'
+}
+
+function openOidcClient(client) {
+  // Navigate to OIDC client detail page
+  window.location.hash = `#oidc:${client.uuid}`
+}
+
+function resetOidcSecret(clientId) {
+  // Generate new secret locally; it will be sent to server on Save
+  const bytes = new Uint8Array(32)
+  crypto.getRandomValues(bytes)
+  const client_secret = btoa(String.fromCharCode(...bytes))
+    .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+  // Update editingOidcClient if we're on the detail page
+  if (editingOidcClient.value?.client_id === clientId) {
+    editingOidcClient.value = { ...editingOidcClient.value, client_secret }
+  }
+  // Also update dialog if open (for backwards compatibility)
+  if (dialog.value.type === 'oidc-edit' && dialog.value.data?.client_id === clientId) {
+    dialog.value.data.client_secret = client_secret
+  }
+}
+
+function createPermissionForClient(clientId) {
+  openDialog('perm-create', { display_name: '', scope: '', domain: clientId })
+}
+
+function deleteOidcClient(client) {
+  openDialog('confirm', {
+    message: `Delete OIDC client "${client.name}"? This will break any applications using this client.`,
+    action: async () => {
+      await performOidcClientDeletion(client.uuid, client.name)
+      // Navigate back to overview if we were on the detail page
+      if (currentOidcId.value === client.uuid) {
+        window.location.hash = '#overview'
+      }
+    }
+  })
+}
+
+async function performOidcClientDeletion(clientUuid, clientName) {
+  await apiJson(`/auth/api/admin/oidc-clients/${clientUuid}`, { method: 'DELETE' })
+  authStore.showMessage(`OIDC client "${clientName}" deleted.`, 'success', 2500)
+  await loadAdminData()
+}
+
+async function handleOidcSave(data) {
+  const { client_id, client_secret, name, redirect_uris, isNew } = data
+
+  try {
+    if (client_secret) {
+      const secret_hash = await sha256Hex(client_secret)
+      if (isNew) {
+        await apiJson('/auth/api/admin/oidc-clients', { method: 'POST', body: { client_id, secret_hash, name, redirect_uris } })
+      } else {
+        await apiJson(`/auth/api/admin/oidc-clients/${client_id}`, { method: 'PATCH', body: { name, redirect_uris, secret_hash } })
+      }
+    } else {
+      await apiJson(`/auth/api/admin/oidc-clients/${client_id}`, { method: 'PATCH', body: { name, redirect_uris } })
+    }
+    authStore.showMessage(`OIDC client "${name}" ${isNew ? 'created' : 'updated'}.`, 'success', 2500)
+    await loadAdminData()
+    window.location.hash = '#overview'
+  } catch (e) {
+    authStore.showMessage(e.message || `Failed to ${isNew ? 'create' : 'update'} OIDC client`, 'error')
+  }
+}
+
+function handleOidcCancel() {
+  goOverview()
+}
+
 const selectedOrg = computed(() => orgs.value.find(o => o.uuid === currentOrgId.value) || null)
 
 function openOrg(o) {
@@ -431,21 +551,27 @@ const breadcrumbEntries = computed(() => {
   const entries = [
     { label: 'My Profile', href: makeUiHref() }
   ]
+  // For org admins, combine Admin and their org
+  if (isOrgAdmin.value && !isMasterAdmin.value && orgs.value.length > 0) {
+    const org = orgs.value[0]
+    entries.push({ label: `Admin: ${org.org.display_name}`, href: `#org/${org.uuid}` })
+  } else {
+    entries.push({ label: 'Admin', href: adminUiPath() })
+  }
   // Determine organization for user view if selectedOrg not explicitly chosen.
   let orgForUser = null
   if (selectedUser.value) {
     orgForUser = orgs.value.find(o => o.uuid === selectedUser.value.org) || null
   }
   const orgToShow = selectedOrg.value || orgForUser
-  if (orgToShow && isOrgAdmin.value && !isMasterAdmin.value) {
-    // For org admins, combine Admin and org name into one link
-    entries.push({ label: `Admin: ${orgToShow.org.display_name}`, href: `#org/${orgToShow.uuid}` })
-  } else {
-    // For master admins or when not showing an org, separate Admin link
-    entries.push({ label: 'Admin', href: isMasterAdmin.value ? adminUiPath() : (orgs.value.length === 1 ? `#org/${orgs.value[0].uuid}` : adminUiPath()) })
-    if (orgToShow) {
-      entries.push({ label: orgToShow.org.display_name, href: `#org/${orgToShow.uuid}` })
-    }
+  // Add org breadcrumb only if it's not already included in the Admin entry
+  const adminOrg = (isOrgAdmin.value && !isMasterAdmin.value && orgs.value.length > 0) ? orgs.value[0] : null
+  if (orgToShow && (!adminOrg || orgToShow.uuid !== adminOrg.uuid)) {
+    entries.push({ label: orgToShow.org.display_name, href: `#org/${orgToShow.uuid}` })
+  }
+  if (currentOidcId.value) {
+    const label = editingOidcClient.value?.isNew ? 'New Client' : (editingOidcClient.value?.name || 'OIDC Client')
+    entries.push({ label, href: `#oidc:${currentOidcId.value}` })
   }
   if (selectedUser.value) {
     entries.push({ label: selectedUser.value.display_name, href: `#user/${selectedUser.value.uuid}` })
@@ -468,23 +594,27 @@ function generateUserRegistrationLink(u) {
 }
 
 async function toggleOrgPermission(org, permId, checked) {
-  // Build next permission dict
+  // org.permissions is dict[UUID, Permission]
   const has = permId in org.permissions
   if (checked && has) return
   if (!checked && !has) return
-  const next = { ...org.permissions }
-  if (checked) {
-    next[permId] = true  // Placeholder, real data comes from loadOrgs
-  } else {
-    delete next[permId]
-  }
   // Optimistic update
   const prev = { ...org.permissions }
-  org.permissions = next
+  if (checked) {
+    // Need to fetch the permission object to add it
+    const perm = permissions.value.find(p => p.uuid === permId)
+    if (perm) {
+      org.permissions = { ...org.permissions, [permId]: perm }
+    }
+  } else {
+    const next = { ...org.permissions }
+    delete next[permId]
+    org.permissions = next
+  }
   try {
     const params = new URLSearchParams({ permission_uuid: permId })
     await apiJson(`/auth/api/admin/orgs/${org.uuid}/permission?${params.toString()}`, { method: checked ? 'POST' : 'DELETE' })
-    await loadOrgs()
+    await loadAdminData()
   } catch (e) {
     authStore.showMessage(e.message || 'Failed to update organization permission', 'error')
     org.permissions = prev // revert
@@ -594,7 +724,7 @@ function handlePanelNavigateOut(direction) {
 }
 
 async function refreshUserDetail() {
-  await loadOrgs()
+  await loadAdminData()
   if (selectedUser.value) {
     try {
       userDetail.value = await apiJson(`/auth/api/admin/users/${selectedUser.value.uuid}`)
@@ -620,7 +750,7 @@ async function submitDialog() {
       apiJson('/auth/api/admin/orgs', { method: 'POST', body: { display_name: name, permissions: [] } })
         .then(() => {
           authStore.showMessage(`Organization "${name}" created.`, 'success', 2500)
-          Promise.all([loadOrgs(), loadPermissions()])
+          loadAdminData()
         })
         .catch(e => {
           authStore.showMessage(e.message || 'Failed to create organization', 'error')
@@ -634,7 +764,7 @@ async function submitDialog() {
       apiJson(`/auth/api/admin/orgs/${org.uuid}`, { method: 'PATCH', body: { display_name: name } })
         .then(() => {
           authStore.showMessage(`Organization renamed to "${name}".`, 'success', 2500)
-          loadOrgs()
+          loadAdminData()
         })
         .catch(e => {
           authStore.showMessage(e.message || 'Failed to update organization', 'error')
@@ -648,7 +778,7 @@ async function submitDialog() {
       apiJson(`/auth/api/admin/orgs/${org.uuid}/roles`, { method: 'POST', body: { display_name: name, permissions: [] } })
         .then(() => {
           authStore.showMessage(`Role "${name}" created.`, 'success', 2500)
-          loadOrgs()
+          loadAdminData()
         })
         .catch(e => {
           authStore.showMessage(e.message || 'Failed to create role', 'error')
@@ -676,7 +806,7 @@ async function submitDialog() {
       apiJson(`/auth/api/admin/orgs/${org.uuid}/users`, { method: 'POST', body: { display_name: name, role: role.display_name } })
         .then(() => {
           authStore.showMessage(`User "${name}" added to ${role.display_name} role.`, 'success', 2500)
-          loadOrgs()
+          loadAdminData()
         })
         .catch(e => {
           authStore.showMessage(e.message || 'Failed to add user', 'error')
@@ -687,7 +817,7 @@ async function submitDialog() {
 
       // Close dialog immediately, then perform async operation
       closeDialog()
-      apiJson(`/auth/api/admin/users/${user.uuid}/display-name`, { method: 'PATCH', body: { display_name: name } })
+      apiJson(`/auth/api/admin/users/${user.uuid}/info`, { method: 'PATCH', body: { display_name: name } })
         .then(() => {
           authStore.showMessage(`User renamed to "${name}".`, 'success', 2500)
           onUserNameSaved()
@@ -722,7 +852,7 @@ async function submitDialog() {
       apiJson(`/auth/api/admin/permission?${params.toString()}`, { method: 'PATCH' })
         .then(() => {
           authStore.showMessage(`Permission "${newDisplay}" updated.`, 'success', 2500)
-          loadPermissions()
+          loadAdminData()
         })
         .catch(e => {
           authStore.showMessage(e.message || 'Failed to update permission', 'error')
@@ -738,10 +868,35 @@ async function submitDialog() {
       apiJson('/auth/api/admin/permissions', { method: 'POST', body: { scope, display_name, domain: domain || undefined } })
         .then(() => {
           authStore.showMessage(`Permission "${display_name}" created.`, 'success', 2500)
-          loadPermissions()
+          loadAdminData()
         })
         .catch(e => {
           authStore.showMessage(e.message || 'Failed to create permission', 'error')
+        })
+      return // Don't call closeDialog() again
+    } else if (t === 'oidc-edit') {
+      const { client_id, client_secret, isNew } = dialog.value.data
+      const name = dialog.value.data.name?.trim()
+      const uris = dialog.value.data.redirect_uris?.trim()
+      if (!name) throw new Error('Client name required')
+
+      const redirect_uris = uris ? uris.split('\n').map(u => u.trim()).filter(u => u) : []
+
+      // Close dialog immediately, then perform async operation
+      closeDialog()
+
+      const req = client_secret
+        ? sha256Hex(client_secret).then(secret_hash => isNew
+            ? apiJson('/auth/api/admin/oidc-clients', { method: 'POST', body: { client_id, secret_hash, name, redirect_uris } })
+            : apiJson(`/auth/api/admin/oidc-clients/${client_id}`, { method: 'PATCH', body: { name, redirect_uris, secret_hash } }))
+        : apiJson(`/auth/api/admin/oidc-clients/${client_id}`, { method: 'PATCH', body: { name, redirect_uris } })
+      req
+        .then(() => {
+          authStore.showMessage(`OIDC client "${name}" ${isNew ? 'created' : 'updated'}.`, 'success', 2500)
+          loadAdminData()
+        })
+        .catch(e => {
+          authStore.showMessage(e.message || `Failed to ${isNew ? 'create' : 'update'} OIDC client`, 'error')
         })
       return // Don't call closeDialog() again
     } else if (t === 'confirm') {
@@ -790,11 +945,12 @@ async function submitDialog() {
           <div class="section-body admin-section-body">
             <div class="admin-panels">
                                   <AdminOverview
-                  v-if="!selectedUser && !selectedOrg && (isMasterAdmin || isOrgAdmin)"
+                  v-if="!selectedUser && !selectedOrg && !currentOidcId && (isMasterAdmin || isOrgAdmin)"
                   ref="adminOverviewRef"
                   :info="info"
                   :orgs="orgs"
                   :permissions="permissions"
+                  :oidc-clients="oidcClients"
                   :navigation-disabled="hasActiveModal"
                   :permission-summary="permissionSummary"
                   @create-org="createOrg"
@@ -805,6 +961,9 @@ async function submitDialog() {
                   @open-dialog="openDialog"
                   @delete-permission="deletePermission"
                   @rename-permission-display="renamePermissionDisplay"
+                  @create-oidc-client="createOidcClient"
+                  @open-oidc-client="openOidcClient"
+                  @delete-oidc-client="deleteOidcClient"
                   @navigate-out="handlePanelNavigateOut"
                 />
 
@@ -846,6 +1005,21 @@ async function submitDialog() {
                   @on-user-drag-start="onUserDragStart"
                 />
 
+                <AdminOidcDetail
+                  v-else-if="currentOidcId && editingOidcClient"
+                  ref="adminOidcDetailRef"
+                  :client="editingOidcClient"
+                  :permissions="permissions"
+                  :is-new="editingOidcClient.isNew"
+                  :navigation-disabled="hasActiveModal"
+                  @save="handleOidcSave"
+                  @cancel="handleOidcCancel"
+                  @delete="deleteOidcClient"
+                  @reset-secret="resetOidcSecret"
+                  @create-permission="createPermissionForClient"
+                  @navigate-out="handlePanelNavigateOut"
+                />
+
               </div>
           </div>
         </section>
@@ -857,13 +1031,14 @@ async function submitDialog() {
       :settings="authStore.settings"
       @submit-dialog="submitDialog"
       @close-dialog="closeDialog"
+      @reset-oidc-secret="resetOidcSecret"
+      @create-permission-for-client="createPermissionForClient"
     />
   </div>
 </template>
 
 <style scoped>
 .view-admin { padding-bottom: var(--space-3xl); }
-.admin-section { margin-top: var(--space-xl); }
 .admin-section-body { display: flex; flex-direction: column; gap: var(--space-xl); }
 .admin-panels { display: flex; flex-direction: column; gap: var(--space-xl); }
 </style>

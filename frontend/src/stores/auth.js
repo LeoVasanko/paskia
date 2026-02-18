@@ -87,7 +87,7 @@ export const useAuthStore = defineStore('auth', {
     },
     async loadUserInfo() {
       try {
-        this.userInfo = await apiJson('/auth/api/user-info', { method: 'POST' })
+        this.userInfo = await apiJson('/auth/api/user-info', { method: 'GET' })
         updateThemeFromSession(this.ctx)
         console.log('User info loaded:', this.userInfo)
       } catch (error) {
@@ -104,9 +104,9 @@ export const useAuthStore = defineStore('auth', {
       await apiJson(`/auth/api/user/credential/${uuid}`, { method: 'DELETE' })
       await this.loadUserInfo()
     },
-    async terminateSession(sessionId) {
+    async terminateSession(sessionKey) {
       try {
-        const payload = await apiJson(`/auth/api/user/session/${sessionId}`, { method: 'DELETE' })
+        const payload = await apiJson(`/auth/api/user/session/${sessionKey}`, { method: 'DELETE' })
         if (payload?.current_session_terminated) {
           sessionStorage.clear()
           location.reload()

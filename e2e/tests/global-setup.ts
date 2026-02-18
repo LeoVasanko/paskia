@@ -42,16 +42,16 @@ export default async function globalSetup() {
   const serverArgs = COLLECT_COVERAGE
     ? [
         'run', 'coverage', 'run', '--parallel-mode',
-        '-m', 'paskia.fastapi', 'localhost:4404',
+        '-m', 'paskia', '-l', 'localhost:4404',
         '--rp-id', 'localhost'
       ]
     : [
-        'run', 'paskia', 'localhost:4404',
+        'run', 'paskia', '-l', 'localhost:4404',
         '--rp-id', 'localhost'
       ]
 
-  // Use a temporary jsonl file for test database
-  const testDbFile = join(testDataDir, 'test-db.jsonl')
+  // Use a fresh database file for tests
+  const testDbFile = join(testDataDir, 'test.paskiadb')
 
   // Start the server using Node's spawn
   const serverProcess = spawn('uv', serverArgs, {

@@ -27,7 +27,7 @@
             <div class="section">
                 <h2>API Mode (not leaving the page)</h2>
                 <p>For SPAs and fetch() calls - shows auth in an iframe overlay:</p>
-                <button onclick="apiCall('/auth/api/user-info', 'POST')">📋 Get User Info</button>
+                <button onclick="apiCall('/auth/api/user-info', 'GET')">📋 Get User Info</button>
                 <button onclick="apiCall('/auth/api/forward?max_age=10s')">🔄 Reauth (max_age=10s)</button>
                 <button onclick="apiCall('/auth/api/forward?perm=auth:admin')">🛡️ Admin Only</button>
                 <button onclick="logout()">🚪 Logout</button>

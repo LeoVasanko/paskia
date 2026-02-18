@@ -16,6 +16,7 @@ export default defineConfig(({ command }) => ({
     fastapiVue({ paths: [
       "/auth/api",
       "/auth/ws",
+      "/.well-known/openid-configuration",
       // Passphrase links: /auth/word1.word2.word3.word4.word5
       "^/auth/[a-z]+\\.[a-z]+\\.[a-z]+\\.[a-z]+\\.[a-z]+$",
       // Passphrase links: /word1.word2.word3.word4.word5
@@ -41,6 +42,18 @@ export default defineConfig(({ command }) => ({
               req.url = '/auth' + req.url
             }
             // Everything else (Vite paths, passphrase links, etc.) passes through unchanged
+          }
+          next()
+        })
+      }
+    },
+    {
+      name: 'restricted-endpoints-rewrite',
+      configureServer(server) {
+        server.middlewares.use((req, _res, next) => {
+          // Rewrite /auth/restricted/iframe and /auth/restricted/oidc to /auth/restricted/
+          if (req.url === '/auth/restricted/iframe' || req.url === '/auth/restricted/oidc') {
+            req.url = '/auth/restricted/'
           }
           next()
         })

@@ -41,7 +41,7 @@ async def auth_error_content(exc: AuthException) -> dict:
     # Build hash fragment from mode and metadata
     params = {"mode": exc.mode, **exc.metadata}
     fragment = "&".join(f"{k}={v}" for k, v in params.items() if v is not None)
-    iframe_url = f"/auth/restricted/#{fragment}"
+    iframe_url = f"/auth/restricted/iframe#{fragment}"
     return {
         "detail": exc.detail,
         "auth": {

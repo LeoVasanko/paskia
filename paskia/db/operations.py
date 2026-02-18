@@ -7,9 +7,11 @@ Write operations: Functions that validate and commit, or raise ValueError.
 """
 
 import logging
+import secrets
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
+import base64url
 import uuid7
 
 from paskia.config import SESSION_LIFETIME
@@ -18,6 +20,7 @@ from paskia.db.jsonl import (
 )
 from paskia.db.structs import (
     DB,
+    Client,
     Config,
     Credential,
     Org,
@@ -28,14 +31,30 @@ from paskia.db.structs import (
     SessionContext,
     User,
 )
+from paskia.util.crypto import hash_secret
+from paskia.util.nameutil import slugify_name
 
 _logger = logging.getLogger(__name__)
+
+# Sentinel for distinguishing "not provided" from None
+_UNSET = object()
 
 # Global database instance (empty until init() loads data)
 _db = DB(config=Config(rp_id="uninitialized.invalid"))
 _store = JsonlStore(_db)
 _db._store = _store
 _initialized = False
+
+
+def is_username_taken(username: str, exclude_uuid: UUID | None = None) -> bool:
+    """Check if a preferred_username is already taken by another user."""
+    if not username:
+        return False
+    for user in _db.users.values():
+        if user.preferred_username == username:
+            if exclude_uuid is None or user.uuid != exclude_uuid:
+                return True
+    return False
 
 
 # -------------------------------------------------------------------------
@@ -255,30 +274,103 @@ def update_user_display_name(
     The acting user should be logged via ctx.
     For self-service (user updating own name), pass user's ctx.
     For admin operations, pass admin's ctx.
+
+    If the user's preferred_username is currently None, this will auto-fill it
+    with a slugified version of the display name (if unique and non-empty).
     """
     if isinstance(uuid, str):
         uuid = UUID(uuid)
     if uuid not in _db.users:
         raise ValueError(f"User {uuid} not found")
+    display_name = (display_name or "").strip()
+    if not display_name:
+        raise ValueError("Display name cannot be empty")
+    user = _db.users[uuid]
     with _db.transaction("update_user_display_name", ctx):
-        _db.users[uuid].display_name = display_name
+        user.display_name = display_name
+        # Auto-fill preferred_username if not already set
+        if user.preferred_username is None:
+            slug = slugify_name(display_name)
+            if slug and not is_username_taken(slug, exclude_uuid=uuid):
+                user.preferred_username = slug
 
 
-def update_user_theme(
+def update_user_info(
     uuid: UUID,
-    theme: str,
     *,
+    display_name: str | object = _UNSET,
+    theme: str | object = _UNSET,
+    email: str | None | object = _UNSET,
+    preferred_username: str | None | object = _UNSET,
+    telephone: str | None | object = _UNSET,
     ctx: SessionContext | None = None,
 ) -> None:
-    """Update user theme preference ('' for auto, 'light', 'dark')."""
+    """Update user profile information.
+
+    Pass only the fields you want to update. Use None to clear optional fields.
+    This does NOT auto-fill preferred_username - use update_user_display_name
+    for the registration flow where auto-fill is desired.
+
+    Args:
+        uuid: User UUID
+        display_name: User display name (cannot be empty)
+        theme: Theme preference ('' for auto, 'light', 'dark')
+        email: Email address (None to clear)
+        preferred_username: Username for OIDC claims (None to clear, must be unique)
+        telephone: Phone number (None to clear)
+        ctx: Session context for audit logging
+    """
     if isinstance(uuid, str):
         uuid = UUID(uuid)
     if uuid not in _db.users:
         raise ValueError(f"User {uuid} not found")
-    if theme not in ("", "light", "dark"):
-        raise ValueError(f"Invalid theme: {theme}")
-    with _db.transaction("update_user_theme", ctx):
-        _db.users[uuid].theme = theme
+
+    user = _db.users[uuid]
+
+    # Validate all fields before transaction
+    if display_name is not _UNSET:
+        display_name = (display_name or "").strip()
+        if not display_name:
+            raise ValueError("Display name cannot be empty")
+
+    if theme is not _UNSET:
+        if theme not in ("", "light", "dark"):
+            raise ValueError(f"Invalid theme: {theme}")
+
+    if email is not _UNSET and email is not None:
+        email = (email or "").strip()
+        if not email:
+            email = None
+        elif "@" not in email or len(email) > 254:
+            raise ValueError("Invalid email format")
+
+    if preferred_username is not _UNSET and preferred_username is not None:
+        preferred_username = (preferred_username or "").strip()
+        if not preferred_username:
+            raise ValueError("Preferred username cannot be empty (use None to clear)")
+        if len(preferred_username) > 128:
+            raise ValueError("preferred_username too long")
+        if is_username_taken(preferred_username, exclude_uuid=uuid):
+            raise ValueError("Username already taken")
+
+    if telephone is not _UNSET and telephone is not None:
+        telephone = (telephone or "").strip()
+        if not telephone:
+            telephone = None
+        elif len(telephone) > 32:
+            raise ValueError("telephone too long")
+
+    with _db.transaction("update_user_info", ctx):
+        if display_name is not _UNSET:
+            user.display_name = display_name
+        if theme is not _UNSET:
+            user.theme = theme
+        if email is not _UNSET:
+            user.email = email
+        if preferred_username is not _UNSET:
+            user.preferred_username = preferred_username
+        if telephone is not _UNSET:
+            user.telephone = telephone
 
 
 def update_user_role(
@@ -350,43 +442,12 @@ def delete_credential(
         cred.delete()
 
 
-def create_session(
-    user_uuid: UUID,
-    credential_uuid: UUID,
-    host: str,
-    ip: str,
-    user_agent: str,
-    duration: timedelta = SESSION_LIFETIME,
-    *,
-    ctx: SessionContext | None = None,
-) -> str:
-    """Create a new session. Returns the session key."""
-    if user_uuid not in _db.users:
-        raise ValueError(f"User {user_uuid} not found")
-    if credential_uuid not in _db.credentials:
-        raise ValueError(f"Credential {credential_uuid} not found")
-    now = datetime.now(UTC)
-    session = Session.create(
-        user=user_uuid,
-        credential=credential_uuid,
-        host=host,
-        ip=ip,
-        user_agent=user_agent,
-        expiry=now + duration,
-    )
-    if session.key in _db.sessions:
-        raise ValueError("Session already exists")
-    with _db.transaction("create_session", ctx):
-        session.store(now)
-    return session.key
-
-
 def update_session(
-    key: str,
+    key: bytes,
     host: str | None = None,
     ip: str | None = None,
     user_agent: str | None = None,
-    expiry: datetime | None = None,
+    validated: datetime | None = None,
     *,
     ctx: SessionContext | None = None,
 ) -> None:
@@ -401,11 +462,13 @@ def update_session(
             s.ip = ip
         if user_agent is not None:
             s.user_agent = user_agent
-        if expiry is not None:
-            s.expiry = expiry
+        if validated is not None:
+            s.validated = validated
 
 
-def set_session_host(key: str, host: str, *, ctx: SessionContext | None = None) -> None:
+def set_session_host(
+    key: bytes, host: str, *, ctx: SessionContext | None = None
+) -> None:
     """Set the host for a session (first-time binding)."""
     update_session(key, host=host, ctx=ctx)
 
@@ -421,6 +484,9 @@ def delete_session(
     """
     if key not in _db.sessions:
         raise ValueError("Session not found")
+    from paskia import oidc_notify  # noqa: PLC0415
+
+    oidc_notify.schedule_notifications([key])
     with _db.transaction(action, ctx):
         _db.sessions[key].delete()
 
@@ -437,6 +503,10 @@ def delete_sessions_for_user(
     user = _db.users.get(user_uuid)
     if not user:
         return
+    from paskia import oidc_notify  # noqa: PLC0415
+
+    keys = [s.key for s in user.sessions]
+    oidc_notify.schedule_notifications(keys)
     with _db.transaction("admin:delete_sessions_for_user", ctx):
         for sess in user.sessions:
             sess.delete()
@@ -513,13 +583,17 @@ def login(
     if credential_uuid not in _db.credentials:
         raise ValueError(f"Credential {credential_uuid} not found")
 
+    # Generate token and derive key
+    token = secrets.token_urlsafe(12)
+
     session = Session.create(
         user=user_uuid,
         credential=credential_uuid,
+        key=base64url.enc(hash_secret("cookie", token)),
         host=host,
         ip=ip,
         user_agent=user_agent,
-        expiry=now + duration,
+        validated=now,
     )
     user_str = str(user_uuid)
     with _db.transaction("login", user=user_str):
@@ -527,7 +601,33 @@ def login(
         # Update credential
         _db.credentials[credential_uuid].sign_count = sign_count
         _db.credentials[credential_uuid].last_used = now
-    return session.key
+    return token
+
+
+def oidc_login(
+    session: Session,
+    credential_uuid: UUID,
+    sign_count: int,
+) -> None:
+    """Store an OIDC session and update credential in a single transaction.
+
+    The caller is responsible for generating the token, deriving the key,
+    and creating the Session object.  This function only handles the
+    database transaction.
+
+    Updates:
+    - user.last_seen, user.visits
+    - credential.sign_count, credential.last_used
+    Stores:
+    - the provided session
+    """
+    now = datetime.now(UTC)
+    user_str = str(session.user_uuid)
+    with _db.transaction("oidc_login", user=user_str):
+        session.store(now)
+        # Update credential
+        _db.credentials[credential_uuid].sign_count = sign_count
+        _db.credentials[credential_uuid].last_used = now
 
 
 def create_credential_session(
@@ -555,13 +655,18 @@ def create_credential_session(
     if user_uuid not in _db.users:
         raise ValueError(f"User {user_uuid} not found")
 
+    # Generate token and derive key
+    token = secrets.token_urlsafe(12)
+    key = base64url.enc(hash_secret("cookie", token))
+
     session = Session.create(
         user=user_uuid,
         credential=credential.uuid,
+        key=key,
         host=host,
         ip=ip,
         user_agent=user_agent,
-        expiry=now + SESSION_LIFETIME,
+        validated=now,
     )
     user_str = str(user_uuid)
     with _db.transaction("create_credential_session", user=user_str):
@@ -582,7 +687,102 @@ def create_credential_session(
 
         # Delete reset token if provided
         if reset_key:
-            token = _db.reset_tokens.get(reset_key)
-            if token:
-                token.delete()
-    return session.key
+            reset_token = _db.reset_tokens.get(reset_key)
+            if reset_token:
+                reset_token.delete()
+    return token
+
+
+# -------------------------------------------------------------------------
+# OIDC Provider operations
+# -------------------------------------------------------------------------
+
+
+def create_oid_client(client: Client, *, ctx: SessionContext | None = None) -> None:
+    """Create a new OIDC client."""
+    if client.uuid in _db.oidc.clients:
+        raise ValueError(f"OIDC client {client.uuid} already exists")
+    with _db.transaction("admin:create_oid_client", ctx):
+        _db.oidc.clients[client.uuid] = client
+
+
+def update_oid_client(
+    client_uuid: UUID,
+    name: str | None = None,
+    redirect_uris: list[str] | None = None,
+    secret_hash: bytes | None = None,
+    backchannel_logout_uri: str | None = _UNSET,
+    *,
+    ctx: SessionContext | None = None,
+) -> None:
+    """Update an OIDC client's name, redirect URIs, and/or secret."""
+    if client_uuid not in _db.oidc.clients:
+        raise ValueError(f"OIDC client {client_uuid} not found")
+
+    client = _db.oidc.clients[client_uuid]
+    changes = {}
+
+    if name is not None and name != client.name:
+        changes["name"] = name
+    if redirect_uris is not None and redirect_uris != client.redirect_uris:
+        changes["redirect_uris"] = redirect_uris
+    if secret_hash is not None and secret_hash != client.client_secret_hash:
+        changes["client_secret_hash"] = secret_hash
+    if (
+        backchannel_logout_uri is not _UNSET
+        and backchannel_logout_uri != client.backchannel_logout_uri
+    ):
+        changes["backchannel_logout_uri"] = backchannel_logout_uri
+
+    if not changes:
+        return  # No changes to make
+
+    new_logout_uri = (
+        backchannel_logout_uri
+        if backchannel_logout_uri is not _UNSET
+        else client.backchannel_logout_uri
+    )
+
+    with _db.transaction("admin:update_oid_client", ctx):
+        # Create updated client with new values
+        updated_client = Client(
+            client_secret_hash=secret_hash
+            if secret_hash is not None
+            else client.client_secret_hash,
+            name=name if name is not None else client.name,
+            redirect_uris=redirect_uris
+            if redirect_uris is not None
+            else client.redirect_uris,
+            backchannel_logout_uri=new_logout_uri,
+        )
+        updated_client.uuid = client.uuid
+        _db.oidc.clients[client_uuid] = updated_client
+
+
+def reset_oid_client_secret(
+    client_uuid: UUID,
+    new_secret_hash: bytes,
+    *,
+    ctx: SessionContext | None = None,
+) -> None:
+    """Reset an OIDC client's secret."""
+    if client_uuid not in _db.oidc.clients:
+        raise ValueError(f"OIDC client {client_uuid} not found")
+    client = _db.oidc.clients[client_uuid]
+    with _db.transaction("admin:reset_oid_client_secret", ctx):
+        updated = Client(
+            client_secret_hash=new_secret_hash,
+            name=client.name,
+            redirect_uris=client.redirect_uris,
+            backchannel_logout_uri=client.backchannel_logout_uri,
+        )
+        updated.uuid = client.uuid
+        _db.oidc.clients[client_uuid] = updated
+
+
+def delete_oid_client(client_uuid: UUID, *, ctx: SessionContext | None = None) -> None:
+    """Delete an OIDC client."""
+    if client_uuid not in _db.oidc.clients:
+        raise ValueError(f"OIDC client {client_uuid} not found")
+    with _db.transaction("admin:delete_oid_client", ctx):
+        del _db.oidc.clients[client_uuid]

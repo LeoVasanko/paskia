@@ -1,16 +1,18 @@
 <script setup>
 import { computed, ref } from 'vue'
 import { getDirection, navigateButtonRow, focusPreferred, focusAtIndex } from '@/utils/keynav'
+import { formatDate } from '@/utils/helpers'
 
 const props = defineProps({
   info: Object,
   orgs: Array,
   permissions: Array,
+  oidcClients: Array,
   permissionSummary: Object,
   navigationDisabled: { type: Boolean, default: false }
 })
 
-const emit = defineEmits(['createOrg', 'openOrg', 'updateOrg', 'deleteOrg', 'toggleOrgPermission', 'openDialog', 'deletePermission', 'renamePermissionDisplay', 'navigateOut'])
+const emit = defineEmits(['createOrg', 'openOrg', 'updateOrg', 'deleteOrg', 'toggleOrgPermission', 'openDialog', 'deletePermission', 'renamePermissionDisplay', 'createOidcClient', 'openOidcClient', 'deleteOidcClient', 'navigateOut'])
 
 // Template refs for navigation
 const orgSection = ref(null)
@@ -19,11 +21,41 @@ const orgTableRef = ref(null)
 const permMatrixRef = ref(null)
 const permActionsRef = ref(null)
 const permTableRef = ref(null)
+const oidcActionsRef = ref(null)
+const oidcTableRef = ref(null)
 
 const sortedOrgs = computed(() => [...props.orgs].sort((a,b)=> {
   const nameCompare = a.org.display_name.localeCompare(b.org.display_name)
   return nameCompare !== 0 ? nameCompare : a.uuid.localeCompare(b.uuid)
 }))
+
+// Map OIDC client UUIDs to display names for permission domain column
+const oidcClientNames = computed(() => {
+  const map = {}
+  for (const c of props.oidcClients || []) map[c.uuid] = c.name
+  return map
+})
+function domainDisplay(domain) {
+  if (!domain) return '—'
+  return oidcClientNames.value[domain] || domain
+}
+
+// Map OIDC client UUIDs to their group permissions (sorted by scope)
+const clientGroups = computed(() => {
+  const map = {}
+  for (const p of props.permissions || []) {
+    if (p.domain) {
+      if (!map[p.domain]) map[p.domain] = []
+      map[p.domain].push(p)
+    }
+  }
+  // Sort each group array by scope
+  for (const key in map) {
+    map[key].sort((a, b) => a.scope.localeCompare(b.scope))
+  }
+  return map
+})
+
 const sortedPermissions = computed(() => [...props.permissions].sort((a,b)=> a.scope.localeCompare(b.scope)))
 
 // Derive admin status from permissions (info contains ctx from validate response)
@@ -35,6 +67,7 @@ function permissionDisplayName(scope) {
 }
 
 function getRoleNames(org) {
+  // org.roles is dict[UUID, Role]
   return Object.values(org.roles)
     .slice()
     .sort((a, b) => a.display_name.localeCompare(b.display_name))
@@ -343,7 +376,7 @@ defineExpose({ focusFirstElement })
                 <span class="id-text">{{ p.scope }}</span>
               </div>
             </td>
-            <td class="perm-domain">{{ p.domain || '—' }}</td>
+            <td class="perm-domain">{{ domainDisplay(p.domain) }}</td>
             <td class="perm-members center">{{ permissionSummary[p.uuid]?.userCount || 0 }}</td>
             <td class="perm-actions center">
               <button @click="$emit('deletePermission', p)" class="icon-btn delete-icon" aria-label="Delete permission" title="Delete permission">❌</button>
@@ -351,6 +384,52 @@ defineExpose({ focusFirstElement })
           </tr>
         </tbody>
       </table>
+  </div>
+
+  <div v-if="isMasterAdmin" class="oidc-clients-section">
+    <div class="section-header">
+      <h2>OAuth2 / OpenID Connect</h2>
+      <p class="section-description">
+        Allow external websites and applications to securely authenticate users through this system.
+        The clients are remote sites or applications that we allow to use Paskia for Single Sign-On.
+      </p>
+    </div>
+    <div ref="oidcActionsRef">
+      <button @click="$emit('createOidcClient')">+ Add Site</button>
+    </div>
+    <table class="org-table" ref="oidcTableRef">
+      <thead>
+        <tr>
+          <th scope="col">Client</th>
+          <th scope="col">Groups</th>
+          <th scope="col" class="center">Sessions</th>
+          <th scope="col" class="center">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr v-if="!oidcClients || oidcClients.length === 0">
+          <td colspan="4" class="center muted">No OIDC clients configured</td>
+        </tr>
+        <tr v-for="client in oidcClients" :key="client.uuid">
+          <td class="perm-name-cell">
+            <div class="perm-title">
+              <a :href="'#oidc:' + client.uuid" @click.prevent="$emit('openOidcClient', client)">{{ client.name }}</a>
+            </div>
+            <div class="perm-id-info">
+              <span class="id-text">{{ client.uuid }}</span>
+            </div>
+          </td>
+          <td class="client-groups">
+            <span v-if="clientGroups[client.uuid]?.length">{{ clientGroups[client.uuid].map(g => g.scope).join(' ') }}</span>
+            <span v-else class="muted">—</span>
+          </td>
+          <td class="center">{{ client.active_sessions || 0 }}</td>
+          <td class="center">
+            <button @click="$emit('deleteOidcClient', client)" class="icon-btn delete-icon" aria-label="Delete OIDC client" title="Delete OIDC client">❌</button>
+          </td>
+        </tr>
+      </tbody>
+    </table>
   </div>
 </template>
 
@@ -371,4 +450,9 @@ defineExpose({ focusFirstElement })
 .edit-display-btn { padding: 0.1rem 0.2rem; font-size: 0.8rem; }
 .edit-org-btn { padding: 0.1rem 0.2rem; font-size: 0.8rem; margin-left: var(--space-xs); }
 .perm-actions { text-align: center; }
+
+/* OIDC Clients Section */
+.oidc-clients-section { margin-bottom: var(--space-xl); margin-top: var(--space-2xl); }
+.oidc-clients-section .section-header { display: flex; flex-direction: column; gap: 0.4rem; margin-bottom: var(--space-md); }
+.client-groups { font-size: 0.85rem; color: var(--color-text-muted); max-width: 200px; font-family: var(--font-mono, monospace); }
 </style>
