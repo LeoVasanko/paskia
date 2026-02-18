@@ -10,9 +10,9 @@
         <UserBasicInfo
           v-if="ctx"
           :name="ctx.user.display_name"
-          :visits="authStore.userInfo?.visits || 0"
-          :created-at="authStore.userInfo?.created_at"
-          :last-seen="authStore.userInfo?.last_seen"
+          :visits="authStore.userInfo.user.visits"
+          :created-at="authStore.userInfo.user.created_at"
+          :last-seen="authStore.userInfo.user.last_seen"
           :email="ctx.user.email"
           :telephone="ctx.user.telephone"
           :org-display-name="orgDisplayName"

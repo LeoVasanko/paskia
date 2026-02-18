@@ -5,8 +5,10 @@ from paskia.db import SessionContext
 from paskia.util import hostutil
 from paskia.util.apistructs import (
     ApiAaguidInfo,
+    ApiOrg,
     ApiOrgContext,
     ApiPermission,
+    ApiRole,
     ApiRoleContext,
     ApiSessionContext,
     ApiUser,
@@ -64,4 +66,6 @@ async def build_user_info(
         permissions={p.uuid: ApiPermission.from_db(p) for p in ctx.permissions}
         if ctx
         else {},
+        org=ApiOrg.from_db(ctx.org) if ctx else None,
+        role=ApiRole.from_db(ctx.role) if ctx else None,
     )

@@ -22,8 +22,8 @@
         :created-at="authStore.userInfo.user.created_at"
         :last-seen="authStore.userInfo.user.last_seen"
         :loading="authStore.isLoading"
-        :org-display-name="authStore.ctx?.org.display_name"
-        :role-name="authStore.ctx?.role.display_name"
+        :org-display-name="authStore.userInfo.org.display_name"
+        :role-name="authStore.userInfo.role.display_name"
         update-endpoint="/auth/api/user/info"
         @saved="authStore.loadUserInfo()"
         @edit="openEditDialog"
@@ -53,7 +53,7 @@
         <CredentialList
           ref="credentialList"
           :credentials="credentials"
-          :aaguid-info="authStore.userInfo?.aaguid_info || {}"
+          :aaguid-info="authStore.userInfo.aaguid_info"
           :loading="authStore.isLoading"
           :hovered-credential-uuid="hoveredCredentialUuid"
           :hovered-session-credential-uuid="hoveredSession?.credential"
@@ -184,11 +184,11 @@ const hasActiveModal = computed(() => showEditDialog.value || showRegLink.value)
 
 watch(showEditDialog, (open) => {
   if (!open) return
-  const user = authStore.userInfo?.user
-  editName.value = user?.display_name ?? ''
-  editEmail.value = user?.email ?? ''
-  editUsername.value = user?.preferred_username ?? ''
-  editTelephone.value = user?.telephone ?? ''
+  const user = authStore.userInfo.user
+  editName.value = user.display_name ?? ''
+  editEmail.value = user.email ?? ''
+  editUsername.value = user.preferred_username ?? ''
+  editTelephone.value = user.telephone ?? ''
   editError.value = ''
 })
 
@@ -341,7 +341,7 @@ const handleDelete = async (credential) => {
 
 const rpName = computed(() => authStore.settings?.rp_name || 'this service')
 const paskiaVersion = computed(() => authStore.settings?.version || '')
-const sessions = computed(() => authStore.userInfo?.sessions || {})
+const sessions = computed(() => authStore.userInfo.sessions)
 const currentSessionHost = computed(() => {
   const currentSession = Object.values(sessions.value).find(session => session.is_current)
   return currentSession?.host || 'this host'
@@ -365,12 +365,12 @@ const logoutEverywhere = async () => { await authStore.logoutEverywhere() }
 const logout = async () => { await authStore.logout() }
 const openEditDialog = () => { showEditDialog.value = true }
 const isAdmin = computed(() => {
-  const perms = authStore.ctx?.permissions
-  return perms?.includes('auth:admin') || perms?.includes('auth:org:admin')
+  const perms = Object.values(authStore.userInfo.permissions).map(p => p.scope)
+  return perms.includes('auth:admin') || perms.includes('auth:org:admin')
 })
 const hasMultipleSessions = computed(() => Object.keys(sessions.value).length > 1)
 const credentials = computed(() =>
-  Object.entries(authStore.userInfo?.credentials || {}).map(([uuid, c]) => ({ ...c, credential: uuid }))
+  Object.entries(authStore.userInfo.credentials).map(([uuid, c]) => ({ ...c, credential: uuid }))
 )
 const useWideLayout = computed(() => {
   // Check if any single site has more than 8 sessions
