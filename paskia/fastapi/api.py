@@ -20,7 +20,7 @@ from paskia.fastapi import authz, session, user
 from paskia.fastapi.response import MsgspecResponse
 from paskia.fastapi.session import AUTH_COOKIE, AUTH_COOKIE_NAME, get_client_ip
 from paskia.globals import passkey as global_passkey
-from paskia.util import hostutil, htmlutil, passphrase, userinfo, vitedev
+from paskia.util import hostutil, htmlutil, passphrase, userinfo
 from paskia.util.apistructs import ApiSettings, ApiTokenInfo, ApiValidateResponse
 
 bearer_auth = HTTPBearer(auto_error=False)
@@ -161,25 +161,15 @@ async def forward_authentication(
         # Clear cookie only if session is invalid (not for reauth)
         if e.clear_session:
             session.clear_session_cookie(response)
-
-        # Check Accept header to decide response format
-        accept = request.headers.get("accept", "")
-        wants_html = "text/html" in accept
-
-        if wants_html:
-            # Browser request - return full-page HTML with metadata
-            data_attrs = {"mode": e.mode, **e.metadata}
-            html = (await vitedev.read("/int/forward/index.html"))[0]
-            html = htmlutil.patch_html_data_attrs(html, **data_attrs)
-            return Response(
-                html, status_code=e.status_code, media_type="text/html; charset=UTF-8"
+        # Browser request? - return full-page HTML with metadata patched into data attrs
+        if "text/html" in request.headers.get("accept", ""):
+            return await htmlutil.patched_html_response(
+                request, "/int/forward/", e.status_code, mode=e.mode, **e.metadata
             )
-        else:
-            # API request - return JSON with iframe srcdoc HTML
-            return JSONResponse(
-                status_code=e.status_code,
-                content=await authz.auth_error_content(e),
-            )
+        # API request - return JSON with iframe srcdoc HTML
+        return JSONResponse(
+            status_code=e.status_code, content=await authz.auth_error_content(e)
+        )
 
 
 @app.get("/settings")
