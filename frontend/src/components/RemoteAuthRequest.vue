@@ -163,6 +163,9 @@ async function startRemoteAuth() {
 
     // PoW challenge
     const powChallenge = await ws.receive_json()
+    if (powChallenge.status) {
+      throw new Error(powChallenge.detail || `Failed to connect: ${powChallenge.status}`)
+    }
     if (powChallenge.pow) {
       const challenge = b64dec(powChallenge.pow.challenge)
       const nonces = await solvePoW(challenge, powChallenge.pow.work)
