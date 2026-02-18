@@ -18,8 +18,6 @@ export {
   isAuthIframeOpen,
   hideAuthIframe,
   showAuthIframe,
-  createAuthIframe,
-  removeAuthIframe,
 } from './overlay'
 
 export { SessionValidator } from './validate'

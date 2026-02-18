@@ -37,7 +37,7 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import QRCodeDisplay from '@/components/QRCodeDisplay.vue'
-import { apiJson, holdGlobalBackdrop, releaseGlobalBackdrop } from 'paskia'
+import { apiJson, AuthCancelledError, holdGlobalBackdrop, releaseGlobalBackdrop } from 'paskia'
 import { formatDate } from '@/utils/helpers'
 import { getDirection } from '@/utils/keynav'
 import { useAuthStore } from '@/stores/auth'
@@ -90,7 +90,9 @@ async function generateLink() {
       emit('close')
     }
   } catch (e) {
-    authStore.showMessage(e.message || 'Failed to generate link', 'error')
+    if (!(e instanceof AuthCancelledError)) {
+      authStore.showMessage(e.message || 'Failed to generate link', 'error')
+    }
     emit('close')
   }
 }
