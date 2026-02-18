@@ -5,7 +5,6 @@ import secrets
 from datetime import UTC, datetime
 from uuid import UUID
 
-import base64url
 import msgspec
 import uuid7
 
@@ -434,7 +433,7 @@ class Session(msgspec.Struct, dict=True, omit_defaults=True):
         """Create a new Session with the provided key.
 
         Args:
-            key: The base64url-encoded hashed session key (derived from secret via hash_secret then base64url.enc)
+            key: The hashed session key (derived from secret via hash_secret)
 
         Returns:
             Session object with key set
@@ -471,7 +470,7 @@ class ResetToken(msgspec.Struct, dict=True):
 
     def __post_init__(self):
         if not hasattr(self, "key"):
-            self.key: bytes = b""
+            self.key: str = ""
 
     @property
     def user(self) -> User:
@@ -487,15 +486,15 @@ class ResetToken(msgspec.Struct, dict=True):
         del db.data().reset_tokens[self.key]
 
     @staticmethod
-    def hash(passphrase: str) -> bytes:
-        """Hash a passphrase to bytes for reset token storage."""
+    def hash(passphrase: str) -> str:
+        """Hash a passphrase to string for reset token storage."""
         if not passphrase_util.is_well_formed(passphrase):
             raise ValueError(
                 "Trying to reset with a session token in place of a passphrase"
                 if len(passphrase) == 16
                 else "Invalid passphrase format"
             )
-        return hashlib.sha512(passphrase.encode()).digest()[:9]
+        return hash_secret("reset", passphrase)
 
     @classmethod
     def by_passphrase(cls, passphrase: str) -> ResetToken | None:
@@ -627,7 +626,7 @@ class DB(msgspec.Struct, dict=True, omit_defaults=False):
     users: dict[UUID, User] = {}
     credentials: dict[UUID, Credential] = {}
     sessions: dict[str, Session] = {}
-    reset_tokens: dict[bytes, ResetToken] = {}
+    reset_tokens: dict[str, ResetToken] = {}
     # OIDC provider data
     oidc: OIDC = msgspec.field(default_factory=lambda: OIDC())
 
@@ -670,7 +669,7 @@ class DB(msgspec.Struct, dict=True, omit_defaults=False):
             SessionContext if valid, None if session not found, expired, or host mismatch
         """
 
-        key = base64url.enc(hash_secret("cookie", session_secret))
+        key = hash_secret("cookie", session_secret)
         try:
             s = self.sessions[key]
         except KeyError:

@@ -11,7 +11,6 @@ import secrets
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
-import base64url
 import uuid7
 
 from paskia import oidc_notify
@@ -588,7 +587,7 @@ def login(
     session = Session.create(
         user=user_uuid,
         credential=credential_uuid,
-        key=base64url.enc(hash_secret("cookie", token)),
+        key=hash_secret("cookie", token),
         host=host,
         ip=ip,
         user_agent=user_agent,
@@ -656,7 +655,7 @@ def create_credential_session(
 
     # Generate token and derive key
     token = secrets.token_urlsafe(12)
-    key = base64url.enc(hash_secret("cookie", token))
+    key = hash_secret("cookie", token)
 
     session = Session.create(
         user=user_uuid,

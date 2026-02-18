@@ -3,7 +3,6 @@ from datetime import UTC, datetime
 from urllib.parse import urlencode
 from uuid import UUID
 
-import base64url
 from fastapi import FastAPI, WebSocket
 
 from paskia import authcode, db
@@ -218,7 +217,7 @@ async def websocket_authenticate(
         session = Session.create(
             user=cred.user_uuid,
             credential=cred.uuid,
-            key=base64url.enc(hash_secret("oidc", token)),
+            key=hash_secret("oidc", token),
             host=normalized_host,
             ip=metadata["ip"],
             user_agent=metadata["user_agent"],
