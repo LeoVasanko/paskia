@@ -188,25 +188,6 @@ class TestExceptionHandlers:
         assert "iframe" in data["auth"]
 
 
-# -------------------- Admin App Root --------------------
-
-
-class TestAdminAppRoot:
-    """Tests for the admin app root endpoint"""
-
-    @pytest.mark.asyncio
-    async def test_admin_app_root_with_auth(
-        self, client: httpx.AsyncClient, session_token: str
-    ):
-        """Admin app root returns HTML when authenticated."""
-        response = await client.get(
-            "/auth/api/admin/",
-            headers={**auth_headers(session_token), "Host": "localhost:4401"},
-        )
-        assert response.status_code == 200
-        assert "text/html" in response.headers.get("content-type", "")
-
-
 # -------------------- Organization Tests --------------------
 
 

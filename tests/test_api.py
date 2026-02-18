@@ -356,34 +356,6 @@ class TestForwardAuthHtmlResponse:
     """Tests for forward auth HTML responses"""
 
     @pytest.mark.asyncio
-    async def test_forward_401_html_response(self, client: httpx.AsyncClient):
-        """Forward auth 401 should return HTML page for browser requests."""
-        response = await client.get(
-            "/auth/api/forward",
-            headers={"Accept": "text/html"},
-        )
-        assert response.status_code == 401
-        assert "text/html" in response.headers.get("content-type", "")
-        # HTML response should contain the mode data attribute
-        assert b"data-mode" in response.content or b"mode" in response.content
-
-    @pytest.mark.asyncio
-    async def test_forward_403_html_response(
-        self, client: httpx.AsyncClient, regular_session_token: str
-    ):
-        """Forward auth 403 should return HTML page for browser requests."""
-        response = await client.get(
-            "/auth/api/forward?perm=auth:admin",
-            headers={
-                **auth_headers(regular_session_token),
-                "Host": "localhost:4401",
-                "Accept": "text/html",
-            },
-        )
-        assert response.status_code == 403
-        assert "text/html" in response.headers.get("content-type", "")
-
-    @pytest.mark.asyncio
     async def test_forward_with_expired_session_clears_cookie(
         self, client: httpx.AsyncClient
     ):

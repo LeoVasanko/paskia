@@ -2,6 +2,45 @@
 
 import re
 
+from paskia.fastapi.front import frontend
+from paskia.util import vitedev
+
+
+async def patched_html_response(request, filepath: str, status_code: int, **data_attrs):
+    """Fetch HTML from vitedev and patch with data attributes.
+
+    Strips caching/compression headers from request to get raw content,
+    patches the HTML body with data attributes, and strips caching headers
+    from response.
+
+    Args:
+        request: The FastAPI Request object
+        filepath: Path to HTML file, e.g. "/int/forward/"
+        status_code: HTTP status code for the response
+        **data_attrs: Key-value pairs for data attributes
+
+    Returns:
+        Patched Response object, or original response if not 200.
+    """
+    # Strip caching/compression headers to get raw uncompressed content
+    cache_headers = {b"if-none-match", b"if-modified-since", b"accept-encoding"}
+    request.scope["headers"] = [
+        (k, v) for k, v in request.scope["headers"] if k.lower() not in cache_headers
+    ]
+
+    resp = await vitedev.handle(request, frontend, filepath)
+    # Pass through non-200 responses
+    if resp.status_code != 200:
+        return resp
+    # Patch HTML with data attrs and strip caching headers from response
+    resp.body = patch_html_data_attrs(resp.body, **data_attrs)
+    resp.status_code = status_code
+    strip_headers = {b"etag", b"last-modified", b"content-length"}
+    resp.raw_headers = [
+        (k, v) for k, v in resp.raw_headers if k.lower() not in strip_headers
+    ]
+    return resp
+
 
 def patch_html_data_attrs(html: bytes, **data_attrs: str) -> bytes:
     """Patch HTML by adding data attributes to the <html> tag.

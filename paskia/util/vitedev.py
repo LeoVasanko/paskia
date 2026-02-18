@@ -1,39 +1,29 @@
 """Vite dev server proxy for fetching frontend files during development.
 
-In dev mode (FASTAPI_VUE_FRONTEND_URL set), fetches files from Vite.
+In dev mode (PASKIA_VITE_URL set), fetches files from Vite.
 In production, reads from the static build directory.
 
 This complements fastapi_vue.Frontend which handles static file serving
 but doesn't provide server-side fetching of HTML content.
 """
 
-import asyncio
 import mimetypes
 import os
 from importlib import resources
 from pathlib import Path
 
 import httpx
+from fastapi import Response
 
-__all__ = ["read"]
-
-
-def _get_dev_server() -> str | None:
-    """Get the dev server URL from environment, or None if not in dev mode."""
-    return os.environ.get("FASTAPI_VUE_FRONTEND_URL") or None
+__all__ = ["handle"]
 
 
 def _resolve_static_dir() -> Path:
-    """Resolve the static files directory."""
-
     # Try packaged path via importlib.resources (works for wheel/installed).
-    try:  # pragma: no cover - trivial path resolution
-        pkg_dir = resources.files("paskia") / "frontend-build"
-        fs_path = Path(str(pkg_dir))
-        if fs_path.is_dir():
-            return fs_path
-    except Exception:  # pragma: no cover - defensive
-        pass
+    pkg_dir = resources.files("paskia") / "frontend-build"
+    fs_path = Path(str(pkg_dir))
+    if fs_path.is_dir():
+        return fs_path
     # Fallback for editable/development before build.
     return Path(__file__).parent.parent / "frontend-build"
 
@@ -41,31 +31,36 @@ def _resolve_static_dir() -> Path:
 _static_dir: Path = _resolve_static_dir()
 
 
-async def read(filepath: str) -> tuple[bytes, int, dict[str, str]]:
-    """Read file content and return response tuple.
+async def handle(request, frontend, filepath: str):
+    """Read file content and return Response.
 
     In dev mode, fetches from the Vite dev server.
-    In production, reads from the static build directory.
+    In production, uses frontend.handle.
 
     Args:
+        request: The FastAPI Request object
+        frontend: The fastapi_vue.Frontend instance
         filepath: Path relative to frontend root, e.g. "/auth/index.html"
 
     Returns:
-        Tuple of (content, status_code, headers) suitable for
-        FastAPI Response(*args).
+        FastAPI Response object.
     """
-    dev_server = _get_dev_server()
-    if dev_server:
+    if dev_server := os.environ.get("PASKIA_VITE_URL"):
         async with httpx.AsyncClient() as client:
             resp = await client.get(f"{dev_server}{filepath}")
             resp.raise_for_status()
             mime = resp.headers.get("content-type", "application/octet-stream")
             # Strip charset suffix if present
             mime = mime.split(";")[0].strip()
-            return resp.content, resp.status_code, {"content-type": mime}
-    else:
-        # Production: read from static build
-        file_path = _static_dir / filepath.lstrip("/")
-        content = await asyncio.to_thread(file_path.read_bytes)
-        mime, _ = mimetypes.guess_type(str(file_path))
-        return content, 200, {"content-type": mime or "application/octet-stream"}
+            return Response(resp.content, resp.status_code, {"content-type": mime})
+
+    # Read from frontend cache directly to bypass any compression/processing
+    cached_content = getattr(frontend, "_files", {}).get(filepath)
+    if cached_content is not None:
+        mime, _ = mimetypes.guess_type(filepath)
+        return Response(
+            cached_content, 200, {"content-type": mime or "application/octet-stream"}
+        )
+
+    # Fallback to frontend.handle for cache negotiation
+    return frontend.handle(request, filepath)

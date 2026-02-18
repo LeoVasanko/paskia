@@ -1,7 +1,7 @@
 import logging
 from uuid import UUID
 
-from fastapi import Body, FastAPI, HTTPException, Query, Request, Response
+from fastapi import Body, FastAPI, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
 
 from paskia import aaguid as aaguid_mod
@@ -14,6 +14,7 @@ from paskia.db import User as UserDC
 from paskia.db.operations import _UNSET
 from paskia.db.structs import Client
 from paskia.fastapi import authz
+from paskia.fastapi.front import frontend
 from paskia.fastapi.response import MsgspecResponse
 from paskia.fastapi.session import AUTH_COOKIE
 from paskia.globals import passkey
@@ -78,7 +79,7 @@ async def general_exception_handler(_request, exc: Exception):  # pragma: no cov
 
 @app.get("/")
 async def adminapp(request: Request, auth=AUTH_COOKIE):
-    return Response(*await vitedev.read("/auth/admin/index.html"))
+    return await vitedev.handle(request, frontend, "/auth/admin/")
 
 
 # -------------------- Organizations --------------------

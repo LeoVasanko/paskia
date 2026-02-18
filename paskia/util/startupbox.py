@@ -69,7 +69,7 @@ def print_startup_config(config: "PaskiaConfig") -> None:
         lines.append(line(f"Auth Host:      {config.auth_host}"))
 
     # Show frontend URL if in dev mode
-    devmode = os.environ.get("FASTAPI_VUE_FRONTEND_URL")
+    devmode = os.environ.get("PASKIA_VITE_URL")
     if devmode:
         lines.append(line(f"Dev Frontend:   {devmode}"))
 

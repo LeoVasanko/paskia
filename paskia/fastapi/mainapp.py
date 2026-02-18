@@ -6,13 +6,15 @@ from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import FileResponse, RedirectResponse
-from fastapi_vue import Frontend
 
 from paskia import authcode, globals
 from paskia.__main__ import DEVMODE
 from paskia.db import start_background, stop_background
 from paskia.db.logging import configure_db_logging
 from paskia.fastapi import admin, api, auth_host, oid, ws
+
+# Import frontend instance
+from paskia.fastapi.front import frontend
 from paskia.fastapi.logging import AccessLogMiddleware, configure_access_logging
 from paskia.fastapi.session import AUTH_COOKIE
 from paskia.util import hostutil, passphrase, vitedev
@@ -22,14 +24,6 @@ configure_access_logging()
 configure_db_logging()
 
 _access_logger = logging.getLogger("paskia.access")
-
-# Vue Frontend static files
-frontend = Frontend(
-    Path(__file__).parent.parent / "frontend-build",
-    cached=["/auth/assets/"],
-    favicon="/paskia.webp",
-)
-
 
 # Path to examples/index.html when running from source tree
 _EXAMPLES_DIR = Path(__file__).parent.parent.parent / "examples"
@@ -131,9 +125,9 @@ async def openid_configuration(request: Request):
 
 @app.get("/auth/restricted/iframe")
 @app.get("/auth/restricted/oidc")
-async def restricted_view():
+async def restricted_view(request: Request):
     """Serve the restricted/authentication UI for iframe or OpenID Connect."""
-    return Response(*await vitedev.read("/auth/restricted/index.html"))
+    return await vitedev.handle(request, frontend, "/auth/restricted/")
 
 
 # Navigable URLs are defined here. We support both / and /auth/ as the base path
@@ -148,7 +142,7 @@ async def frontapp(request: Request, response: Response, auth=AUTH_COOKIE):
     The frontend handles mode detection (host mode vs full profile) based on settings.
     Access control is handled via APIs.
     """
-    return Response(*await vitedev.read("/auth/index.html"))
+    return await vitedev.handle(request, frontend, "/auth/")
 
 
 @app.get("/admin", include_in_schema=False)
@@ -180,14 +174,13 @@ async def examples_page():
 
 
 # Frontend static files - must be before /{token} catch-all routes
-# (actual routes registered during lifespan after frontend.load())
 frontend.route(app, "/")
 
 
 # Note: this catch-all handler must be the last route defined
 @app.get("/{token}")
 @app.get("/auth/{token}")
-async def token_link(token: str):
+async def token_link(request: Request, token: str):
     """Serve the reset app for reset tokens (password reset / device addition).
 
     The frontend will validate the token via /auth/api/token-info.
@@ -195,4 +188,4 @@ async def token_link(token: str):
     if not passphrase.is_well_formed(token):
         raise HTTPException(status_code=404)
 
-    return Response(*await vitedev.read("/int/reset/index.html"))
+    return await vitedev.handle(request, frontend, "/int/reset/")

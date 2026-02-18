@@ -11,7 +11,7 @@ __all__ = ["path", "file", "read", "is_dev_mode"]
 
 def _get_dev_server() -> str | None:
     """Get the dev server URL from environment, or None if not in dev mode."""
-    return os.environ.get("FASTAPI_VUE_FRONTEND_URL") or None
+    return os.environ.get("PASKIA_VITE_URL") or None
 
 
 def _resolve_static_dir() -> Path:
