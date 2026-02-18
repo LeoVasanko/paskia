@@ -153,29 +153,9 @@ async def run_devserver(args: argparse.Namespace, remaining: list[str]) -> None:
             paskia.extend(["--origin", origin])
     paskia.extend(remaining)
 
-    # Compute origins for Caddy
-    caddy_origins = []
-    if args.auth_host:
-        auth_host = args.auth_host
-        if "://" not in auth_host:
-            auth_host = f"https://{auth_host}"
-        caddy_origins.append(auth_host)
-        caddy_origins.append(f"https://{args.rp_id}")
-    if args.origins:
-        for origin in args.origins:
-            if "://" not in origin:
-                origin = f"https://{origin}"
-            caddy_origins.append(origin)
-    if not args.auth_host and not args.origins:
-        caddy_origins.append(f"https://{args.rp_id}")
-    # Remove duplicates while preserving order
-    seen = set()
-    caddy_origins = [x for x in caddy_origins if not (x in seen or seen.add(x))]
-
     # Set environment for subprocesses
     os.environ["PASKIA_VITE_URL"] = viteurl
     os.environ["PASKIA_BACKEND_URL"] = backurl
-    os.environ["PASKIA_SITE_URL"] = caddy_origins[0] if args.caddy else viteurl
     os.environ["PASKIA_DEV"] = "1"
     if args.auth_host:
         os.environ["PASKIA_AUTH_HOST"] = args.auth_host
@@ -183,6 +163,22 @@ async def run_devserver(args: argparse.Namespace, remaining: list[str]) -> None:
     async with ProcessGroup() as pg:
         # Start Caddy first if requested (needs to bind ports)
         if args.caddy:
+            caddy_origins = []
+            if args.auth_host:
+                auth_host = args.auth_host
+                if "://" not in auth_host:
+                    auth_host = f"https://{auth_host}"
+                caddy_origins.append(auth_host)
+                caddy_origins.append(f"https://{args.rp_id}")
+            if args.origins:
+                for origin in args.origins:
+                    if "://" not in origin:
+                        origin = f"https://{origin}"
+                    caddy_origins.append(origin)
+            if not caddy_origins:
+                caddy_origins.append(f"https://{args.rp_id}")
+            seen: set = set()
+            caddy_origins = [x for x in caddy_origins if not (x in seen or seen.add(x))]
             caddy_proc = await run_caddy(caddy_origins, viteurl, backurl)
             pg._procs.append(caddy_proc)
             pg._cmds[caddy_proc.pid] = "caddy"
