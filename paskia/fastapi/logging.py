@@ -115,25 +115,16 @@ def format_access_log(
     client: str, status: int, method: str, host: str, path: str, duration_ms: float
 ) -> str:
     """Format access log line with colors and aligned fields."""
-    use_color = sys.stderr.isatty()
-
     # Format components with fixed widths for alignment
     ip = format_client_ip(client).ljust(19)  # IPv6 network max 19 chars
     timing = f"{duration_ms:.0f}ms"
     method_padded = method.ljust(7)  # Longest method is OPTIONS (7)
 
-    if use_color:
-        status_str = f"{status_color(status)}{status}{_RESET}"
-        timing_str = f"{_TIMING}{timing}{_RESET}"
-        method_str = f"{method_color(method)}{method_padded}{_RESET}"
-        host_str = f"{_HOST}{host}{_RESET}"
-        path_str = f"{_PATH}{path}{_RESET}"
-    else:
-        status_str = str(status)
-        timing_str = timing
-        method_str = method_padded
-        host_str = host
-        path_str = path
+    status_str = f"{status_color(status)}{status}{_RESET}"
+    timing_str = f"{_TIMING}{timing}{_RESET}"
+    method_str = f"{method_color(method)}{method_padded}{_RESET}"
+    host_str = f"{_HOST}{host}{_RESET}"
+    path_str = f"{_PATH}{path}{_RESET}"
 
     # Format: "IP STATUS METHOD host path TIMING"
     return f"{ip} {status_str} {method_str} {host_str}{path_str} {timing_str}"
@@ -153,7 +144,6 @@ def _next_ws_id() -> int:
 
 def log_ws_open(ws) -> int:
     """Log WebSocket connection open. Returns connection ID for use in close."""
-    use_color = sys.stderr.isatty()
     ws_id = _next_ws_id()
 
     client = ws.client.host if ws.client else "-"
@@ -169,19 +159,11 @@ def log_ws_open(ws) -> int:
     origin_host = origin.split("://", 1)[-1] if origin else None
     show_origin = origin_host and origin_host != host
 
-    if use_color:
-        # 🔌 aligned with status (takes ~2 char width), ID aligned with method
-        prefix = f"🔌  {_WS_OPEN}{id_str}{_RESET}"
-        host_str = f"{_HOST}{host}{_RESET}"
-        path_str = f"{_PATH}{path}{_RESET}"
-        origin_str = (
-            f" {_RESET}from {_HOST}{origin_host}{_RESET}" if show_origin else ""
-        )
-    else:
-        prefix = f"WS+ {id_str}"
-        host_str = host
-        path_str = path
-        origin_str = f" from {origin_host}" if show_origin else ""
+    # 🔌 aligned with status (takes ~2 char width), ID aligned with method
+    prefix = f"🔌  {_WS_OPEN}{id_str}{_RESET}"
+    host_str = f"{_HOST}{host}{_RESET}"
+    path_str = f"{_PATH}{path}{_RESET}"
+    origin_str = f" {_RESET}from {_HOST}{origin_host}{_RESET}" if show_origin else ""
 
     logger.info(f"{ip} {prefix} {host_str}{path_str}{origin_str}")
     return ws_id
@@ -209,8 +191,6 @@ WS_CLOSE_CODES = {
 
 def log_ws_close(ws_id: int, close_code: int | None, duration: float) -> None:
     """Log WebSocket connection close with duration and status."""
-    use_color = sys.stderr.isatty()
-
     id_str = f"{ws_id:02d}".ljust(7)  # Align with method field (7 chars)
     timing = f"{duration * 1000:.0f}ms"
 
@@ -220,15 +200,10 @@ def log_ws_close(ws_id: int, close_code: int | None, duration: float) -> None:
     else:
         status = WS_CLOSE_CODES.get(close_code, f"code {close_code}")
 
-    if use_color:
-        # 🔌 aligned with status, ID aligned with method
-        prefix = f"🔌  {_WS_CLOSE}{id_str}{_RESET}"
-        status_str = f"{_WS_STATUS}{status}{_RESET}"
-        timing_str = f"{_TIMING}{timing}{_RESET}"
-    else:
-        prefix = f"WS- {id_str}"
-        status_str = status
-        timing_str = timing
+    # 🔌 aligned with status, ID aligned with method
+    prefix = f"🔌  {_WS_CLOSE}{id_str}{_RESET}"
+    status_str = f"{_WS_STATUS}{status}{_RESET}"
+    timing_str = f"{_TIMING}{timing}{_RESET}"
 
     logger.info(f"{' ' * 19} {prefix} {status_str} {timing_str}")
 

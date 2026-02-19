@@ -35,9 +35,9 @@ _UNSAFE_CHARS = re.compile(
 
 # ANSI color codes (matching FastAPI logging style)
 _RESET = "\033[0m"
-_DIM = "\033[2m"
-_PATH_PREFIX = "\033[1;30m"  # Dark grey for path prefix (like host in access log)
-_PATH_FINAL = "\033[0m"  # Default for final element (like path in access log)
+_SEP = "\033[38;5;242m"  # Dark grey for separators (like host/timing in access log)
+_PATH_PREFIX = "\033[38;5;242m"  # Dark grey for path prefix (like host in access log)
+_PATH_FINAL = "\033[38;5;250m"  # Default for final element (like path in access log)
 _DELETE = "\033[1;31m"  # Red for deletions
 _ADD = "\033[0;32m"  # Green for additions
 _ACTION = "\033[1;34m"  # Bold blue for action name
@@ -317,7 +317,7 @@ def _format_change_lines(
     # Helper to format a value, checking for censored paths
     def fmt_value(v: Any, child_path: list[str]) -> str:
         if child_path[-2:] == ["oidc", "key"]:
-            return f"{_DIM}<hidden>{_RESET}"
+            return f"{_SEP}<hidden>{_RESET}"
         return _format_value(v, resolver=resolver)
 
     # Helper to format path with UUID replacement
@@ -342,12 +342,12 @@ def _format_change_lines(
             lines = []
             # First line: path with green final element and grey =
             if len(formatted_path) == 1:
-                lines.append(f"  {_ADD}{formatted_path[0]}{_RESET} {_DIM}={_RESET}")
+                lines.append(f"  {_ADD}{formatted_path[0]}{_RESET} {_SEP}={_RESET}")
             else:
                 prefix = ".".join(formatted_path[:-1])
                 final = formatted_path[-1]
                 lines.append(
-                    f"  {_PATH_PREFIX}{prefix}.{_RESET}{_ADD}{final}{_RESET} {_DIM}={_RESET}"
+                    f"  {_PATH_PREFIX}{prefix}.{_RESET}{_ADD}{final}{_RESET} {_SEP}={_RESET}"
                 )
             # Child lines: indented key: value, with aligned values
             # Format keys (may contain UUIDs)
@@ -360,24 +360,24 @@ def _format_change_lines(
             field_width = max(max_key_len, 12)  # minimum 12 chars
             for k_display, v_str in formatted_items:
                 padding = " " * (field_width - len(k_display))
-                lines.append(f"    {k_display}{_DIM}:{_RESET}{padding} {v_str}")
+                lines.append(f"    {k_display}{_SEP}:{_RESET}{padding} {v_str}")
             return lines
         else:
             value_str = fmt_value(value, path)
             if len(formatted_path) == 1:
                 return [
-                    f"  {_ADD}{formatted_path[0]}{_RESET} {_DIM}={_RESET} {value_str}"
+                    f"  {_ADD}{formatted_path[0]}{_RESET} {_SEP}={_RESET} {value_str}"
                 ]
             prefix = ".".join(formatted_path[:-1])
             final = formatted_path[-1]
             return [
-                f"  {_PATH_PREFIX}{prefix}.{_RESET}{_ADD}{final}{_RESET} {_DIM}={_RESET} {value_str}"
+                f"  {_PATH_PREFIX}{prefix}.{_RESET}{_ADD}{final}{_RESET} {_SEP}={_RESET} {value_str}"
             ]
 
     # update: Existing item being updated - normal path colors
     value_str = fmt_value(value, path)
     path_str = _format_path(path, resolver=resolver)
-    return [f"  {path_str} {_DIM}={_RESET} {value_str}"]
+    return [f"  {path_str} {_SEP}={_RESET} {value_str}"]
 
 
 def format_diff(
