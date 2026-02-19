@@ -462,6 +462,23 @@ function createPermissionForClient(clientId) {
   openDialog('perm-create', { display_name: '', scope: '', domain: clientId })
 }
 
+async function openServerConfig() {
+  try {
+    const config = await apiJson('/auth/api/admin/server-config')
+    // Strip https:// scheme from stored origins and auth_host for editing
+    const origins = (config.origins || []).map(o => o.replace(/^https:\/\//, ''))
+    const auth_host = (config.auth_host || '').replace(/^https:\/\//, '')
+    openDialog('server-config', {
+      rp_name: config.rp_name || '',
+      auth_host,
+      origins,
+      originValidation: origins.map(() => null),
+    })
+  } catch (e) {
+    authStore.showMessage(e.message || 'Failed to load server configuration', 'error')
+  }
+}
+
 function deleteOidcClient(client) {
   openDialog('confirm', {
     message: `Delete OIDC client "${client.name}"? This will break any applications using this client.`,
@@ -886,6 +903,27 @@ async function submitDialog() {
           authStore.showMessage(e.message || `Failed to ${isNew ? 'create' : 'update'} OIDC client`, 'error')
         })
       return // Don't call closeDialog() again
+    } else if (t === 'server-config') {
+      const rp_name = dialog.value.data.rp_name?.trim() || ''
+      const auth_host = dialog.value.data.auth_host?.trim() || ''
+      // Origins are stored as-is (hostnames); backend normalizes with https://
+      const origins = dialog.value.data.origins
+        .map(o => o.trim())
+        .filter(o => o)
+
+      closeDialog()
+      apiJson('/auth/api/admin/server-config', { method: 'PATCH', body: { rp_name, auth_host, origins } })
+        .then(() => {
+          authStore.showMessage('Server configuration updated.', 'success', 2500)
+          // Reload settings to reflect rp_name changes
+          authStore.loadSettings().then(() => {
+            if (authStore.settings?.rp_name) document.title = authStore.settings.rp_name + ' Admin'
+          })
+        })
+        .catch(e => {
+          authStore.showMessage(e.message || 'Failed to update server configuration', 'error')
+        })
+      return // Don't call closeDialog() again
     } else if (t === 'confirm') {
       const action = dialog.value.data.action
       // Close dialog first, then perform action (errors shown via showMessage)
@@ -951,6 +989,7 @@ async function submitDialog() {
                   @create-oidc-client="createOidcClient"
                   @open-oidc-client="openOidcClient"
                   @delete-oidc-client="deleteOidcClient"
+                  @open-server-config="openServerConfig"
                   @navigate-out="handlePanelNavigateOut"
                 />
 

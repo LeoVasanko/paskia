@@ -12,7 +12,7 @@ const props = defineProps({
   navigationDisabled: { type: Boolean, default: false }
 })
 
-const emit = defineEmits(['createOrg', 'openOrg', 'updateOrg', 'deleteOrg', 'toggleOrgPermission', 'openDialog', 'deletePermission', 'renamePermissionDisplay', 'createOidcClient', 'openOidcClient', 'deleteOidcClient', 'navigateOut'])
+const emit = defineEmits(['createOrg', 'openOrg', 'updateOrg', 'deleteOrg', 'toggleOrgPermission', 'openDialog', 'deletePermission', 'renamePermissionDisplay', 'createOidcClient', 'openOidcClient', 'deleteOidcClient', 'openServerConfig', 'navigateOut'])
 
 // Template refs for navigation
 const orgSection = ref(null)
@@ -431,6 +431,16 @@ defineExpose({ focusFirstElement })
       </tbody>
     </table>
   </div>
+
+  <div v-if="isMasterAdmin" class="server-options-section">
+    <div class="section-header">
+      <h2>Server</h2>
+      <p class="section-description">
+        Configure core server settings such as the display name, authentication host, and allowed origins.
+      </p>
+    </div>
+    <button @click="$emit('openServerConfig')">⚙ Server Options</button>
+  </div>
 </template>
 
 <style scoped>
@@ -455,4 +465,8 @@ defineExpose({ focusFirstElement })
 .oidc-clients-section { margin-bottom: var(--space-xl); margin-top: var(--space-2xl); }
 .oidc-clients-section .section-header { display: flex; flex-direction: column; gap: 0.4rem; margin-bottom: var(--space-md); }
 .client-groups { font-size: 0.85rem; color: var(--color-text-muted); max-width: 200px; font-family: var(--font-mono, monospace); }
+
+/* Server Options Section */
+.server-options-section { margin-top: var(--space-2xl); }
+.server-options-section .section-header { display: flex; flex-direction: column; gap: 0.4rem; margin-bottom: var(--space-md); }
 </style>

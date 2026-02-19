@@ -12,12 +12,13 @@ from paskia.db import Permission as PermDC
 from paskia.db import Role as RoleDC
 from paskia.db import User as UserDC
 from paskia.db.operations import _UNSET
-from paskia.db.structs import Client
+from paskia.db.structs import Client, Config
 from paskia.fastapi import authz
 from paskia.fastapi.front import frontend
 from paskia.fastapi.response import MsgspecResponse
 from paskia.fastapi.session import AUTH_COOKIE
 from paskia.globals import passkey
+from paskia.sansio import Passkey
 from paskia.util import (
     hostutil,
     permutil,
@@ -1174,5 +1175,81 @@ async def admin_delete_oidc_client(
         db.delete_oid_client(client_uuid, ctx=ctx)
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
+
+    return {"status": "ok"}
+
+
+# -------------------- Server Configuration --------------------
+
+
+@app.get("/server-config")
+async def admin_get_server_config(
+    request: Request,
+    auth=AUTH_COOKIE,
+):
+    """Get current server configuration (master admin only)."""
+    await authz.verify(auth, ["auth:admin"], host=request.headers.get("host"))
+    pk = passkey.instance
+    config = db.data().config
+    return {
+        "rp_name": pk.rp_name,
+        "auth_host": config.auth_host or "",
+        "origins": list(pk.allowed_origins) if pk.allowed_origins else [],
+    }
+
+
+@app.patch("/server-config")
+async def admin_update_server_config(
+    request: Request,
+    payload: dict = Body(...),
+    auth=AUTH_COOKIE,
+):
+    """Update server configuration (master admin only).
+
+    Updates rp_name, auth_host, and origins in both the runtime Passkey
+    instance and the persisted database config.
+    """
+    await authz.verify(
+        auth, ["auth:admin"], host=request.headers.get("host"), max_age="5m"
+    )
+    config = db.data().config
+    pk = passkey.instance
+
+    rp_name = payload.get("rp_name", "").strip() or None
+    auth_host = payload.get("auth_host", "").strip() or None
+    raw_origins = payload.get("origins", [])
+    origins = [
+        hostutil.normalize_origin(o.strip()) for o in raw_origins if o.strip()
+    ] or None
+
+    # Normalize auth_host and origins (matching CLI startup behavior)
+    if auth_host:
+        try:
+            hostutil.validate_auth_host(auth_host, config.rp_id)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+    auth_host, origins = hostutil.normalize_auth_host_and_origins(auth_host, origins)
+
+    # Validate origins against the current rp_id
+    if origins:
+        for o in origins:
+            Passkey(rp_id=config.rp_id, origins=[o])  # validates or raises
+
+    # Update runtime Passkey instance
+    pk.rp_name = rp_name or config.rp_id
+    pk.allowed_origins = set(origins) if origins else None
+
+    # Persist to database
+    new_config = Config(
+        rp_id=config.rp_id,
+        rp_name=rp_name,
+        auth_host=auth_host,
+        origins=origins,
+        listen=config.listen,
+    )
+    await db.update_config(new_config)
+
+    # Reload hostutil cached config so auth_host changes take effect
+    hostutil.reload_config()
 
     return {"status": "ok"}

@@ -186,7 +186,9 @@ async def run_devserver(args: argparse.Namespace, remaining: list[str]) -> None:
         npm_proc = await pg.spawn(*npm_install, cwd=frontend_path)
         await check_ports_free(viteurl, backurl)
         await pg.spawn(*paskia)
-        await pg.wait(npm_proc, ready(backurl, path="/api/health?from=devserver.py"))
+        await pg.wait(
+            npm_proc, ready(backurl, path="/auth/api/settings?from=devserver.py")
+        )
         await pg.spawn(*vite, cwd=frontend_path)
 
 
