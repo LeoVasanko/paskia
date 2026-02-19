@@ -823,9 +823,6 @@ th {
 
 .user-info {
   display: grid;
-  border-radius: var(--radius-md);
-  background: var(--color-surface);
-  padding: 1rem;
 }
 
 .user-details {
