@@ -9,7 +9,6 @@ import msgspec
 import uuid7
 
 from paskia import db
-from paskia.util import hostutil
 from paskia.util import passphrase as passphrase_util
 from paskia.util.crypto import hash_secret
 
@@ -601,14 +600,14 @@ class OIDC(msgspec.Struct, dict=True):
     key: bytes | None = None
 
 
-class Config(msgspec.Struct, frozen=True, dict=True, omit_defaults=True):
+class Config(msgspec.Struct, omit_defaults=True):
     """Stored configuration for the instance."""
 
     rp_id: str
     rp_name: str | None = None
-    origins: list[str] | None = None
     auth_host: str | None = None
-    listen: str | None = None
+    origins: list[str] | None = None
+    listen: list[str] | None = None
 
 
 # -------------------------------------------------------------------------
@@ -679,10 +678,8 @@ class DB(msgspec.Struct, dict=True, omit_defaults=False):
         if s.client_uuid is not None:
             return None
 
-        # Normalize host for comparison (stored hosts are already normalized)
-        normalized_input = hostutil.normalize_host(host)
-
         # Validate host matches (sessions are always created with a host)
+        normalized_input = host
         if s.host != normalized_input:
             # Session bound to different host
             return None

@@ -15,7 +15,7 @@ from fastapi.security import HTTPBearer
 
 from paskia import authcode, db
 from paskia._version import __version__
-from paskia.authsession import EXPIRES, get_reset
+from paskia.authsession import EXPIRES, get_reset, session_ctx
 from paskia.fastapi import authz, session, user
 from paskia.fastapi.response import MsgspecResponse
 from paskia.fastapi.session import AUTH_COOKIE, AUTH_COOKIE_NAME, get_client_ip
@@ -202,7 +202,7 @@ async def api_user_info(
             detail="Authentication required",
             mode="login",
         )
-    ctx = db.data().session_ctx(auth, request.headers.get("host"))
+    ctx = session_ctx(auth, request.headers.get("host"))
     if not ctx:
         raise authz.AuthException(
             status_code=401,
@@ -249,7 +249,7 @@ async def api_logout(request: Request, response: Response, auth=AUTH_COOKIE):
     if not auth:
         return {"message": "Already logged out"}
     host = request.headers.get("host")
-    ctx = db.data().session_ctx(auth, host)
+    ctx = session_ctx(auth, host)
     if not ctx:
         return {"message": "Already logged out"}
     with suppress(Exception):
@@ -282,7 +282,7 @@ async def api_set_session(
     secret = a.session_key
 
     # Verify the session exists
-    ctx = db.data().session_ctx(secret, host)
+    ctx = session_ctx(secret, host)
     if not ctx:
         raise HTTPException(401, f"Session not found on {host}")
 

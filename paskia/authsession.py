@@ -23,6 +23,11 @@ if TYPE_CHECKING:
 EXPIRES = SESSION_LIFETIME
 
 
+def session_ctx(auth: str, host: str | None = None):
+    """Get session context with normalized host."""
+    return db.data().session_ctx(auth, hostutil.normalize_host(host))
+
+
 def expires() -> datetime:
     return datetime.now(UTC) + EXPIRES
 
@@ -42,7 +47,7 @@ def get_reset(token: str) -> "ResetToken":
 
 def delete_credential(credential_uuid: UUID, auth: str, host: str | None = None):
     """Delete a specific credential for the current user."""
-    ctx = db.data().session_ctx(auth, hostutil.normalize_host(host))
+    ctx = session_ctx(auth, host)
     if not ctx:
         raise ValueError("Session expired")
     db.delete_credential(credential_uuid, ctx.user.uuid)
