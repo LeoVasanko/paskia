@@ -259,8 +259,10 @@ async def _handle_refresh_token(
     The refresh_token is the session secret. On refresh:
     - Validates session exists and belongs to client
     - Extends session expiry (24h sliding window)
-    - Records current IP and user_agent
     - Issues new access_token and id_token
+
+    Note: ip and user_agent are NOT updated because the refresh request
+    comes from the OIDC client's backend, not the end user's browser.
     """
     if not refresh_token_value:
         return JSONResponse(
@@ -287,17 +289,13 @@ async def _handle_refresh_token(
             status_code=400,
         )
 
-    # Refresh the session - extend expiry and record IP/user_agent
+    # Refresh the session - extend expiry only
+    # Don't update ip/user_agent: the refresh request comes from the OIDC
+    # client's backend, not the end user's browser.
     now = datetime.now(UTC)
-    ip = request.headers.get("x-forwarded-for", "").split(",")[0].strip()
-    if not ip:
-        ip = request.client.host if request.client else ""
-    user_agent = request.headers.get("user-agent", "")
 
     db.update_session(
         session.key,
-        ip=ip,
-        user_agent=user_agent,
         validated=now,
     )
 
