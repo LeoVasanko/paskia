@@ -263,7 +263,7 @@ class TestAdminOrganizations:
     ):
         """Creating org without admin permission should fail."""
         response = await client.post(
-            "/auth/api/admin/orgs",
+            "/auth/api/admin/orgs/",
             json={"display_name": "New Org"},
             headers={
                 **auth_headers(regular_session_token),
@@ -278,7 +278,7 @@ class TestAdminOrganizations:
     ):
         """Admin should be able to create a new organization."""
         response = await client.post(
-            "/auth/api/admin/orgs",
+            "/auth/api/admin/orgs/",
             json={"display_name": "New Test Org", "permissions": []},
             headers={**auth_headers(session_token), "Host": "localhost:4401"},
         )
@@ -292,7 +292,7 @@ class TestAdminOrganizations:
     ):
         """Admin should be able to create org with default values."""
         response = await client.post(
-            "/auth/api/admin/orgs",
+            "/auth/api/admin/orgs/",
             json={},  # No display_name or permissions
             headers={**auth_headers(session_token), "Host": "localhost:4401"},
         )
@@ -1421,7 +1421,7 @@ class TestAdminPermissions:
     ):
         """Admin should be able to create new permissions."""
         response = await client.post(
-            "/auth/api/admin/permissions",
+            "/auth/api/admin/permissions/",
             json={"scope": "test:create:permission", "display_name": "Test Permission"},
             headers={**auth_headers(session_token), "Host": "localhost:4401"},
         )
@@ -1435,7 +1435,7 @@ class TestAdminPermissions:
     ):
         """Creating permission without required fields should fail."""
         response = await client.post(
-            "/auth/api/admin/permissions",
+            "/auth/api/admin/permissions/",
             json={},
             headers={**auth_headers(session_token), "Host": "localhost:4401"},
         )
@@ -1449,7 +1449,7 @@ class TestAdminPermissions:
     ):
         """Creating permission without admin should fail."""
         response = await client.post(
-            "/auth/api/admin/permissions",
+            "/auth/api/admin/permissions/",
             json={"scope": "test:forbidden", "display_name": "Forbidden"},
             headers={
                 **auth_headers(regular_session_token),
@@ -1468,7 +1468,7 @@ class TestAdminPermissions:
         create_permission(perm)
 
         response = await client.patch(
-            f"/auth/api/admin/permission?permission_uuid={perm.uuid}&display_name=Updated%20Name",
+            f"/auth/api/admin/permissions/{perm.uuid}?display_name=Updated%20Name",
             headers={**auth_headers(session_token), "Host": "localhost:4401"},
         )
         assert response.status_code == 200
@@ -1485,7 +1485,7 @@ class TestAdminPermissions:
         create_permission(perm)
 
         response = await client.patch(
-            f"/auth/api/admin/permission?permission_uuid={perm.uuid}&display_name=",
+            f"/auth/api/admin/permissions/{perm.uuid}?display_name=",
             headers={**auth_headers(session_token), "Host": "localhost:4401"},
         )
         assert response.status_code == 400
@@ -1502,7 +1502,7 @@ class TestAdminPermissions:
         create_permission(perm)
 
         response = await client.patch(
-            f"/auth/api/admin/permission?permission_uuid={perm.uuid}&scope=test:renamed2",
+            f"/auth/api/admin/permissions/{perm.uuid}?scope=test:renamed2",
             headers={**auth_headers(session_token), "Host": "localhost:4401"},
         )
         assert response.status_code == 200
@@ -1518,7 +1518,7 @@ class TestAdminPermissions:
         admin_perm = next(p for p in perms if p.scope == "auth:admin")
 
         response = await client.patch(
-            f"/auth/api/admin/permission?permission_uuid={admin_perm.uuid}&scope=auth:superadmin",
+            f"/auth/api/admin/permissions/{admin_perm.uuid}?scope=auth:superadmin",
             headers={**auth_headers(session_token), "Host": "localhost:4401"},
         )
         assert response.status_code == 400
@@ -1534,7 +1534,7 @@ class TestAdminPermissions:
         create_permission(perm)
 
         response = await client.patch(
-            f"/auth/api/admin/permission?permission_uuid={perm.uuid}&scope=test:renamed:withname&display_name=New%20Display%20Name",
+            f"/auth/api/admin/permissions/{perm.uuid}?scope=test:renamed:withname&display_name=New%20Display%20Name",
             headers={**auth_headers(session_token), "Host": "localhost:4401"},
         )
         assert response.status_code == 200
@@ -1549,7 +1549,7 @@ class TestAdminPermissions:
         create_permission(perm)
 
         response = await client.delete(
-            f"/auth/api/admin/permission?permission_uuid={perm.uuid}",
+            f"/auth/api/admin/permissions/{perm.uuid}",
             headers={**auth_headers(session_token), "Host": "localhost:4401"},
         )
         assert response.status_code == 200
@@ -1567,7 +1567,7 @@ class TestAdminPermissions:
         admin_perm = next(p for p in perms if p.scope == "auth:admin")
 
         response = await client.delete(
-            f"/auth/api/admin/permission?permission_uuid={admin_perm.uuid}",
+            f"/auth/api/admin/permissions/{admin_perm.uuid}",
             headers={**auth_headers(session_token), "Host": "localhost:4401"},
         )
         assert response.status_code == 400
@@ -1593,7 +1593,7 @@ class TestAdminPermissions:
 
         # Now we can delete the original one
         response = await client.delete(
-            f"/auth/api/admin/permission?permission_uuid={original_admin_perm.uuid}",
+            f"/auth/api/admin/permissions/{original_admin_perm.uuid}",
             headers={**auth_headers(session_token), "Host": "localhost:4401"},
         )
         assert response.status_code == 200
@@ -1622,7 +1622,7 @@ class TestAdminPermissions:
         original_admin_perm = admin_perms[0]  # The one without domain
 
         response = await client.delete(
-            f"/auth/api/admin/permission?permission_uuid={original_admin_perm.uuid}",
+            f"/auth/api/admin/permissions/{original_admin_perm.uuid}",
             headers={**auth_headers(session_token), "Host": "localhost:4401"},
         )
         assert response.status_code == 400
