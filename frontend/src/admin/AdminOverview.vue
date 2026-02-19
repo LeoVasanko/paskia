@@ -15,14 +15,11 @@ const props = defineProps({
 const emit = defineEmits(['createOrg', 'openOrg', 'updateOrg', 'deleteOrg', 'toggleOrgPermission', 'openDialog', 'deletePermission', 'renamePermissionDisplay', 'createOidcClient', 'openOidcClient', 'deleteOidcClient', 'openServerConfig', 'navigateOut'])
 
 // Template refs for navigation
-const orgSection = ref(null)
 const orgActionsRef = ref(null)
 const orgTableRef = ref(null)
 const permMatrixRef = ref(null)
 const permActionsRef = ref(null)
 const permTableRef = ref(null)
-const oidcActionsRef = ref(null)
-const oidcTableRef = ref(null)
 
 const sortedOrgs = computed(() => [...props.orgs].sort((a,b)=> {
   const nameCompare = a.org.display_name.localeCompare(b.org.display_name)
@@ -61,10 +58,6 @@ const sortedPermissions = computed(() => [...props.permissions].sort((a,b)=> a.s
 // Derive admin status from permissions (info contains ctx from validate response)
 const isMasterAdmin = computed(() => props.info?.ctx.permissions.includes('auth:admin'))
 const isOrgAdmin = computed(() => props.info?.ctx.permissions.includes('auth:org:admin'))
-
-function permissionDisplayName(scope) {
-  return props.permissions.find(p => p.scope === scope)?.display_name || scope
-}
 
 function getRoleNames(org) {
   // org.roles is dict[UUID, Role]
