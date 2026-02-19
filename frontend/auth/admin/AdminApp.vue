@@ -339,24 +339,9 @@ async function moveUserToRole(userUuid, user, targetRoleUuid) {
   }
 }
 
-function onUserDragStart(e, userUuid, org) {
-  e.dataTransfer.effectAllowed = 'move'
-  e.dataTransfer.setData('text/plain', JSON.stringify({ user_uuid: userUuid, org }))
-}
-
-function onRoleDragOver(e) {
-  e.preventDefault()
-  e.dataTransfer.dropEffect = 'move'
-}
-
-function onRoleDrop(e, org, role) {
-  e.preventDefault()
-  try {
-    const data = JSON.parse(e.dataTransfer.getData('text/plain'))
-    if (data.org !== org.uuid) return // only within same org
-    const user = org.users[data.user_uuid]
-    if (user) moveUserToRole(data.user_uuid, user, role.uuid)
-  } catch (_) { /* ignore */ }
+function moveUserToRoleFromDrag(userUuid, newRoleUuid) {
+  const user = selectedOrg.value?.users?.[userUuid]
+  if (user) moveUserToRole(userUuid, user, newRoleUuid)
 }
 
 // Role actions
@@ -1001,10 +986,8 @@ async function submitDialog() {
                   @create-user-in-role="createUserInRole"
                   @open-user="openUser"
                   @toggle-role-permission="toggleRolePermission"
-                  @on-role-drag-over="onRoleDragOver"
+                  @move-user-to-role="moveUserToRoleFromDrag"
                   @navigate-out="handlePanelNavigateOut"
-                  @on-role-drop="onRoleDrop"
-                  @on-user-drag-start="onUserDragStart"
                 />
 
                 <AdminOidcDetail

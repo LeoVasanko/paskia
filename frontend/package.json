@@ -15,7 +15,8 @@
     "qrcode": "^1.5.4",
     "sirv": "^3.0.2",
     "uuidv7": "^1.1.0",
-    "vue": "^3.5.17"
+    "vue": "^3.5.17",
+    "vuedraggable": "^4.1.0"
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "^6.0.0",

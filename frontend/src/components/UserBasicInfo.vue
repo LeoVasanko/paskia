@@ -118,7 +118,7 @@ const userLoaded = computed(() => !!props.name)
 .user-info-extra { grid-area: extra; padding-left: 1rem; border-left: 1px solid var(--color-border); flex-shrink: 0; }
 .user-name-row { display: inline-flex; align-items: center; gap: 0.35rem; max-width: 100%; min-width: 0; }
 .display-name { font-weight: 600; font-size: 1.05em; line-height: 1.2; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
-.mini-btn { width: auto; padding: 4px 6px; margin: 0; font-size: 0.75em; line-height: 1; cursor: pointer; }
+.mini-btn { width: auto; padding: 4px 6px; margin: 0; font-size: 0.75em; line-height: 1; cursor: pointer; background: transparent; }
 .mini-btn:hover:not(:disabled) { background: var(--color-accent-soft); color: var(--color-accent); }
 .mini-btn:active:not(:disabled) { transform: translateY(1px); }
 .mini-btn:disabled { opacity: 0.5; cursor: not-allowed; }

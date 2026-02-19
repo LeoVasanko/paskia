@@ -1,5 +1,6 @@
 <script setup>
 import { computed, ref } from 'vue'
+import draggable from 'vuedraggable'
 import { getDirection, navigateButtonRow, focusPreferred } from '@/utils/keynav'
 
 const props = defineProps({
@@ -8,7 +9,7 @@ const props = defineProps({
   navigationDisabled: { type: Boolean, default: false }
 })
 
-const emit = defineEmits(['updateOrg', 'createRole', 'updateRole', 'deleteRole', 'createUserInRole', 'openUser', 'toggleRolePermission', 'onRoleDragOver', 'onRoleDrop', 'onUserDragStart', 'navigateOut'])
+const emit = defineEmits(['updateOrg', 'createRole', 'updateRole', 'deleteRole', 'createUserInRole', 'openUser', 'toggleRolePermission', 'moveUserToRole', 'navigateOut'])
 
 // Template refs for navigation
 const orgTitleRef = ref(null)
@@ -48,6 +49,14 @@ function roleUsers(roleUuid) {
 
 function roleUserCount(roleUuid) {
   return Object.values(props.selectedOrg.users).filter(u => u.role === roleUuid).length
+}
+
+function onUserChange(evt, targetRoleUuid) {
+  // Only handle 'added' events (when a user is dropped into this role)
+  if (evt.added) {
+    const userUuid = evt.added.element.uuid
+    emit('moveUserToRole', userUuid, targetRoleUuid)
+  }
 }
 
 function permissionDisplayName(scope) {
@@ -350,8 +359,6 @@ defineExpose({ focusFirstElement })
         v-for="(r, roleIndex) in sortedRoles"
         :key="r.uuid"
         class="role-column"
-        @dragover="$emit('onRoleDragOver', $event)"
-        @drop="e => $emit('onRoleDrop', e, selectedOrg, r)"
       >
         <div class="role-header" @keydown="e => handleRoleHeaderKeydown(e, roleIndex)">
           <strong class="role-name" :title="r.uuid">
@@ -363,26 +370,32 @@ defineExpose({ focusFirstElement })
             <button @click="$emit('createUserInRole', selectedOrg, r)" class="plus-btn" aria-label="Add user" title="Add user">➕</button>
           </div>
         </div>
-        <template v-if="roleUserCount(r.uuid) > 0">
-          <ul class="user-list" @keydown="handleUserListKeydown">
-            <li
-              v-for="u in roleUsers(r.uuid)"
-              :key="u.uuid"
-              class="user-chip"
-              tabindex="0"
-              draggable="true"
-              @dragstart="e => $emit('onUserDragStart', e, u.uuid, selectedOrg.uuid)"
-              @click="$emit('openUser', u)"
-              @keydown.enter="$emit('openUser', u)"
-              :title="u.uuid"
-            >
-              <span class="name">{{ u.display_name }}</span>
-              <span class="meta">{{ u.last_seen ? new Date(u.last_seen).toLocaleDateString() : '—' }}</span>
-            </li>
-          </ul>
-        </template>
-        <div v-else class="empty-role">
-          <p class="empty-text muted">No members</p>
+        <div class="user-list-wrapper">
+          <draggable
+            :list="roleUsers(r.uuid)"
+            group="users"
+            item-key="uuid"
+            tag="ul"
+            class="user-list"
+            @change="evt => onUserChange(evt, r.uuid)"
+            @keydown="handleUserListKeydown"
+          >
+            <template #item="{ element: u }">
+              <li
+                class="user-chip"
+                tabindex="0"
+                @click="$emit('openUser', u)"
+                @keydown.enter="$emit('openUser', u)"
+                :title="u.uuid"
+              >
+                <span class="name">{{ u.display_name }}</span>
+                <span class="meta">{{ u.last_seen ? new Date(u.last_seen).toLocaleDateString() : '—' }}</span>
+              </li>
+            </template>
+          </draggable>
+          <div v-if="roleUserCount(r.uuid) === 0" class="empty-role">
+            <p class="empty-text muted">No members</p>
+          </div>
         </div>
       </div>
     </div>
@@ -391,23 +404,27 @@ defineExpose({ focusFirstElement })
 
 <style scoped>
 .card.surface { padding: var(--space-lg); }
-.org-title { display: flex; align-items: center; gap: var(--space-sm); margin-bottom: var(--space-lg); }
-.org-name { font-size: 1.5rem; font-weight: 600; color: var(--color-heading); }
+.org-title { display: flex; align-items: center; gap: var(--space-sm); margin-bottom: var(--space-lg); font-size: 1.65rem; }
+.org-name { font-weight: 600; color: var(--color-heading); }
 .perm-matrix-grid .role-head { display: flex; align-items: flex-end; justify-content: center; }
 .perm-matrix-grid .role-head span { writing-mode: vertical-rl; transform: rotate(180deg); font-size: 0.65rem; }
 .perm-matrix-grid .add-role-head { cursor: pointer; }
-.roles-grid { display: flex; gap: var(--space-lg); margin-top: var(--space-lg); }
-.role-column { flex: 1; min-width: 200px; border-radius: var(--radius-md); padding: var(--space-md); }
+.roles-grid { display: flex; flex-wrap: wrap; gap: var(--space-lg); margin-top: var(--space-lg); justify-content: flex-start; align-items: stretch; }
+.role-column { flex: 0 0 240px; border-radius: var(--radius-md); padding: var(--space-md); display: flex; flex-direction: column; }
 .role-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--space-md); }
 .role-name { display: flex; align-items: center; gap: var(--space-xs); font-size: 1.1rem; color: var(--color-heading); }
 .role-actions { display: flex; gap: var(--space-xs); }
 .plus-btn { background: none; color: var(--color-accent); border: none; border-radius: var(--radius-sm); padding: 0.25rem 0.45rem; font-size: 1.1rem; cursor: pointer; }
 .plus-btn:hover { background: rgba(37, 99, 235, 0.18); }
-.user-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: var(--space-xs); }
-.user-chip { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: 0.45rem 0.6rem; display: flex; justify-content: space-between; gap: var(--space-sm); cursor: grab; }
+.user-list-wrapper { position: relative; flex: 1; display: flex; flex-direction: column; min-height: 5.5rem; }
+.user-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: var(--space-xs); flex: 1; }
+.user-chip { background: var(--color-accent-strong); color: white; border: none; border-radius: var(--radius-md); padding: 0.45rem 0.6rem; display: flex; justify-content: space-between; gap: var(--space-sm); cursor: grab; }
 .user-chip:focus { outline: 2px solid var(--color-accent); outline-offset: 1px; }
-.user-chip .meta { font-size: 0.7rem; color: var(--color-text-muted); }
-.empty-role { border: 1px dashed var(--color-border-strong); border-radius: var(--radius-md); padding: var(--space-sm); display: flex; flex-direction: column; gap: var(--space-xs); align-items: flex-start; }
+.user-chip .meta { font-size: 0.7rem; color: rgba(255, 255, 255, 0.8); }
+.user-chip.sortable-ghost { opacity: 0.5; }
+.user-chip.sortable-chosen { box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2); }
+.empty-role { position: absolute; inset: 0; border: 1px dashed var(--color-border-strong); border-radius: var(--radius-md); display: flex; align-items: center; justify-content: center; pointer-events: none; }
+.user-list:has(.sortable-ghost) + .empty-role { display: none; }
 .empty-text { margin: 0; }
 
 @media (max-width: 720px) {
