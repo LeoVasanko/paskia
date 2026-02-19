@@ -36,14 +36,26 @@ const orgPermissions = computed(() => {
 })
 
 // Get users for a role as sorted array of { uuid, ...user }
+function getNormalizedName(name) {
+  let cleaned = name.replace(/\([^)]*\)/g, '').trim();
+  if (cleaned.includes(',')) {
+    return cleaned.toLowerCase();
+  } else {
+    const parts = cleaned.split(/\s+/);
+    const last = parts.pop();
+    const first = parts.join(' ');
+    return `${last}, ${first}`.toLowerCase();
+  }
+}
+
 function roleUsers(roleUuid) {
   return Object.entries(props.selectedOrg.users)
     .filter(([_, u]) => u.role === roleUuid)
     .map(([uuid, u]) => ({ uuid, ...u }))
     .sort((a, b) => {
-      const nameA = a.display_name.toLowerCase()
-      const nameB = b.display_name.toLowerCase()
-      return nameA.localeCompare(nameB)
+      const normA = getNormalizedName(a.display_name);
+      const normB = getNormalizedName(b.display_name);
+      return normA.localeCompare(normB);
     })
 }
 
