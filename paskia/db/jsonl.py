@@ -41,10 +41,8 @@ class ReplayResult(msgspec.Struct, frozen=False):
     changes: int = 0
 
 
-class DatabaseError(Exception):
+class DatabaseError(ValueError):
     """Exception raised for database loading errors."""
-
-    pass
 
 
 def _replay_from_data(data: bytes, db_path: str) -> ReplayResult:
@@ -61,14 +59,16 @@ def _replay_from_data(data: bytes, db_path: str) -> ReplayResult:
 
     # Replay change records after the snapshot
     lines = data[start_offset:].split(b"\n")
-    for line_num, raw in enumerate(lines, start=1):  # 1-based line numbering
+    for raw in lines:
         line = raw.strip()
         if not line:
             continue
         try:
             change = msgspec.json.decode(line, type=ChangeRecord)
         except msgspec.DecodeError as e:
-            raise DatabaseError(f"{resolved_path}:{line_num}: {e}")
+            raise DatabaseError(
+                f"{resolved_path}: {e}\n{line.decode(errors='replace')}"
+            )
         result.state = jsondiff.patch(result.state, change.diff, marshal=True)
         result.v = change.v
         result.ts = change.ts
@@ -88,29 +88,30 @@ def load_readonly(db_path: str, *, rp_id: str = "localhost") -> DB:
         return DB(config=Config(rp_id=rp_id))
 
     try:
-        with open(path, "rb") as f:
-            content = f.read()
+        content = path.read_bytes()
         r = _replay_from_data(content, str(path.resolve()))
         data_dict = r.state
         version = r.v
+
+        if not data_dict:
+            return DB(config=Config(rp_id=rp_id))
+
+        # Apply migrations in-memory (no persistence)
+        apply_migrations_readonly(data_dict, version, MigrationCtx(rp_id=rp_id))
+
+        # Decode to msgspec struct
+        try:
+            return msgspec.json.decode(msgspec.json.encode(data_dict), type=DB)
+        except msgspec.ValidationError as e:
+            raise DatabaseError(f"{path.resolve()}: {e}") from None
     except OSError as e:
         _logger.exception("Failed to load database")
         raise SystemExit(f"{e}")
-    except (ValueError, msgspec.DecodeError, DatabaseError) as e:
+    except (ValueError, msgspec.DecodeError) as e:
         raise SystemExit(f"{e}")
     except Exception as e:
         _logger.exception("Unexpected error loading database")
         raise SystemExit(f"{e}")
-
-    if not data_dict:
-        return DB(config=Config(rp_id=rp_id))
-
-    # Apply migrations in-memory (no persistence)
-    apply_migrations_readonly(data_dict, version, MigrationCtx(rp_id=rp_id))
-
-    # Decode to msgspec struct
-    db = msgspec.json.decode(msgspec.json.encode(data_dict), type=DB)
-    return db
 
 
 class ChangeRecord(msgspec.Struct, omit_defaults=True, kw_only=True):

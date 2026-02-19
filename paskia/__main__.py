@@ -1,11 +1,13 @@
 import argparse
 import logging
 import os
+import sys
 
 import msgspec
 from fastapi_vue import server
 from fastapi_vue.hostutil import parse_endpoints
 
+from paskia._version import __version__
 from paskia.db.jsonl import load_readonly
 from paskia.util import startupbox
 from paskia.util.hostutil import (
@@ -74,7 +76,11 @@ def main():
 
     # Load stored config (read-only, no writes, no global state)
     db_path = os.environ.get("PASKIA_DB", f"{args.rp_id}.paskiadb")
-    config = load_readonly(db_path, rp_id=args.rp_id).config
+    try:
+        config = load_readonly(db_path, rp_id=args.rp_id).config
+    except SystemExit as e:
+        print(f"🛑 Paskia {__version__} could not load")
+        sys.exit(str(e))
 
     # Override stored config with CLI args, or clear with empty string
     if args.rp_name is not None:
