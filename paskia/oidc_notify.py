@@ -13,7 +13,7 @@ import httpx
 
 from paskia import db
 from paskia.util import oidjwt
-from paskia.util.hostutil import _load_config
+from paskia.util.runtime import _load_config
 
 _logger = logging.getLogger(__name__)
 

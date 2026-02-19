@@ -3,7 +3,7 @@
 from collections.abc import Sequence
 from fnmatch import fnmatchcase
 
-from paskia import db
+from paskia.authsession import session_ctx
 from paskia.util.hostutil import normalize_host
 
 __all__ = ["has_any", "has_all", "session_context"]
@@ -40,4 +40,4 @@ async def session_context(auth: str | None, host: str | None = None):
     if not auth:
         return None
     normalized_host = normalize_host(host) if host else None
-    return db.data().session_ctx(auth, normalized_host)
+    return session_ctx(auth, normalized_host)

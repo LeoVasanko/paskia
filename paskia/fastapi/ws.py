@@ -7,7 +7,7 @@ from fastapi import FastAPI, WebSocket
 
 from paskia import authcode, db
 from paskia.authcode import CookieCode, OIDCCode
-from paskia.authsession import get_reset
+from paskia.authsession import get_reset, session_ctx
 from paskia.db.structs import Session
 from paskia.fastapi import authz, remote
 from paskia.fastapi.session import AUTH_COOKIE, infodict
@@ -195,7 +195,7 @@ async def websocket_authenticate(
     # If there's an existing session, restrict to that user's credentials (reauth)
     session_user_uuid = None
     if auth:
-        existing_ctx = db.data().session_ctx(auth, host)
+        existing_ctx = session_ctx(auth, host)
         if existing_ctx:
             session_user_uuid = existing_ctx.user.uuid
 

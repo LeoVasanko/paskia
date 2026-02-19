@@ -7,6 +7,7 @@ from uuid import UUID
 from fastapi import WebSocket
 
 from paskia import db
+from paskia.authsession import session_ctx
 from paskia.db import Credential, SessionContext
 from paskia.fastapi.session import infodict
 from paskia.fastapi.wsutil import validate_origin
@@ -90,7 +91,7 @@ async def authenticate_and_login(
     # Get credential IDs if restricting to a user's credentials
     credential_ids = None
     if auth:
-        existing_ctx = db.data().session_ctx(auth, host)
+        existing_ctx = session_ctx(auth, host)
         if existing_ctx:
             credential_ids = existing_ctx.user.credential_ids or None
 
@@ -107,7 +108,7 @@ async def authenticate_and_login(
     )
 
     # Fetch and return the full session context
-    ctx = db.data().session_ctx(secret, normalized_host)
+    ctx = session_ctx(secret, host)
     if not ctx:
         raise ValueError("Failed to create session context")
     return ctx, secret

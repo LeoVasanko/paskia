@@ -1,16 +1,16 @@
 import argparse
-import json
 import logging
 import os
 from urllib.parse import urlparse
 
+import msgspec
 from fastapi_vue import server
 from fastapi_vue.hostutil import parse_endpoints
 
-from paskia.config import PaskiaConfig
 from paskia.db.jsonl import load_readonly
 from paskia.util import startupbox
 from paskia.util.hostutil import normalize_origin
+from paskia.util.runtime import RuntimeConfig
 
 DEFAULT_PORT = 4401
 DEVMODE = os.getenv("PASKIA_DEV") == "1"
@@ -51,7 +51,6 @@ def add_common_options(p: argparse.ArgumentParser) -> None:
         "--origin",
         action="append",
         dest="origins",
-        default=[],
         metavar="URL",
         help="Allowed origin URL(s). May be specified multiple times. If any are specified, only those origins are permitted for WebSocket authentication.",
     )
@@ -91,106 +90,66 @@ def main():
 
     args = parser.parse_args()
 
-    # Handle clearing options
-    if getattr(args, "auth_host", None) == "":
-        args.auth_host = None
-    if getattr(args, "rp_name", None) == "":
-        args.rp_name = None
-    if getattr(args, "listen", None) == "":
-        args.listen = None
-
-    # Read-only load to get stored config (no writes, no global state)
+    # Load stored config (read-only, no writes, no global state)
     db_path = os.environ.get("PASKIA_DB", f"{args.rp_id}.paskiadb")
-    stored_db = load_readonly(db_path, rp_id=args.rp_id)
-    stored_config = stored_db.config
+    config = load_readonly(db_path, rp_id=args.rp_id).config
 
-    # Apply defaults from stored config
-    if args.rp_name is None and stored_config.rp_name is not None:
-        args.rp_name = stored_config.rp_name
-    if args.origins is None and stored_config.origins is not None:
-        args.origins = stored_config.origins
-    if args.auth_host is None and stored_config.auth_host is not None:
-        args.auth_host = stored_config.auth_host
-    if args.listen is None and stored_config.listen is not None:
-        args.listen = stored_config.listen
-
-    # Parse first endpoint for config display and site_url
-    ep = next(iter(parse_endpoints(args.listen, DEFAULT_PORT)), {})
-    host, port, uds = ep.get("host"), ep.get("port"), ep.get("uds")
+    # Override stored config with CLI args, or clear with empty string
+    if args.rp_name is not None:
+        config.rp_name = args.rp_name or None
+    if args.auth_host is not None:
+        config.auth_host = args.auth_host or None
+    if args.origins is not None:
+        config.origins = None if args.origins == [""] else args.origins
+    if args.listen is not None:
+        config.listen = None if args.listen == [""] else args.listen
 
     # Process and normalize auth_host
-    if args.auth_host:
-        if "://" not in args.auth_host:
-            args.auth_host = f"https://{args.auth_host}"
-        args.auth_host = args.auth_host.rstrip("/")
-        validate_auth_host(args.auth_host, args.rp_id)
-        if args.origins:
-            args.origins.insert(0, args.auth_host)  # Ensure first in origins
+    if config.auth_host:
+        if "://" not in config.auth_host:
+            config.auth_host = f"https://{config.auth_host}"
+        config.auth_host = config.auth_host.rstrip("/")
+        validate_auth_host(config.auth_host, config.rp_id)
+        if config.origins:
+            config.origins.insert(0, config.auth_host)  # Ensure first in origins
 
-    # Normalize, strip trailing slashes, and deduplicate while preserving order
-    origins = list({normalize_origin(o).rstrip("/"): ... for o in (args.origins)})
+    # Normalize and deduplicate while preserving order
+    if config.origins:
+        config.origins = list({normalize_origin(o): ... for o in config.origins})
 
-    # Compute site_url and site_path for reset links
-    # Priority: auth_host > first configured origin > PASKIA_VITE_URL (devserver) > http://localhost:port > https://rp_id
+    # Parse first endpoint for site_url fallback
+    ep = next(iter(parse_endpoints(config.listen, DEFAULT_PORT)), {})
+    port = ep.get("port")
+
+    # Compute site_url and site_path
+    # Priority: auth_host > origins[0] > PASKIA_VITE_URL > http://localhost:port > https://rp_id
     site_path = "/auth/"
-    if args.auth_host:
-        site_url = args.auth_host
-        site_path = "/"
-    elif origins:
-        # Find localhost origin if rp_id is localhost, else use first origin
-        localhost_origin = (
-            next((o for o in origins if "://localhost" in o), None)
-            if args.rp_id == "localhost"
-            else None
-        )
-        site_url = localhost_origin or origins[0]
+    if config.auth_host:
+        site_url, site_path = config.auth_host, "/"
+    elif config.origins:
+        site_url = config.origins[0]
     elif vite_url := os.environ.get("PASKIA_VITE_URL"):
         site_url = vite_url.rstrip("/")  # Devserver
-    elif args.rp_id == "localhost" and port:
+    elif config.rp_id == "localhost" and port:
         site_url = f"http://localhost:{port}"  # Backend directly if we can
     else:
-        site_url = f"https://{args.rp_id}"  # Assume external reverse proxy
+        site_url = f"https://{config.rp_id}"  # Assume external reverse proxy
 
-    # Build runtime configuration
-    config = PaskiaConfig(
-        rp_id=args.rp_id,
-        rp_name=args.rp_name or None,
-        origins=origins or None,
-        auth_host=args.auth_host or None,
+    # Build runtime configuration for the server
+    runtime = RuntimeConfig(
+        config=config,
         site_url=site_url,
         site_path=site_path,
-        host=host,
-        port=port,
-        uds=uds,
+        save=args.save,
     )
+    startupbox.print_startup_config(runtime)
+    os.environ["PASKIA_CONFIG"] = msgspec.json.encode(runtime).decode()
 
-    # Export configuration via single JSON env variable for worker processes
-    # Include cli_config and save flag so lifespan can handle bootstrap/persistence
-    cli_config = {
-        "rp_id": args.rp_id,
-        "rp_name": args.rp_name,
-        "origins": args.origins,
-        "auth_host": args.auth_host,
-        "listen": args.listen,
-    }
-    config_json = {
-        "rp_id": config.rp_id,
-        "rp_name": config.rp_name,
-        "origins": config.origins,
-        "auth_host": config.auth_host,
-        "site_url": config.site_url,
-        "site_path": config.site_path,
-        "save": args.save,
-        "cli_config": cli_config,
-    }
-    os.environ["PASKIA_CONFIG"] = json.dumps(config_json)
-
-    startupbox.print_startup_config(config)
-
+    # Run the server (spawns processes in dev mode)
     dev = {"reload": True, "reload_dirs": ["paskia"]} if DEVMODE else {}
     server.run(
         "paskia.fastapi.mainapp:app",
-        listen=args.listen,
+        listen=config.listen,
         default_port=DEFAULT_PORT,
         log_level="warning",
         access_log=False,

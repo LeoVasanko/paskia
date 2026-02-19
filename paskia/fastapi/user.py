@@ -13,6 +13,7 @@ from paskia import db
 from paskia.authsession import (
     delete_credential,
     expires,
+    session_ctx,
 )
 from paskia.fastapi import authz, session
 from paskia.fastapi.response import MsgspecResponse
@@ -45,7 +46,7 @@ async def user_update_display_name(
             status_code=401, detail="Authentication Required", mode="login"
         )
     host = request.headers.get("host")
-    ctx = db.data().session_ctx(auth, host)
+    ctx = session_ctx(auth, host)
     if not ctx:
         raise authz.AuthException(
             status_code=401, detail="Session expired", mode="login"
@@ -74,7 +75,7 @@ async def user_update_info(
         raise authz.AuthException(
             status_code=401, detail="Authentication Required", mode="login"
         )
-    ctx = db.data().session_ctx(auth, request.headers.get("host"))
+    ctx = session_ctx(auth, request.headers.get("host"))
     if not ctx:
         raise authz.AuthException(
             status_code=401, detail="Session expired", mode="login"
@@ -112,7 +113,7 @@ async def user_update_theme(
         raise authz.AuthException(
             status_code=401, detail="Authentication Required", mode="login"
         )
-    ctx = db.data().session_ctx(auth, request.headers.get("host"))
+    ctx = session_ctx(auth, request.headers.get("host"))
     if not ctx:
         raise authz.AuthException(
             status_code=401, detail="Session expired", mode="login"
@@ -129,7 +130,7 @@ async def api_logout_all(request: Request, response: Response, auth=AUTH_COOKIE)
     if not auth:
         return {"message": "Already logged out"}
     host = request.headers.get("host")
-    ctx = db.data().session_ctx(auth, host)
+    ctx = session_ctx(auth, host)
     if not ctx:
         raise authz.AuthException(
             status_code=401, detail="Session expired", mode="login"
@@ -151,7 +152,7 @@ async def api_delete_session(
             status_code=401, detail="Authentication Required", mode="login"
         )
     host = request.headers.get("host")
-    ctx = db.data().session_ctx(auth, host)
+    ctx = session_ctx(auth, host)
     if not ctx:
         raise authz.AuthException(
             status_code=401, detail="Session expired", mode="login"

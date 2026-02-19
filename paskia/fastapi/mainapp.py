@@ -1,9 +1,9 @@
-import json
 import logging
 import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
+import msgspec
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import FileResponse, RedirectResponse
 
@@ -13,7 +13,6 @@ from paskia.bootstrap import bootstrap_if_needed
 from paskia.db import start_background, stop_background
 from paskia.db.background import flush
 from paskia.db.logging import configure_db_logging
-from paskia.db.structs import Config
 from paskia.fastapi import admin, api, auth_host, oid, ws
 
 # Import frontend instance
@@ -21,6 +20,7 @@ from paskia.fastapi.front import frontend
 from paskia.fastapi.logging import AccessLogMiddleware, configure_access_logging
 from paskia.fastapi.session import AUTH_COOKIE
 from paskia.util import hostutil, passphrase, vitedev
+from paskia.util.runtime import RuntimeConfig
 
 # Configure custom logging
 configure_access_logging()
@@ -40,13 +40,13 @@ async def lifespan(app: FastAPI):  # pragma: no cover - startup path
     so that uvicorn reload / multiprocess workers inherit the settings.
     All keys are guaranteed to exist; values are already normalized by __main__.py.
     """
-    config = json.loads(os.environ["PASKIA_CONFIG"])
+    runtime = msgspec.json.decode(os.environ["PASKIA_CONFIG"], type=RuntimeConfig)
 
     try:
         await globals.init(
-            rp_id=config["rp_id"],
-            rp_name=config["rp_name"],
-            origins=config["origins"],
+            rp_id=runtime.config.rp_id,
+            rp_name=runtime.config.rp_name,
+            origins=runtime.config.origins,
             bootstrap=False,
         )
     except ValueError as e:
@@ -55,13 +55,10 @@ async def lifespan(app: FastAPI):  # pragma: no cover - startup path
         raise
 
     # Bootstrap and persist config now that the full DB is loaded
-    cli_config_data = config.get("cli_config")
-    if cli_config_data:
-        cli_config = Config(**cli_config_data)
-        await bootstrap_if_needed(config=cli_config)
-        if config.get("save"):
-            await db.update_config(cli_config)
-        await flush()
+    await bootstrap_if_needed(config=runtime.config)
+    if runtime.save:
+        await db.update_config(runtime.config)
+    await flush()
 
     # Restore uvicorn info logging (suppressed during startup in dev mode)
     # Keep uvicorn.error at WARNING to suppress WebSocket "connection open/closed" messages

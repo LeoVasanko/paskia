@@ -1,14 +1,19 @@
 """Startup configuration box formatting utilities."""
 
+from __future__ import annotations
+
 import os
 import re
 from sys import stderr
 from typing import TYPE_CHECKING
 
+from fastapi_vue.hostutil import parse_endpoints
+
 from paskia._version import __version__
+from paskia.util.hostutil import format_endpoint
 
 if TYPE_CHECKING:
-    from paskia.config import PaskiaConfig
+    from paskia.util.runtime import RuntimeConfig
 
 BOX_WIDTH = 60  # Inner width (excluding box chars)
 
@@ -42,7 +47,7 @@ def bottom() -> str:
     return "┗" + "━" * (BOX_WIDTH + 2) + "┛\n"
 
 
-def print_startup_config(config: "PaskiaConfig") -> None:
+def print_startup_config(runtime: RuntimeConfig) -> None:
     """Print server configuration on startup."""
     # Key graphic with yellow shading (bright for highlights, dark for body)
     y = YELLOW  # Dark yellow for main body
@@ -57,41 +62,40 @@ def print_startup_config(config: "PaskiaConfig") -> None:
     lines.append(
         line(
             f"{b}█{y}     {b}█{y}▀▀▀▀{b}█{y}▀▀{b}█{y}▀▀{b}█{r}    {w}"
-            + config.site_url
-            + config.site_path
+            + runtime.site_url
+            + runtime.site_path
             + r
         )
     )
     lines.append(line(f" {y}▀▀▀▀▀{r}"))
 
     # Format auth host section
-    if config.auth_host:
-        lines.append(line(f"Auth Host:      {config.auth_host}"))
+    if runtime.config.auth_host:
+        lines.append(line(f"Auth Host:      {runtime.config.auth_host}"))
+
+    from paskia.__main__ import DEFAULT_PORT as P  # noqa: PLC0415 - circular
+    from paskia.__main__ import DEVMODE  # noqa: PLC0415 - circular
 
     # Show frontend URL if in dev mode
-    devmode = os.environ.get("PASKIA_VITE_URL")
-    if devmode:
-        lines.append(line(f"Dev Frontend:   {devmode}"))
+    if DEVMODE:
+        lines.append(line(f"Dev Frontend:   {os.environ.get('PASKIA_VITE_URL')}"))
 
-    # Format listen address with scheme
-    if config.uds:
-        listen = f"unix:{config.uds}"
-    elif config.host:
-        listen = f"http://{config.host}:{config.port}"
-    else:
-        listen = f"http://0.0.0.0:{config.port} + [::]:{config.port}"
-    lines.append(line(f"Backend:        {listen}"))
+    # Format listen endpoints (dev mode only uses the first endpoint)
+
+    endpoints = list(parse_endpoints(runtime.config.listen, P))
+    if DEVMODE:
+        endpoints = endpoints[:1]  # server.run reload=True uses only one
+    parts = [format_endpoint(ep) for ep in endpoints]
+    lines.append(line(f"Backend:        {' '.join(parts)}"))
 
     # Relying Party line (omit name if same as id)
-    rp_id = config.rp_id
-    rp_name = config.rp_name
-    if rp_name and rp_name != rp_id:
-        lines.append(line(f"Relying Party:  {rp_id}  ({rp_name})"))
-    else:
-        lines.append(line(f"Relying Party:  {rp_id}"))
+    rp_id = runtime.config.rp_id
+    rp_name = runtime.config.rp_name
+    suffix = f" ({rp_name})" if rp_name and rp_name != rp_id else ""
+    lines.append(line(f"Relying Party:  {rp_id}{suffix}"))
 
     # Format origins section
-    allowed = config.origins
+    allowed = runtime.config.origins
     if allowed:
         lines.append(line("Permitted Origins:"))
         for origin in sorted(allowed):
