@@ -124,7 +124,8 @@ def main():
             args.auth_host = f"https://{args.auth_host}"
         args.auth_host = args.auth_host.rstrip("/")
         validate_auth_host(args.auth_host, args.rp_id)
-        args.origins.insert(0, args.auth_host)  # Ensure first in origins
+        if args.origins:
+            args.origins.insert(0, args.auth_host)  # Ensure first in origins
 
     # Normalize, strip trailing slashes, and deduplicate while preserving order
     origins = list({normalize_origin(o).rstrip("/"): ... for o in (args.origins)})
