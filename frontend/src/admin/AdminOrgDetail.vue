@@ -71,10 +71,6 @@ function onUserChange(evt, targetRoleUuid) {
   }
 }
 
-function permissionDisplayName(scope) {
-  return props.permissions.find(p => p.scope === scope)?.display_name || scope
-}
-
 function toggleRolePermission(role, pid, checked) {
   emit('toggleRolePermission', role, pid, checked)
 }
