@@ -1,5 +1,4 @@
 import argparse
-import asyncio
 import json
 import logging
 import os
@@ -102,7 +101,7 @@ def main():
 
     # Read-only load to get stored config (no writes, no global state)
     db_path = os.environ.get("PASKIA_DB", f"{args.rp_id}.paskiadb")
-    stored_db = asyncio.run(load_readonly(db_path, rp_id=args.rp_id))
+    stored_db = load_readonly(db_path, rp_id=args.rp_id)
     stored_config = stored_db.config
 
     # Apply defaults from stored config

@@ -2,6 +2,7 @@
 JSONL persistence layer for the database.
 """
 
+import asyncio
 import copy
 import logging
 import os
@@ -13,10 +14,10 @@ from pathlib import Path
 from typing import Any
 from uuid import UUID
 
-import aiofiles
 import jsondiff
 import msgspec
 
+from paskia.db.filelock import LockedFile
 from paskia.db.logging import log_change
 from paskia.db.migrations import DBVER, apply_all_migrations, apply_migrations_readonly
 from paskia.db.structs import DB, Config, SessionContext
@@ -27,7 +28,7 @@ _logger = logging.getLogger(__name__)
 DB_PATH_DEFAULT = "paskia.jsonl"
 
 
-async def load_readonly(db_path: str, *, rp_id: str = "localhost") -> DB:
+def load_readonly(db_path: str, *, rp_id: str = "localhost") -> DB:
     """Replay JSONL and apply migrations to produce a DB, without writing anything.
 
     This is suitable for reading settings before the server starts.
@@ -40,8 +41,8 @@ async def load_readonly(db_path: str, *, rp_id: str = "localhost") -> DB:
     data_dict: dict = {}
     version = 0
     try:
-        async with aiofiles.open(path, "rb") as f:
-            content = await f.read()
+        with open(path, "rb") as f:
+            content = f.read()
         for line_num, line in enumerate(content.split(b"\n"), 1):
             line = line.strip()
             if not line:
@@ -112,54 +113,6 @@ def create_change_record(
 # Actions that are allowed to create a new database file
 _BOOTSTRAP_ACTIONS = frozenset({"bootstrap"})
 
-# Flag to prevent duplicate error messages on fatal flush failure
-_flush_failed = False
-
-
-async def flush_changes(
-    db_path: Path,
-    pending_changes: deque[_ChangeRecord],
-) -> None:
-    """Write all pending changes to disk.
-
-    Args:
-        db_path: Path to the JSONL database file
-        pending_changes: Queue of pending change records (will be cleared on success)
-
-    On failure, logs an error and sends SIGTERM to trigger graceful shutdown.
-    """
-    global _flush_failed
-    if _flush_failed or not pending_changes:
-        return
-
-    if not db_path.exists():
-        first_action = pending_changes[0].a
-        if first_action not in _BOOTSTRAP_ACTIONS:
-            _logger.error(
-                "Refusing to create database file with action '%s' - "
-                "only bootstrap can create a new database",
-                first_action,
-            )
-            _flush_failed = True
-            os.kill(os.getpid(), signal.SIGTERM)
-            return
-
-    changes_to_write = list(pending_changes)
-
-    try:
-        lines = [_change_encoder.encode(change) for change in changes_to_write]
-        if not lines:
-            pending_changes.clear()
-            return
-
-        async with aiofiles.open(db_path, "ab") as f:
-            await f.write(b"\n".join(lines) + b"\n")
-        pending_changes.clear()
-    except OSError as e:
-        _logger.error("Failed to flush database: %s", e)
-        _flush_failed = True
-        os.kill(os.getpid(), signal.SIGTERM)
-
 
 class JsonlStore:
     """JSONL persistence layer for a DB instance."""
@@ -167,6 +120,8 @@ class JsonlStore:
     def __init__(self, db: DB, db_path: str = DB_PATH_DEFAULT):
         self.db: DB = db
         self.db_path = Path(db_path)
+        self._file = LockedFile()
+        self._flush_failed = False
         self._previous_builtins: dict[str, Any] = {}
         self._pending_changes: deque[_ChangeRecord] = deque()
         self._current_action: str = "system"
@@ -185,11 +140,12 @@ class JsonlStore:
         if not self.db_path.exists():
             return
 
+        # Open with exclusive write lock and read contents — single threadpool call
+        content = await asyncio.to_thread(self._file.open_and_read, self.db_path)
+
         # Replay change log to reconstruct state
         data_dict: dict = {}
         try:
-            async with aiofiles.open(self.db_path, "rb") as f:
-                content = await f.read()
             for line_num, line in enumerate(content.split(b"\n"), 1):
                 line = line.strip()
                 if not line:
@@ -330,5 +286,42 @@ class JsonlStore:
             self._transaction_snapshot = None
 
     async def flush(self) -> None:
-        """Write all pending changes to disk."""
-        await flush_changes(self.db_path, self._pending_changes)
+        """Write all pending changes to disk.
+
+        On failure, logs an error and sends SIGTERM to trigger graceful shutdown.
+        """
+        if self._flush_failed or not self._pending_changes:
+            return
+
+        if not self._file.is_open:
+            first_action = self._pending_changes[0].a
+            if first_action not in _BOOTSTRAP_ACTIONS:
+                _logger.error(
+                    "Refusing to create database file with action '%s' - "
+                    "only bootstrap can create a new database",
+                    first_action,
+                )
+                self._flush_failed = True
+                os.kill(os.getpid(), signal.SIGTERM)
+                return
+            # Bootstrap: create and open the file with lock
+            await asyncio.to_thread(self._file.open, self.db_path, create=True)
+
+        changes_to_write = list(self._pending_changes)
+
+        try:
+            lines = [_change_encoder.encode(change) for change in changes_to_write]
+            if not lines:
+                self._pending_changes.clear()
+                return
+
+            await asyncio.to_thread(self._file.write, b"\n".join(lines) + b"\n")
+            self._pending_changes.clear()
+        except OSError as e:
+            _logger.error("Failed to flush database: %s", e)
+            self._flush_failed = True
+            os.kill(os.getpid(), signal.SIGTERM)
+
+    def close(self) -> None:
+        """Release the file lock and close the file."""
+        self._file.close()
