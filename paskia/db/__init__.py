@@ -1,7 +1,7 @@
 """
 Database module for WebAuthn passkey authentication.
 
-Read: Access data() directly, use build_* to convert to public structs.
+Read: Access data() directly for structs.
 CTX: data().session_ctx(key) returns SessionContext with effective permissions.
 Write: Functions validate and commit, or raise ValueError.
 
@@ -10,7 +10,6 @@ Usage:
 
     # Read (after init)
     user_data = db.data().users[user_uuid]
-    user = db.build_user(user_uuid)
 
     # Context
     ctx = db.data().session_ctx(session_key)
@@ -109,13 +108,6 @@ __all__ = [
     "stop_background",
     "start_cleanup",
     "stop_cleanup",
-    # Builders
-    "build_credential",
-    "build_permission",
-    "build_reset_token",
-    "build_role",
-    "build_session",
-    "build_user",
     # Read ops
     # Write ops
     "add_permission_to_org",

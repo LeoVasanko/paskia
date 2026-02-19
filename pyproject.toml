@@ -21,7 +21,6 @@ dependencies = [
     "pyjwt[crypto]>=2.11.0",
     "jsondiff>=2.2.1",
     "msgspec>=0.20.0",
-    "aiofiles>=25.1.0",
     "fastapi-vue>=1.1.0",
     "ua-parser[regex]>=1.0.1",
 ]
