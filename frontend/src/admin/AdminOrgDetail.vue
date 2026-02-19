@@ -389,7 +389,7 @@ defineExpose({ focusFirstElement })
                 :title="u.uuid"
               >
                 <span class="name">{{ u.display_name }}</span>
-                <span class="meta">{{ u.last_seen ? new Date(u.last_seen).toLocaleDateString() : '—' }}</span>
+                <span class="meta">{{ u.last_seen ? new Date(u.last_seen).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : '—' }}</span>
               </li>
             </template>
           </draggable>
@@ -409,7 +409,7 @@ defineExpose({ focusFirstElement })
 .perm-matrix-grid .role-head { display: flex; align-items: flex-end; justify-content: center; }
 .perm-matrix-grid .role-head span { writing-mode: vertical-rl; transform: rotate(180deg); font-size: 0.65rem; }
 .perm-matrix-grid .add-role-head { cursor: pointer; }
-.roles-grid { display: flex; flex-wrap: wrap; gap: var(--space-lg); margin-top: var(--space-lg); justify-content: flex-start; align-items: stretch; }
+.roles-grid { display: flex; flex-wrap: wrap; gap: 0; margin-top: var(--space-lg); justify-content: flex-start; align-items: stretch; }
 .role-column { flex: 0 0 240px; border-radius: var(--radius-md); padding: var(--space-md); display: flex; flex-direction: column; }
 .role-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--space-md); }
 .role-name { display: flex; align-items: center; gap: var(--space-xs); font-size: 1.1rem; color: var(--color-heading); }
@@ -418,9 +418,9 @@ defineExpose({ focusFirstElement })
 .plus-btn:hover { background: rgba(37, 99, 235, 0.18); }
 .user-list-wrapper { position: relative; flex: 1; display: flex; flex-direction: column; min-height: 5.5rem; }
 .user-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: var(--space-xs); flex: 1; }
-.user-chip { background: var(--color-accent-strong); color: white; border: none; border-radius: var(--radius-md); padding: 0.45rem 0.6rem; display: flex; justify-content: space-between; gap: var(--space-sm); cursor: grab; }
+.user-chip { background: var(--color-accent-strong); color: var(--color-accent-contrast); border: none; border-radius: var(--radius-md); padding: 0.45rem 0.6rem; display: flex; justify-content: space-between; gap: var(--space-sm); cursor: grab; }
 .user-chip:focus { outline: 2px solid var(--color-accent); outline-offset: 1px; }
-.user-chip .meta { font-size: 0.7rem; color: rgba(255, 255, 255, 0.8); }
+.user-chip .meta { font-size: 0.7rem; }
 .user-chip.sortable-ghost { opacity: 0.5; }
 .user-chip.sortable-chosen { box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2); }
 .empty-role { position: absolute; inset: 0; border: 1px dashed var(--color-border-strong); border-radius: var(--radius-md); display: flex; align-items: center; justify-content: center; pointer-events: none; }

@@ -9,8 +9,8 @@
   --font-sans: "Inter", "Inter var", "Segoe UI", system-ui, -apple-system, "Helvetica Neue", sans-serif;
   --font-mono: "DM Mono", "JetBrains Mono", "SFMono-Regular", Menlo, Monaco, Consolas, "Liberation Mono", monospace;
   --color-canvas: white;
-  --color-surface: white;
-  --color-surface-subtle: white;
+  --color-surface: #def;
+  --color-surface-subtle: #bcf;
   --color-surface-hover: oklab(0.97 -0.01 -0.02);
   --color-dialog: oklab(0.96 -0.01 -0.03);
   --color-border: oklab(0.82 -0.02 -0.06);
@@ -21,7 +21,7 @@
   --color-link: oklab(0.5 -0.06 -0.17);
   --color-link-hover: oklab(0.45 -0.06 -0.19);
   --color-accent: oklab(0.55 -0.06 -0.19);
-  --color-accent-strong: oklab(0.45 -0.06 -0.19);
+  --color-accent-strong: #46f;
   --color-accent-contrast: white;
   --color-secondary: oklab(0.55 -0.02 -0.05);
   --color-secondary-strong: oklab(0.45 -0.02 -0.05);
