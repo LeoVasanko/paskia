@@ -22,12 +22,6 @@ async def patched_html_response(request, filepath: str, status_code: int, **data
     Returns:
         Patched Response object, or original response if not 200.
     """
-    # Strip caching/compression headers to get raw uncompressed content
-    cache_headers = {b"if-none-match", b"if-modified-since", b"accept-encoding"}
-    request.scope["headers"] = [
-        (k, v) for k, v in request.scope["headers"] if k.lower() not in cache_headers
-    ]
-
     resp = await vitedev.handle(request, frontend, filepath)
     # Pass through non-200 responses
     if resp.status_code != 200:

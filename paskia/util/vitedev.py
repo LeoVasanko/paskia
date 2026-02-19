@@ -63,4 +63,13 @@ async def handle(request, frontend, filepath: str):
         )
 
     # Fallback to frontend.handle for cache negotiation
+    # Strip accept-encoding to get uncompressed content (needed for HTML patching)
+    strip_headers = {b"accept-encoding", b"if-none-match", b"if-modified-since"}
+    request.scope["headers"] = [
+        (k, v) for k, v in request.scope["headers"] if k.lower() not in strip_headers
+    ]
+    # Invalidate cached Headers object (it doesn't re-read scope after first access)
+    if hasattr(request, "_headers"):
+        del request._headers
+
     return frontend.handle(request, filepath)
