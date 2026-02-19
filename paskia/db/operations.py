@@ -56,7 +56,7 @@ def is_username_taken(username: str, exclude_uuid: UUID | None = None) -> bool:
 # -------------------------------------------------------------------------
 
 
-async def update_config(config: Config) -> None:
+def update_config(config: Config) -> None:
     """Update the stored configuration."""
     with _db.transaction("update_config"):
         _db.config = config

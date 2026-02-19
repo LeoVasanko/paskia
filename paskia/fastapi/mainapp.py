@@ -57,7 +57,7 @@ async def lifespan(app: FastAPI):  # pragma: no cover - startup path
     # Bootstrap and persist config now that the full DB is loaded
     await bootstrap_if_needed(config=runtime.config)
     if runtime.save:
-        await db.update_config(runtime.config)
+        db.update_config(runtime.config)
     await flush()
 
     # Restore uvicorn info logging (suppressed during startup in dev mode)
