@@ -40,6 +40,38 @@ Normally only used via admin panel, requires auth admin permissions and can modi
 
 E.g. Org admin cannot see anything of the other orgs that he has no admin access to. Master admin `auth:admin` can see everything and create and manage orgs.
 
+| Method | Path | Used for | Notes |
+|---:|---|---|---|
+| GET | `/auth/api/admin/info` | Admin overview | Returns orgs, permissions, OIDC clients info |
+| POST | `/auth/api/admin/permissions/` | Create permission | Body: JSON with scope, display_name, domain |
+| PATCH | `/auth/api/admin/permissions/{uuid}` | Update permission | Query params: display_name, scope, domain |
+| DELETE | `/auth/api/admin/permissions/{uuid}` | Delete permission | |
+| POST | `/auth/api/admin/orgs/` | Create organization | Body: JSON with display_name, permissions |
+| GET | `/auth/api/admin/orgs/{uuid}` | Get organization details | |
+| PATCH | `/auth/api/admin/orgs/{uuid}` | Update organization | Body: JSON with display_name |
+| DELETE | `/auth/api/admin/orgs/{uuid}` | Delete organization | |
+| POST | `/auth/api/admin/orgs/{uuid}/users` | Create user in org | Body: JSON with display_name, role_uuid |
+| POST | `/auth/api/admin/orgs/{uuid}/roles` | Create role in org | Body: JSON with display_name, permissions |
+| POST | `/auth/api/admin/orgs/{uuid}/permission` | Grant permission to org | Query param: permission_uuid |
+| DELETE | `/auth/api/admin/orgs/{uuid}/permission` | Revoke permission from org | Query param: permission_uuid |
+| PATCH | `/auth/api/admin/roles/{uuid}` | Update role | Body: JSON with display_name |
+| POST | `/auth/api/admin/roles/{uuid}/permissions/{uuid}` | Add permission to role | |
+| DELETE | `/auth/api/admin/roles/{uuid}/permissions/{uuid}` | Remove permission from role | |
+| DELETE | `/auth/api/admin/roles/{uuid}` | Delete role | |
+| PATCH | `/auth/api/admin/users/{uuid}/role` | Update user role | Body: JSON with role_uuid |
+| PATCH | `/auth/api/admin/users/{uuid}/info` | Update user info | Body: JSON with display_name |
+| GET | `/auth/api/admin/users/{uuid}` | Get user details | |
+| DELETE | `/auth/api/admin/users/{uuid}` | Delete user | |
+| POST | `/auth/api/admin/users/{uuid}/create-link` | Create device add link | |
+| DELETE | `/auth/api/admin/users/{uuid}/credentials/{uuid}` | Delete user credential | |
+| DELETE | `/auth/api/admin/users/{uuid}/sessions/{key}` | Delete user session | |
+| POST | `/auth/api/admin/oidc-clients/` | Create OIDC client | Body: JSON with client_name, redirect_uris |
+| PATCH | `/auth/api/admin/oidc-clients/{uuid}` | Update OIDC client | Body: JSON with client_name, redirect_uris |
+| PATCH | `/auth/api/admin/oidc-clients/{uuid}/reset-secret` | Reset client secret | |
+| DELETE | `/auth/api/admin/oidc-clients/{uuid}` | Delete OIDC client | |
+| GET | `/auth/api/admin/server-config/` | Get server config | Returns rp_name, auth_host, origins |
+| PATCH | `/auth/api/admin/server-config/` | Update server config | Body: JSON with rp_name, auth_host, origins |
+
 ### WebSockets: `/auth/ws/*`
 
 | Path | Used for | Notes |
