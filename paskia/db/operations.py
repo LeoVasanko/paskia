@@ -15,9 +15,6 @@ import uuid7
 
 from paskia import oidc_notify
 from paskia.config import SESSION_LIFETIME
-from paskia.db.jsonl import (
-    JsonlStore,
-)
 from paskia.db.structs import (
     DB,
     Client,
@@ -41,9 +38,6 @@ _UNSET = object()
 
 # Global database instance (empty until init() loads data)
 _db = DB(config=Config(rp_id="uninitialized.invalid"))
-_store = JsonlStore(_db)
-_db._store = _store
-_initialized = False
 
 
 def is_username_taken(username: str, exclude_uuid: UUID | None = None) -> bool:

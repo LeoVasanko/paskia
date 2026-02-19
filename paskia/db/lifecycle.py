@@ -9,20 +9,23 @@ from datetime import UTC, datetime
 import paskia.db.operations as _ops
 from paskia import oidc_notify
 from paskia.authsession import EXPIRES
+from paskia.db.jsonl import JsonlStore
 
 _logger = logging.getLogger(__name__)
 
 
-async def init(rp_id: str = "localhost", *args, **kwargs):
+async def init(rp_id: str, *args, **kwargs):
     """Load database from JSONL file."""
-    if _ops._initialized:
+    if _ops._db._store:
         _logger.debug("Database already initialized, skipping reload")
         return
-    default_path = f"{rp_id}.paskiadb"
-    db_path = os.environ.get("PASKIA_DB", default_path)
-    await _ops._store.load(db_path, rp_id=rp_id)
-    _ops._db = _ops._store.db
-    _ops._initialized = True
+    db_path = os.environ.get("PASKIA_DB", f"{rp_id}.paskiadb")
+    store = JsonlStore(_ops._db, db_path)
+    await store.load(db_path, rp_id=rp_id)
+    _ops._db = store.db
+    _ops._db._store = store
+    # Request a snapshot after successful startup
+    store._snapshot.request_force()
 
 
 def cleanup_expired() -> int:

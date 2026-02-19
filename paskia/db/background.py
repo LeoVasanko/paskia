@@ -21,7 +21,7 @@ _background_task: asyncio.Task | None = None
 
 async def flush() -> None:
     """Write all pending database changes to disk."""
-    store = _ops._store
+    store = _ops._db._store
     if store is None:
         _logger.warning("flush() called but _store is None")
         return
@@ -48,6 +48,10 @@ async def _background_loop():
                 cleanup_expired()
                 await flush()  # Flush cleanup changes
                 last_cleanup = now
+
+            # Conditionally write a snapshot to speed up future startups
+            if _ops._db._store is not None:
+                _ops._db._store.maybe_snapshot()
         except asyncio.CancelledError:
             # Final flush before exit
             await flush()
@@ -99,7 +103,7 @@ async def stop_background():
         except asyncio.CancelledError:
             pass
         _background_task = None
-    _ops._store.close()
+    _ops._db._store.close()
 
 
 # Aliases for backwards compatibility

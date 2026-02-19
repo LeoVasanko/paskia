@@ -25,12 +25,56 @@ from paskia.db.migrations import (
     apply_all_migrations,
     apply_migrations_readonly,
 )
+from paskia.db.snapshot import SnapshotState
 from paskia.db.structs import DB, Config, SessionContext
 
 _logger = logging.getLogger(__name__)
 
-# Default database path
-DB_PATH_DEFAULT = "paskia.jsonl"
+
+class ReplayResult(msgspec.Struct, frozen=False):
+    """Return value of _replay_from_data"""
+
+    state: dict
+    v: int = 0
+    ts: datetime | None = None
+    snapts: datetime | None = None
+    changes: int = 0
+
+
+class DatabaseError(Exception):
+    """Exception raised for database loading errors."""
+
+    pass
+
+
+def _replay_from_data(data: bytes, db_path: str) -> ReplayResult:
+    """Replay database state from file data, using the last snapshot if available."""
+    resolved_path = str(Path(db_path).resolve())
+    result = ReplayResult(state={})
+
+    # Find and apply the last snapshot
+    snap, start_offset = SnapshotState.load(data)
+    if snap:
+        result.state = snap.state
+        result.v = snap.v
+        result.snapts = snap.ts
+
+    # Replay change records after the snapshot
+    lines = data[start_offset:].split(b"\n")
+    for line_num, raw in enumerate(lines, start=1):  # 1-based line numbering
+        line = raw.strip()
+        if not line:
+            continue
+        try:
+            change = msgspec.json.decode(line, type=ChangeRecord)
+        except msgspec.DecodeError as e:
+            raise DatabaseError(f"{resolved_path}:{line_num}: {e}")
+        result.state = jsondiff.patch(result.state, change.diff, marshal=True)
+        result.v = change.v
+        result.ts = change.ts
+        result.changes += 1
+
+    return result
 
 
 def load_readonly(db_path: str, *, rp_id: str = "localhost") -> DB:
@@ -43,25 +87,20 @@ def load_readonly(db_path: str, *, rp_id: str = "localhost") -> DB:
     if not path.exists():
         return DB(config=Config(rp_id=rp_id))
 
-    data_dict: dict = {}
-    version = 0
     try:
         with open(path, "rb") as f:
             content = f.read()
-        for line_num, line in enumerate(content.split(b"\n"), 1):
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                change = msgspec.json.decode(line)
-                data_dict = jsondiff.patch(data_dict, change["diff"], marshal=True)
-                version = change.get("v", 0)
-            except Exception as e:
-                raise ValueError(f"Error parsing line {line_num}: {e}")
+        r = _replay_from_data(content, str(path.resolve()))
+        data_dict = r.state
+        version = r.v
     except OSError as e:
-        raise SystemExit(f"Failed to load database: {e}")
-    except (ValueError, msgspec.DecodeError) as e:
-        raise SystemExit(f"Failed to load database: {e}")
+        _logger.exception("Failed to load database")
+        raise SystemExit(f"{e}")
+    except (ValueError, msgspec.DecodeError, DatabaseError) as e:
+        raise SystemExit(f"{e}")
+    except Exception as e:
+        _logger.exception("Unexpected error loading database")
+        raise SystemExit(f"{e}")
 
     if not data_dict:
         return DB(config=Config(rp_id=rp_id))
@@ -74,45 +113,16 @@ def load_readonly(db_path: str, *, rp_id: str = "localhost") -> DB:
     return db
 
 
-class _ChangeRecord(msgspec.Struct, omit_defaults=True):
-    """A single change record in the JSONL file."""
-
-    ts: datetime
+class ChangeRecord(msgspec.Struct, omit_defaults=True, kw_only=True):
+    ts: datetime = msgspec.field(default_factory=lambda: datetime.now(UTC))
     a: str  # action - describes the operation (e.g., "migrate", "login", "create_user")
-    v: int  # schema version after this change
+    v: int = 0  # schema version after this change
     u: str | None = None  # user UUID who performed the action (None for system)
-    diff: dict = {}
-
-
-# msgspec encoder for change records
-_change_encoder = msgspec.json.Encoder()
+    diff: dict
 
 
 def compute_diff(previous: dict, current: dict) -> dict | None:
-    """Compute JSON diff between two states.
-
-    Args:
-        previous: Previous state (JSON-compatible dict)
-        current: Current state (JSON-compatible dict)
-
-    Returns:
-        The diff, or None if no changes
-    """
-    diff = jsondiff.diff(previous, current, marshal=True)
-    return diff if diff else None
-
-
-def create_change_record(
-    action: str, version: int, diff: dict, user: str | None = None
-) -> _ChangeRecord:
-    """Create a change record for persistence."""
-    return _ChangeRecord(
-        ts=datetime.now(UTC),
-        a=action,
-        v=version,
-        u=user,
-        diff=diff,
-    )
+    return jsondiff.diff(previous, current, marshal=True) or None
 
 
 # Actions that are allowed to create a new database file
@@ -122,18 +132,19 @@ _BOOTSTRAP_ACTIONS = frozenset({"bootstrap"})
 class JsonlStore:
     """JSONL persistence layer for a DB instance."""
 
-    def __init__(self, db: DB, db_path: str = DB_PATH_DEFAULT):
+    def __init__(self, db: DB, db_path: str):
         self.db: DB = db
         self.db_path = Path(db_path)
         self._file = LockedFile()
         self._flush_failed = False
-        self._previous_builtins: dict[str, Any] = {}
-        self._pending_changes: deque[_ChangeRecord] = deque()
+        self._statedict: dict[str, Any] = {}
+        self._pending_changes: deque[ChangeRecord] = deque()
         self._current_action: str = "system"
         self._current_user: str | None = None
         self._in_transaction: bool = False
         self._transaction_snapshot: dict[str, Any] | None = None
-        self._current_version: int = DBVER  # Schema version for new databases
+        self._v: int = DBVER  # Schema version for new databases
+        self._snapshot = SnapshotState()
 
     async def load(
         self, db_path: str | None = None, *, rp_id: str = "localhost"
@@ -148,56 +159,49 @@ class JsonlStore:
         # Open with exclusive write lock and read contents — single threadpool call
         content = await asyncio.to_thread(self._file.open_and_read, self.db_path)
 
-        # Replay change log to reconstruct state
-        data_dict: dict = {}
+        # Replay change log to reconstruct state (snapshot-accelerated)
         try:
-            for line_num, line in enumerate(content.split(b"\n"), 1):
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    change = msgspec.json.decode(line)
-                    data_dict = jsondiff.patch(data_dict, change["diff"], marshal=True)
-                    self._current_version = change.get("v", 0)
-                except Exception as e:
-                    raise ValueError(f"Error parsing line {line_num}: {e}")
-        except OSError as e:
-            raise SystemExit(f"Failed to load database: {e}")
-        except (ValueError, msgspec.DecodeError) as e:
-            raise SystemExit(f"Failed to load database: {e}")
+            r = _replay_from_data(content, str(self.db_path.resolve()))
+            statedict = r.state
+            self._v = r.v
+            self._snapshot.ts = r.snapts
+            self._snapshot.changes = r.changes
+        except (OSError, ValueError, msgspec.DecodeError, DatabaseError) as e:
+            raise SystemExit(f"{e}")
+        except Exception as e:
+            _logger.exception("Unexpected error loading database")
+            raise SystemExit(f"{e}")
 
-        if not data_dict:
+        if not statedict:
             return
 
         # Set previous state for diffing (will be updated by _queue_change)
-        self._previous_builtins = copy.deepcopy(data_dict)
+        self._statedict = copy.deepcopy(statedict)
 
         # Callback to persist each migration
         async def persist_migration(
             action: str, new_version: int, current: dict
         ) -> None:
-            self._current_version = new_version
+            self._v = new_version
             self._queue_change(action, new_version, current)
 
         # Apply schema migrations one at a time
         await apply_all_migrations(
-            data_dict,
-            self._current_version,
+            statedict,
+            self._v,
             persist_migration,
             MigrationCtx(rp_id=rp_id),
         )
 
         # Decode to msgspec struct
         decoder = msgspec.json.Decoder(DB)
-        self.db = decoder.decode(msgspec.json.encode(data_dict))
+        self.db = decoder.decode(msgspec.json.encode(statedict))
         self.db._store = self
 
         # Normalize via msgspec round-trip (handles omit_defaults etc.)
         # This ensures _previous_builtins matches what msgspec would produce
         normalized_dict = msgspec.to_builtins(self.db)
-        await persist_migration(
-            "migrate:msgspec", self._current_version, normalized_dict
-        )
+        await persist_migration("migrate:msgspec", self._v, normalized_dict)
 
     def _queue_change(
         self, action: str, version: int, current: dict, user: str | None = None
@@ -210,10 +214,17 @@ class JsonlStore:
             current: The current state as a plain dict
             user: Optional user UUID who performed the action
         """
-        diff = compute_diff(self._previous_builtins, current)
+        diff = compute_diff(self._statedict, current)
         if not diff:
             return
-        self._pending_changes.append(create_change_record(action, version, diff, user))
+        self._pending_changes.append(
+            ChangeRecord(
+                a=action,
+                v=version,
+                u=user,
+                diff=diff,
+            )
+        )
 
         # Log the change with user display name if available
         user_display = None
@@ -225,8 +236,8 @@ class JsonlStore:
             except (ValueError, KeyError):
                 user_display = user
 
-        log_change(action, diff, user_display, self._previous_builtins, self.db)
-        self._previous_builtins = copy.deepcopy(current)
+        log_change(action, diff, user_display, self._statedict, self.db)
+        self._statedict = copy.deepcopy(current)
 
     @contextmanager
     def transaction(
@@ -248,13 +259,13 @@ class JsonlStore:
 
         # Check for out-of-transaction modifications
         current_state = msgspec.to_builtins(self.db)
-        if current_state != self._previous_builtins:
+        if current_state != self._statedict:
             # Allow bootstrap to create a new database from empty state
             is_bootstrap = action in _BOOTSTRAP_ACTIONS
-            if is_bootstrap and not self._previous_builtins:
+            if is_bootstrap and not self._statedict:
                 pass  # Expected: creating database from scratch
             else:
-                diff = compute_diff(self._previous_builtins, current_state)
+                diff = compute_diff(self._statedict, current_state)
                 diff_json = msgspec.json.encode(diff).decode()
                 _logger.critical(
                     "Database state modified outside of transaction! "
@@ -275,7 +286,7 @@ class JsonlStore:
             yield
             current = msgspec.to_builtins(self.db)
             self._queue_change(
-                self._current_action, self._current_version, current, self._current_user
+                self._current_action, self._v, current, self._current_user
             )
         except Exception:
             # Rollback on error: restore from snapshot
@@ -318,17 +329,22 @@ class JsonlStore:
         changes_to_write = list(self._pending_changes)
 
         try:
-            lines = [_change_encoder.encode(change) for change in changes_to_write]
+            lines = [msgspec.json.encode(change) for change in changes_to_write]
             if not lines:
                 self._pending_changes.clear()
                 return
 
             await asyncio.to_thread(self._file.write, b"\n".join(lines) + b"\n")
+            self._snapshot.record_lines(len(lines))
             self._pending_changes.clear()
         except OSError as e:
             _logger.error("Failed to flush database: %s", e)
             self._flush_failed = True
             os.kill(os.getpid(), signal.SIGTERM)
+
+    def maybe_snapshot(self) -> None:
+        """Write a snapshot if conditions are met."""
+        self._snapshot.maybe_write(self._file, self._v, self._statedict)
 
     def close(self) -> None:
         """Release the file lock and close the file."""
