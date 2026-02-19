@@ -185,7 +185,8 @@ async def get_settings():
             auth_site_url=hostutil.auth_site_url(),
             session_cookie=AUTH_COOKIE_NAME,
             version=__version__,
-        )
+        ),
+        headers={"Access-Control-Allow-Origin": "*", "Vary": "Origin"},
     )
 
 

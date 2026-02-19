@@ -49,6 +49,51 @@ def normalize_origin(origin: str) -> str:
     return origin.rstrip("/")
 
 
+def is_subdomain(sub: str, domain: str) -> bool:
+    """Check if sub is a subdomain of domain (or equal)."""
+    sub_parts = sub.lower().split(".")
+    domain_parts = domain.lower().split(".")
+    if len(sub_parts) < len(domain_parts):
+        return False
+    return sub_parts[-len(domain_parts) :] == domain_parts
+
+
+def validate_auth_host(auth_host: str, rp_id: str) -> None:
+    """Validate that auth_host is a subdomain of rp_id.
+
+    Raises ValueError on invalid auth_host.
+    """
+    parsed = urlparse(auth_host if "://" in auth_host else f"//{auth_host}")
+    host = parsed.hostname or parsed.path
+    if not host:
+        raise ValueError(f"Invalid auth-host: '{auth_host}'")
+    if not is_subdomain(host, rp_id):
+        raise ValueError(
+            f"auth-host '{auth_host}' is not a subdomain of rp-id '{rp_id}'"
+        )
+
+
+def normalize_auth_host_and_origins(
+    auth_host: str | None, origins: list[str] | None
+) -> tuple[str | None, list[str] | None]:
+    """Normalize auth_host and origins, matching CLI startup behavior.
+
+    - Adds https:// to auth_host if no scheme present, strips trailing slashes
+    - Validates auth_host is a well-formed subdomain (caller provides rp_id via validate_auth_host)
+    - Inserts auth_host as first origin if both are specified and not already present
+    - Deduplicates origins while preserving order
+    """
+    if auth_host:
+        if "://" not in auth_host:
+            auth_host = f"https://{auth_host}"
+        auth_host = auth_host.rstrip("/")
+        if origins is not None and auth_host not in origins:
+            origins.insert(0, auth_host)
+    if origins:
+        origins = list(dict.fromkeys(origins))
+    return auth_host, origins
+
+
 def reload_config() -> None:
     _load_config.cache_clear()
 

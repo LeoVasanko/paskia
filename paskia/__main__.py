@@ -1,7 +1,6 @@
 import argparse
 import logging
 import os
-from urllib.parse import urlparse
 
 import msgspec
 from fastapi_vue import server
@@ -9,7 +8,11 @@ from fastapi_vue.hostutil import parse_endpoints
 
 from paskia.db.jsonl import load_readonly
 from paskia.util import startupbox
-from paskia.util.hostutil import normalize_origin
+from paskia.util.hostutil import (
+    normalize_auth_host_and_origins,
+    normalize_origin,
+    validate_auth_host,
+)
 from paskia.util.runtime import RuntimeConfig
 
 DEFAULT_PORT = 4401
@@ -19,27 +22,6 @@ EPILOG = """\
 Example:
   paskia --rp-id example.com --rp-name "Example Corporation" --auth-host auth.example.com
 """
-
-
-def is_subdomain(sub: str, domain: str) -> bool:
-    """Check if sub is a subdomain of domain (or equal)."""
-    sub_parts = sub.lower().split(".")
-    domain_parts = domain.lower().split(".")
-    if len(sub_parts) < len(domain_parts):
-        return False
-    return sub_parts[-len(domain_parts) :] == domain_parts
-
-
-def validate_auth_host(auth_host: str, rp_id: str) -> None:
-    """Validate that auth_host is a subdomain of rp_id."""
-    parsed = urlparse(auth_host if "://" in auth_host else f"//{auth_host}")
-    host = parsed.hostname or parsed.path
-    if not host:
-        raise SystemExit(f"Invalid auth-host: '{auth_host}'")
-    if not is_subdomain(host, rp_id):
-        raise SystemExit(
-            f"auth-host '{auth_host}' is not a subdomain of rp-id '{rp_id}'"
-        )
 
 
 def add_common_options(p: argparse.ArgumentParser) -> None:
@@ -104,18 +86,16 @@ def main():
     if args.listen is not None:
         config.listen = None if args.listen == [""] else args.listen
 
-    # Process and normalize auth_host
-    if config.auth_host:
-        if "://" not in config.auth_host:
-            config.auth_host = f"https://{config.auth_host}"
-        config.auth_host = config.auth_host.rstrip("/")
-        validate_auth_host(config.auth_host, config.rp_id)
-        if config.origins:
-            config.origins.insert(0, config.auth_host)  # Ensure first in origins
-
-    # Normalize and deduplicate while preserving order
+    # Process and normalize auth_host and origins
+    try:
+        validate_auth_host(config.auth_host, config.rp_id) if config.auth_host else None
+    except ValueError as e:
+        raise SystemExit(str(e))
     if config.origins:
-        config.origins = list({normalize_origin(o): ... for o in config.origins})
+        config.origins = [normalize_origin(o) for o in config.origins]
+    config.auth_host, config.origins = normalize_auth_host_and_origins(
+        config.auth_host, config.origins
+    )
 
     # Parse first endpoint for site_url fallback
     ep = next(iter(parse_endpoints(config.listen, DEFAULT_PORT)), {})
