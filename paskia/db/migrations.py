@@ -45,6 +45,13 @@ def migrate_v4(d: dict, ctx: MigrationCtx) -> None:
     d["oidc"] = {"clients": {}, "key": base64.standard_b64encode(secret_key()).decode()}
 
 
+def migrate_v5(d: dict, ctx: MigrationCtx) -> None:
+    """Convert config.listen from str to list[str] if needed."""
+    listen = d["config"].get("listen")
+    if listen and isinstance(listen, str):
+        d["config"]["listen"] = [listen]
+
+
 migrations = sorted(
     [f for n, f in globals().items() if n.startswith("migrate_v")],
     key=lambda f: int(f.__name__.removeprefix("migrate_v")),
