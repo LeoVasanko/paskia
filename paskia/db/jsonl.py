@@ -34,7 +34,7 @@ _logger = logging.getLogger(__name__)
 class ReplayResult(msgspec.Struct, frozen=False):
     """Return value of _replay_from_data"""
 
-    state: dict
+    state: dict = {}
     v: int = 0
     ts: datetime | None = None
     snapts: datetime | None = None
@@ -50,7 +50,7 @@ class DatabaseError(Exception):
 def _replay_from_data(data: bytes, db_path: str) -> ReplayResult:
     """Replay database state from file data, using the last snapshot if available."""
     resolved_path = str(Path(db_path).resolve())
-    result = ReplayResult(state={})
+    result = ReplayResult()
 
     # Find and apply the last snapshot
     snap, start_offset = SnapshotState.load(data)
@@ -115,7 +115,7 @@ def load_readonly(db_path: str, *, rp_id: str = "localhost") -> DB:
 
 class ChangeRecord(msgspec.Struct, omit_defaults=True, kw_only=True):
     ts: datetime = msgspec.field(default_factory=lambda: datetime.now(UTC))
-    a: str  # action - describes the operation (e.g., "migrate", "login", "create_user")
+    a: str = ""  # action (e.g., "migrate", "login", "create_user")
     v: int = 0  # schema version after this change
     u: str | None = None  # user UUID who performed the action (None for system)
     diff: dict
