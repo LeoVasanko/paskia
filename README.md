@@ -35,7 +35,7 @@ Paskia includes set of login, reauthentication and forbidden dialogs that it can
 
 Install [UV](https://docs.astral.sh/uv/getting-started/installation/) and run:
 
-```fish
+```sh
 uvx paskia --rp-id example.com
 ```
 
@@ -45,7 +45,7 @@ For production you need a web server such as [Caddy](https://caddyserver.com/) t
 
 For a permanent install of `paskia` CLI command, not needing `uvx`:
 
-```fish
+```sh
 uv tool install paskia
 ```
 
@@ -72,27 +72,17 @@ To clear a stored setting, pass an empty value like `--auth-host=`. The database
 
 This section walks you through a complete example, from running Paskia locally to protecting a real site in production.
 
-### Step 1: Local Testing
-
-For development and testing, run Paskia without any arguments:
-
-```fish
-paskia
-```
-
-This starts the server on [localhost:4401](http://localhost:4401) with passkeys bound to `localhost`. On first run, Paskia prints a registration link for the Master Admin—click it to register your first passkey.
-
-### Step 2: Production Configuration
+### Step 1: Production Configuration
 
 For a real deployment, configure Paskia with your domain name (rp-id). This enables SSO setup for that domain and any subdomains.
 
-```fish
-paskia --rp-id=example.com --rp-name="Example Corp" --save
+```sh
+uvx paskia --rp-id=example.com --rp-name="Example Corp"
 ```
 
-This binds passkeys to the rp-id, allowing them to be used there or on any subdomain of it. The `--rp-name` is the branding shown in UI and registered with passkeys for everything on your domain (rp id). The `--save` option stores these settings in the database, so future runs only need `paskia --rp-id example.com`, of which we will make use of with the systemd config later on.
+This binds passkeys to the rp-id, allowing them to be used there or on any subdomain of it. The `--rp-name` is the branding shown in UI and registered with passkeys for everything on your domain (rp id). On the first run, you'll see a registration link—use it to create your Admin account. You may enter your real name here for a more suitable account name.
 
-### Step 3: Set Up Caddy
+### Step 2: Set Up Caddy
 
 Install [Caddy](https://caddyserver.com/) and copy the [auth folder](caddy/auth) to `/etc/caddy/auth`. Say your current unprotected Caddyfile looks like this:
 
@@ -116,7 +106,7 @@ app.example.com {
 
 Run `systemctl reload caddy`. Now `app.example.com` requires the `myapp:login` permission. Try accessing it and you'll land on a login dialog.
 
-### Step 4: Assign Permissions via Admin Panel
+### Step 3: Assign Permissions via Admin Panel
 
 ![Admin panel permissions](https://git.zi.fi/leovasanko/paskia/raw/main/docs/screenshots/master-permissions.webp)
 
@@ -129,7 +119,7 @@ Now you have granted yourself the new permission.
 
 Permission scopes are text identifiers with colons as separators that we can use for permission checks. The `myapp:` prefix is a convention to namespace permissions per application—you but you can use other forms as you see fit (urlsafe characters, no spaces allowed).
 
-### Step 5: Add API Authentication to Your App
+### Step 4: Add API Authentication to Your App
 
 Your backend already receives `Remote-*` headers from Caddy's forward-auth. For frontend API calls, we provide a [JS paskia module](https://www.npmjs.com/package/paskia):
 
@@ -170,13 +160,23 @@ You may also remove the `myapp:login` protection from the rest of your site path
     }
 ```
 
-### Step 6: Run Paskia as a Service
+### Step 5: Run Paskia as a Service
 
 Create a system user paskia, install UV on the system, and create a systemd unit:
 
-```fish
+```sh
 sudo useradd --system --home-dir /srv/paskia --create-home paskia
+```
+
+Install UV on the system (or arch btw `pacman -S uv`):
+
+```sh
 curl -LsSf https://astral.sh/uv/install.sh | sudo env UV_INSTALL_DIR=/usr/local/bin sh
+```
+
+Create a systemd unit:
+
+```sh
 sudo systemctl edit --force --full paskia@.service
 ```
 
@@ -190,27 +190,19 @@ Description=Paskia for %i
 Type=simple
 User=paskia
 WorkingDirectory=/srv/paskia
-ExecStart=uvx paskia --rp-id=%i
+ExecStart=uvx paskia@latest --rp-id=%i
 
 [Install]
 WantedBy=multi-user.target
 ```
 
-Then enable and start, view output for registration link:
+Run the service and view log:
 
-```fish
-sudo systemctl enable --now paskia@example.com && sudo journalctl -u paskia@example.com -f -n 30 -o cat
+```sh
+sudo systemctl enable --now paskia@example.com && sudo journalctl -n30 -ocat -fu paskia@example.com
 ```
 
 ### Optional: Dedicated Authentication Site
-
-By default, Paskia serves login dialogs and admin interface at the `/auth/` path on each protected site. For a cleaner setup, you can use a dedicated authentication subdomain instead. We assume you have your DNS setup for that domain or a wildcard of all subdomains to current machine.
-
-Configure Paskia with the authentication host:
-
-```fish
-paskia --rp-id example.com --auth-host=auth.example.com --save
-```
 
 Add a Caddy configuration for the authentication domain:
 
@@ -220,8 +212,9 @@ auth.example.com {
 }
 ```
 
-Now all authentication happens at `auth.example.com` instead of `/auth/` paths on your apps. No other changes are needed. Your existing protected sites continue to work as before but they just forward to the dedicated site for user profile and other such functionality.
+Now all authentication happens at `auth.example.com` instead of `/auth/` paths on your apps. Your existing protected sites continue to work as before but they just forward to the dedicated site for user profile and other such functionality.
 
+Enter your auth site domain on Admin / Server Options panel or use `--auth-host=auth.example.com` when starting the server.
 
 
 ## Further Documentation
