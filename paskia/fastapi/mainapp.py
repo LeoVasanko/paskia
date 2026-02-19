@@ -14,6 +14,7 @@ from paskia.db import start_background, stop_background
 from paskia.db.background import flush
 from paskia.db.logging import configure_db_logging
 from paskia.fastapi import admin, api, auth_host, oid, ws
+from paskia.fastapi.admin.adminapp import adminapp
 
 # Import frontend instance
 from paskia.fastapi.front import frontend
@@ -162,7 +163,7 @@ async def admin_root_redirect():
 @app.get("/admin/", include_in_schema=False)
 @app.get("/auth/admin/", include_in_schema=False)
 async def admin_root(request: Request, auth=AUTH_COOKIE):
-    return await admin.adminapp(request, auth)  # Delegated to admin app
+    return await adminapp(request, auth)  # Delegated to admin app
 
 
 @app.get("/auth/examples/", include_in_schema=False)
