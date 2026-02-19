@@ -8,6 +8,7 @@ from paskia.fastapi.session import AUTH_COOKIE
 from paskia.globals import passkey
 from paskia.sansio import Passkey
 from paskia.util import hostutil
+from paskia.util.runtime import update_runtime_config
 
 app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
 
@@ -79,9 +80,6 @@ async def admin_update_server_config(
         origins=origins,
         listen=config.listen,
     )
-    await db.update_config(new_config)
-
-    # Reload hostutil cached config so auth_host changes take effect
-    hostutil.reload_config()
-
+    db.update_config(new_config)
+    update_runtime_config(new_config)
     return {"status": "ok"}
