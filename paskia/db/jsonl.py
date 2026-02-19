@@ -19,7 +19,12 @@ import msgspec
 
 from paskia.db.filelock import LockedFile
 from paskia.db.logging import log_change
-from paskia.db.migrations import DBVER, apply_all_migrations, apply_migrations_readonly
+from paskia.db.migrations import (
+    DBVER,
+    MigrationCtx,
+    apply_all_migrations,
+    apply_migrations_readonly,
+)
 from paskia.db.structs import DB, Config, SessionContext
 
 _logger = logging.getLogger(__name__)
@@ -62,7 +67,7 @@ def load_readonly(db_path: str, *, rp_id: str = "localhost") -> DB:
         return DB(config=Config(rp_id=rp_id))
 
     # Apply migrations in-memory (no persistence)
-    apply_migrations_readonly(data_dict, version, rp_id=rp_id)
+    apply_migrations_readonly(data_dict, version, MigrationCtx(rp_id=rp_id))
 
     # Decode to msgspec struct
     db = msgspec.json.decode(msgspec.json.encode(data_dict), type=DB)
@@ -176,7 +181,10 @@ class JsonlStore:
 
         # Apply schema migrations one at a time
         await apply_all_migrations(
-            data_dict, self._current_version, persist_migration, rp_id=rp_id
+            data_dict,
+            self._current_version,
+            persist_migration,
+            MigrationCtx(rp_id=rp_id),
         )
 
         # Decode to msgspec struct
