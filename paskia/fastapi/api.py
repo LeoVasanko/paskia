@@ -1,6 +1,7 @@
 import logging
 from contextlib import suppress
 from datetime import UTC, datetime, timedelta
+from uuid import UUID
 
 from fastapi import (
     Depends,
@@ -20,8 +21,17 @@ from paskia.fastapi import authz, session, user
 from paskia.fastapi.response import MsgspecResponse
 from paskia.fastapi.session import AUTH_COOKIE, AUTH_COOKIE_NAME, get_client_ip
 from paskia.globals import passkey as global_passkey
-from paskia.util import hostutil, htmlutil, passphrase, userinfo
-from paskia.util.apistructs import ApiSettings, ApiTokenInfo, ApiValidateResponse
+from paskia.util import hostutil, htmlutil, passphrase, permutil, userinfo
+from paskia.util.apistructs import (
+    ApiCheckUserResponse,
+    ApiOrgContext,
+    ApiRoleContext,
+    ApiSessionContext,
+    ApiSettings,
+    ApiTokenInfo,
+    ApiUserContext,
+    ApiValidateResponse,
+)
 
 bearer_auth = HTTPBearer(auto_error=False)
 
@@ -107,6 +117,60 @@ async def validate_token(
             ctx=userinfo.build_session_context(ctx),
         )
     )
+
+
+@app.get("/check")
+async def check_user(
+    request: Request,
+    user_uuid: UUID = Query(..., alias="user"),
+    perm: list[str] = Query([]),
+):
+    """Check permissions for a user by UUID without requiring a session.
+
+    Query Params:
+    - user: UUID of the user to check.
+    - perm: repeated permission scope the user must possess (ALL required).
+
+    Returns 200 with valid=True/False and the user's effective permissions,
+    scoped to the requesting host (domain-restricted permissions are filtered).
+    Returns 404 if the user UUID does not exist.
+
+    No session cookie is read or written. Caller authentication is not required.
+    """
+    data = db.data()
+    try:
+        u = data.users[user_uuid]
+        role = u.role
+        org = role.org
+    except KeyError:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    host = hostutil.normalize_host(request.headers.get("host"))
+    org_perm_uuids = {p.uuid for p in org.permissions}
+
+    effective_perms = []
+    for perm_uuid in role.permission_set:
+        if perm_uuid not in org_perm_uuids:
+            continue
+        try:
+            p = data.permissions[perm_uuid]
+        except KeyError:
+            continue
+        if p.domain is not None and p.domain != host:
+            continue
+        effective_perms.append(p)
+
+    required = " ".join(perm).split()
+    effective_scopes = {p.scope for p in effective_perms}
+    valid = permutil.has_all_scopes(effective_scopes, required)
+
+    ctx = ApiSessionContext(
+        user=ApiUserContext(uuid=u.uuid, display_name=u.display_name, theme=u.theme),
+        org=ApiOrgContext(uuid=org.uuid, display_name=org.display_name),
+        role=ApiRoleContext(uuid=role.uuid, display_name=role.display_name),
+        permissions=sorted(effective_scopes),
+    )
+    return MsgspecResponse(ApiCheckUserResponse(valid=valid, ctx=ctx))
 
 
 @app.get("/forward")

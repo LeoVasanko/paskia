@@ -6,7 +6,7 @@ from fnmatch import fnmatchcase
 from paskia.authsession import session_ctx
 from paskia.util.hostutil import normalize_host
 
-__all__ = ["has_any", "has_all", "session_context"]
+__all__ = ["has_any", "has_all", "has_all_scopes", "session_context"]
 
 
 def _match(perms: set[str], patterns: Sequence[str]):
@@ -34,6 +34,11 @@ def has_any(ctx, patterns: Sequence[str]) -> bool:
 
 def has_all(ctx, patterns: Sequence[str]) -> bool:
     return all(_match(_get_effective_scopes(ctx), patterns)) if ctx else False
+
+
+def has_all_scopes(scopes: set[str], patterns: Sequence[str]) -> bool:
+    """Check that a pre-computed scope set satisfies all required patterns."""
+    return all(_match(scopes, patterns)) if patterns else True
 
 
 async def session_context(auth: str | None, host: str | None = None):
