@@ -233,6 +233,13 @@ class ApiValidateResponse(msgspec.Struct):
     ctx: ApiSessionContext
 
 
+class ApiCheckUserResponse(msgspec.Struct):
+    """Response struct for check-user endpoint."""
+
+    valid: bool
+    ctx: ApiSessionContext
+
+
 class ApiAdminInfo(msgspec.Struct, kw_only=True):
     """Combined admin info response."""
 
