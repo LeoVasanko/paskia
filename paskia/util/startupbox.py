@@ -19,8 +19,8 @@ BOX_WIDTH = 60  # Inner width (excluding box chars)
 
 # ANSI color codes
 RESET = "\033[0m"
-YELLOW = "\033[33m"  # Dark yellow
-BRIGHT_YELLOW = "\033[93m"  # Bright yellow
+YELLOW = "\033[38;5;184m"  # Bright yellow (6x6x6 cube, r=4 g=4)
+BRIGHT_YELLOW = "\033[38;5;226m"  # Brightest yellow (6x6x6 cube)
 BRIGHT_WHITE = "\033[1;37m"  # Bold bright white
 
 
@@ -50,8 +50,8 @@ def bottom() -> str:
 def print_startup_config(runtime: RuntimeConfig) -> None:
     """Print server configuration on startup."""
     # Key graphic with yellow shading (bright for highlights, dark for body)
-    y = YELLOW  # Dark yellow for main body
-    b = BRIGHT_YELLOW  # Bright yellow for highlights/edges
+    y = YELLOW  # Bright golden yellow for main body
+    b = BRIGHT_YELLOW  # Brightest yellow for highlights/edges
     w = BRIGHT_WHITE  # Bold white for URL
     r = RESET
 
