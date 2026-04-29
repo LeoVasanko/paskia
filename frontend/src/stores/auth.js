@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { register, authenticate } from '@/utils/passkey'
 import { getSettings } from '@/utils/settings'
-import { apiJson } from 'paskia'
+import { apiJson, settings as paskiaSettings } from 'paskia'
 import { updateThemeFromSession } from '@/utils/theme'
 
 export const useAuthStore = defineStore('auth', {
@@ -50,6 +50,7 @@ export const useAuthStore = defineStore('auth', {
       return await apiJson('/auth/api/set-session', {
         method: 'POST',
         headers: {'Authorization': `Bearer ${result.session_token}`},
+        timeout: paskiaSettings.auth_ms,
       })
     },
     async register() {
@@ -87,7 +88,7 @@ export const useAuthStore = defineStore('auth', {
     },
     async loadUserInfo() {
       try {
-        this.userInfo = await apiJson('/auth/api/user-info', { method: 'GET' })
+        this.userInfo = await apiJson('/auth/api/user-info', { method: 'GET', timeout: paskiaSettings.auth_ms })
         updateThemeFromSession(this.userInfo)
         console.log('User info loaded:', this.userInfo)
       } catch (error) {
@@ -121,7 +122,7 @@ export const useAuthStore = defineStore('auth', {
     },
     async logout() {
       try {
-        await apiJson('/auth/api/logout', {method: 'POST'})
+        await apiJson('/auth/api/logout', {method: 'POST', timeout: paskiaSettings.auth_ms})
         sessionStorage.clear()
         location.reload()
       } catch (error) {
@@ -134,7 +135,7 @@ export const useAuthStore = defineStore('auth', {
     },
     async logoutEverywhere() {
       try {
-        await apiJson('/auth/api/user/logout-all', {method: 'POST'})
+        await apiJson('/auth/api/user/logout-all', {method: 'POST', timeout: paskiaSettings.auth_ms})
         sessionStorage.clear()
         location.reload()
       } catch (error) {

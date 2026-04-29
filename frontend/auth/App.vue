@@ -13,7 +13,7 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useAuthStore } from '@/stores/auth'
-import { apiJson, SessionValidator } from 'paskia'
+import { apiJson, SessionValidator, settings as paskiaSettings } from 'paskia'
 import { updateThemeFromSession } from '@/utils/theme'
 import StatusMessage from '@/components/StatusMessage.vue'
 import ProfileView from '@/components/ProfileView.vue'
@@ -72,8 +72,8 @@ async function loadUserInfo() {
     // apiJson handles 401/403 with auth.iframe automatically:
     // shows overlay iframe, waits for auth, retries the request.
     const [validateData, userInfoData] = await Promise.all([
-      apiJson('/auth/api/validate', { method: 'POST' }),
-      apiJson('/auth/api/user-info', { method: 'GET' })
+      apiJson('/auth/api/validate', { method: 'POST', timeout: paskiaSettings.auth_ms }),
+      apiJson('/auth/api/user-info', { method: 'GET', timeout: paskiaSettings.auth_ms })
     ])
     store.userInfo = userInfoData
     store.ctx = validateData.ctx

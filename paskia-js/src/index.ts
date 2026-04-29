@@ -12,6 +12,8 @@ export {
 
 export type { ApiFetchOptions, FetchJsonOptions } from './fetch'
 
+export { default as settings } from './settings'
+
 export {
   holdGlobalBackdrop,
   releaseGlobalBackdrop,

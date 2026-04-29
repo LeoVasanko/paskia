@@ -1,7 +1,5 @@
 import { apiJson } from './fetch'
-
-const POLL_INTERVAL = 60 * 1000
-const IDLE_TIMEOUT = 5 * 60 * 1000
+import settings from './settings'
 
 export class SessionValidator {
   private userUuidGetter: () => string | undefined
@@ -19,12 +17,12 @@ export class SessionValidator {
   resetIdleTimer(): void {
     if (this.idleTimer) clearTimeout(this.idleTimer)
     if (!this.active) this.startPolling()
-    this.idleTimer = setTimeout(() => this.stopPolling(), IDLE_TIMEOUT)
+    this.idleTimer = setTimeout(() => this.stopPolling(), settings.idle_ms)
   }
 
   async validate(): Promise<void> {
     try {
-      const data = await apiJson<{ ctx?: { user?: { uuid?: string } } }>('/auth/api/validate', { method: 'POST' })
+      const data = await apiJson<{ ctx?: { user?: { uuid?: string } } }>('/auth/api/validate', { method: 'POST', timeout: settings.auth_ms })
       const newUuid = data.ctx?.user?.uuid
       if (newUuid !== this.userUuidGetter()) {
         window.location.reload()
@@ -40,7 +38,7 @@ export class SessionValidator {
   startPolling(): void {
     if (this.active) return
     this.active = true
-    this.pollTimer = setInterval(() => this.validate(), POLL_INTERVAL)
+    this.pollTimer = setInterval(() => this.validate(), settings.poll_ms)
   }
 
   stopPolling(): void {

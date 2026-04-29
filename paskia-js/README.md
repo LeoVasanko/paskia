@@ -64,6 +64,30 @@ When a 401/403 response includes an auth iframe URL, the request automatically p
 
 The JSON variants set headers automatically, with body and response in JSON.
 
+### Timeout Settings
+
+Paskia exports a mutable settings object for defaults used by fetch/auth/session validation timers. Default values shown below.
+
+```js
+import { settings } from 'paskia'
+
+// General fetch timeout used by apiFetch/apiJson/fetchJson when no timeout is passed
+settings.fetch_ms = 10000
+
+// Fetch timeout used by SessionValidator (/auth/api/validate is fast)
+settings.auth_ms = 1000
+
+// SessionValidator polling and idle timers
+settings.poll_ms = 60000
+settings.idle_ms = 300000
+```
+
+You can still override timeout per request:
+
+```js
+await apiJson('/api/upload', { method: 'POST', body: data, timeout: 30000 })
+```
+
 ### Authentication Overlay
 
 Normally you use apiJson/apiFetch and they handle this automatically. If you need to wire it yourself, on a 401/403 response that includes `auth.iframe`, call `showAuthIframe(...)` and then retry the original request.
