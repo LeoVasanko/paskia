@@ -112,7 +112,13 @@ def method_color(method: str) -> str:
 
 
 def format_access_log(
-    client: str, status: int, method: str, host: str, path: str, duration_ms: float
+    client: str,
+    status: int,
+    method: str,
+    host: str,
+    path: str,
+    duration_ms: float,
+    extra: str = "",
 ) -> str:
     """Format access log line with colors and aligned fields."""
     # Format components with fixed widths for alignment
@@ -126,8 +132,9 @@ def format_access_log(
     host_str = f"{_HOST}{host}{_RESET}"
     path_str = f"{_PATH}{path}{_RESET}"
 
-    # Format: "IP STATUS METHOD host path TIMING"
-    return f"{ip} {status_str} {method_str} {host_str}{path_str} {timing_str}"
+    # Format: "IP STATUS METHOD host path [extra] TIMING"
+    extra_str = f" {_TIMING}{extra}{_RESET}" if extra else ""
+    return f"{ip} {status_str} {method_str} {host_str}{path_str}{extra_str} {timing_str}"
 
 
 # WebSocket connection counter (mod 100)
@@ -244,7 +251,16 @@ class AccessLogMiddleware(BaseHTTPMiddleware):
             path = f"{path}?{request.url.query}"
         status = response.status_code
 
-        line = format_access_log(client, status, method, host, path, duration_ms)
+        extra = ""
+        # For forward-auth endpoint, include the original target URI when provided.
+        if request.url.path == "/auth/api/forward":
+            forwarded_uri = request.headers.get("x-forwarded-uri")
+            if forwarded_uri:
+                extra = forwarded_uri
+
+        line = format_access_log(
+            client, status, method, host, path, duration_ms, extra=extra
+        )
         logger.info(line)
 
         return response
