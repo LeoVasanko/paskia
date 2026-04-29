@@ -256,12 +256,7 @@ class AccessLogMiddleware(BaseHTTPMiddleware):
             path = f"{path}?{request.url.query}"
         status = response.status_code
 
-        extra = ""
-        # For forward-auth endpoint, include the original target URI when provided.
-        if request.url.path == "/auth/api/forward":
-            forwarded_uri = request.headers.get("x-forwarded-uri")
-            if forwarded_uri:
-                extra = forwarded_uri
+        extra = getattr(request.state, "log_extra", "")
 
         line = format_access_log(
             client, status, method, host, path, duration_ms, extra=extra

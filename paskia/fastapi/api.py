@@ -21,6 +21,7 @@ from paskia.fastapi import authz, session, user
 from paskia.fastapi.response import MsgspecResponse
 from paskia.fastapi.session import AUTH_COOKIE, AUTH_COOKIE_NAME, get_client_ip
 from paskia.globals import passkey as global_passkey
+from paskia.util.crypto import hash_secret
 from paskia.util import hostutil, htmlutil, passphrase, permutil, userinfo
 from paskia.util.apistructs import (
     ApiCheckUserResponse,
@@ -54,6 +55,12 @@ async def http_exception_handler(_request: Request, exc: HTTPException):
 # Consumption is derived from (now + EXPIRES) - current_expires.
 # This guarantees a minimum spacing between DB writes even with frequent /validate calls.
 _REFRESH_INTERVAL = timedelta(minutes=5)
+
+
+def _set_log_extra(request: Request, *parts: str) -> None:
+    values = [part for part in parts if part]
+    if values:
+        request.state.log_extra = " ".join(values)
 
 
 @app.exception_handler(ValueError)
@@ -110,6 +117,7 @@ async def validate_token(
             )
             session.set_session_cookie(response, auth)
             renewed = True
+        _set_log_extra(request, ctx.session.key)
     return MsgspecResponse(
         ApiValidateResponse(
             valid=True,
@@ -202,6 +210,7 @@ async def forward_authentication(
             host=request.headers.get("host"),
             max_age=max_age,
         )
+        _set_log_extra(request, request.headers.get("x-forwarded-uri", ""), ctx.session.key)
         # Build permission scopes for Remote-Groups header
         role_permissions = (
             {p.scope for p in ctx.permissions} if ctx.permissions else set()
@@ -275,6 +284,8 @@ async def api_user_info(
             mode="login",
             clear_session=True,
         )
+
+    _set_log_extra(request, ctx.session.key)
 
     return MsgspecResponse(
         await userinfo.build_user_info(
@@ -351,5 +362,6 @@ async def api_set_session(
     if not ctx:
         raise HTTPException(401, f"Session not found on {host}")
 
+    _set_log_extra(request, hash_secret("cookie", secret))
     session.set_session_cookie(response, secret)
     return {"status": "ok", "user": str(ctx.user.uuid)}
