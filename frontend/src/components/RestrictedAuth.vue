@@ -58,7 +58,7 @@
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import passkey from '@/utils/passkey'
 import { getSettings, uiBasePath } from '@/utils/settings'
-import { fetchJson, getUserFriendlyErrorMessage } from 'paskia'
+import { fetchJson, getUserFriendlyErrorMessage, settings as paskiaSettings } from 'paskia'
 import RemoteAuthRequest from '@/components/RemoteAuthRequest.vue'
 import { focusDialogButton } from '@/utils/keynav'
 import { updateThemeFromSession } from '@/utils/theme'
@@ -147,7 +147,7 @@ async function fetchSettings() {
 
 async function validateSession() {
   try {
-    session.value = await fetchJson('/auth/api/validate', { method: 'POST' })
+    session.value = await fetchJson('/auth/api/validate', { method: 'POST', timeout: paskiaSettings.auth_ms })
     updateThemeFromSession(session.value?.ctx)
     if (isAuthenticated.value && props.mode !== 'reauth') {
       currentView.value = 'forbidden'
@@ -198,7 +198,7 @@ async function logoutUser() {
   if (loading.value) return
   loading.value = true
   try {
-    await fetchJson('/auth/api/logout', { method: 'POST' })
+    await fetchJson('/auth/api/logout', { method: 'POST', timeout: paskiaSettings.auth_ms })
     session.value = null
     currentView.value = 'login'
     showMessage('Logged out. You can sign in with a different account.', 'info', 3000)
@@ -220,7 +220,7 @@ async function exchangeCode(result) {
     throw new Error('Authentication response missing exchange_code')
   }
   return await fetchJson('/auth/api/set-session', {
-    method: 'POST', headers: { 'Authorization': `Bearer ${result.exchange_code}` }
+    method: 'POST', headers: { 'Authorization': `Bearer ${result.exchange_code}` }, timeout: paskiaSettings.auth_ms
   })
 }
 

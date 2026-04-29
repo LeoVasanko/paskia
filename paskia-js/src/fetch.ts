@@ -1,8 +1,7 @@
 import { showAuthIframe, AuthCancelledError } from './overlay'
+import settings from './settings'
 
 export { AuthCancelledError }
-
-const DEFAULT_TIMEOUT_MS = 1000
 
 export interface ApiFetchOptions extends RequestInit {
   timeout?: number
@@ -40,7 +39,7 @@ export class NetworkError extends Error {
 }
 
 export async function apiFetch(url: string, options: ApiFetchOptions = {}): Promise<Response> {
-  const { timeout = DEFAULT_TIMEOUT_MS, ...fetchOptions } = options
+  const { timeout = settings.fetch_ms, ...fetchOptions } = options
   fetchOptions.credentials = fetchOptions.credentials || 'include'
 
   while (true) {

@@ -59,7 +59,7 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import passkey from '@/utils/passkey'
 import { getSettings, uiBasePath } from '@/utils/settings'
-import { apiJson, ApiError, getUserFriendlyErrorMessage } from 'paskia'
+import { apiJson, ApiError, getUserFriendlyErrorMessage, settings as paskiaSettings } from 'paskia'
 import { updateThemeFromSession } from '@/utils/theme'
 
 const status = reactive({
@@ -164,7 +164,8 @@ async function exchangeCode(result) {
   }
   return await apiJson('/auth/api/set-session', {
     method: 'POST',
-    headers: { 'Authorization': `Bearer ${result.exchange_code}` }
+    headers: { 'Authorization': `Bearer ${result.exchange_code}` },
+    timeout: paskiaSettings.auth_ms,
   })
 }
 
