@@ -203,6 +203,15 @@ async def forward_authentication(
         - Otherwise: JSON response with error details and an `iframe` field
           pointing to /auth/restricted/iframe#mode=... for iframe-based authentication.
     """
+    forwarded_method = request.headers.get("x-forwarded-method", "").strip()
+    forwarded_uri = request.headers.get("x-forwarded-uri", "").strip()
+    forwarded = (
+        f"{forwarded_method} {forwarded_uri}"
+        if forwarded_method and forwarded_uri
+        else ""
+    )
+    _set_log_extra(request, forwarded)
+
     try:
         ctx = await authz.verify(
             auth,
@@ -210,7 +219,7 @@ async def forward_authentication(
             host=request.headers.get("host"),
             max_age=max_age,
         )
-        _set_log_extra(request, request.headers.get("x-forwarded-uri", ""), ctx.session.key)
+        _set_log_extra(request, forwarded, ctx.session.key)
         # Build permission scopes for Remote-Groups header
         role_permissions = (
             {p.scope for p in ctx.permissions} if ctx.permissions else set()
