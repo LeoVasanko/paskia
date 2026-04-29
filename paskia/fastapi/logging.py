@@ -159,20 +159,21 @@ def log_ws_open(ws) -> int:
     origin = ws.headers.get("origin")
 
     ip = format_client_ip(client).ljust(19)
-    id_str = f"{ws_id:02d}".ljust(7)  # Align with method field (7 chars)
+    # ID right-aligned like status codes (3 chars), emoji formatted like method
+    id_str = f"{_WS_OPEN}{str(ws_id).rjust(3)}{_RESET}"
+    # Emoji (2 display width) + 6 spaces = 8 display chars, but within color for alignment
+    emoji_str = f"{_METHOD_READ}🔌      {_RESET}"
 
     # Determine if origin should be shown (omit when same as host)
     # Origin header includes scheme (e.g., "https://example.com"), compare host part
     origin_host = origin.split("://", 1)[-1] if origin else None
     show_origin = origin_host and origin_host != host
 
-    # 🔌 aligned with status (takes ~2 char width), ID aligned with method
-    prefix = f"🔌  {_WS_OPEN}{id_str}{_RESET}"
     host_str = f"{_HOST}{host}{_RESET}"
     path_str = f"{_PATH}{path}{_RESET}"
     origin_str = f" {_RESET}from {_HOST}{origin_host}{_RESET}" if show_origin else ""
 
-    logger.info(f"{ip} {prefix} {host_str}{path_str}{origin_str}")
+    logger.info(f"{ip} {id_str} {emoji_str}{host_str}{path_str}{origin_str}")
     return ws_id
 
 
@@ -198,21 +199,25 @@ WS_CLOSE_CODES = {
 
 def log_ws_close(ws_id: int, close_code: int | None, duration: float) -> None:
     """Log WebSocket connection close with duration and status."""
-    id_str = f"{ws_id:02d}".ljust(7)  # Align with method field (7 chars)
+    # ID right-aligned like status codes (3 chars), "closed" formatted like method
+    id_str = f"{_WS_CLOSE}{str(ws_id).rjust(3)}{_RESET}"
+    # Pad within the dim color to keep full width in color (8 display chars)
+    closed_str = f"{_TIMING}closed  {_RESET}"
     timing = f"{duration * 1000:.0f}ms"
 
     # Convert close code to status text
     if close_code is None:
-        status = "closed"
+        code = "----"
+        status = "unknown"
     else:
+        code = str(close_code)
         status = WS_CLOSE_CODES.get(close_code, f"code {close_code}")
 
-    # 🔌 aligned with status, ID aligned with method
-    prefix = f"🔌  {_WS_CLOSE}{id_str}{_RESET}"
-    status_str = f"{_WS_STATUS}{status}{_RESET}"
+    # Status code and text in normal color, not dim
+    status_str = f"{code} {status}"
     timing_str = f"{_TIMING}{timing}{_RESET}"
 
-    logger.info(f"{' ' * 19} {prefix} {status_str} {timing_str}")
+    logger.info(f"{' ' * 19} {id_str} {closed_str}{status_str} {timing_str}")
 
 
 def log_permission_denied(
