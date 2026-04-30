@@ -437,7 +437,7 @@ def delete_credential(
 
 
 def update_session(
-    key: bytes,
+    key: str,
     host: str | None = None,
     ip: str | None = None,
     user_agent: str | None = None,
@@ -461,7 +461,7 @@ def update_session(
 
 
 def set_session_host(
-    key: bytes, host: str, *, ctx: SessionContext | None = None
+    key: str, host: str, *, ctx: SessionContext | None = None
 ) -> None:
     """Set the host for a session (first-time binding)."""
     update_session(key, host=host, ctx=ctx)
