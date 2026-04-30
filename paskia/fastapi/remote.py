@@ -312,7 +312,13 @@ async def websocket_remote_auth_permit(ws: WebSocket, auth=AUTH_COOKIE):
 
             # Handle authenticate request (no PoW needed - already validated during lookup)
             if msg.get("authenticate") and request is not None:
-                ctx, secret = await authenticate_and_login(ws, auth)
+                ctx, secret = await authenticate_and_login(
+                    ws,
+                    auth,
+                    session_host=request.host,
+                    session_ip=request.ip,
+                    session_user_agent=request.user_agent,
+                )
 
                 reset_token = None
 

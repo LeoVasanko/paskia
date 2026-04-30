@@ -69,10 +69,21 @@ async def authenticate_chat(
 async def authenticate_and_login(
     ws: WebSocket,
     auth: str | None = None,
+    *,
+    session_host: str | None = None,
+    session_ip: str | None = None,
+    session_user_agent: str | None = None,
 ) -> tuple[SessionContext, str]:
     """Run WebAuthn authentication flow, create session, and return the session context.
 
     If auth is provided, restrict authentication to credentials of that session's user.
+
+    Args:
+        ws: The WebSocket connection (used for WebAuthn and origin validation)
+        auth: Existing session cookie for re-auth credential restriction
+        session_host: Override host for the new session (defaults to ws origin)
+        session_ip: Override IP for the new session (defaults to ws client IP)
+        session_user_agent: Override user-agent for the new session (defaults to ws headers)
 
     Returns:
         Tuple of (SessionContext for the authenticated session, session secret)
@@ -97,18 +108,25 @@ async def authenticate_and_login(
 
     cred, new_sign_count = await authenticate_chat(ws, credential_ids)
 
+    # Use overrides if provided, otherwise use websocket metadata
+    login_host = hostutil.normalize_host(session_host) if session_host is not None else normalized_host
+    if not login_host:
+        raise ValueError("Host required for session creation")
+    login_ip = session_ip if session_ip is not None else metadata["ip"]
+    login_user_agent = session_user_agent if session_user_agent is not None else metadata["user_agent"]
+
     # Create session and update user/credential
     secret = db.login(
         user_uuid=cred.user_uuid,
         credential_uuid=cred.uuid,
         sign_count=new_sign_count,
-        host=normalized_host,
-        ip=metadata["ip"],
-        user_agent=metadata["user_agent"],
+        host=login_host,
+        ip=login_ip,
+        user_agent=login_user_agent,
     )
 
-    # Fetch and return the full session context
-    ctx = session_ctx(secret, host)
+    # Fetch and return the full session context (using the same host the session was created with)
+    ctx = session_ctx(secret, login_host)
     if not ctx:
         raise ValueError("Failed to create session context")
     return ctx, secret
