@@ -75,9 +75,15 @@ Discovery: `backchannel_logout_supported: true`
 - `GET /.well-known/openid-configuration` — Discovery
 - `GET /auth/oidc/keys` — Keys (EdDSA)
 - `POST /auth/oidc/token` — Exchange/refresh
-- `GET /auth/oidc/userinfo` — User (bearer token)
+- `GET /auth/oidc/userinfo` — User (bearer token, includes `picture` when `profile` scope is granted and avatar exists)
 - `POST /auth/oidc/backchannel-logout` — Logout
 - `POST /auth/api/exchange` — Native auth code → cookie
+
+## Claims
+
+- `profile` scope may include `name`, `preferred_username`, and `picture`
+- `email` scope may include `email`
+- `groups` is emitted from client-scoped permissions
 
 ## Files
 

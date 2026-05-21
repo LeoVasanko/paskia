@@ -126,6 +126,7 @@ async def openid_configuration(request: Request):
             "name",
             "preferred_username",
             "email",
+            "picture",
             "groups",
             "sid",
         ],

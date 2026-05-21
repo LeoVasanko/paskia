@@ -78,6 +78,7 @@ def create_id_token(
     name: str | None = None,
     preferred_username: str | None = None,
     email: str | None = None,
+    picture: str | None = None,
     groups: list[str] | None = None,
     auth_time: datetime | None = None,
     expires_in: int = 3600,
@@ -93,6 +94,7 @@ def create_id_token(
         name: User's display name
         preferred_username: User's preferred username
         email: User's email address
+        picture: User avatar URL
         groups: List of permission scopes (groups claim)
         auth_time: When the user authenticated (last credential use time)
         expires_in: Token lifetime in seconds
@@ -101,8 +103,9 @@ def create_id_token(
         Signed JWT string
     """
     _ensure_key()
+    assert _private_key is not None
     now = datetime.now(UTC)
-    payload = {
+    payload: dict[str, object] = {
         "iss": issuer,
         "sub": str(subject),
         "aud": audience,
@@ -119,6 +122,8 @@ def create_id_token(
         payload["preferred_username"] = preferred_username
     if email:
         payload["email"] = email
+    if picture:
+        payload["picture"] = picture
     if groups:
         payload["groups"] = groups
     if auth_time:
@@ -147,8 +152,9 @@ def create_access_token(
         Signed JWT string
     """
     _ensure_key()
+    assert _private_key is not None
     now = datetime.now(UTC)
-    payload = {
+    payload: dict[str, object] = {
         "iss": issuer,
         "sub": str(subject),
         "aud": audience,
@@ -173,20 +179,24 @@ def decode_access_token(
         Decoded payload or None if invalid
     """
     _ensure_key()
+    assert _public_key is not None
     try:
-        # PyJWT requires audience parameter when token has aud claim.
-        # When audience is None, we skip PyJWT's audience validation and validate manually.
-        options = {}
-        decode_kwargs = {
-            "algorithms": ["EdDSA"],
-            "issuer": issuer,
-        }
         if audience is not None:
-            decode_kwargs["audience"] = audience
-        else:
-            options["verify_aud"] = False
+            return jwt.decode(
+                token,
+                _public_key,
+                algorithms=["EdDSA"],
+                issuer=issuer,
+                audience=audience,
+            )
 
-        return jwt.decode(token, _public_key, options=options, **decode_kwargs)
+        return jwt.decode(
+            token,
+            _public_key,
+            algorithms=["EdDSA"],
+            issuer=issuer,
+            options={"verify_aud": False},
+        )
     except jwt.PyJWTError:
         return None
 
@@ -212,8 +222,9 @@ def create_logout_token(
         Signed JWT string
     """
     _ensure_key()
+    assert _private_key is not None
     now = datetime.now(UTC)
-    payload = {
+    payload: dict[str, object] = {
         "iss": issuer,
         "aud": audience,
         "iat": int(now.timestamp()),

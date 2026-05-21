@@ -12,6 +12,7 @@ These tests cover:
 
 import secrets
 from datetime import UTC, datetime, timedelta
+from urllib.parse import urlsplit
 
 import httpx
 import pytest
@@ -19,8 +20,10 @@ import pytest
 from paskia import authcode
 from paskia.authsession import EXPIRES
 from paskia.db import delete_session
+from paskia.db.structs import Client
+from paskia.util import oidjwt
 from paskia.util.passphrase import generate
-from tests.conftest import auth_headers, create_test_session
+from tests.conftest import auth_headers, create_test_image_bytes, create_test_session
 
 
 class TestSettingsEndpoint:
@@ -45,6 +48,15 @@ class TestSettingsEndpoint:
         response = await client.get("/auth/api/settings")
         data = response.json()
         assert "ui_base_path" in data
+
+    @pytest.mark.asyncio
+    async def test_openid_configuration_includes_picture_claim(
+        self, client: httpx.AsyncClient
+    ):
+        """Discovery document should advertise picture claim support."""
+        response = await client.get("/.well-known/openid-configuration")
+        assert response.status_code == 200
+        assert "picture" in response.json()["claims_supported"]
 
 
 class TestValidateEndpoint:
@@ -293,6 +305,121 @@ class TestUserInfoEndpoint:
         assert response.status_code == 200
         data = response.json()
         assert "permissions" in data
+
+    @pytest.mark.asyncio
+    async def test_user_info_includes_avatar_url(
+        self,
+        client: httpx.AsyncClient,
+        session_token: str,
+        test_user,
+        tmp_path,
+        monkeypatch,
+    ):
+        """User info should include the canonical avatar URL when present."""
+        monkeypatch.setenv("PASKIA_DB", str(tmp_path / "test-avatar-db.paskiadb"))
+
+        upload = await client.put(
+            f"/auth/api/user/{test_user.uuid}/profile.webp",
+            files={"file": ("avatar.webp", create_test_image_bytes(), "image/webp")},
+            headers={**auth_headers(session_token), "Host": "localhost:4401"},
+        )
+        assert upload.status_code == 200
+
+        response = await client.get(
+            "/auth/api/user-info",
+            headers={**auth_headers(session_token), "Host": "localhost:4401"},
+        )
+        assert response.status_code == 200
+        data = response.json()
+        avatar_url = data["user"]["avatar_url"]
+        parts = urlsplit(avatar_url)
+        assert parts.path.endswith(f"/auth/api/user/{test_user.uuid}/profile.webp")
+        assert parts.query == ""
+
+    @pytest.mark.asyncio
+    async def test_avatar_route_returns_304_for_matching_etag(
+        self,
+        client: httpx.AsyncClient,
+        session_token: str,
+        test_user,
+        tmp_path,
+        monkeypatch,
+    ):
+        """Avatar route should honor If-None-Match for unchanged avatars."""
+        monkeypatch.setenv("PASKIA_DB", str(tmp_path / "test-avatar-db.paskiadb"))
+
+        upload = await client.put(
+            f"/auth/api/user/{test_user.uuid}/profile.webp",
+            files={"file": ("avatar.webp", create_test_image_bytes(), "image/webp")},
+            headers={**auth_headers(session_token), "Host": "localhost:4401"},
+        )
+        assert upload.status_code == 200
+        parts = urlsplit(upload.json()["avatar_url"])
+
+        first = await client.get(parts.path, headers={"Host": "localhost:4401"})
+        assert first.status_code == 200
+
+        response = await client.get(
+            f"/auth/api/user/{test_user.uuid}/profile.webp",
+            headers={
+                "Host": "localhost:4401",
+                "If-None-Match": first.headers["etag"],
+            },
+        )
+        assert response.status_code == 304
+        assert response.headers["etag"] == first.headers["etag"]
+
+
+class TestOidcUserInfoEndpoint:
+    """Tests for OIDC userinfo metadata relevant to avatars."""
+
+    @pytest.mark.asyncio
+    async def test_userinfo_includes_picture_claim(
+        self,
+        client: httpx.AsyncClient,
+        test_db,
+        session_token: str,
+        test_user,
+        tmp_path,
+        monkeypatch,
+    ):
+        """OIDC userinfo should expose picture when profile scope is granted."""
+        monkeypatch.setenv("PASKIA_DB", str(tmp_path / "test-avatar-db.paskiadb"))
+
+        upload = await client.put(
+            f"/auth/api/user/{test_user.uuid}/profile.webp",
+            files={"file": ("avatar.webp", create_test_image_bytes(), "image/webp")},
+            headers={**auth_headers(session_token), "Host": "localhost:4401"},
+        )
+        assert upload.status_code == 200
+        avatar_url = upload.json()["avatar_url"]
+
+        oidc_client, _secret = Client.create(
+            name="Test Client",
+            redirect_uris=["https://client.example/callback"],
+            client_secret="topsecret",
+        )
+        with test_db.transaction("create_test_oidc_client"):
+            test_db.oidc.clients[oidc_client.uuid] = oidc_client
+
+        access_token = oidjwt.create_access_token(
+            issuer="http://localhost:4401",
+            subject=test_user.uuid,
+            audience=str(oidc_client.uuid),
+            scope="openid profile",
+        )
+
+        response = await client.get(
+            "/auth/oidc/userinfo",
+            headers={
+                "Authorization": f"Bearer {access_token}",
+                "Host": "localhost:4401",
+            },
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert urlsplit(data["picture"]).path == urlsplit(avatar_url).path
+        assert data["picture"].startswith("http")
 
 
 class TestSetSessionEndpoint:

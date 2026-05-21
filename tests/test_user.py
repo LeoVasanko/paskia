@@ -3,16 +3,19 @@ Tests for the user API endpoints (/auth/api/user/).
 
 These tests cover user self-service operations:
 - Display name update
+- Avatar upload/delete
 - Logout all sessions
 - Session management (delete specific session)
 - Credential management (delete credential)
 - Device addition link creation
 """
 
+from urllib.parse import urlsplit
+
 import httpx
 import pytest
 
-from tests.conftest import auth_headers
+from tests.conftest import auth_headers, create_test_image_bytes
 
 
 class TestUserDisplayName:
@@ -65,6 +68,138 @@ class TestUserDisplayName:
             headers={**auth_headers(session_token), "Host": "localhost:4401"},
         )
         assert response.status_code == 400
+
+
+class TestUserAvatar:
+    """Tests for PUT/DELETE /auth/api/user/{user_uuid}/profile.webp"""
+
+    @pytest.mark.asyncio
+    async def test_upload_avatar_requires_auth(self, client: httpx.AsyncClient):
+        """Uploading avatar without auth should return 401."""
+        response = await client.put(
+            "/auth/api/user/00000000-0000-0000-0000-000000000000/profile.webp",
+            files={"file": ("avatar.webp", create_test_image_bytes(), "image/webp")},
+        )
+        assert response.status_code in (401, 404)
+
+    @pytest.mark.asyncio
+    async def test_upload_avatar_success(
+        self,
+        client: httpx.AsyncClient,
+        session_token: str,
+        test_user,
+        tmp_path,
+        monkeypatch,
+    ):
+        """Uploading a WebP avatar should store and expose the canonical URL."""
+        monkeypatch.setenv("PASKIA_DB", str(tmp_path / "test-avatar-db.paskiadb"))
+
+        upload_bytes = create_test_image_bytes()
+
+        response = await client.put(
+            f"/auth/api/user/{test_user.uuid}/profile.webp",
+            files={"file": ("avatar.webp", upload_bytes, "image/webp")},
+            headers={**auth_headers(session_token), "Host": "localhost:4401"},
+        )
+        assert response.status_code == 200
+        data = response.json()
+        avatar_url = data["avatar_url"]
+        parts = urlsplit(avatar_url)
+        assert parts.query == ""
+
+        avatar_response = await client.get(
+            parts.path,
+            headers={"Host": "localhost:4401"},
+        )
+        assert avatar_response.status_code == 200
+        assert avatar_response.headers["cache-control"] == "public, max-age=300"
+        assert avatar_response.headers["content-type"] == "image/webp"
+        assert "etag" in avatar_response.headers
+        assert avatar_response.content == upload_bytes
+
+        not_modified = await client.get(
+            parts.path,
+            headers={
+                "Host": "localhost:4401",
+                "If-None-Match": avatar_response.headers["etag"],
+            },
+        )
+        assert not_modified.status_code == 304
+        assert not_modified.headers["etag"] == avatar_response.headers["etag"]
+
+    @pytest.mark.asyncio
+    async def test_upload_avatar_rejects_non_webp(
+        self,
+        client: httpx.AsyncClient,
+        session_token: str,
+        test_user,
+        tmp_path,
+        monkeypatch,
+    ):
+        """Avatar uploads must already be browser-prepared WebP."""
+        monkeypatch.setenv("PASKIA_DB", str(tmp_path / "test-avatar-db.paskiadb"))
+
+        response = await client.put(
+            f"/auth/api/user/{test_user.uuid}/profile.webp",
+            files={
+                "file": (
+                    "avatar.png",
+                    create_test_image_bytes(image_format="PNG"),
+                    "image/png",
+                )
+            },
+            headers={**auth_headers(session_token), "Host": "localhost:4401"},
+        )
+
+        assert response.status_code == 400
+        assert response.json()["detail"] == "Avatar upload must be WebP"
+
+    @pytest.mark.asyncio
+    async def test_delete_avatar_success(
+        self,
+        client: httpx.AsyncClient,
+        session_token: str,
+        test_user,
+        tmp_path,
+        monkeypatch,
+    ):
+        """Deleting avatar should clear the user avatar URL."""
+        monkeypatch.setenv("PASKIA_DB", str(tmp_path / "test-avatar-db.paskiadb"))
+
+        await client.put(
+            f"/auth/api/user/{test_user.uuid}/profile.webp",
+            files={"file": ("avatar.webp", create_test_image_bytes(), "image/webp")},
+            headers={**auth_headers(session_token), "Host": "localhost:4401"},
+        )
+
+        response = await client.delete(
+            f"/auth/api/user/{test_user.uuid}/profile.webp",
+            headers={**auth_headers(session_token), "Host": "localhost:4401"},
+        )
+        assert response.status_code == 200
+
+    @pytest.mark.asyncio
+    async def test_regular_user_cannot_upload_another_users_avatar(
+        self,
+        client: httpx.AsyncClient,
+        regular_session_token: str,
+        session_token: str,
+        test_user,
+    ):
+        """A non-admin user should not be able to upload another user's avatar."""
+        response = await client.put(
+            f"/auth/api/user/{test_user.uuid}/profile.webp",
+            files={"file": ("avatar.webp", create_test_image_bytes(), "image/webp")},
+            headers={**auth_headers(regular_session_token), "Host": "localhost:4401"},
+        )
+        assert response.status_code == 403
+
+        info = await client.get(
+            "/auth/api/user-info",
+            headers={**auth_headers(session_token), "Host": "localhost:4401"},
+        )
+        assert info.status_code == 200
+        assert info.json()["user"].get("avatar_url") is None
 
 
 class TestUserLogoutAll:

@@ -3,11 +3,13 @@ from uuid import UUID
 from fastapi import (
     Body,
     FastAPI,
+    File,
     HTTPException,
     Request,
     Response,
+    UploadFile,
 )
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 
 from paskia import db
 from paskia.authsession import (
@@ -18,10 +20,46 @@ from paskia.authsession import (
 from paskia.fastapi import authz, session
 from paskia.fastapi.response import MsgspecResponse
 from paskia.fastapi.session import AUTH_COOKIE
-from paskia.util import hostutil
+from paskia.util import avatar, hostutil
 from paskia.util.apistructs import ApiCreateLinkResponse
 
 app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
+
+
+def _can_manage_avatar(ctx, target_user) -> bool:
+    if ctx.user.uuid == target_user.uuid:
+        return True
+
+    if any(p.scope == "auth:admin" for p in ctx.permissions):
+        return True
+
+    return ctx.org.uuid == target_user.org.uuid and any(
+        p.scope == "auth:org:admin" for p in ctx.permissions
+    )
+
+
+def _avatar_write_ctx(request: Request, user_uuid: UUID, auth):
+    if not auth:
+        raise authz.AuthException(
+            status_code=401, detail="Authentication Required", mode="login"
+        )
+
+    ctx = session_ctx(auth, request.headers.get("host"))
+    if not ctx:
+        raise authz.AuthException(
+            status_code=401, detail="Session expired", mode="login"
+        )
+
+    user = db.data().users.get(user_uuid)
+    if not user:
+        raise HTTPException(status_code=404, detail="Avatar not found")
+
+    if not _can_manage_avatar(ctx, user):
+        raise authz.AuthException(
+            status_code=403, detail="Insufficient permissions", mode="forbidden"
+        )
+
+    return ctx, user
 
 
 @app.exception_handler(authz.AuthException)
@@ -100,6 +138,55 @@ async def user_update_info(
         raise HTTPException(status_code=400, detail="No fields to update")
 
     db.update_user_info(ctx.user.uuid, **kwargs, ctx=ctx)
+    return {"status": "ok"}
+
+
+@app.get("/{user_uuid}/profile.webp")
+async def serve_avatar(request: Request, user_uuid: UUID):
+    """Serve a user's current avatar with short-lived caching and ETag."""
+    user = db.data().users.get(user_uuid)
+    if not user:
+        raise HTTPException(status_code=404, detail="Avatar not found")
+
+    path = avatar.avatar_path(user_uuid)
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="Avatar not found")
+
+    data = avatar.read_avatar_bytes(user_uuid)
+    if data is None:
+        raise HTTPException(status_code=404, detail="Avatar not found")
+
+    etag = avatar.avatar_etag(data)
+    if request.headers.get("if-none-match") == f'"{etag}"':
+        return Response(status_code=304, headers={"ETag": f'"{etag}"'})
+
+    headers = {
+        "ETag": f'"{etag}"',
+        "Cache-Control": "public, max-age=300",
+    }
+
+    return FileResponse(path, media_type="image/webp", headers=headers)
+
+
+@app.put("/{user_uuid}/profile.webp")
+async def upload_avatar(
+    request: Request,
+    user_uuid: UUID,
+    file: UploadFile = File(...),
+    auth=AUTH_COOKIE,
+):
+    """Upload a user's browser-prepared WebP avatar on the same URL it is served from."""
+    _ctx, _user = _avatar_write_ctx(request, user_uuid, auth)
+    data = await avatar.read_upload(file)
+    avatar.store_avatar(user_uuid, data)
+    return {"status": "ok", "avatar_url": avatar.avatar_browser_url(user_uuid)}
+
+
+@app.delete("/{user_uuid}/profile.webp")
+async def delete_avatar(request: Request, user_uuid: UUID, auth=AUTH_COOKIE):
+    """Delete a user's avatar image on the same URL it is served from."""
+    _ctx, _user = _avatar_write_ctx(request, user_uuid, auth)
+    avatar.remove_avatar_file(user_uuid)
     return {"status": "ok"}
 
 

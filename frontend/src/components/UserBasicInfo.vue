@@ -1,9 +1,20 @@
 <template>
   <div v-if="userLoaded" class="user-info" :class="{ 'has-extra': $slots.default }">
     <div class="user-info-content">
-      <div class="user-picture">
-        <span>👤</span>
-      </div>
+      <ProfilePicture
+        :src="avatarUrl"
+        :render-version="avatarRenderVersion"
+        :clickable="avatarClickable"
+        :loading="loading"
+        :title="avatarClickable ? 'Change profile picture' : ''"
+        width="5.25rem"
+        height="5.25rem"
+        radius="var(--radius-sm)"
+        fallback-size="2.8em"
+        class="user-picture"
+        :class="avatarClickable ? 'user-picture-btn' : ''"
+        @click="emit('avatar-click')"
+      />
       <h3 class="user-name-heading">
         <span class="user-name-row">
           <span class="display-name" :title="name">{{ name }}</span>
@@ -42,11 +53,13 @@
 
 <script setup>
 import { computed } from 'vue'
-import { useAuthStore } from '@/stores/auth'
+import ProfilePicture from '@/components/ProfilePicture.vue'
 import { formatDate } from '@/utils/helpers'
 
 const props = defineProps({
   name: { type: String, required: true },
+  avatarUrl: { type: String, default: null },
+  avatarRenderVersion: { type: [Number, String], default: 0 },
   email: { type: String, default: null },
   preferred_username: { type: String, default: null },
   telephone: { type: String, default: null },
@@ -55,14 +68,13 @@ const props = defineProps({
   lastSeen: { type: [String, Number, Date], default: null },
   updateEndpoint: { type: String, default: null },
   canEdit: { type: Boolean, default: true },
+  avatarClickable: { type: Boolean, default: false },
   loading: { type: Boolean, default: false },
   orgDisplayName: { type: String, default: '' },
   roleName: { type: String, default: '' }
 })
 
-const emit = defineEmits(['saved', 'edit'])
-const authStore = useAuthStore()
-
+const emit = defineEmits(['saved', 'edit', 'avatar-click'])
 const userLoaded = computed(() => !!props.name)
 </script>
 
@@ -96,12 +108,12 @@ const userLoaded = computed(() => !!props.name)
   grid-template-areas:
     "picture heading fields"
     "picture org fields"
-    ". info info";
+    "picture info info";
   gap: 0 1rem;
   min-width: 0;
 }
 
-.user-picture { grid-area: picture; display: flex; align-items: flex-start; font-size: 2em; line-height: 1; }
+:deep(.user-picture) { grid-area: picture; align-self: stretch; }
 .user-name-heading { grid-area: heading; display: flex; align-items: center; flex-wrap: wrap; margin: 0 0 0.25rem 0; min-width: 0; }
 .org-role-sub { grid-area: org; display: flex; flex-direction: column; min-width: 0; }
 .org-line { font-size: .7rem; font-weight: 600; line-height: 1.1; color: var(--color-text-muted); text-transform: uppercase; letter-spacing: 0.05em; }

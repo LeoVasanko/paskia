@@ -9,7 +9,7 @@ from paskia.fastapi import authz
 from paskia.fastapi.admin.errors import install_error_handlers
 from paskia.fastapi.response import MsgspecResponse
 from paskia.fastapi.session import AUTH_COOKIE
-from paskia.util import hostutil, permutil
+from paskia.util import avatar, hostutil, permutil
 from paskia.util.apistructs import (
     ApiAaguidInfo,
     ApiCreateLinkResponse,
@@ -165,7 +165,7 @@ async def admin_get_user_detail(
 
     return MsgspecResponse(
         ApiUserDetail(
-            user=ApiUser.from_db(user),
+            user=ApiUser.from_db(user, avatar_url=avatar.avatar_browser_url(user.uuid)),
             credentials={c.uuid: c for c in user.credentials},
             aaguid_info={
                 k: ApiAaguidInfo(**v)

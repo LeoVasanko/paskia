@@ -14,6 +14,7 @@ These tests cover:
 import os
 import secrets
 from datetime import UTC, datetime
+from urllib.parse import urlsplit
 from uuid import UUID
 
 import httpx
@@ -37,7 +38,7 @@ from paskia.db import (
 )
 from paskia.db.operations import DB
 from paskia.util.crypto import hash_secret
-from tests.conftest import auth_headers, create_test_session
+from tests.conftest import auth_headers, create_test_image_bytes, create_test_session
 
 # -------------------- Additional Fixtures --------------------
 
@@ -237,6 +238,38 @@ class TestAdminOrganizations:
         assert "display_name" in org
         assert "roles" in org_data
         assert "users" in org_data
+
+    @pytest.mark.asyncio
+    async def test_list_orgs_includes_user_avatar_urls(
+        self,
+        client: httpx.AsyncClient,
+        session_token: str,
+        test_org,
+        test_user,
+        tmp_path,
+        monkeypatch,
+    ):
+        """Admin org payload should include canonical avatar URLs for listed users."""
+        monkeypatch.setenv("PASKIA_DB", str(tmp_path / "test-avatar-db.paskiadb"))
+
+        upload = await client.put(
+            f"/auth/api/user/{test_user.uuid}/profile.webp",
+            files={"file": ("avatar.webp", create_test_image_bytes(), "image/webp")},
+            headers={**auth_headers(session_token), "Host": "localhost:4401"},
+        )
+        assert upload.status_code == 200
+
+        response = await client.get(
+            "/auth/api/admin/info",
+            headers={**auth_headers(session_token), "Host": "localhost:4401"},
+        )
+        assert response.status_code == 200
+
+        data = response.json()
+        listed_user = data["orgs"][str(test_org.uuid)]["users"][str(test_user.uuid)]
+        parts = urlsplit(listed_user["avatar_url"])
+        assert parts.path.endswith(f"/auth/api/user/{test_user.uuid}/profile.webp")
+        assert parts.query == ""
 
     @pytest.mark.asyncio
     async def test_list_orgs_with_org_admin(
@@ -901,6 +934,34 @@ class TestAdminUsersInOrg:
         assert response.status_code == 400
         data = response.json()
         assert "display_name too long" in data["detail"]
+
+    @pytest.mark.asyncio
+    async def test_admin_can_upload_user_avatar(
+        self,
+        client: httpx.AsyncClient,
+        session_token: str,
+        test_user: User,
+        tmp_path,
+        monkeypatch,
+    ):
+        """Admin should be able to upload avatar for a managed user."""
+        monkeypatch.setenv("PASKIA_DB", str(tmp_path / "test-admin-avatar-db.paskiadb"))
+
+        response = await client.put(
+            f"/auth/api/user/{test_user.uuid}/profile.webp",
+            files={"file": ("avatar.webp", create_test_image_bytes(), "image/webp")},
+            headers={**auth_headers(session_token), "Host": "localhost:4401"},
+        )
+        assert response.status_code == 200
+
+        detail = await client.get(
+            f"/auth/api/admin/users/{test_user.uuid}",
+            headers={**auth_headers(session_token), "Host": "localhost:4401"},
+        )
+        assert detail.status_code == 200
+        avatar_url = detail.json()["user"]["avatar_url"]
+        parts = urlsplit(avatar_url)
+        assert parts.path.endswith(f"/auth/api/user/{test_user.uuid}/profile.webp")
 
     @pytest.mark.asyncio
     async def test_update_user_role_in_org(

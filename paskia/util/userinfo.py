@@ -2,7 +2,7 @@
 
 from paskia import aaguid, db
 from paskia.db import SessionContext
-from paskia.util import hostutil
+from paskia.util import avatar, hostutil
 from paskia.util.apistructs import (
     ApiAaguidInfo,
     ApiOrg,
@@ -56,7 +56,7 @@ async def build_user_info(
     }
 
     return ApiUserDetail(
-        user=ApiUser.from_db(user),
+        user=ApiUser.from_db(user, avatar_url=avatar.avatar_browser_url(user.uuid)),
         credentials={c.uuid: c for c in user.credentials},
         aaguid_info={
             k: ApiAaguidInfo(**v)

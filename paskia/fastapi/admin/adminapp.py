@@ -17,6 +17,7 @@ from paskia.fastapi.front import frontend
 from paskia.fastapi.response import MsgspecResponse
 from paskia.fastapi.session import AUTH_COOKIE
 from paskia.util import (
+    avatar,
     permutil,
     vitedev,
 )
@@ -26,6 +27,7 @@ from paskia.util.apistructs import (
     ApiOrg,
     ApiOrgResponse,
     ApiPermission,
+    ApiUser,
 )
 
 app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
@@ -79,7 +81,11 @@ async def admin_info(request: Request, auth=AUTH_COOKIE):
             org=ApiOrg.from_db(o),
             permissions={p.uuid: p for p in o.permissions},
             roles={r.uuid: r for r in roles},
-            users={u.uuid: u for r in roles for u in r.users},
+            users={
+                u.uuid: ApiUser.from_db(u, avatar_url=avatar.avatar_browser_url(u.uuid))
+                for r in roles
+                for u in r.users
+            },
         )
 
     orgs_dict = {o.uuid: org_to_dict(o) for o in orgs}

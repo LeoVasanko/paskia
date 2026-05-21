@@ -10,6 +10,7 @@
         <UserBasicInfo
           v-if="ctx"
           :name="ctx.user.display_name"
+          :avatar-url="authStore.userInfo.user.avatar_url"
           :visits="authStore.userInfo.user.visits"
           :created-at="authStore.userInfo.user.created_at"
           :last-seen="authStore.userInfo.user.last_seen"

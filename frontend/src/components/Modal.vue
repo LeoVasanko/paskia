@@ -1,6 +1,6 @@
 <template>
   <div class="dialog-overlay" @click="$emit('close')">
-    <div ref="dialog" class="modal-panel" @keydown="handleDialogKeydown" @click.stop>
+    <div ref="dialog" :class="['modal-panel', panelClass]" @keydown="handleDialogKeydown" @click.stop>
       <slot />
     </div>
   </div>
@@ -17,7 +17,9 @@ const props = defineProps({
   // Optional: index to help find next sibling when item is deleted
   focusIndex: { type: Number, default: -1 },
   // Optional: selector for finding siblings when restoring focus
-  focusSiblingSelector: { type: String, default: '' }
+  focusSiblingSelector: { type: String, default: '' },
+  // Optional: extra class name(s) for the modal panel
+  panelClass: { type: [String, Array, Object], default: '' }
 })
 
 const emit = defineEmits(['close'])

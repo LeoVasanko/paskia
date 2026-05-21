@@ -24,10 +24,11 @@ class ApiUser(User, kw_only=True):
     """User with uuid serialized."""
 
     uuid: UUID
+    avatar_url: str | None = None
 
     @classmethod
-    def from_db(cls, u: User) -> ApiUser:
-        return cls(uuid=u.uuid, **msgspec.structs.asdict(u))
+    def from_db(cls, u: User, *, avatar_url: str | None = None) -> ApiUser:
+        return cls(uuid=u.uuid, avatar_url=avatar_url, **msgspec.structs.asdict(u))
 
 
 class ApiOrg(Org, kw_only=True):
@@ -139,7 +140,7 @@ class ApiUserDetail(msgspec.Struct, kw_only=True):
     user: ApiUser
     credentials: dict[UUID, Credential]
     aaguid_info: dict[str, ApiAaguidInfo]
-    sessions: dict[bytes, ApiUserSession]
+    sessions: dict[str, ApiUserSession]
     permissions: dict[UUID, ApiPermission] = {}
     org: ApiOrg | None = None
     role: ApiRole | None = None
@@ -156,7 +157,7 @@ class ApiOrgResponse(msgspec.Struct, kw_only=True):
     org: ApiOrg
     permissions: dict[UUID, Permission]
     roles: dict[UUID, Role]
-    users: dict[UUID, User]
+    users: dict[UUID, ApiUser]
 
 
 class ApiSettings(msgspec.Struct):

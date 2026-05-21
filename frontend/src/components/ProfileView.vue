@@ -15,6 +15,9 @@
         v-if="authStore.userInfo?.user"
         ref="userBasicInfo"
         :name="authStore.userInfo.user.display_name"
+        :avatar-url="authStore.userInfo.user.avatar_url"
+        :avatar-render-version="avatarRenderVersion"
+        avatar-clickable
         :email="authStore.userInfo.user.email"
         :preferred_username="authStore.userInfo.user.preferred_username"
         :telephone="authStore.userInfo.user.telephone"
@@ -26,6 +29,7 @@
         :role-name="authStore.userInfo.role.display_name"
         update-endpoint="/auth/api/user/info"
         @saved="authStore.loadUserInfo()"
+        @avatar-click="openAvatarDialog"
         @edit="openEditDialog"
         @keydown="handleUserInfoKeydown"
       >
@@ -131,6 +135,15 @@
       </form>
     </Modal>
 
+    <ProfilePictureEditorModal
+      v-if="showAvatarDialog && currentAvatarEndpoint"
+      :endpoint="currentAvatarEndpoint"
+      :picture-url="authStore.userInfo?.user?.avatar_url"
+      :render-version="avatarRenderVersion"
+      @close="closeAvatarDialog"
+      @updated="handleProfilePictureUpdated"
+    />
+
     <RegistrationLinkModal
       v-if="showRegLink"
       endpoint="/auth/api/user/create-link"
@@ -144,6 +157,7 @@
 import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
 import Breadcrumbs from '@/components/Breadcrumbs.vue'
 import CredentialList from '@/components/CredentialList.vue'
+import ProfilePictureEditorModal from '@/components/ProfilePictureEditorModal.vue'
 import ThemeSelector from '@/components/ThemeSelector.vue'
 import UserBasicInfo from '@/components/UserBasicInfo.vue'
 import Modal from '@/components/Modal.vue'
@@ -160,11 +174,13 @@ import { navigateButtonRow, focusPreferred, focusAtIndex, getDirection } from '@
 const authStore = useAuthStore()
 const updateInterval = ref(null)
 const showEditDialog = ref(false)
+const showAvatarDialog = ref(false)
 const showRegLink = ref(false)
 const editName = ref('')
 const editEmail = ref('')
 const editUsername = ref('')
 const editTelephone = ref('')
+const avatarRenderVersion = ref(0)
 const saving = ref(false)
 const editError = ref('')
 const hoveredCredentialUuid = ref(null)
@@ -176,14 +192,15 @@ const credentialButtons = ref(null)
 const sessionList = ref(null)
 const logoutButtons = ref(null)
 const breadcrumbs = ref(null)
-const userBasicInfo = ref(null)
 const userInfoSection = ref(null)
 
 // Check if any modal/dialog is open (blocks arrow key navigation)
-const hasActiveModal = computed(() => showEditDialog.value || showRegLink.value)
+const hasActiveModal = computed(() => showEditDialog.value || showAvatarDialog.value || showRegLink.value)
 
 watch(showEditDialog, (open) => {
-  if (!open) return
+  if (!open) {
+    return
+  }
   const user = authStore.userInfo.user
   editName.value = user.display_name ?? ''
   editEmail.value = user.email ?? ''
@@ -196,7 +213,28 @@ onMounted(() => {
   updateInterval.value = setInterval(() => { if (authStore.userInfo) authStore.userInfo = { ...authStore.userInfo } }, 60000)
 })
 
-onUnmounted(() => { if (updateInterval.value) clearInterval(updateInterval.value) })
+onUnmounted(() => {
+  if (updateInterval.value) clearInterval(updateInterval.value)
+})
+
+const currentAvatarEndpoint = computed(() => {
+  const userUuid = authStore.userInfo?.user?.uuid
+  if (!userUuid) return null
+  return `/auth/api/user/${userUuid}/profile.webp`
+})
+
+const openAvatarDialog = () => {
+  showAvatarDialog.value = true
+}
+
+const closeAvatarDialog = () => {
+  showAvatarDialog.value = false
+}
+
+const handleProfilePictureUpdated = async () => {
+  await authStore.loadUserInfo()
+  avatarRenderVersion.value += 1
+}
 
 const addNewCredential = async () => {
   try {
@@ -245,7 +283,7 @@ const handleBreadcrumbKeydown = (event) => {
   if (direction === 'down') {
     event.preventDefault()
     // Move to user info section - always focus edit button first
-    focusPreferred(userInfoSection.value, { primarySelector: '.mini-btn', itemSelector: '.mini-btn, .pairing-input' })
+    focusPreferred(userInfoSection.value, { primarySelector: '.mini-btn', itemSelector: '.user-picture-btn, .mini-btn, .pairing-input' })
   }
   // ArrowUp at the top does nothing
 }
@@ -257,7 +295,7 @@ const handleUserInfoKeydown = (event) => {
   if (!direction) return
 
   event.preventDefault()
-  const itemSelector = '.mini-btn, .pairing-input'
+  const itemSelector = '.user-picture-btn, .mini-btn, .pairing-input'
 
   if (direction === 'left' || direction === 'right') {
     navigateButtonRow(userInfoSection.value, event.target, direction, { itemSelector })
@@ -278,7 +316,7 @@ const handleCredentialNavigateOut = (direction) => {
     focusPreferredButton(credentialButtons.value)
   } else if (direction === 'up' || direction === 'left') {
     // Focus user info section - always focus edit button first
-    focusPreferred(userInfoSection.value, { primarySelector: '.mini-btn', itemSelector: '.mini-btn, .pairing-input' })
+    focusPreferred(userInfoSection.value, { primarySelector: '.mini-btn', itemSelector: '.user-picture-btn, .mini-btn, .pairing-input' })
   }
 }
 
@@ -399,6 +437,7 @@ const saveProfile = async () => {
   try {
     editError.value = ''
     saving.value = true
+    let changed = false
     const body = {}
     if (name !== user.display_name) body.display_name = name
     if (emailVal !== (user.email || null)) body.email = emailVal
@@ -406,6 +445,9 @@ const saveProfile = async () => {
     if (telephoneVal !== (user.telephone || null)) body.telephone = telephoneVal
     if (Object.keys(body).length) {
       await apiJson('/auth/api/user/info', { method: 'PATCH', body })
+      changed = true
+    }
+    if (changed) {
       await authStore.loadUserInfo()
       authStore.showMessage('Profile updated!', 'success', 3000)
     }

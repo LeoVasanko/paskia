@@ -6,6 +6,7 @@ dist/
 package-lock.json
 paskia.sqlite
 *.paskiadb
+*.data
 /paskia/frontend-build
 /paskia/_version.py
 coverage-html/

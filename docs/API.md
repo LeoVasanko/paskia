@@ -26,13 +26,17 @@ The `validate` and `forward` endpoints take query arguments `perm=` and `max_age
 
 | Method | Path | Used for | Notes |
 |---:|---|---|---|
-| PUT | `/auth/api/user/display-name` | Update the user’s display name | Body: JSON `{ "display_name": "..." }` |
+| PATCH | `/auth/api/user/display-name` | Update the user’s display name | Body: JSON `{ "display_name": "..." }` |
+| GET | `/auth/api/user/{uuid}/profile.webp` | Canonical avatar image URL | Public on the auth host; serves `image/webp` with `ETag` and short-lived cache headers |
+| PUT | `/auth/api/user/{uuid}/profile.webp` | Upload or replace a user avatar | Multipart form with `file`; upload must already be square WebP prepared in the browser |
+| DELETE | `/auth/api/user/{uuid}/profile.webp` | Remove a user avatar | Allowed for the user, master admin, or org admin for users in the same org |
 | POST | `/auth/api/user/logout-all` | Terminate all user sessions | Clears current host cookie |
 | DELETE | `/auth/api/user/session/{session_id}` | Terminate one session | Session IDs are server-issued |
 | DELETE | `/auth/api/user/credential/{uuid}` | Delete a credential | Requires recent authentication |
 | POST | `/auth/api/user/create-link` | Create a device-add link | Requires recent authentication |
 
-These are used mostly from the user profile panel and modify the current user.
+These are used mostly from the user profile panel. The avatar route is also used by admins when managing other users.
+`GET /auth/api/user-info` includes `user.avatar_url` when the user has an uploaded avatar, using the same canonical `/auth/api/user/{uuid}/profile.webp` path.
 
 ### Admin API: `/auth/api/admin/*`
 
@@ -71,6 +75,8 @@ E.g. Org admin cannot see anything of the other orgs that he has no admin access
 | DELETE | `/auth/api/admin/oidc-clients/{uuid}` | Delete OIDC client | |
 | GET | `/auth/api/admin/server-config/` | Get server config | Returns rp_name, auth_host, origins |
 | PATCH | `/auth/api/admin/server-config/` | Update server config | Body: JSON with rp_name, auth_host, origins |
+
+Admins edit user avatars through the same canonical `/auth/api/user/{uuid}/profile.webp` PUT and DELETE endpoints.
 
 ### WebSockets: `/auth/ws/*`
 

@@ -2,6 +2,7 @@
 import { ref, computed } from 'vue'
 import UserBasicInfo from '@/components/UserBasicInfo.vue'
 import CredentialList from '@/components/CredentialList.vue'
+import ProfilePictureEditorModal from '@/components/ProfilePictureEditorModal.vue'
 import RegistrationLinkModal from '@/components/RegistrationLinkModal.vue'
 import SessionList from '@/components/SessionList.vue'
 import { useAuthStore } from '@/stores/auth'
@@ -23,6 +24,8 @@ const authStore = useAuthStore()
 const terminatingSessions = ref({})
 const hoveredCredentialUuid = ref(null)
 const hoveredSession = ref(null)
+const showPictureDialog = ref(false)
+const avatarRenderVersion = ref(0)
 
 // Convert credentials dict to array with uuid attached as 'credential'
 const credentials = computed(() =>
@@ -46,6 +49,20 @@ function onLinkCopied() {
 
 function handleEditName() {
   emit('editUserName', props.selectedUser)
+}
+
+function openPictureDialog() {
+  if (!props.userDetail || props.userDetail.error) return
+  showPictureDialog.value = true
+}
+
+function closePictureDialog() {
+  showPictureDialog.value = false
+}
+
+function handlePictureUpdated() {
+  avatarRenderVersion.value += 1
+  emit('refreshUserDetail')
 }
 
 async function handleDelete(credential) {
@@ -102,7 +119,7 @@ function handleUserInfoKeydown(event) {
   event.preventDefault()
 
   if (direction === 'left' || direction === 'right') {
-    navigateButtonRow(userInfoRef.value, event.target, direction, { itemSelector: '.mini-btn' })
+    navigateButtonRow(userInfoRef.value, event.target, direction, { itemSelector: '.user-picture-btn, .mini-btn' })
   } else if (direction === 'up') {
     emit('navigateOut', 'up')
   } else if (direction === 'down') {
@@ -124,7 +141,7 @@ function handleRegActionsKeydown(event) {
     navigateButtonRow(regActionsRef.value, event.target, direction, { itemSelector: 'button' })
   } else if (direction === 'up') {
     // Move to user info edit button
-    focusPreferred(userInfoRef.value, { itemSelector: '.mini-btn' })
+    focusPreferred(userInfoRef.value, { itemSelector: '.user-picture-btn, .mini-btn' })
   } else if (direction === 'down') {
     // Move to credential list
     credentialListRef.value?.$el?.focus()
@@ -174,10 +191,22 @@ function handleBackButtonKeydown(event) {
 
 // Focus helper for external navigation
 function focusFirstElement() {
-  focusPreferred(userInfoRef.value, { itemSelector: '.mini-btn' })
+  focusPreferred(userInfoRef.value, { itemSelector: '.user-picture-btn, .mini-btn' })
 }
 
 defineExpose({ focusFirstElement })
+
+const currentPictureEndpoint = computed(() => {
+  if (!props.selectedUser?.uuid) return null
+  return `/auth/api/user/${props.selectedUser.uuid}/profile.webp`
+})
+
+const adminPictureTitle = computed(() => {
+  const username = props.userDetail?.user?.preferred_username || props.selectedUser?.preferred_username
+  const displayName = props.userDetail?.user?.display_name || props.selectedUser?.display_name
+  const label = username || displayName || 'User'
+  return `Profile Picture for ${label}`
+})
 </script>
 
 <template>
@@ -186,6 +215,9 @@ defineExpose({ focusFirstElement })
       <UserBasicInfo
         v-if="userDetail && !userDetail.error"
         :name="userDetail.user.display_name || selectedUser.display_name"
+        :avatar-url="userDetail.user.avatar_url"
+        :avatar-render-version="avatarRenderVersion"
+        avatar-clickable
         :visits="userDetail.user.visits"
         :created-at="userDetail.user.created_at"
         :last-seen="userDetail.user.last_seen"
@@ -196,6 +228,7 @@ defineExpose({ focusFirstElement })
         :role-name="userDetail.role.display_name"
         :update-endpoint="`/auth/api/admin/users/${selectedUser.uuid}/info`"
         @saved="$emit('onUserNameSaved')"
+        @avatar-click="openPictureDialog"
         @edit="handleEditName"
       >
         <div class="admin-actions">
@@ -257,6 +290,15 @@ defineExpose({ focusFirstElement })
       :user-name="userDetail?.display_name || selectedUser.display_name"
       @close="$emit('closeRegModal')"
       @copied="onLinkCopied"
+    />
+    <ProfilePictureEditorModal
+      v-if="showPictureDialog && currentPictureEndpoint"
+      :endpoint="currentPictureEndpoint"
+      :picture-url="userDetail?.user?.avatar_url"
+      :render-version="avatarRenderVersion"
+      :title="adminPictureTitle"
+      @close="closePictureDialog"
+      @updated="handlePictureUpdated"
     />
   </div>
 </template>

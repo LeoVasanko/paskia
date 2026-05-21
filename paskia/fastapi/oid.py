@@ -22,7 +22,7 @@ from fastapi.security import HTTPBearer
 
 from paskia import authcode, db
 from paskia.db.structs import Session
-from paskia.util import oidjwt
+from paskia.util import avatar, oidjwt
 from paskia.util.crypto import hash_secret
 
 _logger = logging.getLogger(__name__)
@@ -361,6 +361,7 @@ def _build_token_response(
         name=user.display_name,
         preferred_username=user.preferred_username,
         email=user.email,
+        picture=avatar.current_avatar_url(user.uuid),
         groups=groups or None,
         auth_time=auth_time,
     )
@@ -442,12 +443,15 @@ async def userinfo(
 
     # Build userinfo response based on scope
     scope = payload.get("scope", "openid").split()
-    response = {"sub": str(user.uuid)}
+    response: dict[str, object] = {"sub": str(user.uuid)}
 
     if "profile" in scope:
         response["name"] = user.display_name
         if user.preferred_username:
             response["preferred_username"] = user.preferred_username
+        picture = avatar.current_avatar_url(user.uuid)
+        if picture:
+            response["picture"] = picture
 
     if "email" in scope and user.email:
         response["email"] = user.email

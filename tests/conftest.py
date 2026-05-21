@@ -283,3 +283,27 @@ def create_test_session(
     with ops_db._db.transaction("create_test_session"):
         session.store(now)
     return session.key, token
+
+
+def create_test_image_bytes(
+    *,
+    image_format: str = "WEBP",
+) -> bytes:
+    """Return deterministic test upload bytes without image-library dependencies."""
+    fixtures = {
+        "WEBP": (
+            b"RIFF\x1a\x00\x00\x00WEBPVP8 "
+            b"\x0e\x00\x00\x000\x01\x00\x9d\x01*\x01\x00\x01\x00\x01\x00"
+        ),
+        "PNG": (
+            b"\x89PNG\r\n\x1a\n"
+            b"\x00\x00\x00\rIHDR"
+            b"\x00\x00\x00\x01\x00\x00\x00\x01\x08\x02\x00\x00\x00"
+            b"\x90wS\xde"
+        ),
+    }
+
+    try:
+        return fixtures[image_format.upper()]
+    except KeyError as exc:
+        raise ValueError(f"Unsupported test image format: {image_format}") from exc
