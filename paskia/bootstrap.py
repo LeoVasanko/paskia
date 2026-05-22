@@ -14,6 +14,19 @@ from paskia.util import hostutil
 
 logger = logging.getLogger(__name__)
 
+
+def _configure_logger() -> None:
+    if logger.handlers:
+        return
+    handler = logging.StreamHandler()
+    handler.setFormatter(logging.Formatter("%(message)s"))
+    logger.addHandler(handler)
+    logger.setLevel(logging.INFO)
+    logger.propagate = False
+
+
+_configure_logger()
+
 # Shared log message template for admin reset links
 ADMIN_RESET_MESSAGE = """
 👤 Admin  %s
