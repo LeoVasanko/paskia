@@ -46,7 +46,7 @@ def avatar_url(user_uuid: UUID) -> str | None:
     """Return the absolute public avatar URL for a user, or None."""
     if not avatar_path(user_uuid).is_file():
         return None
-    return f"{hostutil.auth_site_url()}api/user/{user_uuid}/profile.webp"
+    return hostutil.api_url(f"user/{user_uuid}/profile.webp")
 
 
 def current_avatar_url(user_uuid: UUID) -> str | None:

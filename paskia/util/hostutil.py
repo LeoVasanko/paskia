@@ -29,6 +29,16 @@ def ui_base_path() -> str:
     return "/" if is_root_mode() else "/auth/"
 
 
+def api_url(path: str = "") -> str:
+    """Return an absolute URL under the canonical /auth/api/ prefix."""
+    cfg = _cfg()
+    base = cfg.site_url if cfg else "https://localhost"
+    if not path:
+        return f"{base}/auth/api/"
+    normalized = path.lstrip("/")
+    return f"{base}/auth/api/{normalized}"
+
+
 def auth_site_url() -> str:
     """Return the base URL for the auth site UI (computed at startup)."""
     cfg = _cfg()

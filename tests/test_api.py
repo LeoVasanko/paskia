@@ -13,6 +13,7 @@ These tests cover:
 import secrets
 from datetime import UTC, datetime, timedelta
 from urllib.parse import urlsplit
+from uuid import UUID
 
 import httpx
 import pytest
@@ -21,7 +22,7 @@ from paskia import authcode
 from paskia.authsession import EXPIRES
 from paskia.db import delete_session
 from paskia.db.structs import Client
-from paskia.util import oidjwt
+from paskia.util import avatar, hostutil, oidjwt
 from paskia.util.passphrase import generate
 from tests.conftest import auth_headers, create_test_image_bytes, create_test_session
 
@@ -57,6 +58,32 @@ class TestSettingsEndpoint:
         response = await client.get("/.well-known/openid-configuration")
         assert response.status_code == 200
         assert "picture" in response.json()["claims_supported"]
+
+
+class TestAvatarUrls:
+    """Tests for avatar URL helpers."""
+
+    def test_avatar_url_uses_canonical_public_path_in_auth_host_mode(
+        self, tmp_path, monkeypatch
+    ):
+        """Absolute avatar URLs should preserve /auth/api even with an auth host."""
+        db_root = tmp_path / "test-avatar-db.paskiadb"
+        monkeypatch.setenv("PASKIA_DB", str(db_root))
+        monkeypatch.setattr(
+            hostutil,
+            "api_url",
+            lambda path="": f"https://auth.zi.fi/auth/api/{path.lstrip('/')}",
+        )
+
+        user_uuid = test_uuid = UUID("019c6831-84cf-7b88-b66c-c8165890b7c5")
+        path = db_root / "users" / str(test_uuid) / "profile.webp"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"RIFF1234WEBP")
+
+        assert avatar.avatar_url(user_uuid) == (
+            "https://auth.zi.fi/auth/api/user/"
+            "019c6831-84cf-7b88-b66c-c8165890b7c5/profile.webp"
+        )
 
 
 class TestValidateEndpoint:
