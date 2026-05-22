@@ -1,6 +1,6 @@
 import { execSync, spawn } from 'child_process'
 import { join, dirname } from 'path'
-import { existsSync, mkdirSync, writeFileSync } from 'fs'
+import { existsSync, mkdirSync, rmSync, writeFileSync } from 'fs'
 import { fileURLToPath } from 'url'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -57,6 +57,11 @@ export default async function globalSetup() {
 
   // Use a fresh database file for tests
   const testDbFile = join(testDataDir, 'test.paskiadb')
+
+  if (existsSync(testDbFile)) {
+    console.log('  Removing stale test database...')
+    rmSync(testDbFile, { force: true, recursive: true })
+  }
 
   // Start the server using Node's spawn
   const serverProcess = spawn('uv', serverArgs, {
