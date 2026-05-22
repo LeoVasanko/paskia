@@ -796,7 +796,7 @@ async function submitDialog() {
       apiJson(`/auth/api/admin/roles/${role.uuid}`, { method: 'PATCH', body: { display_name: name } })
         .then(() => {
           authStore.showMessage(`Role renamed to "${name}".`, 'success', 2500)
-          loadOrgs()
+          loadAdminData()
         })
         .catch(e => {
           authStore.showMessage(e.message || 'Failed to update role', 'error')
