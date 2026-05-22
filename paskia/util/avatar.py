@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import contextlib
 import hashlib
-import os
 from pathlib import Path
 from uuid import UUID
 
 from fastapi import HTTPException, UploadFile
 
+from paskia.db.paths import users_root_path
 from paskia.util import hostutil
 
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024
@@ -17,15 +17,12 @@ MAX_UPLOAD_BYTES = 10 * 1024 * 1024
 
 def media_root() -> Path:
     """Return the filesystem root for auxiliary media files."""
-    db_path = Path(os.environ.get("PASKIA_DB", "localhost.paskiadb")).resolve()
-    db_name = db_path.name
-    hostname = db_name.removesuffix(".paskiadb") or db_path.stem
-    return db_path.parent / f"{hostname}.data"
+    return users_root_path(create_root=True)
 
 
 def avatars_root() -> Path:
     """Return the filesystem root for stored avatar images."""
-    return media_root() / "user"
+    return media_root()
 
 
 def avatar_path(user_uuid: UUID) -> Path:

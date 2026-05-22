@@ -3,13 +3,13 @@ Database lifecycle: initialization and maintenance.
 """
 
 import logging
-import os
 from datetime import UTC, datetime
 
 import paskia.db.operations as _ops
 from paskia import oidc_notify
 from paskia.authsession import EXPIRES
 from paskia.db.jsonl import JsonlStore
+from paskia.db.paths import db_file_path
 
 _logger = logging.getLogger(__name__)
 
@@ -19,9 +19,9 @@ async def init(rp_id: str, *args, **kwargs):
     if _ops._db._store:
         _logger.debug("Database already initialized, skipping reload")
         return
-    db_path = os.environ.get("PASKIA_DB", f"{rp_id}.paskiadb")
-    store = JsonlStore(_ops._db, db_path)
-    await store.load(db_path, rp_id=rp_id)
+    db_path = db_file_path(rp_id=rp_id, create_root=True)
+    store = JsonlStore(_ops._db, str(db_path))
+    await store.load(str(db_path), rp_id=rp_id)
     _ops._db = store.db
     _ops._db._store = store
     # Request a snapshot after successful startup

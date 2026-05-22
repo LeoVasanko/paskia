@@ -66,7 +66,7 @@ paskia [options]
 | --auth-host *url* | Dedicated authentication site, e.g. **auth.example.com** | Use **/auth/** path on each site |
 | --save | Save current options to database | (only --rp-id required on further invocations) |
 
-To clear a stored setting, pass an empty value like `--auth-host=`. The database is stored in `{rp-id}.paskiadb` in current directory. This can be overridden by environment `PASKIA_DB` if needed.
+To clear a stored setting, pass an empty value like `--auth-host=`. The database is stored in `{rp-id}.paskiadb` folder in current directory. This can be overridden by environment `PASKIA_DB` if needed.
 
 ## Tutorial: From Local Testing to Production
 

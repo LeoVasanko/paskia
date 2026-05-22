@@ -21,7 +21,6 @@ from paskia.fastapi import authz, session, user
 from paskia.fastapi.response import MsgspecResponse
 from paskia.fastapi.session import AUTH_COOKIE, AUTH_COOKIE_NAME, get_client_ip
 from paskia.globals import passkey as global_passkey
-from paskia.util.crypto import hash_secret
 from paskia.util import hostutil, htmlutil, passphrase, permutil, userinfo
 from paskia.util.apistructs import (
     ApiCheckUserResponse,
@@ -33,6 +32,7 @@ from paskia.util.apistructs import (
     ApiUserContext,
     ApiValidateResponse,
 )
+from paskia.util.crypto import hash_secret
 
 bearer_auth = HTTPBearer(auto_error=False)
 

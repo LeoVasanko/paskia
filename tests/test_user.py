@@ -15,6 +15,7 @@ from urllib.parse import urlsplit
 import httpx
 import pytest
 
+from paskia.db.paths import db_file_path, users_root_path
 from tests.conftest import auth_headers, create_test_image_bytes
 
 
@@ -178,6 +179,13 @@ class TestUserAvatar:
         )
         assert response.status_code == 200
 
+        info = await client.get(
+            "/auth/api/user-info",
+            headers={**auth_headers(session_token), "Host": "localhost:4401"},
+        )
+        assert info.status_code == 200
+        assert info.json()["user"].get("avatar_url") is None
+
     @pytest.mark.asyncio
     async def test_regular_user_cannot_upload_another_users_avatar(
         self,
@@ -194,12 +202,29 @@ class TestUserAvatar:
         )
         assert response.status_code == 403
 
-        info = await client.get(
-            "/auth/api/user-info",
-            headers={**auth_headers(session_token), "Host": "localhost:4401"},
-        )
-        assert info.status_code == 200
-        assert info.json()["user"].get("avatar_url") is None
+
+def test_paskia_db_legacy_file_is_migrated_to_root_dir(tmp_path, monkeypatch):
+    legacy_path = tmp_path / "legacy.paskiadb"
+    legacy_bytes = b'{"v":0}\n'
+    legacy_path.write_bytes(legacy_bytes)
+
+    monkeypatch.setenv("PASKIA_DB", str(legacy_path))
+
+    db_path = db_file_path(create_root=True)
+
+    assert legacy_path.is_dir()
+    assert db_path == legacy_path / "main.db"
+    assert db_path.read_bytes() == legacy_bytes
+
+
+def test_paskia_db_root_uses_users_directory(tmp_path, monkeypatch):
+    root_path = tmp_path / "instance-root"
+    monkeypatch.setenv("PASKIA_DB", str(root_path))
+
+    users_path = users_root_path(create_root=True)
+
+    assert users_path == root_path / "users"
+    assert users_path.parent == root_path
 
 
 class TestUserLogoutAll:

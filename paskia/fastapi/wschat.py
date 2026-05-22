@@ -109,11 +109,17 @@ async def authenticate_and_login(
     cred, new_sign_count = await authenticate_chat(ws, credential_ids)
 
     # Use overrides if provided, otherwise use websocket metadata
-    login_host = hostutil.normalize_host(session_host) if session_host is not None else normalized_host
+    login_host = (
+        hostutil.normalize_host(session_host)
+        if session_host is not None
+        else normalized_host
+    )
     if not login_host:
         raise ValueError("Host required for session creation")
     login_ip = session_ip if session_ip is not None else metadata["ip"]
-    login_user_agent = session_user_agent if session_user_agent is not None else metadata["user_agent"]
+    login_user_agent = (
+        session_user_agent if session_user_agent is not None else metadata["user_agent"]
+    )
 
     # Create session and update user/credential
     secret = db.login(

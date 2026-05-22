@@ -460,9 +460,7 @@ def update_session(
             s.validated = validated
 
 
-def set_session_host(
-    key: str, host: str, *, ctx: SessionContext | None = None
-) -> None:
+def set_session_host(key: str, host: str, *, ctx: SessionContext | None = None) -> None:
     """Set the host for a session (first-time binding)."""
     update_session(key, host=host, ctx=ctx)
 

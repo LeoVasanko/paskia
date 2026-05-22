@@ -9,6 +9,7 @@ from fastapi_vue.hostutil import parse_endpoints
 
 from paskia._version import __version__
 from paskia.db.jsonl import load_readonly
+from paskia.db.paths import db_file_path
 from paskia.util import startupbox
 from paskia.util.hostutil import (
     normalize_auth_host_and_origins,
@@ -75,9 +76,9 @@ def main():
     args = parser.parse_args()
 
     # Load stored config (read-only, no writes, no global state)
-    db_path = os.environ.get("PASKIA_DB", f"{args.rp_id}.paskiadb")
+    db_path = db_file_path(rp_id=args.rp_id, create_root=True)
     try:
-        config = load_readonly(db_path, rp_id=args.rp_id).config
+        config = load_readonly(str(db_path), rp_id=args.rp_id).config
     except SystemExit as e:
         print(f"🛑 Paskia {__version__} could not load")
         sys.exit(str(e))

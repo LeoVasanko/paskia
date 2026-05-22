@@ -134,7 +134,9 @@ def format_access_log(
 
     # Format: "IP STATUS METHOD host path [extra] TIMING"
     extra_str = f" {_TIMING}{extra}{_RESET}" if extra else ""
-    return f"{ip} {status_str} {method_str} {host_str}{path_str}{extra_str} {timing_str}"
+    return (
+        f"{ip} {status_str} {method_str} {host_str}{path_str}{extra_str} {timing_str}"
+    )
 
 
 # WebSocket connection counter (mod 100)
