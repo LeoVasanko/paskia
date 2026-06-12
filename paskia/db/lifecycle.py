@@ -3,29 +3,52 @@ Database lifecycle: initialization and maintenance.
 """
 
 import logging
+import os
+import signal
 from datetime import UTC, datetime
+
+from kanta import Kanta
+from kanta.exceptions import DatabaseError
 
 import paskia.db.operations as _ops
 from paskia import oidc_notify
 from paskia.authsession import EXPIRES
-from paskia.db.jsonl import JsonlStore
+from paskia.db.migrations import MigrationCtx
 from paskia.db.paths import db_file_path
+from paskia.db.structs import DB
 
 _logger = logging.getLogger(__name__)
 
 
+def _fatal_error(error: DatabaseError) -> None:
+    """Fatal error callback: terminate the process on background write failures."""
+    _logger.error("Fatal database error: %s", error)
+    os.kill(os.getpid(), signal.SIGTERM)
+
+
 async def init(rp_id: str, *args, **kwargs):
-    """Load database from JSONL file."""
-    if _ops._db._store:
+    """Load database from JSONL file using kanta."""
+    if _ops._store is not None:
         _logger.debug("Database already initialized, skipping reload")
         return
     db_path = db_file_path(rp_id=rp_id, create_root=True)
-    store = JsonlStore(_ops._db, str(db_path))
-    await store.load(str(db_path), rp_id=rp_id)
-    _ops._db = store.db
-    _ops._db._store = store
+    db = DB()
+    kanta = Kanta(
+        str(db_path),
+        db,
+        migrations="paskia.db.migrations",
+        migration_ctx=MigrationCtx(rp_id=rp_id),
+        fatal_error=_fatal_error,
+    )
+    try:
+        await kanta.open()
+    except DatabaseError as e:
+        raise SystemExit(f"{e}") from e
+    _ops._store = kanta
+    _ops._db = db
+    _ops._db._store = kanta
     # Request a snapshot after successful startup
-    store._snapshot.request_force()
+    kanta.request_snapshot()
 
 
 def cleanup_expired() -> int:

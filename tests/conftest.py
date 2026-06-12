@@ -22,13 +22,13 @@ from uuid import UUID
 import httpx
 import pytest
 import pytest_asyncio
+from kanta import Kanta
 
 import paskia.db.operations as ops_db
 from paskia import globals as paskia_globals
 from paskia.authsession import reset_expires
 from paskia.config import SESSION_LIFETIME
 from paskia.db import (
-    Config,
     Credential,
     Org,
     Permission,
@@ -40,7 +40,7 @@ from paskia.db import (
     create_role,
     create_user,
 )
-from paskia.db.jsonl import JsonlStore
+from paskia.db.migrations import MigrationCtx
 from paskia.db.operations import DB
 from paskia.db.structs import Session
 from paskia.fastapi.mainapp import app
@@ -59,7 +59,7 @@ def event_loop():
 
 @pytest_asyncio.fixture(scope="function")
 async def test_db() -> AsyncGenerator[DB, None]:
-    """Create an in-memory JSON database for testing.
+    """Create a temporary JSONL database for testing using kanta.
 
     Uses bootstrap() to properly initialize the database with:
     - auth:admin and auth:org:admin permissions
@@ -67,18 +67,24 @@ async def test_db() -> AsyncGenerator[DB, None]:
     - An admin user with the Administration role
     """
     with tempfile.NamedTemporaryFile(suffix=".jsonl", delete=True) as f:
-        db = DB(config=Config(rp_id="test.example.com"))
-        store = JsonlStore(db, f.name)
-        db._store = store
-        await store.load()
+        db = DB()
+        kanta = Kanta(
+            f.name,
+            db,
+            migrations="paskia.db.migrations",
+            migration_ctx=MigrationCtx(rp_id="test.example.com"),
+        )
+        await kanta.open()
+        ops_db._store = kanta
         ops_db._db = db
-        ops_db._store = store
+        ops_db._db._store = kanta
         # Bootstrap creates the initial permissions, org, role, and admin user
         bootstrap(
             org_name="Test Organization",
             admin_name="Test Admin",
         )
-        yield db
+        yield ops_db._db
+        await kanta.close()
         ops_db._db = None
         ops_db._store = None
 

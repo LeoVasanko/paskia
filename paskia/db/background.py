@@ -1,67 +1,61 @@
 """
 Background task for database maintenance.
 
-Periodically flushes pending changes to disk and cleans up expired items.
+Kanta handles periodic flushing to disk.  This module keeps a small
+companion task that periodically cleans up expired sessions/tokens.
 """
 
 import asyncio
 import logging
-from datetime import UTC, datetime
+import os
+import signal
+
+from kanta.exceptions import DatabaseError
 
 import paskia.db.operations as _ops
 from paskia.db.lifecycle import cleanup_expired
 
-FLUSH_INTERVAL = 0.1  # Flush to disk
 CLEANUP_INTERVAL = 1  # Expired item cleanup
-
 
 _logger = logging.getLogger(__name__)
 _background_task: asyncio.Task | None = None
 
 
+def _sigterm_on_error(error: DatabaseError) -> None:
+    """Exit the server when a database write fails."""
+    _logger.error("Fatal database error: %s", error)
+    os.kill(os.getpid(), signal.SIGTERM)
+
+
 async def flush() -> None:
     """Write all pending database changes to disk."""
-    store = _ops._db._store
+    store = _ops._store
     if store is None:
         _logger.warning("flush() called but _store is None")
         return
-    await store.flush()
+    try:
+        await store.flush()
+    except DatabaseError as e:
+        _sigterm_on_error(e)
 
 
 async def _background_loop():
-    """Background task that periodically flushes changes and cleans up."""
+    """Background task that periodically cleans up expired items."""
     # Run cleanup immediately on startup to clear old expired items
     cleanup_expired()
-    await flush()
-
-    last_cleanup = datetime.now(UTC)
 
     while True:
         try:
-            await asyncio.sleep(FLUSH_INTERVAL)
-            # Flush pending changes to disk
-            await flush()
-
-            # Run cleanup periodically
-            now = datetime.now(UTC)
-            if (now - last_cleanup).total_seconds() >= CLEANUP_INTERVAL:
-                cleanup_expired()
-                await flush()  # Flush cleanup changes
-                last_cleanup = now
-
-            # Conditionally write a snapshot to speed up future startups
-            if _ops._db._store is not None:
-                _ops._db._store.maybe_snapshot()
+            await asyncio.sleep(CLEANUP_INTERVAL)
+            cleanup_expired()
         except asyncio.CancelledError:
-            # Final flush before exit
-            await flush()
             break
         except Exception:
             _logger.debug("Error in database background loop", exc_info=True)
 
 
 async def start_background():
-    """Start the background flush/cleanup task."""
+    """Start the background cleanup task."""
     global _background_task
 
     # Check if task exists but is no longer running (e.g., after uvicorn reload)
@@ -75,16 +69,15 @@ async def start_background():
                 # Check if task is in current event loop
                 loop = asyncio.get_running_loop()
                 task_loop = _background_task.get_loop()
-                if loop is not task_loop:
-                    _logger.debug("Background task in different event loop, restarting")
-                    _background_task = None
-                else:
+                if loop is task_loop:
                     # Task is already running in same loop - idempotent, just return
                     # This happens with dual IPv4+IPv6 endpoints sharing the same process
                     _logger.debug(
                         "Background task already running in same loop, skipping"
                     )
                     return
+                _logger.debug("Background task in different event loop, restarting")
+                _background_task = None
             except Exception as e:
                 _logger.debug("Error checking background task loop: %s, restarting", e)
                 _background_task = None
@@ -94,7 +87,7 @@ async def start_background():
 
 
 async def stop_background():
-    """Stop the background task, flush pending changes, and release the file lock."""
+    """Stop the background cleanup task and close kanta."""
     global _background_task
     if _background_task:
         _background_task.cancel()
@@ -103,7 +96,12 @@ async def stop_background():
         except asyncio.CancelledError:
             pass
         _background_task = None
-    _ops._db._store.close()
+    store = _ops._store
+    if store is not None:
+        try:
+            await store.close()
+        except DatabaseError as e:
+            _sigterm_on_error(e)
 
 
 # Aliases for backwards compatibility

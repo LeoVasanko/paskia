@@ -14,6 +14,8 @@ import sys
 from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
+from kanta.logging import configure_logging as configure_kanta_logging
+
 if TYPE_CHECKING:
     from paskia.db.structs import DB
 
@@ -464,3 +466,5 @@ def configure_db_logging() -> None:
     logger.addHandler(handler)
     logger.setLevel(logging.INFO)
     logger.propagate = False
+    # Kanta logs changes through its own logger; wire it to the same output.
+    configure_kanta_logging()

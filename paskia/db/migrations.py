@@ -6,17 +6,15 @@ Each migration should be idempotent and only run when needed.
 """
 
 import base64
-from collections.abc import Awaitable, Callable
-
-import msgspec
 
 from paskia.util.crypto import secret_key
 
 
-class MigrationCtx(msgspec.Struct):
+class MigrationCtx:
     """Context passed to each migration function."""
 
-    rp_id: str
+    def __init__(self, rp_id: str):
+        self.rp_id = rp_id
 
 
 def migrate_v1(d: dict, ctx: MigrationCtx) -> None:
@@ -42,7 +40,10 @@ def migrate_v4(d: dict, ctx: MigrationCtx) -> None:
     # Session keys changed to hashes, drop old sessions
     d["sessions"] = {}
     # Create OIDC structure with a generated new key
-    d["oidc"] = {"clients": {}, "key": base64.standard_b64encode(secret_key()).decode()}
+    d["oidc"] = {
+        "clients": {},
+        "key": base64.standard_b64encode(secret_key()).decode(),
+    }
 
 
 def migrate_v5(d: dict, ctx: MigrationCtx) -> None:
@@ -50,38 +51,3 @@ def migrate_v5(d: dict, ctx: MigrationCtx) -> None:
     listen = d["config"].get("listen")
     if listen and isinstance(listen, str):
         d["config"]["listen"] = [listen]
-
-
-migrations = sorted(
-    [f for n, f in globals().items() if n.startswith("migrate_v")],
-    key=lambda f: int(f.__name__.removeprefix("migrate_v")),
-)
-
-DBVER = len(migrations)  # Used by bootstrap to set initial version
-
-
-def apply_migrations_readonly(
-    data_dict: dict,
-    current_version: int,
-    ctx: MigrationCtx,
-) -> int:
-    """Apply migration functions in-place without persistence.
-
-    Returns the new version after all migrations.
-    """
-    while current_version < DBVER:
-        migrations[current_version](data_dict, ctx)
-        current_version += 1
-    return current_version
-
-
-async def apply_all_migrations(
-    data_dict: dict,
-    current_version: int,
-    persist: Callable[[str, int, dict], Awaitable[None]],
-    ctx: MigrationCtx,
-) -> None:
-    while current_version < DBVER:
-        migrations[current_version](data_dict, ctx)
-        current_version += 1
-        await persist(f"migrate:v{current_version}", current_version, data_dict)

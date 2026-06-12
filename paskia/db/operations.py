@@ -12,6 +12,7 @@ from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 import uuid7
+from kanta import Kanta
 
 from paskia import oidc_notify
 from paskia.config import SESSION_LIFETIME
@@ -38,6 +39,7 @@ _UNSET = object()
 
 # Global database instance (empty until init() loads data)
 _db = DB(config=Config(rp_id="uninitialized.invalid"))
+_store: Kanta[DB] | None = None
 
 
 def is_username_taken(username: str, exclude_uuid: UUID | None = None) -> bool:

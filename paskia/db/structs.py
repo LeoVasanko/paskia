@@ -9,6 +9,7 @@ import msgspec
 import uuid7
 
 from paskia import db
+from paskia.db.logging import UuidResolver
 from paskia.util import passphrase as passphrase_util
 from paskia.util.crypto import hash_secret
 
@@ -618,7 +619,7 @@ class Config(msgspec.Struct, omit_defaults=True):
 class DB(msgspec.Struct, dict=True, omit_defaults=False):
     """In-memory database. Access fields directly for reads."""
 
-    config: Config
+    config: Config = msgspec.field(default_factory=lambda: Config(rp_id="localhost"))
     permissions: dict[UUID, Permission] = {}
     orgs: dict[UUID, Org] = {}
     roles: dict[UUID, Role] = {}
@@ -652,8 +653,21 @@ class DB(msgspec.Struct, dict=True, omit_defaults=False):
             client.uuid = uuid
 
     def transaction(self, action, ctx=None, *, user=None):
-        """Wrap writes in transaction. Delegates to JsonlStore."""
-        return self._store.transaction(action, ctx, user=user)
+        """Wrap writes in transaction. Delegates to Kanta."""
+        user_id = str(ctx.user.uuid) if ctx else user
+        user_display = None
+        if user_id:
+            try:
+                user_uuid = UUID(user_id)
+                if user_uuid in self.users:
+                    user_display = self.users[user_uuid].display_name
+            except (ValueError, KeyError):
+                user_display = user_id
+        previous_state = msgspec.to_builtins(self)
+        resolver = UuidResolver(self, previous_state).resolve
+        return self._store.transaction(
+            action, user=user_id, user_display=user_display, resolver=resolver
+        )
 
     def session_ctx(
         self, session_secret: str, host: str | None = None

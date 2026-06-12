@@ -23,6 +23,7 @@ dependencies = [
     "msgspec>=0.20.0",
     "fastapi-vue>=1.1.0",
     "ua-parser[regex]>=1.0.1",
+    "kanta>=0.1.1",
 ]
 [dependency-groups]
 dev = [
