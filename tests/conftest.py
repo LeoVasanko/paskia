@@ -12,6 +12,7 @@ in the database to test authenticated endpoints.
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import secrets
 import tempfile
@@ -24,6 +25,20 @@ import pytest
 import pytest_asyncio
 from kanta import Kanta
 
+# Keep runtime initialization invariant aligned with production:
+# db.lifecycle requires PASKIA_CONFIG at import time.
+os.environ.setdefault(
+    "PASKIA_CONFIG",
+    json.dumps(
+        {
+            "config": {"rp_id": "localhost", "rp_name": "localhost"},
+            "site_url": "http://localhost:4401",
+            "site_path": "/auth/",
+            "save": False,
+        }
+    ),
+)
+
 import paskia.db.operations as ops_db
 from paskia import globals as paskia_globals
 from paskia.authsession import reset_expires
@@ -34,13 +49,12 @@ from paskia.db import (
     Permission,
     Role,
     User,
-    bootstrap,
     create_credential,
     create_reset_token,
     create_role,
     create_user,
 )
-from paskia.db.migrations import MigrationCtx
+from paskia.db.bootstrap import bootstrap
 from paskia.db.operations import DB
 from paskia.db.structs import Session
 from paskia.fastapi.mainapp import app
@@ -61,7 +75,7 @@ def event_loop():
 async def test_db() -> AsyncGenerator[DB, None]:
     """Create a temporary JSONL database for testing using kanta.
 
-    Uses bootstrap() to properly initialize the database with:
+    Uses a kanta bootstrap callback to properly initialize the database with:
     - auth:admin and auth:org:admin permissions
     - A default organization with Administration role
     - An admin user with the Administration role
@@ -72,34 +86,46 @@ async def test_db() -> AsyncGenerator[DB, None]:
             f.name,
             db,
             migrations="paskia.db.migrations",
-            migration_ctx=MigrationCtx(rp_id="test.example.com"),
         )
+        kanta.ctx.rp_id = "test.example.com"
+
+        # Register bootstrap callback so kanta seeds the empty DB during open()
+        @kanta.bootstrap(action="bootstrap")
+        def bootstrap_test_db(data: DB) -> None:
+            bootstrap(
+                data,
+                org_name="Test Organization",
+                admin_name="Test Admin",
+            )
+
         await kanta.open()
-        ops_db._store = kanta
         ops_db._db = db
         ops_db._db._store = kanta
-        # Bootstrap creates the initial permissions, org, role, and admin user
-        bootstrap(
-            org_name="Test Organization",
-            admin_name="Test Admin",
-        )
         yield ops_db._db
         await kanta.close()
         ops_db._db = None
-        ops_db._store = None
 
 
 @pytest_asyncio.fixture(scope="function")
 async def passkey_instance() -> Passkey:
-    """Initialize a passkey instance for testing."""
+    """Override the module-level passkey instance for testing."""
     pk = Passkey(
         rp_id="localhost",
         rp_name="Test RP",
         origins=["http://localhost:4401"],
     )
-    paskia_globals.passkey._instance = pk
+    original = {
+        "rp_id": paskia_globals.passkey.rp_id,
+        "rp_name": paskia_globals.passkey.rp_name,
+        "allowed_origins": paskia_globals.passkey.allowed_origins,
+    }
+    paskia_globals.passkey.rp_id = pk.rp_id
+    paskia_globals.passkey.rp_name = pk.rp_name
+    paskia_globals.passkey.allowed_origins = pk.allowed_origins
     yield pk
-    paskia_globals.passkey._instance = None
+    paskia_globals.passkey.rp_id = original["rp_id"]
+    paskia_globals.passkey.rp_name = original["rp_name"]
+    paskia_globals.passkey.allowed_origins = original["allowed_origins"]
 
 
 @pytest_asyncio.fixture(scope="function")
@@ -286,7 +312,10 @@ def create_test_session(
     )
     if session.key in ops_db._db.sessions:
         raise ValueError("Session already exists")
-    with ops_db._db.transaction("create_test_session"):
+    store = ops_db._db._store
+    if store is None:
+        raise RuntimeError("Test DB store is not initialized")
+    with store.transaction("create_test_session"):
         session.store(now)
     return session.key, token
 

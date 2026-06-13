@@ -23,14 +23,14 @@ async def register_chat(
     credential_ids: list[bytes] | None = None,
 ):
     """Run WebAuthn registration flow and return the verified credential."""
-    options, challenge = passkey.instance.reg_generate_options(
+    options, challenge = passkey.reg_generate_options(
         user_id=user_uuid,
         user_name=user_name,
         credential_ids=credential_ids,
     )
     await ws.send_json({"optionsJSON": options})
     response = await ws.receive_json()
-    return passkey.instance.reg_verify(response, challenge, user_uuid, origin=origin)
+    return passkey.reg_verify(response, challenge, user_uuid, origin=origin)
 
 
 async def authenticate_chat(
@@ -43,11 +43,9 @@ async def authenticate_chat(
         tuple of (credential, new_sign_count) where new_sign_count comes from WebAuthn verification
     """
     origin = validate_origin(ws)
-    options, challenge = passkey.instance.auth_generate_options(
-        credential_ids=credential_ids
-    )
+    options, challenge = passkey.auth_generate_options(credential_ids=credential_ids)
     await ws.send_json({"optionsJSON": options})
-    authcred = passkey.instance.auth_parse(await ws.receive_json())
+    authcred = passkey.auth_parse(await ws.receive_json())
 
     cred = next(
         (
@@ -58,11 +56,9 @@ async def authenticate_chat(
         None,
     )
     if not cred:
-        raise ValueError(
-            f"This passkey is no longer registered with {passkey.instance.rp_name}"
-        )
+        raise ValueError(f"This passkey is no longer registered with {passkey.rp_name}")
 
-    verification = passkey.instance.auth_verify(authcred, challenge, cred, origin)
+    verification = passkey.auth_verify(authcred, challenge, cred, origin)
     return cred, verification.new_sign_count
 
 
@@ -94,7 +90,7 @@ async def authenticate_and_login(
     if not normalized_host:
         raise ValueError("Host required for session creation")
     hostname = normalized_host.split(":")[0]
-    rp_id = passkey.instance.rp_id
+    rp_id = passkey.rp_id
     if not (hostname == rp_id or hostname.endswith(f".{rp_id}")):
         raise ValueError(f"Host must be the same as or a subdomain of {rp_id}")
     metadata = infodict(ws, "auth")

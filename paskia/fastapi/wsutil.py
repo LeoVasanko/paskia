@@ -96,4 +96,4 @@ def validate_origin(ws: WebSocket) -> str:
     origin = ws.headers.get("origin")
     if not origin:
         raise ValueError("Origin header is required for WebSocket connections")
-    return passkey.instance.validate_origin(origin)
+    return passkey.validate_origin(origin)

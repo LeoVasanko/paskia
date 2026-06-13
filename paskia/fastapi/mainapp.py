@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import os
 from contextlib import asynccontextmanager
@@ -7,11 +8,10 @@ import msgspec
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import FileResponse, RedirectResponse
 
-from paskia import authcode, db, globals
-from paskia.__main__ import DEVMODE
+from paskia import authcode, db, remoteauth
 from paskia.bootstrap import bootstrap_if_needed
-from paskia.db import start_background, stop_background
-from paskia.db.background import flush
+from paskia.db.background import start_background, stop_background
+from paskia.db.lifecycle import kanta
 from paskia.db.logging import configure_db_logging
 from paskia.fastapi import admin, api, auth_host, oid, ws
 from paskia.fastapi.admin.adminapp import adminapp
@@ -21,6 +21,7 @@ from paskia.fastapi.front import frontend
 from paskia.fastapi.logging import AccessLogMiddleware, configure_access_logging
 from paskia.fastapi.session import AUTH_COOKIE
 from paskia.util import hostutil, passphrase, vitedev
+from paskia.util.constants import DEVMODE
 from paskia.util.runtime import RuntimeConfig
 
 # Configure custom logging
@@ -43,34 +44,33 @@ async def lifespan(app: FastAPI):  # pragma: no cover - startup path
     """
     runtime = msgspec.json.decode(os.environ["PASKIA_CONFIG"], type=RuntimeConfig)
 
-    try:
-        await globals.init(
-            rp_id=runtime.config.rp_id,
-            rp_name=runtime.config.rp_name,
-            origins=runtime.config.origins,
-            bootstrap=False,
-        )
-    except ValueError as e:
-        logging.error(f"⚠️ {e}")
-        # Re-raise to fail fast
-        raise
+    await asyncio.to_thread(
+        Path(kanta.filename).parent.mkdir, parents=True, exist_ok=True
+    )
+    async with kanta:
+        try:
+            await remoteauth.init()
+            await authcode.start()
+        except ValueError as e:
+            logging.error(f"⚠️ {e}")
+            # Re-raise to fail fast
+            raise
 
-    # Bootstrap and persist config now that the full DB is loaded
-    await bootstrap_if_needed(config=runtime.config)
-    if runtime.save:
-        db.update_config(runtime.config)
-    await flush()
+        # Bootstrap and persist config now that the full DB is loaded
+        await bootstrap_if_needed(config=runtime.config)
+        if runtime.save:
+            db.update_config(runtime.config)
 
-    # Restore uvicorn info logging (suppressed during startup in dev mode)
-    # Keep uvicorn.error at WARNING to suppress WebSocket "connection open/closed" messages
-    if app.debug:
-        logging.getLogger("uvicorn").setLevel(logging.INFO)
-    logging.getLogger("uvicorn.error").setLevel(logging.WARNING)
-    await frontend.load()
-    await start_background()
-    yield
-    await stop_background()
-    await authcode.stop()
+        # Restore uvicorn info logging (suppressed during startup in dev mode)
+        # Keep uvicorn.error at WARNING to suppress WebSocket "connection open/closed" messages
+        if app.debug:
+            logging.getLogger("uvicorn").setLevel(logging.INFO)
+        logging.getLogger("uvicorn.error").setLevel(logging.WARNING)
+        await frontend.load()
+        await start_background()
+        yield
+        await stop_background()
+        await authcode.stop()
 
 
 app = FastAPI(

@@ -2,11 +2,12 @@
 
 from urllib.parse import urlparse, urlsplit
 
-from paskia.util.runtime import _load_config
+from paskia.util.runtime import clear_config_cache
+from paskia.util.runtime import config as runtime_config
 
 
 def _cfg():
-    return _load_config()
+    return runtime_config()
 
 
 def is_root_mode() -> bool:
@@ -105,7 +106,7 @@ def normalize_auth_host_and_origins(
 
 
 def reload_config() -> None:
-    _load_config.cache_clear()
+    clear_config_cache()
 
 
 def normalize_host(raw_host: str | None) -> str | None:

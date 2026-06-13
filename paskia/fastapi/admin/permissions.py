@@ -28,7 +28,7 @@ def _validate_permission_domain(domain: str | None) -> None:
     except ValueError:
         pass
 
-    rp_id = passkey.instance.rp_id
+    rp_id = passkey.rp_id
     if domain == rp_id or domain.endswith(f".{rp_id}"):
         return
     raise ValueError(

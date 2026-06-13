@@ -58,7 +58,7 @@ async def websocket_register_add(
     if reset is not None:
         if not passphrase.is_well_formed(reset):
             raise ValueError(
-                f"The reset link for {passkey.instance.rp_name} is invalid or has expired"
+                f"The reset link for {passkey.rp_name} is invalid or has expired"
             )
         s = get_reset(reset)
         user_uuid = s.user_uuid

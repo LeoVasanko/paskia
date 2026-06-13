@@ -31,9 +31,19 @@ def _load_config() -> "RuntimeConfig | None":
     return msgspec.json.decode(config_json.encode(), type=RuntimeConfig)
 
 
+def config() -> "RuntimeConfig | None":
+    """Return cached runtime config loaded from PASKIA_CONFIG."""
+    return _load_config()
+
+
+def clear_config_cache() -> None:
+    """Clear cached runtime config; next config() call reloads from env."""
+    _load_config.cache_clear()
+
+
 def update_runtime_config(new_config: Config) -> None:
     """Update the runtime configuration with a new Config and refresh the cache."""
-    current_runtime = _load_config()
+    current_runtime = config()
     if not current_runtime:
         return  # No runtime config to update
 
@@ -56,4 +66,4 @@ def update_runtime_config(new_config: Config) -> None:
     os.environ["PASKIA_CONFIG"] = msgspec.json.encode(new_runtime).decode()
 
     # Clear the cache so next access loads the updated config
-    _load_config.cache_clear()
+    clear_config_cache()

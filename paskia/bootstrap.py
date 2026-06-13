@@ -4,13 +4,17 @@ Bootstrap module for passkey authentication system.
 This module handles initial system setup when a new database is created,
 including creating default admin user, organization, permissions, and
 generating a reset link for initial admin setup.
+
+The actual database seeding is performed by the module-level kanta bootstrap
+callback defined in :mod:`paskia.db.bootstrap` and registered during
+:func:`paskia.db.lifecycle.init`.
 """
 
 import logging
 
 from paskia import authsession, db
+from paskia.db.bootstrap import log_reset_link
 from paskia.db.structs import Config
-from paskia.util import hostutil
 
 logger = logging.getLogger(__name__)
 
@@ -27,37 +31,10 @@ def _configure_logger() -> None:
 
 _configure_logger()
 
-# Shared log message template for admin reset links
-ADMIN_RESET_MESSAGE = """
-👤 Admin  %s
-   - Use this link to register a Passkey for the admin user!
-"""
-
 
 def _log_reset_link(passphrase: str, message: str | None = None) -> str:
     """Log a reset link message and return the URL."""
-    reset_link = hostutil.reset_link_url(passphrase)
-    if message:
-        logger.info(message)
-    logger.info(ADMIN_RESET_MESSAGE, reset_link)
-    return reset_link
-
-
-async def bootstrap_system(config: Config | None = None) -> None:
-    """
-    Bootstrap the entire system with default data.
-
-    Uses db.bootstrap() which performs all operations in a single transaction.
-    The transaction log will show a single "bootstrap" action with all changes.
-
-    Args:
-        config: Configuration to store (rp_id, rp_name, origins, etc.)
-    """
-    # Call the single-transaction bootstrap function
-    reset_passphrase = db.bootstrap(config=config)
-
-    # Log the reset link (this is separate from the transaction log)
-    _log_reset_link(reset_passphrase, "✅ Bootstrap completed!")
+    return log_reset_link(passphrase, message)
 
 
 async def check_admin_credentials() -> bool:
@@ -114,22 +91,18 @@ async def check_admin_credentials() -> bool:
 
 async def bootstrap_if_needed(config: Config | None = None) -> bool:
     """
-    Check if system needs bootstrapping and perform it if necessary.
+    Check if admin needs credentials and create a reset link if needed.
+
+    Database bootstrapping itself is now handled automatically during
+    ``db.init()`` via the registered kanta bootstrap callback. This function
+    remains as a post-init hook for credential checks.
 
     Args:
-        config: Configuration to store during bootstrap (rp_id, rp_name, origins, etc.)
+        config: Kept for backwards compatibility; config is now applied during
+            ``db.init()``.
 
     Returns:
-        bool: True if bootstrapping was performed, False if system was already set up
+        bool: Always returns False (bootstrapping is performed during init).
     """
-    # Check if the admin permission exists - if it does, system is already bootstrapped
-    if any(p.scope == "auth:admin" for p in db.data().permissions.values()):
-        # Permission exists, system is already bootstrapped
-        # Check if admin needs credentials (only for already-bootstrapped systems)
-        await check_admin_credentials()
-        return False
-
-    # No admin permission found, need to bootstrap
-    # Bootstrap creates the admin user AND the reset link, so no need to check credentials after
-    await bootstrap_system(config=config)
-    return True
+    await check_admin_credentials()
+    return False

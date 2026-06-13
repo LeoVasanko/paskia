@@ -3,13 +3,13 @@ from __future__ import annotations
 import hashlib
 import secrets
 from datetime import UTC, datetime
+from typing import Any
 from uuid import UUID
 
 import msgspec
 import uuid7
 
 from paskia import db
-from paskia.db.logging import UuidResolver
 from paskia.util import passphrase as passphrase_util
 from paskia.util.crypto import hash_secret
 
@@ -631,8 +631,8 @@ class DB(msgspec.Struct, dict=True, omit_defaults=False):
     oidc: OIDC = msgspec.field(default_factory=lambda: OIDC())
 
     def __post_init__(self):
-        # Store reference for persistence (not serialized)
-        self._store = None
+        # Optional store reference for non-global DB instances (e.g. tests).
+        self._store: Any | None = None
         # Set the key fields on all stored objects
         for uuid, perm in self.permissions.items():
             perm.uuid = uuid
@@ -651,23 +651,6 @@ class DB(msgspec.Struct, dict=True, omit_defaults=False):
         # OIDC
         for uuid, client in self.oidc.clients.items():
             client.uuid = uuid
-
-    def transaction(self, action, ctx=None, *, user=None):
-        """Wrap writes in transaction. Delegates to Kanta."""
-        user_id = str(ctx.user.uuid) if ctx else user
-        user_display = None
-        if user_id:
-            try:
-                user_uuid = UUID(user_id)
-                if user_uuid in self.users:
-                    user_display = self.users[user_uuid].display_name
-            except (ValueError, KeyError):
-                user_display = user_id
-        previous_state = msgspec.to_builtins(self)
-        resolver = UuidResolver(self, previous_state).resolve
-        return self._store.transaction(
-            action, user=user_id, user_display=user_display, resolver=resolver
-        )
 
     def session_ctx(
         self, session_secret: str, host: str | None = None

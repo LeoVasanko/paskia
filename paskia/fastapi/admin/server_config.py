@@ -22,7 +22,7 @@ async def admin_get_server_config(
 ):
     """Get current server configuration (master admin only)."""
     await authz.verify(auth, ["auth:admin"], host=request.headers.get("host"))
-    pk = passkey.instance
+    pk = passkey
     config = db.data().config
     return {
         "rp_name": pk.rp_name,
@@ -46,7 +46,7 @@ async def admin_update_server_config(
         auth, ["auth:admin"], host=request.headers.get("host"), max_age="5m"
     )
     config = db.data().config
-    pk = passkey.instance
+    pk = passkey
 
     rp_name = payload.get("rp_name", "").strip() or None
     auth_host = payload.get("auth_host", "").strip() or None

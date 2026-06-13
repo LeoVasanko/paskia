@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING
 from fastapi_vue.hostutil import parse_endpoints
 
 from paskia._version import __version__
+from paskia.util.constants import DEFAULT_PORT, DEVMODE
 from paskia.util.hostutil import format_endpoint
 
 if TYPE_CHECKING:
@@ -73,16 +74,13 @@ def print_startup_config(runtime: RuntimeConfig) -> None:
     if runtime.config.auth_host:
         lines.append(line(f"Auth Host:      {runtime.config.auth_host}"))
 
-    from paskia.__main__ import DEFAULT_PORT as P  # noqa: PLC0415 - circular
-    from paskia.__main__ import DEVMODE  # noqa: PLC0415 - circular
-
     # Show frontend URL if in dev mode
     if DEVMODE:
         lines.append(line(f"Dev Frontend:   {os.environ.get('PASKIA_VITE_URL')}"))
 
     # Format listen endpoints (dev mode only uses the first endpoint)
 
-    endpoints = list(parse_endpoints(runtime.config.listen, P))
+    endpoints = list(parse_endpoints(runtime.config.listen, DEFAULT_PORT))
     if DEVMODE:
         endpoints = endpoints[:1]  # server.run reload=True uses only one
     parts = [format_endpoint(ep) for ep in endpoints]

@@ -29,11 +29,14 @@ def _load_or_generate_key() -> None:
     global _private_key, _public_key, _kid
 
     data = db.data()
+    store = data._store
+    if store is None:
+        raise RuntimeError("Kanta store is not initialized")
     if data.oidc.key is not None:
         _private_key = public_key_from_secret(data.oidc.key)
     else:
         raw_key = secret_key()
-        with data.transaction("oidc_key"):
+        with store.transaction("oidc_key"):
             data.oidc.key = raw_key
         _private_key = public_key_from_secret(raw_key)
 

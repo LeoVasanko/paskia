@@ -1,25 +1,26 @@
 import argparse
+import asyncio
 import logging
 import os
 import sys
+from pathlib import Path
 
 import msgspec
 from fastapi_vue import server
 from fastapi_vue.hostutil import parse_endpoints
+from kanta import Kanta
 
 from paskia._version import __version__
-from paskia.db.jsonl import load_readonly
 from paskia.db.paths import db_file_path
+from paskia.db.structs import DB, Config
 from paskia.util import startupbox
+from paskia.util.constants import DEFAULT_PORT, DEVMODE
 from paskia.util.hostutil import (
     normalize_auth_host_and_origins,
     normalize_origin,
     validate_auth_host,
 )
 from paskia.util.runtime import RuntimeConfig
-
-DEFAULT_PORT = 4401
-DEVMODE = os.getenv("PASKIA_DEV") == "1"
 
 EPILOG = """\
 Example:
@@ -50,6 +51,36 @@ def add_common_options(p: argparse.ArgumentParser) -> None:
     )
 
 
+def _load_stored_config(db_path: Path, *, rp_id: str) -> Config:
+    """Load the stored Config from disk using Kanta in read-only mode.
+
+    This must not depend on PASKIA_CONFIG or the global lifecycle Kanta.
+    If the database file does not exist, a default config is returned.
+    """
+    if not db_path.exists():
+        return Config(rp_id=rp_id)
+
+    kanta = Kanta(
+        str(db_path),
+        DB(config=Config(rp_id=rp_id)),
+        migrations="paskia.db.migrations",
+    )
+    kanta.ctx.rp_id = rp_id
+
+    async def _read() -> Config:
+        await kanta.open(readonly=True)
+        try:
+            return kanta.data.config
+        finally:
+            await kanta.close()
+
+    try:
+        return asyncio.run(_read())
+    except Exception as e:
+        logging.exception("Failed to load database")
+        raise SystemExit(f"{e}") from e
+
+
 def main():
     # Configure logging to remove the "ERROR:root:" prefix
     logging.basicConfig(level=logging.INFO, format="%(message)s", force=True)
@@ -75,10 +106,12 @@ def main():
 
     args = parser.parse_args()
 
-    # Load stored config (read-only, no writes, no global state)
+    # Load stored config using a local read-only Kanta instance.
+    # This happens before PASKIA_CONFIG is set, so we must not import
+    # modules that initialize the global database lifecycle.
     db_path = db_file_path(rp_id=args.rp_id, create_root=True)
     try:
-        config = load_readonly(str(db_path), rp_id=args.rp_id).config
+        config = _load_stored_config(db_path, rp_id=args.rp_id)
     except SystemExit as e:
         print(f"🛑 Paskia {__version__} could not load")
         sys.exit(str(e))

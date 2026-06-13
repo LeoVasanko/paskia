@@ -13,7 +13,7 @@ import httpx
 
 from paskia import db
 from paskia.util import oidjwt
-from paskia.util.runtime import _load_config
+from paskia.util.runtime import config as runtime_config
 
 _logger = logging.getLogger(__name__)
 
@@ -23,8 +23,8 @@ _TIMEOUT = httpx.Timeout(10.0, connect=5.0)
 
 def _issuer() -> str:
     """Derive issuer URL from config (same base as discovery document)."""
-    cfg = _load_config()
-    return cfg.get("site_url", "https://localhost")
+    cfg = runtime_config()
+    return cfg.site_url if cfg else "https://localhost"
 
 
 def _collect_oidc_sessions(

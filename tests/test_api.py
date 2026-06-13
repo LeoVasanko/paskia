@@ -426,7 +426,10 @@ class TestOidcUserInfoEndpoint:
             redirect_uris=["https://client.example/callback"],
             client_secret="topsecret",
         )
-        with test_db.transaction("create_test_oidc_client"):
+        store = test_db._store
+        if store is None:
+            raise RuntimeError("Test DB store is not initialized")
+        with store.transaction("create_test_oidc_client"):
             test_db.oidc.clients[oidc_client.uuid] = oidc_client
 
         access_token = oidjwt.create_access_token(

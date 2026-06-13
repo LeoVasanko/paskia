@@ -256,7 +256,7 @@ async def forward_authentication(
 
 @app.get("/settings")
 async def get_settings():
-    pk = global_passkey.instance
+    pk = global_passkey
     base_path = hostutil.ui_base_path()
     return MsgspecResponse(
         ApiSettings(

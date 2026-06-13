@@ -7,36 +7,13 @@ companion task that periodically cleans up expired sessions/tokens.
 
 import asyncio
 import logging
-import os
-import signal
 
-from kanta.exceptions import DatabaseError
-
-import paskia.db.operations as _ops
 from paskia.db.lifecycle import cleanup_expired
 
 CLEANUP_INTERVAL = 1  # Expired item cleanup
 
 _logger = logging.getLogger(__name__)
 _background_task: asyncio.Task | None = None
-
-
-def _sigterm_on_error(error: DatabaseError) -> None:
-    """Exit the server when a database write fails."""
-    _logger.error("Fatal database error: %s", error)
-    os.kill(os.getpid(), signal.SIGTERM)
-
-
-async def flush() -> None:
-    """Write all pending database changes to disk."""
-    store = _ops._store
-    if store is None:
-        _logger.warning("flush() called but _store is None")
-        return
-    try:
-        await store.flush()
-    except DatabaseError as e:
-        _sigterm_on_error(e)
 
 
 async def _background_loop():
@@ -87,7 +64,7 @@ async def start_background():
 
 
 async def stop_background():
-    """Stop the background cleanup task and close kanta."""
+    """Stop the background cleanup task."""
     global _background_task
     if _background_task:
         _background_task.cancel()
@@ -96,12 +73,6 @@ async def stop_background():
         except asyncio.CancelledError:
             pass
         _background_task = None
-    store = _ops._store
-    if store is not None:
-        try:
-            await store.close()
-        except DatabaseError as e:
-            _sigterm_on_error(e)
 
 
 # Aliases for backwards compatibility

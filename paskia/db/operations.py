@@ -12,7 +12,6 @@ from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 import uuid7
-from kanta import Kanta
 
 from paskia import oidc_notify
 from paskia.config import SESSION_LIFETIME
@@ -39,7 +38,26 @@ _UNSET = object()
 
 # Global database instance (empty until init() loads data)
 _db = DB(config=Config(rp_id="uninitialized.invalid"))
-_store: Kanta[DB] | None = None
+
+
+def _store():
+    """Return active Kanta instance for the current DB object."""
+    store = _db._store
+    if store is None:
+        raise RuntimeError("Kanta store is not initialized")
+    return store
+
+
+def _transaction(
+    action: str,
+    ctx: SessionContext | None = None,
+    *,
+    user: str | None = None,
+    mtime: bool | datetime = True,
+):
+    """Create a Kanta transaction with minimal metadata mapping."""
+    user_id = str(ctx.user.uuid) if ctx else user
+    return _store().transaction(action, user=user_id, mtime=mtime)
 
 
 def is_username_taken(username: str, exclude_uuid: UUID | None = None) -> bool:
@@ -60,7 +78,7 @@ def is_username_taken(username: str, exclude_uuid: UUID | None = None) -> bool:
 
 def update_config(config: Config) -> None:
     """Update the stored configuration."""
-    with _db.transaction("update_config"):
+    with _transaction("update_config"):
         _db.config = config
 
 
@@ -68,7 +86,7 @@ def create_permission(perm: Permission, *, ctx: SessionContext | None = None) ->
     """Create a new permission."""
     if perm.uuid in _db.permissions:
         raise ValueError(f"Permission {perm.uuid} already exists")
-    with _db.transaction("admin:create_permission", ctx):
+    with _transaction("admin:create_permission", ctx):
         perm.store()
 
 
@@ -86,7 +104,7 @@ def update_permission(
     """
     if uuid not in _db.permissions:
         raise ValueError(f"Permission {uuid} not found")
-    with _db.transaction("admin:update_permission", ctx):
+    with _transaction("admin:update_permission", ctx):
         _db.permissions[uuid].scope = scope
         _db.permissions[uuid].display_name = display_name
         _db.permissions[uuid].domain = domain
@@ -96,7 +114,7 @@ def delete_permission(uuid: UUID, *, ctx: SessionContext | None = None) -> None:
     """Delete a permission and remove it from all roles."""
     if uuid not in _db.permissions:
         raise ValueError(f"Permission {uuid} not found")
-    with _db.transaction("admin:delete_permission", ctx):
+    with _transaction("admin:delete_permission", ctx):
         _db.permissions[uuid].delete()
 
 
@@ -108,7 +126,7 @@ def create_org(org: Org, *, ctx: SessionContext | None = None) -> None:
     if org.uuid in _db.orgs:
         raise ValueError(f"Organization {org.uuid} already exists")
     now = datetime.now(UTC)
-    with _db.transaction("admin:create_org", ctx):
+    with _transaction("admin:create_org", ctx):
         new_org = Org.create(display_name=org.display_name, created_at=now)
         new_org.uuid = org.uuid
         new_org.store()
@@ -140,7 +158,7 @@ def update_org_name(
     """Update organization display name."""
     if uuid not in _db.orgs:
         raise ValueError(f"Organization {uuid} not found")
-    with _db.transaction("admin:update_org_name", ctx):
+    with _transaction("admin:update_org_name", ctx):
         _db.orgs[uuid].display_name = display_name
 
 
@@ -148,7 +166,7 @@ def delete_org(uuid: UUID, *, ctx: SessionContext | None = None) -> None:
     """Delete organization and all its roles/users."""
     if uuid not in _db.orgs:
         raise ValueError(f"Organization {uuid} not found")
-    with _db.transaction("admin:delete_org", ctx):
+    with _transaction("admin:delete_org", ctx):
         _db.orgs[uuid].delete()
 
 
@@ -165,7 +183,7 @@ def add_permission_to_org(
     if permission_uuid not in _db.permissions:
         raise ValueError(f"Permission {permission_uuid} not found")
 
-    with _db.transaction("admin:add_permission_to_org", ctx):
+    with _transaction("admin:add_permission_to_org", ctx):
         _db.permissions[permission_uuid].orgs[org_uuid] = True
 
 
@@ -182,7 +200,7 @@ def remove_permission_from_org(
     if permission_uuid not in _db.permissions:
         return  # Permission not found, silently return
 
-    with _db.transaction("admin:remove_permission_from_org", ctx):
+    with _transaction("admin:remove_permission_from_org", ctx):
         _db.permissions[permission_uuid].orgs.pop(org_uuid, None)
 
 
@@ -192,7 +210,7 @@ def create_role(role: Role, *, ctx: SessionContext | None = None) -> None:
         raise ValueError(f"Role {role.uuid} already exists")
     if role.org_uuid not in _db.orgs:
         raise ValueError(f"Organization {role.org_uuid} not found")
-    with _db.transaction("admin:create_role", ctx):
+    with _transaction("admin:create_role", ctx):
         role.store()
 
 
@@ -205,7 +223,7 @@ def update_role_name(
     """Update role display name."""
     if uuid not in _db.roles:
         raise ValueError(f"Role {uuid} not found")
-    with _db.transaction("admin:update_role_name", ctx):
+    with _transaction("admin:update_role_name", ctx):
         _db.roles[uuid].display_name = display_name
 
 
@@ -220,7 +238,7 @@ def add_permission_to_role(
         raise ValueError(f"Role {role_uuid} not found")
     if permission_uuid not in _db.permissions:
         raise ValueError(f"Permission {permission_uuid} not found")
-    with _db.transaction("admin:add_permission_to_role", ctx):
+    with _transaction("admin:add_permission_to_role", ctx):
         _db.roles[role_uuid].permissions[permission_uuid] = True
 
 
@@ -233,7 +251,7 @@ def remove_permission_from_role(
     """Remove permission from role by UUID."""
     if role_uuid not in _db.roles:
         raise ValueError(f"Role {role_uuid} not found")
-    with _db.transaction("admin:remove_permission_from_role", ctx):
+    with _transaction("admin:remove_permission_from_role", ctx):
         _db.roles[role_uuid].permissions.pop(permission_uuid, None)
 
 
@@ -245,7 +263,7 @@ def delete_role(uuid: UUID, *, ctx: SessionContext | None = None) -> None:
     role = _db.roles[uuid]
     if role.users:
         raise ValueError(f"Cannot delete role {uuid}: users still assigned")
-    with _db.transaction("admin:delete_role", ctx):
+    with _transaction("admin:delete_role", ctx):
         _db.roles[uuid].delete()
 
 
@@ -255,7 +273,7 @@ def create_user(new_user: User, *, ctx: SessionContext | None = None) -> None:
         raise ValueError(f"User {new_user.uuid} already exists")
     if new_user.role_uuid not in _db.roles:
         raise ValueError(f"Role {new_user.role_uuid} not found")
-    with _db.transaction("admin:create_user", ctx):
+    with _transaction("admin:create_user", ctx):
         new_user.store()
 
 
@@ -282,7 +300,7 @@ def update_user_display_name(
     if not display_name:
         raise ValueError("Display name cannot be empty")
     user = _db.users[uuid]
-    with _db.transaction("update_user_display_name", ctx):
+    with _transaction("update_user_display_name", ctx):
         user.display_name = display_name
         # Auto-fill preferred_username if not already set
         if user.preferred_username is None:
@@ -356,7 +374,7 @@ def update_user_info(
         elif len(telephone) > 32:
             raise ValueError("telephone too long")
 
-    with _db.transaction("update_user_info", ctx):
+    with _transaction("update_user_info", ctx):
         if display_name is not _UNSET:
             user.display_name = display_name
         if theme is not _UNSET:
@@ -380,7 +398,7 @@ def update_user_role(
         raise ValueError(f"User {uuid} not found")
     if role_uuid not in _db.roles:
         raise ValueError(f"Role {role_uuid} not found")
-    with _db.transaction("admin:update_user_role", ctx):
+    with _transaction("admin:update_user_role", ctx):
         _db.users[uuid].role_uuid = role_uuid
 
 
@@ -388,7 +406,7 @@ def delete_user(uuid: UUID, *, ctx: SessionContext | None = None) -> None:
     """Delete user and their credentials/sessions."""
     if uuid not in _db.users:
         raise ValueError(f"User {uuid} not found")
-    with _db.transaction("admin:delete_user", ctx):
+    with _transaction("admin:delete_user", ctx):
         _db.users[uuid].delete()
 
 
@@ -398,7 +416,7 @@ def create_credential(cred: Credential, *, ctx: SessionContext | None = None) ->
         raise ValueError(f"Credential {cred.uuid} already exists")
     if cred.user_uuid not in _db.users:
         raise ValueError(f"User {cred.user_uuid} not found")
-    with _db.transaction("create_credential", ctx):
+    with _transaction("create_credential", ctx):
         cred.store()
 
 
@@ -412,7 +430,7 @@ def update_credential_sign_count(
     """Update credential sign count and last_used."""
     if uuid not in _db.credentials:
         raise ValueError(f"Credential {uuid} not found")
-    with _db.transaction("update_credential_sign_count", ctx):
+    with _transaction("update_credential_sign_count", ctx):
         _db.credentials[uuid].sign_count = sign_count
         if last_used:
             _db.credentials[uuid].last_used = last_used
@@ -434,7 +452,7 @@ def delete_credential(
     if user_uuid is not None:
         if cred.user_uuid != user_uuid:
             raise ValueError(f"Credential {uuid} does not belong to user {user_uuid}")
-    with _db.transaction("delete_credential", ctx):
+    with _transaction("delete_credential", ctx):
         cred.delete()
 
 
@@ -450,7 +468,7 @@ def update_session(
     """Update session metadata."""
     if key not in _db.sessions:
         raise ValueError("Session not found")
-    with _db.transaction("update_session", ctx):
+    with _transaction("update_session", ctx):
         s = _db.sessions[key]
         if host is not None:
             s.host = host
@@ -480,7 +498,7 @@ def delete_session(
         raise ValueError("Session not found")
 
     oidc_notify.schedule_notifications([key])
-    with _db.transaction(action, ctx):
+    with _transaction(action, ctx):
         _db.sessions[key].delete()
 
 
@@ -499,7 +517,7 @@ def delete_sessions_for_user(
 
     keys = [s.key for s in user.sessions]
     oidc_notify.schedule_notifications(keys)
-    with _db.transaction("admin:delete_sessions_for_user", ctx):
+    with _transaction("admin:delete_sessions_for_user", ctx):
         for sess in user.sessions:
             sess.delete()
 
@@ -530,7 +548,7 @@ def create_reset_token(
     )
     if token.key in _db.reset_tokens:
         raise ValueError("Reset token already exists")
-    with _db.transaction("create_reset_token", ctx, user=user):
+    with _transaction("create_reset_token", ctx, user=user):
         token.store()
     return passphrase
 
@@ -539,7 +557,7 @@ def delete_reset_token(key: bytes, *, ctx: SessionContext | None = None) -> None
     """Delete a reset token."""
     if key not in _db.reset_tokens:
         raise ValueError("Reset token not found")
-    with _db.transaction("delete_reset_token", ctx):
+    with _transaction("delete_reset_token", ctx):
         _db.reset_tokens[key].delete()
 
 
@@ -588,7 +606,7 @@ def login(
         validated=now,
     )
     user_str = str(user_uuid)
-    with _db.transaction("login", user=user_str):
+    with _transaction("login", user=user_str):
         session.store(now)
         # Update credential
         _db.credentials[credential_uuid].sign_count = sign_count
@@ -615,7 +633,7 @@ def oidc_login(
     """
     now = datetime.now(UTC)
     user_str = str(session.user_uuid)
-    with _db.transaction("oidc_login", user=user_str):
+    with _transaction("oidc_login", user=user_str):
         session.store(now)
         # Update credential
         _db.credentials[credential_uuid].sign_count = sign_count
@@ -661,7 +679,7 @@ def create_credential_session(
         validated=now,
     )
     user_str = str(user_uuid)
-    with _db.transaction("create_credential_session", user=user_str):
+    with _transaction("create_credential_session", user=user_str):
         # Update display name if provided
         if display_name:
             _db.users[user_uuid].display_name = display_name
@@ -694,7 +712,7 @@ def create_oid_client(client: Client, *, ctx: SessionContext | None = None) -> N
     """Create a new OIDC client."""
     if client.uuid in _db.oidc.clients:
         raise ValueError(f"OIDC client {client.uuid} already exists")
-    with _db.transaction("admin:create_oid_client", ctx):
+    with _transaction("admin:create_oid_client", ctx):
         _db.oidc.clients[client.uuid] = client
 
 
@@ -735,7 +753,7 @@ def update_oid_client(
         else client.backchannel_logout_uri
     )
 
-    with _db.transaction("admin:update_oid_client", ctx):
+    with _transaction("admin:update_oid_client", ctx):
         # Create updated client with new values
         updated_client = Client(
             client_secret_hash=secret_hash
@@ -761,7 +779,7 @@ def reset_oid_client_secret(
     if client_uuid not in _db.oidc.clients:
         raise ValueError(f"OIDC client {client_uuid} not found")
     client = _db.oidc.clients[client_uuid]
-    with _db.transaction("admin:reset_oid_client_secret", ctx):
+    with _transaction("admin:reset_oid_client_secret", ctx):
         updated = Client(
             client_secret_hash=new_secret_hash,
             name=client.name,
@@ -776,5 +794,5 @@ def delete_oid_client(client_uuid: UUID, *, ctx: SessionContext | None = None) -
     """Delete an OIDC client."""
     if client_uuid not in _db.oidc.clients:
         raise ValueError(f"OIDC client {client_uuid} not found")
-    with _db.transaction("admin:delete_oid_client", ctx):
+    with _transaction("admin:delete_oid_client", ctx):
         del _db.oidc.clients[client_uuid]

@@ -2,24 +2,60 @@
 Bootstrap operations for initial system setup.
 """
 
+import logging
+import sys
 from datetime import UTC, datetime
 
 import uuid7
 
-import paskia.db.operations as _ops
 from paskia.authsession import reset_expires
-from paskia.db.structs import Config, Org, Permission, ResetToken, Role, User
+from paskia.db.structs import DB, Config, Org, Permission, ResetToken, Role, User
 from paskia.util.crypto import secret_key
+from paskia.util.hostutil import reset_link_url
+
+_reset_link_logger = logging.getLogger("paskia.reset_link")
+
+
+def _configure_reset_link_logger() -> None:
+    if _reset_link_logger.handlers:
+        return
+    handler = logging.StreamHandler(sys.stderr)
+    handler.setFormatter(logging.Formatter("%(message)s"))
+    _reset_link_logger.addHandler(handler)
+    _reset_link_logger.setLevel(logging.INFO)
+    _reset_link_logger.propagate = False
+
+
+_configure_reset_link_logger()
+
+ADMIN_RESET_MESSAGE = """
+👤 Admin  %s
+   - Use this link to register a Passkey for the admin user!
+"""
+
+
+def log_reset_link(passphrase: str, message: str | None = None) -> str:
+    """Log a reset link message and return the URL."""
+    reset_link = reset_link_url(passphrase)
+    if message:
+        _reset_link_logger.info(message)
+    _reset_link_logger.info(ADMIN_RESET_MESSAGE, reset_link)
+    return reset_link
 
 
 def bootstrap(
+    data: "DB",
     org_name: str = "Organization",
     admin_name: str = "Admin",
     reset_passphrase: str | None = None,
     reset_expiry: datetime | None = None,
     config: Config | None = None,
 ) -> str:
-    """Bootstrap the entire system in a single transaction.
+    """Bootstrap the entire system by seeding an empty database.
+
+    This is intended to be called from a ``@kanta.bootstrap`` callback during
+    ``kanta.open()``. It mutates the provided root ``data`` object directly;
+    kanta queues the resulting state as the initial "bootstrap" change record.
 
     Creates:
     - auth:admin permission (Master Admin)
@@ -29,10 +65,8 @@ def bootstrap(
     - Reset token for admin registration
     - Config (if provided)
 
-    This is the only way to create a new database file.
-    All data is created atomically - if any step fails, nothing is written.
-
     Args:
+        data: The live root database object (usually a ``DB`` instance).
         org_name: Display name for the organization (default: "Organization")
         admin_name: Display name for the admin user (default: "Admin")
         reset_passphrase: Passphrase for the reset token (generated if not provided)
@@ -44,7 +78,7 @@ def bootstrap(
     """
 
     # Check if system is already bootstrapped
-    for p in _ops._db.permissions.values():
+    for p in data.permissions.values():
         if p.scope == "auth:admin":
             raise ValueError(
                 "System already bootstrapped (auth:admin permission exists)"
@@ -62,65 +96,66 @@ def bootstrap(
     if reset_expiry is None:
         reset_expiry = reset_expires()
 
-    with _ops._db.transaction("bootstrap"):
-        # Create auth:admin permission
-        perm_admin = Permission(
-            scope="auth:admin",
-            display_name="Master Admin",
-            orgs={org_uuid: True},  # Grant to org
-        )
-        perm_admin.uuid = perm_admin_uuid
-        perm_admin.store()
+    # Create auth:admin permission
+    perm_admin = Permission(
+        scope="auth:admin",
+        display_name="Master Admin",
+        orgs={org_uuid: True},  # Grant to org
+    )
+    perm_admin.uuid = perm_admin_uuid
 
-        # Create auth:org:admin permission
-        perm_org_admin = Permission(
-            scope="auth:org:admin",
-            display_name="Org Admin",
-            orgs={org_uuid: True},  # Grant to org
-        )
-        perm_org_admin.uuid = perm_org_admin_uuid
-        perm_org_admin.store()
+    # Create auth:org:admin permission
+    perm_org_admin = Permission(
+        scope="auth:org:admin",
+        display_name="Org Admin",
+        orgs={org_uuid: True},  # Grant to org
+    )
+    perm_org_admin.uuid = perm_org_admin_uuid
 
-        # Create organization
-        new_org = Org.create(display_name=org_name)
-        new_org.uuid = org_uuid
-        new_org.store()
+    # Create organization
+    new_org = Org.create(display_name=org_name)
+    new_org.uuid = org_uuid
 
-        # Create Administration role with both permissions
-        admin_role = Role(
-            org_uuid=org_uuid,
-            display_name="Administration",
-            permissions={perm_admin_uuid: True, perm_org_admin_uuid: True},
-        )
-        admin_role.uuid = role_uuid
-        admin_role.store()
+    # Create Administration role with both permissions
+    admin_role = Role(
+        org_uuid=org_uuid,
+        display_name="Administration",
+        permissions={perm_admin_uuid: True, perm_org_admin_uuid: True},
+    )
+    admin_role.uuid = role_uuid
 
-        # Create admin user
-        admin_user = User(
-            display_name=admin_name,
-            role_uuid=role_uuid,
-            created_at=now,
-            last_seen=None,
-            visits=0,
-            theme="",
-        )
-        admin_user.uuid = user_uuid
-        admin_user.store()
+    # Create admin user
+    admin_user = User(
+        display_name=admin_name,
+        role_uuid=role_uuid,
+        created_at=now,
+        last_seen=None,
+        visits=0,
+        theme="",
+    )
+    admin_user.uuid = user_uuid
 
-        # Create reset token
-        reset_token, reset_passphrase = ResetToken.create(
-            user=user_uuid,
-            expiry=reset_expiry,
-            token_type="admin bootstrap",
-            passphrase=reset_passphrase,
-        )
-        reset_token.store()
+    # Create reset token
+    reset_token, reset_passphrase = ResetToken.create(
+        user=user_uuid,
+        expiry=reset_expiry,
+        token_type="admin bootstrap",
+        passphrase=reset_passphrase,
+    )
 
-        # Set config if provided
-        if config is not None:
-            _ops._db.config = config
+    # Set config if provided
+    if config is not None:
+        data.config = config
 
-        # Generate OIDC signing key
-        _ops._db.oidc.key = secret_key()
+    # Generate OIDC signing key
+    data.oidc.key = secret_key()
+
+    # Store all bootstrapped objects in the live data object
+    data.permissions[perm_admin_uuid] = perm_admin
+    data.permissions[perm_org_admin_uuid] = perm_org_admin
+    data.orgs[org_uuid] = new_org
+    data.roles[role_uuid] = admin_role
+    data.users[user_uuid] = admin_user
+    data.reset_tokens[reset_token.key] = reset_token
 
     return reset_passphrase
