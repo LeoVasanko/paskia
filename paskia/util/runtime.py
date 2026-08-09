@@ -48,14 +48,20 @@ def update_runtime_config(new_config: Config) -> None:
         return  # No runtime config to update
 
     # Recompute site_url and site_path based on new config
-    site_path = "/" if new_config.auth_host else "/auth/"
+    old_auth_host = current_runtime.config.auth_host
     if new_config.auth_host:
-        site_url = new_config.auth_host
-    elif new_config.origins:
-        site_url = new_config.origins[0]
+        site_url, site_path = new_config.auth_host, "/"
     else:
-        # Keep current site_url if no auth_host and no origins
-        site_url = current_runtime.site_url
+        site_path = "/auth/"
+        # Never derive site_url from a just-removed auth host
+        origins = [o for o in (new_config.origins or []) if o != old_auth_host]
+        if origins:
+            site_url = origins[0]
+        elif current_runtime.site_url != old_auth_host:
+            # Keep current site_url if it wasn't derived from the removed auth host
+            site_url = current_runtime.site_url
+        else:
+            site_url = f"https://{new_config.rp_id}"
 
     new_runtime = RuntimeConfig(
         config=new_config,

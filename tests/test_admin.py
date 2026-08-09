@@ -37,7 +37,10 @@ from paskia.db import (
     create_user,
 )
 from paskia.db.operations import DB
+from paskia.util import hostutil
 from paskia.util.crypto import hash_secret
+from paskia.util.runtime import clear_config_cache
+from paskia.util.runtime import config as runtime_config
 from tests.conftest import auth_headers, create_test_image_bytes, create_test_session
 
 # -------------------- Additional Fixtures --------------------
@@ -1789,3 +1792,115 @@ class TestOrgAdminAuthExceptions:
             headers={**auth_headers(regular_session_token), "Host": "localhost:4401"},
         )
         assert response.status_code == 403
+
+
+class TestServerConfig:
+    """Tests for GET/PATCH /auth/api/admin/server-config/ runtime updates."""
+
+    @pytest.fixture(scope="function")
+    def restore_runtime_config(self):
+        """Restore PASKIA_CONFIG env and cache after a test mutates runtime."""
+        original = os.environ["PASKIA_CONFIG"]
+        yield
+        os.environ["PASKIA_CONFIG"] = original
+        clear_config_cache()
+
+    async def _set_auth_host(self, client, session_token, test_user, test_credential):
+        """Configure an auth host via PATCH, as the admin UI would."""
+        r = await client.patch(
+            "/auth/api/admin/server-config/",
+            json={
+                "rp_name": "",
+                "auth_host": "auth.localhost",
+                "origins": ["auth.localhost", "localhost"],
+            },
+            headers={**auth_headers(session_token), "Host": "localhost:4401"},
+        )
+        assert r.status_code == 200, r.text
+        assert db.data().config.auth_host == "https://auth.localhost"
+        assert hostutil.dedicated_auth_host() == "auth.localhost"
+        assert hostutil.auth_site_url() == "https://auth.localhost/"
+        # Session for requests coming from the auth host (sessions are host-bound)
+        _, token = create_test_session(
+            test_user.uuid, test_credential.uuid, host="auth.localhost"
+        )
+        return {**auth_headers(token), "Host": "auth.localhost"}
+
+    @pytest.mark.asyncio
+    async def test_remove_auth_host_updates_runtime(
+        self,
+        client: httpx.AsyncClient,
+        session_token: str,
+        test_user,
+        test_credential,
+        restore_runtime_config,
+    ):
+        """Removing auth_host must clear it from runtime config and URLs."""
+        headers = await self._set_auth_host(
+            client, session_token, test_user, test_credential
+        )
+
+        # The dialog still lists the old auth host among origins, so it is sent back
+        r = await client.patch(
+            "/auth/api/admin/server-config/",
+            json={
+                "rp_name": "",
+                "auth_host": "",
+                "origins": ["auth.localhost", "localhost"],
+            },
+            headers=headers,
+        )
+        assert r.status_code == 200, r.text
+        assert db.data().config.auth_host is None
+
+        rt = runtime_config()
+        assert rt.config.auth_host is None
+        assert rt.site_path == "/auth/"
+        assert "auth.localhost" not in rt.site_url
+        assert hostutil.dedicated_auth_host() is None
+        assert "auth.localhost" not in hostutil.auth_site_url()
+
+        # GET and settings reflect the cleared state
+        r = await client.get(
+            "/auth/api/admin/server-config/",
+            headers={**auth_headers(session_token), "Host": "localhost:4401"},
+        )
+        assert r.json()["auth_host"] == ""
+        r = await client.get("/auth/api/settings")
+        assert r.json()["auth_host"] is None
+        assert r.json()["ui_base_path"] == "/auth/"
+
+        # Middleware no longer redirects to the removed auth host
+        r = await client.get(
+            "/auth/admin",
+            headers={**auth_headers(session_token), "Host": "localhost:4401"},
+            follow_redirects=False,
+        )
+        assert "auth.localhost" not in r.headers.get("location", "")
+
+    @pytest.mark.asyncio
+    async def test_remove_auth_host_without_origins_falls_back_to_rp_id(
+        self,
+        client: httpx.AsyncClient,
+        session_token: str,
+        test_user,
+        test_credential,
+        restore_runtime_config,
+    ):
+        """With no origins left, site_url must not keep the removed auth host."""
+        headers = await self._set_auth_host(
+            client, session_token, test_user, test_credential
+        )
+
+        r = await client.patch(
+            "/auth/api/admin/server-config/",
+            json={"rp_name": "", "auth_host": "", "origins": []},
+            headers=headers,
+        )
+        assert r.status_code == 200, r.text
+
+        rt = runtime_config()
+        assert rt.config.auth_host is None
+        assert rt.site_path == "/auth/"
+        assert "auth.localhost" not in rt.site_url
+        assert "auth.localhost" not in hostutil.auth_site_url()
