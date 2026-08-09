@@ -736,10 +736,7 @@ async function refreshUserDetail() {
   }
 }
 
-async function onUserNameSaved() {
-  await refreshUserDetail()
-  authStore.showMessage('User renamed', 'success', 1500)
-}
+
 
 async function submitDialog() {
   if (!dialog.value.type || dialog.value.busy) return
@@ -824,7 +821,7 @@ async function submitDialog() {
       apiJson(`/auth/api/admin/users/${user.uuid}/info`, { method: 'PATCH', body: { display_name: name } })
         .then(() => {
           authStore.showMessage(`User renamed to "${name}".`, 'success', 2500)
-          onUserNameSaved()
+          refreshUserDetail()
         })
         .catch(e => {
           authStore.showMessage(e.message || 'Failed to update user name', 'error')
@@ -1003,9 +1000,7 @@ async function submitDialog() {
                   :show-reg-modal="showRegModal"
                   :navigation-disabled="hasActiveModal"
                   @generate-user-registration-link="generateUserRegistrationLink"
-                  @go-overview="goOverview"
                   @open-org="openOrg"
-                  @on-user-name-saved="onUserNameSaved"
                   @refresh-user-detail="refreshUserDetail"
                   @edit-user-name="editUserName"
                   @close-reg-modal="showRegModal = false"

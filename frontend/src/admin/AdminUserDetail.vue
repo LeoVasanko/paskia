@@ -18,7 +18,7 @@ const props = defineProps({
   navigationDisabled: { type: Boolean, default: false }
 })
 
-const emit = defineEmits(['generateUserRegistrationLink', 'goOverview', 'openOrg', 'onUserNameSaved', 'closeRegModal', 'editUserName', 'refreshUserDetail', 'navigateOut', 'deleteUser'])
+const emit = defineEmits(['generateUserRegistrationLink', 'openOrg', 'closeRegModal', 'editUserName', 'refreshUserDetail', 'navigateOut', 'deleteUser'])
 
 const authStore = useAuthStore()
 const terminatingSessions = ref({})
@@ -69,11 +69,13 @@ async function handleDelete(credential) {
   try {
     const data = await apiJson(`/auth/api/admin/users/${props.selectedUser.uuid}/credentials/${credential.credential}`, { method: 'DELETE' })
     if (data.status === 'ok') {
-      emit('onUserNameSaved') // Reuse to refresh user detail
+      emit('refreshUserDetail')
+      authStore.showMessage('Passkey removed', 'success', 2500)
     } else {
-      console.error('Failed to delete credential', data)
+      authStore.showMessage(data.detail || 'Failed to remove passkey', 'error')
     }
   } catch (err) {
+    authStore.showMessage(err.message || 'Failed to remove passkey', 'error')
     console.error('Delete credential error', err)
   }
 }
@@ -90,7 +92,7 @@ async function handleTerminateSession(session) {
         location.reload()
         return
       }
-      emit('refreshUserDetail') // Refresh without showing rename message
+      emit('refreshUserDetail')
       authStore.showMessage('Session terminated', 'success', 2500)
     } else {
       authStore.showMessage(data.detail || 'Failed to terminate session', 'error')
@@ -227,7 +229,6 @@ const adminPictureTitle = computed(() => {
         :org-display-name="userDetail.org.display_name"
         :role-name="userDetail.role.display_name"
         :update-endpoint="`/auth/api/admin/users/${selectedUser.uuid}/info`"
-        @saved="$emit('onUserNameSaved')"
         @avatar-click="openPictureDialog"
         @edit="handleEditName"
       >
@@ -287,7 +288,7 @@ const adminPictureTitle = computed(() => {
     <RegistrationLinkModal
       v-if="showRegModal"
       :endpoint="`/auth/api/admin/users/${selectedUser.uuid}/create-link`"
-      :user-name="userDetail?.display_name || selectedUser.display_name"
+      :user-name="userDetail?.user?.display_name || selectedUser.display_name"
       @close="$emit('closeRegModal')"
       @copied="onLinkCopied"
     />
