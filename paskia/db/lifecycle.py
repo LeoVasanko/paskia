@@ -101,7 +101,13 @@ def format_log_uuid(
     previous: Annotated[dict, "pre"] | None = None,
     current: Annotated[dict, "post"] | None = None,
 ) -> Optional[str]:  # noqa: UP045
-    """Format UUID values/keys/actor labels in transaction logs."""
+    """Format UUID values/keys/actor labels and censor secrets in transaction logs."""
+    # Censor sensitive OIDC key material regardless of value type, but only
+    # when formatting the value: path components are passed with the component
+    # itself as value and must stay visible ("oidc.key = <hidden>").
+    if (path == "oidc.key" or path.endswith(".oidc.key")) and value != "key":
+        return "<hidden>"
+
     if not isinstance(value, str):
         return None
 

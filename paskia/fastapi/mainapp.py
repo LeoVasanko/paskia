@@ -7,12 +7,12 @@ from pathlib import Path
 import msgspec
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import FileResponse, RedirectResponse
+from kanta.logging import configure_logging as configure_kanta_logging
 
 from paskia import authcode, db, remoteauth
 from paskia.bootstrap import bootstrap_if_needed
 from paskia.db.background import start_background, stop_background
 from paskia.db.lifecycle import kanta
-from paskia.db.logging import configure_db_logging
 from paskia.fastapi import admin, api, auth_host, oid, ws
 from paskia.fastapi.admin.adminapp import adminapp
 
@@ -26,7 +26,7 @@ from paskia.util.runtime import RuntimeConfig
 
 # Configure custom logging
 configure_access_logging()
-configure_db_logging()
+configure_kanta_logging()
 
 _access_logger = logging.getLogger("paskia.access")
 
