@@ -111,7 +111,7 @@ async def validate_token(
             db.update_session(
                 ctx.session.key,
                 ip=get_client_ip(request),
-                user_agent=request.headers.get("user-agent") or "",
+                user_agent=request.headers.get("user-agent"),
                 validated=datetime.now(UTC),
                 ctx=ctx,
             )
