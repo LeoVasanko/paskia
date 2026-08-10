@@ -1,6 +1,8 @@
 # Integrating Paskia with your App
 
-This guide covers frontend and backend integration with Paskia. For Caddy forward-auth setup, see [Caddy configuration](Caddy.md).
+[API overview](API.md) · [Proxy guides](proxy/index.md)
+
+This guide covers frontend and backend integration with Paskia. For forward-auth setup, see the [Forward-Auth Proxy Guides](proxy/index.md); Caddy users can also start from the dedicated [Caddy configuration](proxy/caddy.md).
 
 ## Frontend Integration
 
@@ -58,7 +60,7 @@ validator.start()  // start polling (pauses on idle)
 validator.stop()   // stop polling
 ```
 
-The validator calls `/auth/api/validate` periodically to:
+The validator calls `/auth/api/validate` (see below) periodically to:
 - Renew the session cookie (24h lifetime)
 - Detect if the user logged out or switched accounts
 - Pause polling when the page is idle, allowing sessions to expire when not used
@@ -101,7 +103,7 @@ Or link to the built-in profile page: `/auth/`
 
 ### Using Forward-Auth Headers
 
-When using Caddy forward-auth, your backend receives `Remote-*` headers on authenticated requests. See [Headers](Headers.md) for the full list.
+When using forward-auth, your backend receives `Remote-*` headers on authenticated requests. See [Headers](Headers.md) for the full list and [Forward-Auth Proxy Guides](proxy/index.md) for proxy configuration.
 
 ```python
 # Example: Python/FastAPI
@@ -115,47 +117,24 @@ def get_data(request: Request):
 
 ### Direct Validation from Backend
 
-Your backend can validate sessions directly by calling Paskia's validate endpoint:
+This is useful for:
+- Apps/APIs not behind proxy Forward-Auth protection
+- Background jobs that need to verify a stored session
+- Check extra permissions, get user context or renew session
+
+Your backend can validate sessions directly by calling Paskia's validate endpoint [`/auth/api/validate`](api/validate.md). It generally expects client headers proxied as is, while on the URL you can specify exact requirements.
+
+Usually it is sufficient to simply forward the headers the client sent, assuming your proxy already preserved `Host` and set `X-Forwarded-For` (otherwise set them here with original host and IP). `User-Agent` should also be forwarded if available, omitted if not: do not let your backend HTTP client add its own header.
+
+Be sure to REMOVE connection hop-by-hop headers (these will break WebSockets among other things):
 
 ```python
-import httpx
-
-async def validate_session(request) -> dict:
-    """Validate a session cookie and check permissions."""
-    authcookie = request.get("__Host-paskia")
-    response = await httpx.post(
-        "http://localhost:4401/auth/api/validate?perm=myapp:login+myapp:api",
-        headers={
-            "Host": request.headers["host"]
-            "X-Forwarded-For": request.client.host,
-            "Cookie": f"__Host-paskia={}",
-        },
-    )
-    if response.status_code != 200:
-        return response.json()  # Return to client
-    # User authenticated... We are good to go!
-    ctx = response.json()  # User and session information
+"Connection", "Keep-Alive", "Proxy-Connection", "TE", "Transfer-Encoding", "Upgrade"
 ```
-
-This is useful for:
-- WebSocket connections where headers aren't available after handshake
-- Background jobs that need to verify a stored session
-- APIs not behind forward-auth (auth/restrict)
-
-### Validate Endpoint Parameters
-
-`POST /auth/api/validate` accepts query parameters:
-
-| Parameter | Description |
-|-----------|-------------|
-| `perm=scope:name` | Require this permission (repeatable) |
-| `max_age=5min` | Require recent passkey use |
-
-Returns 200 with user info on success, 401/403 on failure.
 
 ## Proxying /auth/ to Paskia
 
-Your app server needs to proxy `/auth/` paths to Paskia. This can be done by your application but is much easier done by Caddy or Nginx.
+Your app server needs to proxy `/auth/` paths to Paskia. This can be done by your application but is much easier done by a reverse proxy. The [Forward-Auth Proxy Guides](proxy/index.md) cover Caddy, Nginx, Traefik, Apache APISIX, Envoy and HAProxy.
 
 ### Caddy
 

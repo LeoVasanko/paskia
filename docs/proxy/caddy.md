@@ -1,13 +1,15 @@
 # Paskia Caddy Configuration
 
-[Caddy](https://caddyserver.com/) is a modern web server that makes setting up web services easy. We provide a few Caddy snippets that make the configuration even easier, although the `forward_auth` directive of Caddy can be used directly as well. Place the [auth folder](../caddy/auth) with the snippets `require` and `setup` where your config file is (e.g. `/etc/caddy/auth`)
+[`/auth/api/forward`](../api/forward.md) · [Proxy guides](index.md)
+
+[Caddy](https://caddyserver.com/) is a modern web server that makes setting up web services easy. We provide a few Caddy snippets that make the configuration even easier, although the `forward_auth` directive of Caddy can be used directly as well. Place the [auth folder](../../caddy/auth) with the snippets `require` and `setup` where your config file is (e.g. `/etc/caddy/auth`)
 
 What these snippets do
 - `setup`: Mount the auth UI at `/auth/` proxying to `:4401`
 - `require`: Use `/auth/api/forward` for access control
 - Render a login page or a permission denied page if needed (without changing URL)
 
-Your backend may not use authentication at all, or it can make use of the user information passed via `Remote-*` headers by the authentication system, see [trusted headers](Headers.md) for details.
+Your backend may not use authentication at all, or it can make use of the user information passed via `Remote-*` headers by the authentication system, see [trusted headers](../Headers.md) for details.
 
 We assume the normal unprotected **Caddyfile** for your site looks like this:
 

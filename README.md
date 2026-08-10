@@ -20,7 +20,7 @@ An easy to install passkey-based authentication service that protects any web ap
 ## Authenticate to get to your app, or in your app
 
 - API fetch: auth checks and login without leaving your app
-- Forward-auth proxy: protect any unprotected site or service (Caddy, Nginx)
+- Forward-auth proxy: protect any unprotected site or service ([Caddy](docs/proxy/caddy.md), [Nginx](docs/proxy/nginx.md), and [others](docs/proxy/index.md))
 
 The API mode is useful for applications that can be customized to run with Paskia. Forward auth can also protect your javascript and other assets. Each provides fine-grained permission control and reauthentication requests where needed, and both can be mixed where needed.
 
@@ -219,7 +219,7 @@ Enter your auth site domain on Admin / Server Options panel or use `--auth-host=
 
 ## Further Documentation
 
-- [Caddy configuration](https://git.zi.fi/LeoVasanko/paskia/src/branch/main/docs/Caddy.md)
+- [Forward-Auth Guides](https://git.zi.fi/LeoVasanko/paskia/src/branch/main/docs/proxy/index.md) (Caddy, Nginx, ...)
 - [Trusted Headers for Backend Apps](https://git.zi.fi/LeoVasanko/paskia/src/branch/main/docs/Headers.md)
 - [Frontend integration](https://git.zi.fi/LeoVasanko/paskia/src/branch/main/docs/Integration.md)
 - [Paskia API](https://git.zi.fi/LeoVasanko/paskia/src/branch/main/docs/API.md)
