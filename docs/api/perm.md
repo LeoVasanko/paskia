@@ -15,7 +15,7 @@ Repeat the query parameter for each required scope:
 ?perm=myapp:read&perm=myapp:write
 ```
 
-You can also pass multiple scopes in one parameter by separating them with whitespace:
+You can also pass multiple scopes in one parameter by separating them with whitespace (a literal space, i.e. `+` or `%20` in the query string):
 
 ```text
 ?perm=myapp:read%20myapp:write
@@ -25,19 +25,39 @@ Both forms produce the same result.
 
 ## Semantics
 
-The perm argument uses **AND** semantics: **every** listed scope must be present in the effective permissions for the request to succeed. If any required scope is missing, the endpoint returns 403.
+The perm argument uses **AND** semantics between groups: **every** listed scope group must be satisfied by the effective permissions for the request to succeed. If any required group is not satisfied, the endpoint returns 403.
 
-There is **no OR** support inside a single call. If you need to check "scope A or scope B", make separate calls or check the returned permission list in your own backend.
+Within a single group, use `|` to list alternatives with **OR** semantics — the group is satisfied when **any one** of the alternatives is present:
+
+```text
+?perm=myapp:read|myapp:write+myapp:login
+```
+
+This requires `myapp:login` **and** (`myapp:read` **or** `myapp:write`). No whitespace is allowed around the `|` operator.
+
+## Syntax errors
+
+Parsing is strict: anything out of spec is rejected with **400 Bad Request** rather than guessed at. This includes:
+
+- Empty values or alternatives (`?perm=`, `?perm=a||b`, `?perm=|a`, `?perm=a|`)
+- Whitespace around `|` (`?perm=a+|+b`)
+- Characters not allowed in scopes other than the operators (space and `|`); scopes match `^[A-Za-z0-9:._~/-]+$` plus the `*` wildcard. In particular a literal `+` in the decoded value (from a `%2B` in the query string) is rejected — use `+` or `%20` to encode a space, never `%2B`.
+
+Extra spaces between groups (leading, trailing, or repeated) are tolerated, since they can easily result from URL formatting and carry no ambiguity — they only ever add required permissions, never remove them. The `|` operator is parsed strictly: `?perm=foo&perm=|bar` is an error, never a way to make `foo` optional.
 
 ## Wildcards
 
-A required scope may contain the * wildcard, which matches any sequence of characters:
+Wildcards work like filenames, with `:` and `/` acting as path separators:
+
+- `*` matches any sequence of characters **within a single segment** (it never crosses a `:` or `/`)
+- `**` matches any sequence of characters, **across separators**
+- Part of a segment can be wildcarded, with required text on either or both sides
 
 ```text
 ?perm=myapp:*
 ```
 
-This matches myapp:read, myapp:write, and any other scope starting with myapp:.
+This matches myapp:read and myapp:write, but **not** myapp:read:all — use `myapp:**` for that. Partial wildcards like `myapp:re*` or `myapp:r*d` match myapp:read. The same applies to path-based scopes: `myapp:path:/api/*` matches myapp:path:/api/clients but not myapp:path:/api/v2/clients — use `myapp:path:/api/**` to span path segments.
 
 ## Effective permissions
 
@@ -67,4 +87,10 @@ Require any scope under myapp:
 
 ```text
 ?perm=myapp:*
+```
+
+Require myapp:login and either myapp:read or myapp:write:
+
+```text
+?perm=myapp:login&perm=myapp:read|myapp:write
 ```

@@ -22,7 +22,7 @@ from paskia import authcode
 from paskia.authsession import EXPIRES
 from paskia.db import delete_session
 from paskia.db.structs import Client
-from paskia.util import avatar, hostutil, oidjwt
+from paskia.util import avatar, hostutil, oidjwt, permutil
 from paskia.util.passphrase import generate
 from tests.conftest import auth_headers, create_test_image_bytes, create_test_session
 
@@ -231,6 +231,209 @@ class TestForwardEndpoint:
         data = response.json()
         assert "auth" in data
         assert data["auth"]["mode"] == "forbidden"
+
+
+class TestPermOrSemantics:
+    """Tests for OR ('|') semantics and strict parsing of the perm argument"""
+
+    @pytest.mark.asyncio
+    async def test_or_alternative_matches(
+        self, client: httpx.AsyncClient, session_token: str
+    ):
+        """Group is satisfied when any alternative matches."""
+        response = await client.post(
+            "/auth/api/validate?perm=missing:scope|auth:admin",
+            headers={**auth_headers(session_token), "Host": "localhost:4401"},
+        )
+        assert response.status_code == 200
+
+    @pytest.mark.asyncio
+    async def test_or_no_alternative_matches(
+        self, client: httpx.AsyncClient, session_token: str
+    ):
+        """Group fails when no alternative matches."""
+        response = await client.post(
+            "/auth/api/validate?perm=missing:a|missing:b",
+            headers={**auth_headers(session_token), "Host": "localhost:4401"},
+        )
+        assert response.status_code == 403
+
+    @pytest.mark.asyncio
+    async def test_or_combined_with_and_group(
+        self, client: httpx.AsyncClient, session_token: str
+    ):
+        """Space-separated groups are ANDed with OR groups."""
+        response = await client.post(
+            "/auth/api/validate?perm=auth:admin|missing:a+missing:b",
+            headers={**auth_headers(session_token), "Host": "localhost:4401"},
+        )
+        assert response.status_code == 403
+
+    @pytest.mark.asyncio
+    async def test_multiple_perm_args_and_semantics(
+        self, client: httpx.AsyncClient, session_token: str
+    ):
+        """Repeated perm arguments remain ANDed."""
+        ok = await client.post(
+            "/auth/api/validate?perm=auth:admin&perm=auth:admin|missing:a",
+            headers={**auth_headers(session_token), "Host": "localhost:4401"},
+        )
+        assert ok.status_code == 200
+        denied = await client.post(
+            "/auth/api/validate?perm=auth:admin&perm=missing:a",
+            headers={**auth_headers(session_token), "Host": "localhost:4401"},
+        )
+        assert denied.status_code == 403
+
+    @pytest.mark.asyncio
+    async def test_forward_or_semantics(
+        self, client: httpx.AsyncClient, session_token: str
+    ):
+        """Forward endpoint supports OR semantics too."""
+        response = await client.get(
+            "/auth/api/forward?perm=missing:a|auth:admin",
+            headers={**auth_headers(session_token), "Host": "localhost:4401"},
+        )
+        assert response.status_code == 204
+
+    @pytest.mark.asyncio
+    async def test_extra_spaces_tolerated(
+        self, client: httpx.AsyncClient, session_token: str
+    ):
+        """Leading, trailing and repeated spaces between groups are tolerated."""
+        response = await client.post(
+            "/auth/api/validate?perm=%20auth:admin%20%20",
+            headers={**auth_headers(session_token), "Host": "localhost:4401"},
+        )
+        assert response.status_code == 200
+
+    @pytest.mark.asyncio
+    async def test_pipe_in_separate_arg_does_not_weaken(
+        self, client: httpx.AsyncClient, session_token: str
+    ):
+        """perm=auth:admin&perm=|bar is a syntax error, not an OR for auth:admin."""
+        response = await client.post(
+            "/auth/api/validate?perm=auth:admin&perm=|bar",
+            headers={**auth_headers(session_token), "Host": "localhost:4401"},
+        )
+        assert response.status_code == 400
+
+    @pytest.mark.asyncio
+    async def test_forward_400_identifies_origin_without_echoing_args(
+        self, client: httpx.AsyncClient, session_token: str
+    ):
+        """Forward 400 names the endpoint and does not echo query args."""
+        response = await client.get(
+            "/auth/api/forward?perm=a||b",
+            headers={**auth_headers(session_token), "Host": "localhost:4401"},
+        )
+        assert response.status_code == 400
+        detail = response.json()["detail"]
+        assert detail.startswith("/auth/api/forward")
+        assert "a||b" not in detail
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "query",
+        [
+            "perm=",  # empty value
+            "perm=a||b",  # empty alternative
+            "perm=|a",  # leading pipe
+            "perm=a|",  # trailing pipe
+            "perm=a%20|%20b",  # spaces around pipe
+            "perm=a%2Bb",  # percent-encoded plus
+            "perm=a,b",  # character not allowed in scopes
+        ],
+    )
+    async def test_invalid_perm_syntax_returns_400(
+        self, client: httpx.AsyncClient, session_token: str, query: str
+    ):
+        """Out-of-spec perm values are rejected with 400, not guessed at."""
+        for path in ("/auth/api/validate", "/auth/api/forward"):
+            if path.endswith("validate"):
+                response = await client.post(
+                    f"{path}?{query}",
+                    headers={**auth_headers(session_token), "Host": "localhost:4401"},
+                )
+            else:
+                response = await client.get(
+                    f"{path}?{query}",
+                    headers={**auth_headers(session_token), "Host": "localhost:4401"},
+                )
+            assert response.status_code == 400, f"{path}?{query}"
+
+
+class TestPermParsing:
+    """Unit tests for permutil.parse_perm_args"""
+
+    def test_single_scope(self):
+        assert permutil.parse_perm_args(["auth:admin"]) == [("auth:admin",)]
+
+    def test_space_separated_groups(self):
+        assert permutil.parse_perm_args(["a b", "c"]) == [("a",), ("b",), ("c",)]
+
+    def test_or_group(self):
+        assert permutil.parse_perm_args(["a|b c"]) == [("a", "b"), ("c",)]
+
+    def test_wildcard_allowed(self):
+        assert permutil.parse_perm_args(["myapp:*|other"]) == [("myapp:*", "other")]
+
+    def test_extra_spaces_tolerated(self):
+        assert permutil.parse_perm_args([" a  b ", "c"]) == [("a",), ("b",), ("c",)]
+
+    @pytest.mark.parametrize(
+        "values",
+        [
+            [""],
+            ["a||b"],
+            ["a | b"],
+            ["a| b"],
+            ["a+b"],
+            ["a,b"],
+            ["a\tb"],
+        ],
+    )
+    def test_syntax_errors(self, values):
+        with pytest.raises(ValueError):
+            permutil.parse_perm_args(values)
+
+
+class TestPermWildcards:
+    """Unit tests for filename-like wildcard semantics in scope patterns"""
+
+    @pytest.mark.parametrize(
+        "pattern,scope,expected",
+        [
+            ("myapp:*", "myapp:read", True),
+            ("myapp:*", "myapp:read:all", False),  # * stays within one element
+            ("myapp:**", "myapp:read:all", True),  # ** crosses elements
+            ("myapp:**", "myapp:", True),
+            ("myapp:re*", "myapp:read", True),  # partial element, suffix wildcard
+            ("myapp:*ad", "myapp:read", True),  # prefix wildcard
+            ("myapp:r*d", "myapp:read", True),  # text on both sides
+            ("myapp:r*d", "myapp:redo", False),
+            ("*:read", "myapp:read", True),
+            ("*", "myapp:read", False),
+            ("**", "myapp:read", True),
+            ("myapp:*:all", "myapp:read:all", True),
+            ("myapp:*:all", "myapp:read:write:all", False),
+            # regex metacharacters valid in scopes are matched literally
+            ("my.app:*", "my.app:read", True),
+            ("my.app:*", "myXapp:read", False),
+            ("myapp:v1.*", "myapp:v1.2", True),
+            ("myapp:v1.*", "myapp:v1x2", False),
+            ("my-app_*:~*", "my-app_x:~tmp", True),
+            # slash is a literal separator; * crosses neither / nor :
+            ("myapp:path:/api/clients:write", "myapp:path:/api/clients:write", True),
+            ("myapp:path:*", "myapp:path:/api/clients", False),
+            ("myapp:path:**", "myapp:path:/api/clients", True),
+            ("myapp:path:/api/*:write", "myapp:path:/api/clients:write", True),
+            ("myapp:path:/api/*:write", "myapp:path:/api/v2/clients:write", False),
+            ("myapp:path:/api/**:write", "myapp:path:/api/v2/clients:write", True),
+        ],
+    )
+    def test_wildcard_matching(self, pattern, scope, expected):
+        assert permutil.has_all_scopes_groups({scope}, [(pattern,)]) is expected
 
 
 class TestLogoutEndpoint:

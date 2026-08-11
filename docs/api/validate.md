@@ -55,10 +55,11 @@ The endpoint always responds with JSON.
 
 If the response includes a Set-Cookie header, the session has been renewed (renewed is true) and you should forward that cookie to the client so the browser updates its expiry. Not forwarding it means the session lifetime is not extended, so the user may need to re-authenticate sooner. Renewals are throttled, so frequent calls usually return renewed: false with no Set-Cookie.
 
-### Failure (401 / 403)
+### Failure (400 / 401 / 403)
 
 | Status | Meaning |
 |---|---|
+| 400 | Malformed perm argument (see [perm](perm.md#syntax-errors)). |
 | 401 | Session missing, expired, or max_age not satisfied. The response body includes auth metadata for the login/reauth iframe. |
 | 403 | Session is valid but one or more requested permissions are missing. |
 

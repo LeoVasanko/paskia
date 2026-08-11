@@ -1,4 +1,5 @@
 import logging
+from collections.abc import Callable
 
 from fastapi import HTTPException
 
@@ -54,12 +55,16 @@ async def auth_error_content(exc: AuthException) -> dict:
 
 async def verify(
     auth: str | None,
-    perm: list[str],
-    match=permutil.has_all,
+    perm: list[str] | list[tuple[str, ...]],
+    match: "Callable | None" = None,
     host: str | None = None,
     max_age: str | None = None,
 ):
     """Validate session token and optional list of required permissions.
+
+    Each perm entry is either a scope pattern or a tuple of alternative
+    scope patterns (OR semantics within a group). All entries must be
+    satisfied (AND semantics).
 
     Returns the session context.
 
@@ -97,15 +102,21 @@ async def verify(
             # Invalid max_age format - log but don't fail the request
             logger.warning(f"Invalid max_age format '{max_age}': {e}")
 
-    if not match(ctx, perm):
+    groups = [(p,) if isinstance(p, str) else tuple(p) for p in perm]
+    ok = match(ctx, perm) if match else permutil.has_all_groups(ctx, groups)
+    if not ok:
         effective_scopes = (
             {p.scope for p in (ctx.permissions or [])}
             if ctx.permissions
             else set(ctx.role.permissions or [])
         )
-        missing = sorted(set(perm) - effective_scopes)
+        missing = [
+            "|".join(g)
+            for g in groups
+            if not permutil.group_satisfied(effective_scopes, g)
+        ]
         log_permission_denied(
-            ctx, perm, missing, require_all=(match == permutil.has_all)
+            ctx, ["|".join(g) for g in groups], missing, require_all=True
         )
         raise AuthException(
             status_code=403,

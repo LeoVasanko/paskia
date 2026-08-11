@@ -34,10 +34,11 @@ Connection hop-by-hop headers (Connection, Upgrade, Transfer-Encoding, etc.) mus
 
 No response body. Only [Remote headers](../Headers.md) are set on the response and your proxy should forward them to the backend request. The headers, not a response body, are the whole point of this endpoint: they are how the authenticated identity reaches the protected service, which can trust them because it is only reachable through the proxy.
 
-### Failure (401 / 403)
+### Failure (400 / 401 / 403)
 
 | Status | Meaning |
 |---|---|
+| 400 | Malformed perm argument (see [perm](perm.md#syntax-errors)). The error detail names `/auth/api/forward` as the origin and never echoes query arguments. |
 | 401 | Session missing or expired, or max_age not satisfied — the user needs to (re)authenticate. |
 | 403 | Requested permissions are missing — the forbidden flow allows signing in with another account. |
 

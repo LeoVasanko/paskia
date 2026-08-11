@@ -79,10 +79,22 @@ async def auth_exception_handler(_request: Request, exc: authz.AuthException):
 
 @app.exception_handler(Exception)
 async def general_exception_handler(
-    _request: Request, exc: Exception
+    request: Request, exc: Exception
 ):  # pragma: no cover
     logging.exception("Unhandled exception in API app")
-    return JSONResponse(status_code=500, content={"detail": "Internal server error"})
+    # Identify the origin endpoint for proxied clients (e.g. forward auth)
+    return JSONResponse(
+        status_code=500,
+        content={"detail": f"{request.url.path}: Internal server error"},
+    )
+
+
+def _parse_perm(perm: list[str]) -> list[tuple[str, ...]]:
+    """Parse perm query arguments into groups of OR alternatives (400 on syntax error)."""
+    try:
+        return permutil.parse_perm_args(perm)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @app.post("/validate")
@@ -94,10 +106,11 @@ async def validate_token(
     auth=AUTH_COOKIE,
 ):
     """Validate session and return context. Refreshes session expiry."""
+    perm_groups = _parse_perm(perm)
     try:
         ctx = await authz.verify(
             auth,
-            " ".join(perm).split(),
+            perm_groups,
             host=request.headers.get("host"),
             max_age=max_age,
         )
@@ -137,7 +150,8 @@ async def check_user(
 
     Query Params:
     - user: UUID of the user to check.
-    - perm: repeated permission scope the user must possess (ALL required).
+    - perm: repeated permission scope the user must possess (ALL required;
+            separate alternatives with '|' for OR semantics within a group).
 
     Returns 200 with valid=True/False and the user's effective permissions,
     scoped to the requesting host (domain-restricted permissions are filtered).
@@ -168,9 +182,9 @@ async def check_user(
             continue
         effective_perms.append(p)
 
-    required = " ".join(perm).split()
+    required_groups = _parse_perm(perm)
     effective_scopes = {p.scope for p in effective_perms}
-    valid = permutil.has_all_scopes(effective_scopes, required)
+    valid = permutil.has_all_scopes_groups(effective_scopes, required_groups)
 
     ctx = ApiSessionContext(
         user=ApiUserContext(uuid=u.uuid, display_name=u.display_name, theme=u.theme),
@@ -192,7 +206,8 @@ async def forward_authentication(
     """Forward auth validation for Caddy/Nginx.
 
     Query Params:
-    - perm: repeated permission IDs the authenticated user must possess (ALL required).
+    - perm: repeated permission scopes the authenticated user must possess (ALL
+            required; separate alternatives with '|' for OR semantics within a group).
     - max_age: maximum age of authentication (e.g., "5m", "1h", "30s"). If the session
                is older than this, user must re-authenticate.
 
@@ -213,9 +228,16 @@ async def forward_authentication(
     _set_log_extra(request, forwarded)
 
     try:
+        perm_groups = permutil.parse_perm_args(perm)
+    except ValueError:
+        # Identify the error origin for proxied clients; do not echo query args
+        raise HTTPException(
+            status_code=400, detail="/auth/api/forward: invalid perm argument"
+        )
+    try:
         ctx = await authz.verify(
             auth,
-            " ".join(perm).split(),
+            perm_groups,
             host=request.headers.get("host"),
             max_age=max_age,
         )
