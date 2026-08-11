@@ -44,7 +44,7 @@ def log_reset_link(passphrase: str, message: str | None = None) -> str:
 
 
 def bootstrap(
-    data: "DB",
+    data: DB,
     org_name: str = "Organization",
     admin_name: str = "Admin",
     reset_passphrase: str | None = None,

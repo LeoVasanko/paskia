@@ -422,7 +422,7 @@ async def userinfo(
     # Get user
     try:
         user_uuid = UUID(payload["sub"])
-    except (KeyError, ValueError):
+    except KeyError, ValueError:
         raise HTTPException(401, "Invalid token")
 
     user = db.data().users.get(user_uuid)

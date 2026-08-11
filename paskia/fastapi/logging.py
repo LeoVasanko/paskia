@@ -223,7 +223,7 @@ def log_ws_close(ws_id: int, close_code: int | None, duration: float) -> None:
 
 
 def log_permission_denied(
-    ctx: "SessionContext", required: list[str], missing: list[str], *, require_all: bool
+    ctx: SessionContext, required: list[str], missing: list[str], *, require_all: bool
 ) -> None:
     """Log permission denied with org, role, user and highlighted missing scopes."""
     missing_set = set(missing)

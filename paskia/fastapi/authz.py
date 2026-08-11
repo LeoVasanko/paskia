@@ -56,7 +56,7 @@ async def auth_error_content(exc: AuthException) -> dict:
 async def verify(
     auth: str | None,
     perm: list[str] | list[tuple[str, ...]],
-    match: "Callable | None" = None,
+    match: Callable | None = None,
     host: str | None = None,
     max_age: str | None = None,
 ):

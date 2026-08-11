@@ -36,7 +36,7 @@ def reset_expires() -> datetime:
     return datetime.now(UTC) + RESET_LIFETIME
 
 
-def get_reset(token: str) -> "ResetToken":
+def get_reset(token: str) -> ResetToken:
     """Validate a credential reset token."""
 
     record = ResetToken.by_passphrase(token)

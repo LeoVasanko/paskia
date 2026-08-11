@@ -72,7 +72,7 @@ def event_loop():
 
 
 @pytest_asyncio.fixture(scope="function")
-async def test_db() -> AsyncGenerator[DB, None]:
+async def test_db() -> AsyncGenerator[DB]:
     """Create a temporary JSONL database for testing using kanta.
 
     Uses a kanta bootstrap callback to properly initialize the database with:
@@ -248,7 +248,7 @@ async def reset_token(test_db: DB, test_user: User, test_credential: Credential)
 @pytest_asyncio.fixture(scope="function")
 async def client(
     test_db: DB, passkey_instance: Passkey
-) -> AsyncGenerator[httpx.AsyncClient, None]:
+) -> AsyncGenerator[httpx.AsyncClient]:
     """Create an async test client for the FastAPI app.
 
     Note: We import the app inside the fixture to ensure globals are

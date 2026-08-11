@@ -32,7 +32,7 @@ class ProcessGroup:
         return proc
 
     async def wait(
-        self, *waitables: "asyncio.subprocess.Process | Coroutine[Any, Any, Any]"
+        self, *waitables: asyncio.subprocess.Process | Coroutine[Any, Any, Any]
     ) -> None:
         """Wait for processes/coroutines to complete, raise SystemExit on failure."""
 

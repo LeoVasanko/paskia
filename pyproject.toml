@@ -11,7 +11,7 @@ keywords = [ "forward_auth", "auth_request", "FastAPI" ]
 authors = [
     {name = "Leo Vasanko"},
 ]
-requires-python = ">=3.11"
+requires-python = ">=3.14"
 dependencies = [
     "fastapi[standard]>=0.129.0",
     "websockets>=16.0",

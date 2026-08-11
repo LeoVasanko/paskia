@@ -22,7 +22,7 @@ class RuntimeConfig(msgspec.Struct):
 
 
 @lru_cache(maxsize=1)
-def _load_config() -> "RuntimeConfig | None":
+def _load_config() -> RuntimeConfig | None:
     """Load RuntimeConfig from PASKIA_CONFIG env var."""
     config_json = os.getenv("PASKIA_CONFIG")
     if not config_json:
@@ -31,7 +31,7 @@ def _load_config() -> "RuntimeConfig | None":
     return msgspec.json.decode(config_json.encode(), type=RuntimeConfig)
 
 
-def config() -> "RuntimeConfig | None":
+def config() -> RuntimeConfig | None:
     """Return cached runtime config loaded from PASKIA_CONFIG."""
     return _load_config()
 

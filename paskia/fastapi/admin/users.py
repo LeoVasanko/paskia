@@ -65,7 +65,7 @@ async def admin_update_user_role(
         raise ValueError("role_uuid is required")
     try:
         new_role_uuid = UUID(role_uuid_str)
-    except (ValueError, TypeError):
+    except ValueError, TypeError:
         raise ValueError("Invalid role UUID")
     new_role = db.data().roles.get(new_role_uuid)
     if not new_role or new_role.org_uuid != user.org.uuid:

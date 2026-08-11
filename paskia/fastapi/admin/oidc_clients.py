@@ -54,7 +54,7 @@ async def admin_create_oidc_client(
 
     try:
         client_uuid = UUID(client_id)
-    except (ValueError, AttributeError):
+    except ValueError, AttributeError:
         raise ValueError("client_id must be a valid UUID")
 
     try:

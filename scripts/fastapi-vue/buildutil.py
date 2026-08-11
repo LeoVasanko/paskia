@@ -43,7 +43,7 @@ def _check_node_version(node_path: str) -> None:
             raise RuntimeError(
                 f"Node.js {version_str} found, but v20+ required (install with nvm)"
             )
-    except (subprocess.CalledProcessError, FileNotFoundError, ValueError):
+    except subprocess.CalledProcessError, FileNotFoundError, ValueError:
         pass
     raise RuntimeError("Could not determine Node.js version")
 
