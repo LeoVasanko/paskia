@@ -122,7 +122,7 @@ This is useful for:
 - Background jobs that need to verify a stored session
 - Check extra permissions, get user context or renew session
 
-Your backend can validate sessions directly by calling Paskia's validate endpoint [`/auth/api/validate`](api/validate.md). It generally expects client headers proxied as is, while on the URL you can specify exact requirements.
+Your backend can validate sessions directly by calling Paskia's validate endpoint [`/auth/api/validate`](api/validate.md). It generally expects client headers proxied as is, while on the URL you can specify exact requirements. To verify a session without extending its lifetime or updating its IP / user-agent, pass `renew=0`.
 
 Usually it is sufficient to simply forward the headers the client sent, assuming your proxy already preserved `Host` and set `X-Forwarded-For` (otherwise set them here with original host and IP). `User-Agent` should also be forwarded if available, omitted if not: do not let your backend HTTP client add its own header.
 

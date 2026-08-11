@@ -18,11 +18,13 @@ from uuid import UUID
 import httpx
 import pytest
 
-from paskia import authcode
+from paskia import authcode, db
 from paskia.authsession import EXPIRES
 from paskia.db import delete_session
 from paskia.db.structs import Client
+from paskia.fastapi.api import _REFRESH_INTERVAL
 from paskia.util import avatar, hostutil, oidjwt, permutil
+from paskia.util.crypto import hash_secret
 from paskia.util.passphrase import generate
 from tests.conftest import auth_headers, create_test_image_bytes, create_test_session
 
@@ -924,3 +926,53 @@ class TestValidateWithMaxAge:
         # This exercises the max_age path - but isn't defined in validate
         # Actually validate doesn't have max_age - this tests that unknown params are ignored
         assert response.status_code == 200
+
+
+class TestValidateRenewParameter:
+    """Tests for the renew query parameter on /auth/api/validate."""
+
+    @pytest.mark.asyncio
+    async def test_validate_renew_false_skips_renewal(
+        self, client: httpx.AsyncClient, session_token: str, test_db
+    ):
+        """renew=0 should skip session renewal and leave metadata untouched."""
+        key = hash_secret("cookie", session_token)
+        old_validated = datetime.now(UTC) - _REFRESH_INTERVAL - timedelta(minutes=1)
+        db.update_session(key, validated=old_validated)
+        original_ua = test_db.sessions[key].user_agent
+
+        response = await client.post(
+            "/auth/api/validate?renew=0",
+            headers={
+                **auth_headers(session_token),
+                "Host": "localhost:4401",
+                "User-Agent": "different-ua",
+            },
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["valid"] is True
+        assert data["renewed"] is False
+        assert "set-cookie" not in response.headers
+        assert test_db.sessions[key].validated == old_validated
+        assert test_db.sessions[key].user_agent == original_ua
+
+    @pytest.mark.asyncio
+    async def test_validate_renew_true_renews_old_session(
+        self, client: httpx.AsyncClient, session_token: str, test_db
+    ):
+        """Explicit renew=1 should renew an aged session and return Set-Cookie."""
+        key = hash_secret("cookie", session_token)
+        old_validated = datetime.now(UTC) - _REFRESH_INTERVAL - timedelta(minutes=1)
+        db.update_session(key, validated=old_validated)
+
+        response = await client.post(
+            "/auth/api/validate?renew=1",
+            headers={**auth_headers(session_token), "Host": "localhost:4401"},
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["valid"] is True
+        assert data["renewed"] is True
+        assert "set-cookie" in response.headers
+        assert test_db.sessions[key].validated > old_validated

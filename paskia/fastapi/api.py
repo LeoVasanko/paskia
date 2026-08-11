@@ -103,9 +103,10 @@ async def validate_token(
     response: Response,
     perm: list[str] = Query([]),
     max_age: str | None = Query(None),
+    renew: bool = Query(True),
     auth=AUTH_COOKIE,
 ):
-    """Validate session and return context. Refreshes session expiry."""
+    """Validate session and return context. Refreshes session expiry by default."""
     perm_groups = _parse_perm(perm)
     try:
         ctx = await authz.verify(
@@ -118,7 +119,7 @@ async def validate_token(
         # Global handler will clear cookie if 401
         raise
     renewed = False
-    if auth:
+    if auth and renew:
         consumed = datetime.now(UTC) - ctx.session.validated
         if not timedelta(0) < consumed < _REFRESH_INTERVAL:
             db.update_session(
@@ -128,16 +129,18 @@ async def validate_token(
                 validated=datetime.now(UTC),
                 ctx=ctx,
             )
-            session.set_session_cookie(response, auth)
             renewed = True
         _set_log_extra(request, ctx.session.key)
-    return MsgspecResponse(
+    resp = MsgspecResponse(
         ApiValidateResponse(
             valid=True,
             renewed=renewed,
             ctx=userinfo.build_session_context(ctx),
         )
     )
+    if renewed:
+        session.set_session_cookie(resp, auth)
+    return resp
 
 
 @app.get("/check")

@@ -12,6 +12,7 @@ See also the [API overview](../API.md) and the [integration guide](../Integratio
 |-----------|-------------|
 | perm | Required permissions. See the [perm argument](perm.md). |
 | max_age | Require recent passkey use. See the [max_age argument](max-age.md). |
+| renew | Pass `renew=0` to skip renewal: does no session updates, auth check only. |
 
 ## Request headers
 
@@ -19,7 +20,7 @@ See also the [API overview](../API.md) and the [integration guide](../Integratio
 |---|---|---|
 | Host | Forwarded directly from the client | Verifying the session's bound host |
 | Cookie | Forwarded directly or just cookie `__Host-paskia` | Session ID |
-| X-Forwarded-For | Real client IP | Recorded in session data instead of the backend/proxy IP; requires FORWARDED_ALLOW_IPS to trust the immediate peer |
+| X-Forwarded-For | Real client IP | Recorded in logs and session data instead of the backend/proxy IP; requires FORWARDED_ALLOW_IPS to trust the immediate peer |
 | User-Agent | Forward the original client UA if available; do not let your backend client add its own default | Recorded in session data only when the header is present; omitting it preserves the existing value |
 
 See [integration documentation for backend validate requests](../Integration.md) for more detailed instructions, in particular for forwarding of client-provided headers.

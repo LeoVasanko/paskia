@@ -14,12 +14,12 @@ For integrating Paskia with your app frontend, see [integration](Integration.md)
 
 ### Public JSON API: /auth/api/*
 
-| Method | Path | Used for | Responses |
+| Method | Path | Used for | Expected responses |
 |---:|---|---|---|
 | GET | /auth/api/settings | Paskia configuration: RP info, base paths, session cookie name | 200 |
 | GET | /auth/api/user-info | Full user profile: info, credentials, sessions, permissions | 200/401 |
 | POST | /auth/api/logout | Terminate session and delete session cookie on the current host | 200 |
-| POST | [/auth/api/validate](api/validate.md) | Validate and renew the session cookie; query [perm](api/perm.md), [max_age](api/max-age.md) | 200/401/403 |
+| POST | [/auth/api/validate](api/validate.md) | Validate and renew the session cookie; query [perm](api/perm.md), [max_age](api/max-age.md), [renew](api/validate.md#query-parameters) | 200/401/403 |
 | GET | [/auth/api/forward](api/forward.md) | Forward-auth with reverse proxies; see [proxy guides](proxy/index.md), query [perm](api/perm.md), [max_age](api/max-age.md) | 204/401/403 empty, json or html|
 
 ### User JSON API: /auth/api/user/*
