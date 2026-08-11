@@ -88,20 +88,6 @@ async def verify(
     # User's theme preference for iframe (only if explicitly set)
     user_theme = ctx.user.theme if ctx.user.theme else None
 
-    # Check max_age requirement if specified
-    if max_age:
-        try:
-            if not sessionutil.check_session_age(ctx, max_age):
-                raise AuthException(
-                    status_code=401,
-                    detail="Additional authentication required",
-                    mode="reauth",
-                    theme=user_theme,
-                )
-        except ValueError as e:
-            # Invalid max_age format - log but don't fail the request
-            logger.warning(f"Invalid max_age format '{max_age}': {e}")
-
     groups = [(p,) if isinstance(p, str) else tuple(p) for p in perm]
     ok = match(ctx, perm) if match else permutil.has_all_groups(ctx, groups)
     if not ok:
@@ -124,5 +110,19 @@ async def verify(
             detail="Permission required",
             theme=user_theme,
         )
+
+    # Check max_age requirement if specified
+    if max_age:
+        try:
+            if not sessionutil.check_session_age(ctx, max_age):
+                raise AuthException(
+                    status_code=401,
+                    detail="Additional authentication required",
+                    mode="reauth",
+                    theme=user_theme,
+                )
+        except ValueError as e:
+            # Invalid max_age format - log but don't fail the request
+            logger.warning(f"Invalid max_age format '{max_age}': {e}")
 
     return ctx
