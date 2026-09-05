@@ -23,6 +23,7 @@ No matter which proxy you use, the auth subrequest must:
 2. Include the query parameters Paskia needs for access control:
    - `perm` — required permission scope, repeatable (e.g. `perm=myapp:login`). See [perm argument](../api/perm.md).
    - `max_age` — how recently the user must have authenticated (e.g. `max_age=5min`). See [max_age argument](../api/max-age.md).
+   - `public=1` — optional; allow public access (anonymous visitors and users missing `perm` pass through, marked with a `Remote-Public` header instead of a 401/403). See [public access](../api/forward.md#public-access).
 3. Forward these request headers from the original client request:
    - `Host` — the site the user is visiting.
    - `Cookie` — the session cookie, normally `__Host-paskia`.
@@ -30,8 +31,8 @@ No matter which proxy you use, the auth subrequest must:
    - `X-Forwarded-Uri` — the original path and query string (e.g. `/reports?foo=bar`).
    - `Accept` — decides whether a 401/403 response should be HTML (browser) or JSON (API/fetch).
 4. Strip hop-by-hop headers (`Connection`, `Upgrade`, `Transfer-Encoding`, `Keep-Alive`, `Proxy-Connection`, `TE`) from the auth subrequest. The auth check is a plain HTTP request and must not carry WebSocket/body framing headers.
-5. On a `204 No Content` response, copy the `Remote-*` response headers to the request that is forwarded to the protected backend. The headers are the whole point of the auth check.
-6. On a 401/403 response, send Paskia's response back to the client without contacting the protected backend.
+5. On a `204 No Content` response, copy the `Remote-*` response headers to the request that is forwarded to the protected backend. The headers are the whole point of the auth check. With `public=1`, also copy `Remote-Public` — it marks whether the request is `authenticated`, `forbidden` or `anonymous`, and the backend must check it.
+6. On a 401/403 response, send Paskia's response back to the client without contacting the protected backend. (With `public=1` these only occur for reauth requirements.)
 7. Also proxy the `/auth/` path prefix to Paskia so the login/profile UI, API endpoints, and WebSockets are reachable. Paskia's WebSocket endpoints need `Upgrade` and `Connection` headers passed through for that path.
 
 ## Backend usage

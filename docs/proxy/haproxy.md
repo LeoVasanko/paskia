@@ -106,6 +106,18 @@ frontend app
 
 See [perm argument](../api/perm.md) and [max_age argument](../api/max-age.md) for query parameter syntax.
 
+## Public access
+
+For routes where anonymous visitors are allowed but logged-in users should still be identified, add `public=1` to the auth subrequest path:
+
+```haproxy
+http-request lua.auth-intercept paskia_auth /auth/api/forward?public=1 GET Host,Cookie,Accept,X-Forwarded-Method,X-Forwarded-Uri Remote-* *
+# or with a permission the backend will check itself:
+http-request lua.auth-intercept paskia_auth /auth/api/forward?public=1&perm=myapp:reports GET Host,Cookie,Accept,X-Forwarded-Method,X-Forwarded-Uri Remote-* *
+```
+
+The `Remote-*` success-headers glob already copies the `Remote-Public` header that marks each request as `anonymous`, `forbidden` or `authenticated`. With `public=1` the backend always runs and must check `Remote-Public` before treating the request as authorized; only reauth (`max_age`) still returns the 401 auth flow, so the `http-request deny` safety net simply never triggers on public routes. See [public access](../api/forward.md#public-access) and [trusted headers](../Headers.md#public-access).
+
 ## Notes
 
 - The Lua script strips the request body from the auth subrequest, so Paskia's `/auth/api/forward` will only see the headers.

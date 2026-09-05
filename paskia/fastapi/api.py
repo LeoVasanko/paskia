@@ -198,12 +198,31 @@ async def check_user(
     return MsgspecResponse(ApiCheckUserResponse(valid=valid, ctx=ctx))
 
 
+def _remote_headers(ctx) -> dict[str, str]:
+    """Build the Remote-* identity headers for a verified session context."""
+    role_permissions = {p.scope for p in ctx.permissions} if ctx.permissions else set()
+    return {
+        "Remote-User": str(ctx.user.uuid),
+        "Remote-Name": ctx.user.display_name,
+        "Remote-Groups": ",".join(sorted(role_permissions)),
+        "Remote-Org": str(ctx.org.uuid),
+        "Remote-Org-Name": ctx.org.display_name,
+        "Remote-Role": str(ctx.role.uuid),
+        "Remote-Role-Name": ctx.role.display_name,
+        "Remote-Session-Expires": (
+            (ctx.session.validated + EXPIRES).isoformat().replace("+00:00", "Z")
+        ),
+        "Remote-Credential": str(ctx.session.credential),
+    }
+
+
 @app.get("/forward")
 async def forward_authentication(
     request: Request,
     response: Response,
     perm: list[str] = Query([]),
     max_age: str | None = Query(None),
+    public: bool = Query(False),
     auth=AUTH_COOKIE,
 ):
     """Forward auth validation for Caddy/Nginx.
@@ -213,6 +232,11 @@ async def forward_authentication(
             required; separate alternatives with '|' for OR semantics within a group).
     - max_age: maximum age of authentication (e.g., "5m", "1h", "30s"). If the session
                is older than this, user must re-authenticate.
+    - public: allow public access — instead of 401 (no/expired session) or 403
+              (permission denied), return 204 with a Remote-Public header
+              (anonymous/forbidden) so the backend can decide. Reauth (max_age)
+              still requires the auth flow. Successful checks are marked
+              Remote-Public: authenticated.
 
     Success: 204 No Content with Remote-* headers describing the authenticated user.
     Failure (unauthenticated / unauthorized): 4xx response.
@@ -245,26 +269,21 @@ async def forward_authentication(
             max_age=max_age,
         )
         _set_log_extra(request, forwarded, ctx.session.key)
-        # Build permission scopes for Remote-Groups header
-        role_permissions = (
-            {p.scope for p in ctx.permissions} if ctx.permissions else set()
-        )
-
-        remote_headers: dict[str, str] = {
-            "Remote-User": str(ctx.user.uuid),
-            "Remote-Name": ctx.user.display_name,
-            "Remote-Groups": ",".join(sorted(role_permissions)),
-            "Remote-Org": str(ctx.org.uuid),
-            "Remote-Org-Name": ctx.org.display_name,
-            "Remote-Role": str(ctx.role.uuid),
-            "Remote-Role-Name": ctx.role.display_name,
-            "Remote-Session-Expires": (
-                (ctx.session.validated + EXPIRES).isoformat().replace("+00:00", "Z")
-            ),
-            "Remote-Credential": str(ctx.session.credential),
-        }
+        remote_headers = _remote_headers(ctx)
+        if public:
+            remote_headers["Remote-Public"] = "authenticated"
         return Response(status_code=204, headers=remote_headers)
     except authz.AuthException as e:
+        # Public access: pass the request through instead of an auth flow.
+        # Reauth is never soft-passed: an authenticated user was explicitly asked
+        # for fresh verification (log out first to use the public mode).
+        if public and e.mode in ("login", "forbidden"):
+            _set_log_extra(request, forwarded, f"public:{e.mode}")
+            if e.mode == "forbidden" and e.ctx is not None:
+                headers = {**_remote_headers(e.ctx), "Remote-Public": "forbidden"}
+            else:
+                headers = {"Remote-Public": "anonymous"}
+            return Response(status_code=204, headers=headers)
         # Clear cookie only if session is invalid (not for reauth)
         if e.clear_session:
             session.clear_session_cookie(response)

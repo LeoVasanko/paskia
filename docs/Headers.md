@@ -13,6 +13,17 @@
 | Remote-Groups | Permissions the user has, comma separated | **auth:admin,yourapp:reports** |
 | Remote-Session-Expires | Session expiry timestamp (ISO 8601 UTC) | **2030-12-31T23:59:59Z** |
 | Remote-Credential | Credential UUID | Identifier for the sign-in passkey (string) |
+| Remote-Public | Public-access marker, only present on routes using [`public=1`](api/forward.md#public-access) | **authenticated**, **forbidden** or **anonymous** |
+
+### Public access
+
+On routes configured with `public=1`, every forwarded request carries `Remote-Public` and the backend must check it before treating the request as authorized:
+
+- `authenticated` — the user has everything the route asked for; full `Remote-*` headers.
+- `forbidden` — the user is logged in but the route's `perm` check failed. Full identity headers are sent, including `Remote-Groups` — it is trustworthy, it just lacks the requested permission.
+- `anonymous` — no valid session; no identity headers are sent.
+
+Without `public=1` the header is absent and every request reaching the backend is fully authorized.
 
 Similar headers are also used by other authentication systems like [Authelia](https://www.authelia.com/integration/trusted-header-sso/introduction/) to signal the backend application information about the signed in user.
 

@@ -85,6 +85,7 @@ authResponseHeaders:
   - Remote-Role-Name
   - Remote-Session-Expires
   - Remote-Credential
+  - Remote-Public
 ```
 
 ## Proxying `/auth/` to Paskia
@@ -118,6 +119,17 @@ labels:
   - "traefik.http.middlewares.paskia-auth.forwardauth.authResponseHeadersRegex=^Remote-"
   - "traefik.http.middlewares.paskia-auth.forwardauth.authRequestHeaders=Host,Cookie,Accept,X-Forwarded-Method,X-Forwarded-Uri"
 ```
+
+## Public access
+
+For routes where anonymous visitors are allowed but logged-in users should still be identified, add `public=1` to the middleware `address`:
+
+```yaml
+address: "http://localhost:4401/auth/api/forward?public=1"
+address: "http://localhost:4401/auth/api/forward?public=1&perm=myapp:reports"
+```
+
+The auth check then always returns 204 (except reauth with `max_age`, which still returns the 401 auth flow), and the `Remote-Public` header — copied by `authResponseHeadersRegex: "^Remote-"` — marks each request as `anonymous`, `forbidden` or `authenticated`. The backend always runs and must check `Remote-Public` before treating the request as authorized. See [public access](../api/forward.md#public-access) and [trusted headers](../Headers.md#public-access).
 
 ## Notes
 

@@ -15,6 +15,19 @@ See [Forward-Auth Proxy Guides](../proxy/index.md) for Caddy, Nginx, Traefik, Ap
 |-----------|-------------|
 | perm | Required permissions. See the [perm argument](perm.md). |
 | max_age | Require recent passkey use. See the [max_age argument](max-age.md). |
+| public | `public=1` allows public access: instead of 401 (no/expired session) or 403 (permission denied), the request passes with a `Remote-Public` header marking the bypass. Reauth (`max_age`) still requires the auth flow. |
+
+## Public access
+
+With `public=1` the endpoint returns 204 in every case except reauth and malformed arguments, and always sets `Remote-Public`:
+
+| Value | Meaning | Identity headers |
+|---|---|---|
+| `authenticated` | Session valid, all requested permissions met | Full `Remote-*` set |
+| `forbidden` | Session valid, but the `perm` check failed | Full `Remote-*` set (including `Remote-Groups` — it is trustworthy, it just lacks the requested permission) |
+| `anonymous` | No valid session | None |
+
+The backend must check `Remote-Public` before treating the request as authorized. See [Trusted Headers](../Headers.md) and the "Public access" section in the [proxy guides](../proxy/index.md).
 
 ## Request headers
 

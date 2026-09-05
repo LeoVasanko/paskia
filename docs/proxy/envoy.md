@@ -163,6 +163,17 @@ See [perm argument](../api/perm.md) and [max_age argument](../api/max-age.md) fo
 
 If you use a dedicated authentication host (`--auth-host`), route `auth.example.com` to the Paskia cluster and you do not need the `/auth/` bypass above. Otherwise, make sure the `/auth/` route keeps the `Upgrade` and `Connection` headers so passkey WebSocket endpoints work. The default Envoy router handles `Upgrade` headers when the client requests them.
 
+## Public access
+
+For routes where anonymous visitors are allowed but logged-in users should still be identified, add `public=1` to `path_override` (globally or per route):
+
+```yaml
+path_override: "/auth/api/forward?public=1"
+path_override: "/auth/api/forward?public=1&perm=myapp:reports"
+```
+
+The auth check then always returns 204 (except reauth with `max_age`, which still returns the 401 auth flow), and the `Remote-Public` header — matched by the `prefix: Remote-` rule in `allowed_upstream_headers` — marks each request as `anonymous`, `forbidden` or `authenticated`. The backend always runs and must check `Remote-Public` before treating the request as authorized. See [public access](../api/forward.md#public-access) and [trusted headers](../Headers.md#public-access).
+
 ## Notes
 
 - Envoy's `ext_authz` filter does not send the request body to the auth server by default. For Paskia this is fine.

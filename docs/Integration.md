@@ -132,6 +132,27 @@ Be sure to REMOVE connection hop-by-hop headers (these will break WebSockets amo
 "Connection", "Keep-Alive", "Proxy-Connection", "TE", "Transfer-Encoding", "Upgrade"
 ```
 
+## Public access
+
+For apps where authentication is optional, configure the proxy route with `public=1` (see your [proxy guide](proxy/index.md)). The auth check then always lets the request through, and your backend branches on the `Remote-Public` header:
+
+- `anonymous` — no valid session; no `Remote-*` identity headers are present.
+- `forbidden` — the user is logged in (identity headers are present and trustworthy) but the route's `perm` was not granted.
+- `authenticated` — session valid and all requested permissions met.
+
+```python
+# Example: Python/FastAPI
+@app.get("/api/reports")
+def reports(request: Request):
+    public = request.headers.get("Remote-Public")
+    if public != "authenticated":
+        raise HTTPException(401)  # or serve a limited public view
+    user_id = request.headers.get("Remote-User")
+    # ...
+```
+
+Login-on-demand still works unchanged: any 401 your app itself returns for privileged operations carries the `auth.iframe` URL that the [paskia](https://www.npmjs.com/package/paskia) module handles automatically (see [API Fetch with Automatic Auth](#api-fetch-with-automatic-auth)). A `max_age` reauth requirement on the route still returns the 401 auth flow directly from the proxy. See [public access](api/forward.md#public-access) and [Headers](Headers.md#public-access).
+
 ## Proxying /auth/ to Paskia
 
 Your app server needs to proxy `/auth/` paths to Paskia. This can be done by your application but is much easier done by a reverse proxy. The [Forward-Auth Proxy Guides](proxy/index.md) cover Caddy, Nginx, Traefik, Apache APISIX, Envoy and HAProxy.

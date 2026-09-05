@@ -2,11 +2,13 @@
 # Argument is mandatory and provides a query string to /auth/api/forward
 #   "" means just authentication
 #   perm=yourservice:login to require specific permission
+#   public=1 to allow public access (backend must check Remote-Public)
 forward_auth {$AUTH_UPSTREAM:localhost:4401} {
     uri /auth/api/forward?{args[0]}
     header_up Connection keep-alive  # Much higher performance
     header_up -Upgrade  # Disable Upgrade: WebSocket
     copy_headers {
+        Remote-Public
         Remote-User
         Remote-Name
         Remote-Groups

@@ -35,6 +35,7 @@ server {
         auth_request_set $remote_role_name   $upstream_http_remote_role_name;
         auth_request_set $remote_session_exp $upstream_http_remote_session_expires;
         auth_request_set $remote_credential  $upstream_http_remote_credential;
+        auth_request_set $remote_public      $upstream_http_remote_public;
 
         proxy_set_header Remote-User             $remote_user;
         proxy_set_header Remote-Name             $remote_name;
@@ -45,6 +46,7 @@ server {
         proxy_set_header Remote-Role-Name        $remote_role_name;
         proxy_set_header Remote-Session-Expires  $remote_session_exp;
         proxy_set_header Remote-Credential       $remote_credential;
+        proxy_set_header Remote-Public           $remote_public;
 
         # 4. The proxy_set_header lines above override any client-supplied
         #    Remote-* headers, so the backend receives only the values from
@@ -122,6 +124,17 @@ location /static/ {
     root /var/www;
 }
 ```
+
+## Public access
+
+For routes where anonymous visitors are allowed but logged-in users should still be identified, add `public=1` to the auth subrequest URI inside `/auth-internal`:
+
+```nginx
+proxy_pass http://localhost:4401/auth/api/forward?public=1;
+proxy_pass http://localhost:4401/auth/api/forward?public=1&perm=myapp:reports;
+```
+
+The auth check then always returns 204 (except reauth with `max_age`, which still returns the 401 auth flow), and `Remote-Public` marks each request as `anonymous`, `forbidden` or `authenticated`. It is captured and forwarded by the `auth_request_set $remote_public` / `proxy_set_header Remote-Public` lines added in the overview above — the backend always runs and must check `Remote-Public` before treating the request as authorized. See [public access](../api/forward.md#public-access) and [trusted headers](../Headers.md#public-access).
 
 ## Notes
 

@@ -58,6 +58,19 @@ app.example.com {
 
 The above setup allows unauthenticated access to certain files, then implements two different access controls for your backend app depending on which path is accessed. Note that the perm and max-age options may be combined, e.g. `perm=myapp:admin&max-age=5min` on a very sensitive endpoint. This will require additional authentication if the passkey hasn't been used in the last 5 minutes (automatic session renewals don't affect this). Use `""` if you only want the user to be authenticated with no time or perm requirements.
 
+### Public access (public=1)
+
+For routes where anonymous visitors are allowed but logged-in users should still be identified, add `public=1` to the same snippet:
+
+```caddyfile
+handle {
+    import auth/require "public=1"
+    reverse_proxy :3000
+}
+```
+
+The auth check then always passes (204): anonymous requests and users lacking a requested `perm` reach your backend marked with a `Remote-Public` header (`anonymous`, `forbidden` or `authenticated`) instead of getting a 401/403. Your backend must check `Remote-Public` before treating the request as authorized — see [trusted headers](../Headers.md#public-access). A `max_age` reauth requirement still renders the authentication page, even on public routes.
+
 ### Dedicated Authentication Site
 
 When you setup a separate subdomain for the authentication site, just add to your config another section for the auth host:

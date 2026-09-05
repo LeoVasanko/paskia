@@ -15,9 +15,10 @@ class AuthException(HTTPException):
     Attributes:
         status_code: HTTP status code (401 for auth, 403 for authz)
         detail: Error message
-        mode: UI mode ('login' or 'reauth')
+        mode: UI mode ('login', 'reauth' or 'forbidden')
         clear_session: Whether to clear the session cookie (True for invalid sessions)
         metadata: Additional data to pass to the frontend
+        ctx: Session context, set only for 403 (session valid, permission missing)
     """
 
     def __init__(
@@ -26,11 +27,13 @@ class AuthException(HTTPException):
         detail: str,
         mode: str,
         clear_session: bool = False,
+        ctx=None,
         **metadata,
     ):
         super().__init__(status_code=status_code, detail=detail)
         self.mode = mode
         self.clear_session = clear_session
+        self.ctx = ctx
         self.metadata = metadata
 
 
@@ -108,6 +111,7 @@ async def verify(
             status_code=403,
             mode="forbidden",
             detail="Permission required",
+            ctx=ctx,
             theme=user_theme,
         )
 

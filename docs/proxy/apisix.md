@@ -54,7 +54,8 @@ curl "http://127.0.0.1:9180/apisix/admin/routes" -X PUT \
           "Remote-Role",
           "Remote-Role-Name",
           "Remote-Session-Expires",
-          "Remote-Credential"
+          "Remote-Credential",
+          "Remote-Public"
         ]
       }
     },
@@ -110,6 +111,7 @@ services:
               - Remote-Role-Name
               - Remote-Session-Expires
               - Remote-Credential
+              - Remote-Public
         upstream:
           type: roundrobin
           nodes:
@@ -155,6 +157,17 @@ uri: http://localhost:4401/auth/api/forward
 ```
 
 The last form requires only authentication. See [perm argument](../api/perm.md) and [max_age argument](../api/max-age.md).
+
+## Public access
+
+For routes where anonymous visitors are allowed but logged-in users should still be identified, add `public=1` to the `forward-auth` URI:
+
+```yaml
+uri: http://localhost:4401/auth/api/forward?public=1
+uri: http://localhost:4401/auth/api/forward?public=1&perm=myapp:reports
+```
+
+The auth check then always returns 204 (except reauth with `max_age`, which still returns the 401 auth flow), and the `Remote-Public` header — included in the `upstream_headers` lists above — marks each request as `anonymous`, `forbidden` or `authenticated`. The backend always runs and must check `Remote-Public` before treating the request as authorized. See [public access](../api/forward.md#public-access) and [trusted headers](../Headers.md#public-access).
 
 ## Notes
 

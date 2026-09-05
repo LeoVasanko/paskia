@@ -235,6 +235,104 @@ class TestForwardEndpoint:
         assert data["auth"]["mode"] == "forbidden"
 
 
+class TestForwardPublicAccess:
+    """Tests for GET /auth/api/forward with public=1 (public access mode)"""
+
+    @pytest.mark.asyncio
+    async def test_public_without_session_returns_204_anonymous(
+        self, client: httpx.AsyncClient
+    ):
+        """Public access without session should pass as anonymous."""
+        response = await client.get("/auth/api/forward?public=1")
+        assert response.status_code == 204
+        assert response.headers["Remote-Public"] == "anonymous"
+        assert "Remote-User" not in response.headers
+        assert "Remote-Groups" not in response.headers
+
+    @pytest.mark.asyncio
+    async def test_public_with_expired_session_returns_204_anonymous(
+        self, client: httpx.AsyncClient
+    ):
+        """Public access with invalid session should pass as anonymous."""
+        fake_token = "aaaaaaaaaaaaaaaa"  # Exactly 16 characters
+        response = await client.get(
+            "/auth/api/forward?public=1",
+            headers={**auth_headers(fake_token), "Host": "localhost:4401"},
+        )
+        assert response.status_code == 204
+        assert response.headers["Remote-Public"] == "anonymous"
+        assert "Remote-User" not in response.headers
+        # Cookie must not be cleared on public pass-through
+        assert "set-cookie" not in response.headers
+
+    @pytest.mark.asyncio
+    async def test_public_permission_denied_returns_204_forbidden(
+        self, client: httpx.AsyncClient, regular_session_token: str
+    ):
+        """Public access with missing permission should pass as forbidden with identity."""
+        response = await client.get(
+            "/auth/api/forward?public=1&perm=auth:admin",
+            headers={
+                **auth_headers(regular_session_token),
+                "Host": "localhost:4401",
+            },
+        )
+        assert response.status_code == 204
+        assert response.headers["Remote-Public"] == "forbidden"
+        # Identity is known and sent, including (trustworthy) groups
+        assert "Remote-User" in response.headers
+        assert "Remote-Groups" in response.headers
+
+    @pytest.mark.asyncio
+    async def test_public_authorized_returns_204_authenticated(
+        self, client: httpx.AsyncClient, session_token: str
+    ):
+        """Public access with full authorization should be marked authenticated."""
+        response = await client.get(
+            "/auth/api/forward?public=1&perm=auth:admin",
+            headers={**auth_headers(session_token), "Host": "localhost:4401"},
+        )
+        assert response.status_code == 204
+        assert response.headers["Remote-Public"] == "authenticated"
+        assert "Remote-User" in response.headers
+        assert "Remote-Groups" in response.headers
+
+    @pytest.mark.asyncio
+    async def test_public_reauth_still_returns_401(
+        self, client: httpx.AsyncClient, session_token: str
+    ):
+        """Reauth (max_age) is never soft-passed, even with public=1."""
+        response = await client.get(
+            "/auth/api/forward?public=1&max_age=0s",
+            headers={
+                **auth_headers(session_token),
+                "Host": "localhost:4401",
+                "Accept": "application/json",
+            },
+        )
+        assert response.status_code == 401
+        data = response.json()
+        assert data["auth"]["mode"] == "reauth"
+
+    @pytest.mark.asyncio
+    async def test_public_malformed_perm_returns_400(self, client: httpx.AsyncClient):
+        """Malformed perm remains a hard error with public=1."""
+        response = await client.get("/auth/api/forward?public=1&perm=a||b")
+        assert response.status_code == 400
+
+    @pytest.mark.asyncio
+    async def test_without_public_no_remote_public_header(
+        self, client: httpx.AsyncClient, session_token: str
+    ):
+        """Without public=1, Remote-Public is absent on success."""
+        response = await client.get(
+            "/auth/api/forward",
+            headers={**auth_headers(session_token), "Host": "localhost:4401"},
+        )
+        assert response.status_code == 204
+        assert "Remote-Public" not in response.headers
+
+
 class TestPermOrSemantics:
     """Tests for OR ('|') semantics and strict parsing of the perm argument"""
 
