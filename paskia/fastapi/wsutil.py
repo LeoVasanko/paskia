@@ -3,7 +3,6 @@ Shared WebSocket utilities for FastAPI endpoints.
 """
 
 import logging
-import time
 from functools import wraps
 
 import base64url
@@ -11,7 +10,6 @@ from fastapi import WebSocket, WebSocketDisconnect
 from webauthn.helpers.exceptions import InvalidAuthenticationResponse
 
 from paskia.fastapi import authz
-from paskia.fastapi.logging import log_ws_close, log_ws_open
 from paskia.globals import passkey
 from paskia.util import pow
 
@@ -21,15 +19,11 @@ def websocket_error_handler(func):
 
     @wraps(func)
     async def wrapper(ws: WebSocket, *args, **kwargs):
-        start = time.perf_counter()
-        ws_id = log_ws_open(ws)
-        close_code = None
-
         try:
             await ws.accept()
             return await func(ws, *args, **kwargs)
-        except WebSocketDisconnect as e:
-            close_code = e.code
+        except WebSocketDisconnect:
+            pass
         except authz.AuthException as e:
             await ws.send_json(
                 {
@@ -42,8 +36,6 @@ def websocket_error_handler(func):
         except Exception:
             logging.exception("Internal Server Error")
             await ws.send_json({"status": 500, "detail": "Internal Server Error"})
-        finally:
-            log_ws_close(ws_id, close_code, time.perf_counter() - start)
 
     return wrapper
 

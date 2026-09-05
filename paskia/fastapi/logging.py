@@ -1,225 +1,25 @@
-"""Custom access logging middleware for FastAPI/Uvicorn."""
+"""Authorization-related logging.
+
+HTTP/WebSocket access logging is handled by fastapi_vue's ASGI middleware
+(installed via fastapi_vue.server.run); request handlers can pass extra
+details to the access log line via request.state.log_extra.
+"""
 
 import logging
-import sys
-import time
-from ipaddress import IPv6Address
 from typing import TYPE_CHECKING
-
-from starlette.middleware.base import BaseHTTPMiddleware
 
 if TYPE_CHECKING:
     from paskia.db.structs import SessionContext
-from starlette.requests import Request
-from starlette.responses import Response
 
 logger = logging.getLogger("paskia.access")
 
 _RESET = "\033[0m"
-_STATUS_INFO = "\033[32m"  # 1xx (green)
-_STATUS_OK = "\033[1;92m"  # 2xx (bright green)
-_STATUS_REDIRECT = "\033[32m"  # 3xx (green)
-_STATUS_CLIENT_ERR = "\033[0;31m"  # 4xx (red)
-_STATUS_SERVER_ERR = "\033[1;91m"  # 5xx (bold bright red)
-_METHOD_READ = "\033[0;34m"  # GET, HEAD, OPTIONS (blue)
-_METHOD_WRITE = "\033[1;94m"  # POST, PUT, DELETE, PATCH (bold bright blue)
-_HOST = "\033[38;5;242m"  # hostname (dark grey)
-_PATH = "\033[38;5;250m"  # path (white)
-_TIMING = "\033[38;5;242m"  # timing/devmode (dark grey)
-_WS_OPEN = "\033[38;5;226m"  # WebSocket connect (brightest yellow from 6x6x6 cube)
-_WS_CLOSE = "\033[38;5;142m"  # WebSocket disconnect (significantly dimmer yellow)
-_WS_STATUS = "\033[38;5;242m"  # WebSocket close status (dark grey)
 _AUTHZ_DENIED = "\033[0;31m"  # Permission denied (red)
 _AUTHZ_USER = "\033[1;34m"  # User info (light blue)
 _AUTHZ_ORG = "\033[34m"  # User info (blue)
 _AUTHZ_NEEDS = "\033[1;38;5;231m"  # Needs (brightest white)
 _AUTHZ_MISSING = "\033[1;31m"  # Missing scope (bold red)
 _AUTHZ_GRANTED = "\033[0;32m"  # Granted scope (green)
-
-
-def format_ipv6_network(ip: str) -> str:
-    """Format IPv6 address to show only network part (first 64 bits).
-
-    Special addresses are returned as-is for clarity:
-    - ::1 (loopback)
-    - :: (unspecified)
-    - ::ffff:x.x.x.x (IPv4-mapped, returns just the IPv4 part)
-    - fe80:: (link-local, returned as-is since interface-specific)
-    """
-    try:
-        # Strip brackets that some proxies add around IPv6
-        ip = ip.strip("[]")
-        # Strip zone ID (e.g., fe80::1%eth0)
-        if "%" in ip:
-            ip = ip.split("%")[0]
-        addr = IPv6Address(ip)
-
-        # Special cases - return as-is or with minimal processing
-        if addr.is_loopback:  # ::1
-            return "::1"
-        if addr.is_unspecified:  # ::
-            return "::"
-        if addr.ipv4_mapped:  # ::ffff:x.x.x.x
-            return str(addr.ipv4_mapped)
-        if addr.is_link_local:  # fe80::/10 - interface-specific, keep full
-            return str(addr)
-
-        # Regular addresses: truncate to /64 network prefix
-        network_int = int(addr) >> 64
-        # Format as IPv6 with trailing ::
-        # Split into 4 groups of 16 bits
-        groups = []
-        for _ in range(4):
-            groups.insert(0, format(network_int & 0xFFFF, "x"))
-            network_int >>= 16
-        # Compress consecutive zero groups
-        result = ":".join(groups) + "::"
-        # Simplify leading zeros in groups and compress, then strip trailing ::
-        return str(IPv6Address(result + "0")).removesuffix("::")
-    except Exception:
-        return ip
-
-
-def format_client_ip(ip: str) -> str:
-    """Format client IP, compressing IPv6 to network part only."""
-    if not ip or ip == "-":
-        return "-"
-    # Strip brackets for detection (some proxies add them)
-    stripped = ip.strip("[]")
-    if ":" in stripped:
-        return format_ipv6_network(ip)
-    return ip
-
-
-def status_color(status: int) -> str:
-    """Return color code based on HTTP status."""
-    if status < 200:
-        return _STATUS_INFO
-    if status < 300:
-        return _STATUS_OK
-    if status < 400:
-        return _STATUS_REDIRECT
-    if status < 500:
-        return _STATUS_CLIENT_ERR
-    return _STATUS_SERVER_ERR
-
-
-def method_color(method: str) -> str:
-    """Return color code based on HTTP method."""
-    if method in ("GET", "HEAD", "OPTIONS"):
-        return _METHOD_READ
-    return _METHOD_WRITE
-
-
-def format_access_log(
-    client: str,
-    status: int,
-    method: str,
-    host: str,
-    path: str,
-    duration_ms: float,
-    extra: str = "",
-) -> str:
-    """Format access log line with colors and aligned fields."""
-    # Format components with fixed widths for alignment
-    ip = format_client_ip(client).ljust(19)  # IPv6 network max 19 chars
-    timing = f"{duration_ms:.0f}ms"
-    method_padded = method.ljust(7)  # Longest method is OPTIONS (7)
-
-    status_str = f"{status_color(status)}{status}{_RESET}"
-    timing_str = f"{_TIMING}{timing}{_RESET}"
-    method_str = f"{method_color(method)}{method_padded}{_RESET}"
-    host_str = f"{_HOST}{host}{_RESET}"
-    path_str = f"{_PATH}{path}{_RESET}"
-
-    # Format: "IP STATUS METHOD host path [extra] TIMING"
-    extra_str = f" {_TIMING}{extra}{_RESET}" if extra else ""
-    return (
-        f"{ip} {status_str} {method_str} {host_str}{path_str}{extra_str} {timing_str}"
-    )
-
-
-# WebSocket connection counter (mod 100)
-_ws_counter = 0
-
-
-def _next_ws_id() -> int:
-    """Get next WebSocket connection ID (0-99)."""
-    global _ws_counter
-    ws_id = _ws_counter
-    _ws_counter = (_ws_counter + 1) % 100
-    return ws_id
-
-
-def log_ws_open(ws) -> int:
-    """Log WebSocket connection open. Returns connection ID for use in close."""
-    ws_id = _next_ws_id()
-
-    client = ws.client.host if ws.client else "-"
-    host = ws.headers.get("host", "-")
-    path = ws.url.path
-    origin = ws.headers.get("origin")
-
-    ip = format_client_ip(client).ljust(19)
-    # ID right-aligned like status codes (3 chars), emoji formatted like method
-    id_str = f"{_WS_OPEN}{str(ws_id).rjust(3)}{_RESET}"
-    # Emoji (2 display width) + 6 spaces = 8 display chars, but within color for alignment
-    emoji_str = f"{_METHOD_READ}🔌      {_RESET}"
-
-    # Determine if origin should be shown (omit when same as host)
-    # Origin header includes scheme (e.g., "https://example.com"), compare host part
-    origin_host = origin.split("://", 1)[-1] if origin else None
-    show_origin = origin_host and origin_host != host
-
-    host_str = f"{_HOST}{host}{_RESET}"
-    path_str = f"{_PATH}{path}{_RESET}"
-    origin_str = f" {_RESET}from {_HOST}{origin_host}{_RESET}" if show_origin else ""
-
-    logger.info(f"{ip} {id_str} {emoji_str}{host_str}{path_str}{origin_str}")
-    return ws_id
-
-
-# WebSocket close codes to human-readable status
-WS_CLOSE_CODES = {
-    1000: "ok",
-    1001: "going away",
-    1002: "protocol error",
-    1003: "unsupported",
-    1005: "no status",
-    1006: "abnormal",
-    1007: "invalid data",
-    1008: "policy violation",
-    1009: "too large",
-    1010: "extension required",
-    1011: "server error",
-    1012: "restarting",
-    1013: "try again",
-    1014: "bad gateway",
-    1015: "tls error",
-}
-
-
-def log_ws_close(ws_id: int, close_code: int | None, duration: float) -> None:
-    """Log WebSocket connection close with duration and status."""
-    # ID right-aligned like status codes (3 chars), "closed" formatted like method
-    id_str = f"{_WS_CLOSE}{str(ws_id).rjust(3)}{_RESET}"
-    # Pad within the dim color to keep full width in color (8 display chars)
-    closed_str = f"{_TIMING}closed  {_RESET}"
-    timing = f"{duration * 1000:.0f}ms"
-
-    # Convert close code to status text
-    if close_code is None:
-        code = "----"
-        status = "unknown"
-    else:
-        code = str(close_code)
-        status = WS_CLOSE_CODES.get(close_code, f"code {close_code}")
-
-    # Status code and text in normal color, not dim
-    status_str = f"{code} {status}"
-    timing_str = f"{_TIMING}{timing}{_RESET}"
-
-    logger.info(f"{' ' * 19} {id_str} {closed_str}{status_str} {timing_str}")
 
 
 def log_permission_denied(
@@ -240,40 +40,3 @@ def log_permission_denied(
         f"{_AUTHZ_ORG}({ctx.org.display_name} {ctx.role.display_name}){_RESET} "
         f"{_AUTHZ_NEEDS}needs{n}:{_RESET} {scopes}"
     )
-
-
-class AccessLogMiddleware(BaseHTTPMiddleware):
-    """Middleware that logs HTTP requests with custom format."""
-
-    async def dispatch(self, request: Request, call_next) -> Response:
-        start = time.perf_counter()
-        response = await call_next(request)
-        duration_ms = (time.perf_counter() - start) * 1000
-
-        client = request.client.host if request.client else "-"
-        host = request.headers.get("host", "-")
-        method = request.method
-        path = request.url.path
-        if request.url.query:
-            path = f"{path}?{request.url.query}"
-        status = response.status_code
-
-        extra = getattr(request.state, "log_extra", "")
-
-        line = format_access_log(
-            client, status, method, host, path, duration_ms, extra=extra
-        )
-        logger.info(line)
-
-        return response
-
-
-def configure_access_logging():
-    """Configure the access logger to output to stderr."""
-    handler = logging.StreamHandler(sys.stderr)
-    handler.setFormatter(logging.Formatter("%(message)s"))
-    logger.addHandler(handler)
-    logger.setLevel(logging.INFO)
-    logger.propagate = False
-    # Suppress watchfiles "X changes detected" INFO messages (keep WARNING for reload notification)
-    logging.getLogger("watchfiles.main").setLevel(logging.WARNING)

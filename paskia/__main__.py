@@ -166,14 +166,15 @@ def main():
     os.environ["PASKIA_CONFIG"] = msgspec.json.encode(runtime).decode()
 
     # Run the server (spawns processes in dev mode)
-    dev = {"reload": True, "reload_dirs": ["paskia"]} if DEVMODE else {}
+    # tracerite, access logging and log config are handled by fastapi_vue.server;
+    # we print our own startup config box, so disable the built-in one.
     server.run(
         "paskia.fastapi.mainapp:app",
         listen=config.listen,
         default_port=DEFAULT_PORT,
-        log_level="warning",
-        access_log=False,
-        **dev,
+        server_header=False,
+        startup_box=None,
+        reload=Path(__file__).parent if DEVMODE else False,
     )
 
 

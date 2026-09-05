@@ -11,6 +11,8 @@ from contextlib import suppress
 from pathlib import Path
 from urllib.parse import urlparse
 
+import tracerite
+
 # Import utilities from scripts/fastapi-vue (not a package, so we adjust sys.path)
 sys.path.insert(0, str(Path(__file__).with_name("fastapi-vue")))
 from devutil import (  # noqa: E402
@@ -193,6 +195,7 @@ async def run_devserver(args: argparse.Namespace, remaining: list[str]) -> None:
 
 
 def main():
+    tracerite.load()
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument(
         "-l",

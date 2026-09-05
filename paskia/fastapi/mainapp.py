@@ -18,17 +18,13 @@ from paskia.fastapi.admin.adminapp import adminapp
 
 # Import frontend instance
 from paskia.fastapi.front import frontend
-from paskia.fastapi.logging import AccessLogMiddleware, configure_access_logging
 from paskia.fastapi.session import AUTH_COOKIE
 from paskia.util import hostutil, passphrase, vitedev
 from paskia.util.constants import DEVMODE
 from paskia.util.runtime import RuntimeConfig
 
 # Configure custom logging
-configure_access_logging()
 configure_kanta_logging()
-
-_access_logger = logging.getLogger("paskia.access")
 
 # Path to examples/index.html when running from source tree
 _EXAMPLES_DIR = Path(__file__).parent.parent.parent / "examples"
@@ -61,11 +57,6 @@ async def lifespan(app: FastAPI):  # pragma: no cover - startup path
         if runtime.save:
             db.update_config(runtime.config)
 
-        # Restore uvicorn info logging (suppressed during startup in dev mode)
-        # Keep uvicorn.error at WARNING to suppress WebSocket "connection open/closed" messages
-        if app.debug:
-            logging.getLogger("uvicorn").setLevel(logging.INFO)
-        logging.getLogger("uvicorn.error").setLevel(logging.WARNING)
         await frontend.load()
         await start_background()
         yield
@@ -82,8 +73,8 @@ app = FastAPI(
     debug=DEVMODE,
 )
 
-# Custom access logging (uvicorn's access_log is disabled)
-app.add_middleware(AccessLogMiddleware)
+# WebSocket and HTTP access logging is handled by fastapi_vue's ASGI middleware;
+# extra details are passed via request.state.log_extra (ASGI scope state).
 
 # Apply redirections to auth-host if configured (deny access to restricted endpoints, remove /auth/)
 app.middleware("http")(auth_host.redirect_middleware)
