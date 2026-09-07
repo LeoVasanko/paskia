@@ -1,5 +1,8 @@
 """
 OIDC JWT utilities for signing ID tokens and serving JWKS.
+
+The OIDC provider is instance-global: a single signing key serves all
+domains, with each request Host acting as an issuer alias.
 """
 
 import hashlib
@@ -18,46 +21,44 @@ from paskia.util.crypto import (
     secret_key,
 )
 
-# JWT signing key (loaded on first use)
-_private_key = None
-_public_key = None
-_kid: str | None = None
+# JWT signing key (loaded on first use): (private, public, kid)
+_key: tuple[object, object, str] | None = None
 
 
-def _load_or_generate_key() -> None:
-    """Load existing Ed25519 key or generate a new one."""
-    global _private_key, _public_key, _kid
-
+def _load_or_generate_key() -> tuple[object, object, str]:
+    """Load the Ed25519 signing key or generate and store a new one."""
     data = db.data()
+    provider = data.oidc
     store = data._store
     if store is None:
         raise RuntimeError("Kanta store is not initialized")
-    if data.oidc.key is not None:
-        _private_key = public_key_from_secret(data.oidc.key)
+    if provider.key is not None:
+        private_key = public_key_from_secret(provider.key)
     else:
         raw_key = secret_key()
         with store.transaction("oidc_key"):
-            data.oidc.key = raw_key
-        _private_key = public_key_from_secret(raw_key)
+            provider.key = raw_key
+        private_key = public_key_from_secret(raw_key)
 
-    _public_key = _private_key.public_key()
+    public_key = private_key.public_key()
     # Generate kid from public key fingerprint
-    pub_der = get_public_key_der(_private_key)
-    _kid = generate_kid(pub_der)
+    kid = generate_kid(get_public_key_der(private_key))
+    return private_key, public_key, kid
 
 
-def _ensure_key() -> None:
-    """Ensure key is loaded."""
-    if _private_key is None:
-        _load_or_generate_key()
+def _ensure_key() -> tuple[object, object, str]:
+    """Ensure the signing key is loaded and return (private, public, kid)."""
+    global _key
+    if _key is None:
+        _key = _load_or_generate_key()
+    return _key
 
 
 def get_jwks() -> dict:
     """Get JWKS (JSON Web Key Set) for public key verification."""
-    _ensure_key()
-    assert _public_key is not None
+    private_key, _, kid = _ensure_key()
     # Ed25519 public key is 32 bytes raw
-    pub_bytes = get_public_key_raw(_private_key)
+    pub_bytes = get_public_key_raw(private_key)
     return {
         "keys": [
             {
@@ -65,7 +66,7 @@ def get_jwks() -> dict:
                 "crv": "Ed25519",
                 "use": "sig",
                 "alg": "EdDSA",
-                "kid": _kid,
+                "kid": kid,
                 "x": urlsafe_b64encode(pub_bytes).rstrip(b"=").decode("ascii"),
             }
         ]
@@ -105,8 +106,7 @@ def create_id_token(
     Returns:
         Signed JWT string
     """
-    _ensure_key()
-    assert _private_key is not None
+    private_key, _, kid = _ensure_key()
     now = datetime.now(UTC)
     payload: dict[str, object] = {
         "iss": issuer,
@@ -132,7 +132,7 @@ def create_id_token(
     if auth_time:
         payload["auth_time"] = int(auth_time.timestamp())
 
-    return jwt.encode(payload, _private_key, algorithm="EdDSA", headers={"kid": _kid})
+    return jwt.encode(payload, private_key, algorithm="EdDSA", headers={"kid": kid})
 
 
 def create_access_token(
@@ -154,8 +154,7 @@ def create_access_token(
     Returns:
         Signed JWT string
     """
-    _ensure_key()
-    assert _private_key is not None
+    private_key, _, kid = _ensure_key()
     now = datetime.now(UTC)
     payload: dict[str, object] = {
         "iss": issuer,
@@ -165,7 +164,7 @@ def create_access_token(
         "iat": int(now.timestamp()),
         "exp": int((now + timedelta(seconds=expires_in)).timestamp()),
     }
-    return jwt.encode(payload, _private_key, algorithm="EdDSA", headers={"kid": _kid})
+    return jwt.encode(payload, private_key, algorithm="EdDSA", headers={"kid": kid})
 
 
 def decode_access_token(
@@ -181,13 +180,12 @@ def decode_access_token(
     Returns:
         Decoded payload or None if invalid
     """
-    _ensure_key()
-    assert _public_key is not None
+    _, public_key, _ = _ensure_key()
     try:
         if audience is not None:
             return jwt.decode(
                 token,
-                _public_key,
+                public_key,
                 algorithms=["EdDSA"],
                 issuer=issuer,
                 audience=audience,
@@ -195,7 +193,7 @@ def decode_access_token(
 
         return jwt.decode(
             token,
-            _public_key,
+            public_key,
             algorithms=["EdDSA"],
             issuer=issuer,
             options={"verify_aud": False},
@@ -224,8 +222,7 @@ def create_logout_token(
     Returns:
         Signed JWT string
     """
-    _ensure_key()
-    assert _private_key is not None
+    private_key, _, kid = _ensure_key()
     now = datetime.now(UTC)
     payload: dict[str, object] = {
         "iss": issuer,
@@ -241,4 +238,4 @@ def create_logout_token(
         payload["sid"] = sid
     if sub:
         payload["sub"] = str(sub)
-    return jwt.encode(payload, _private_key, algorithm="EdDSA", headers={"kid": _kid})
+    return jwt.encode(payload, private_key, algorithm="EdDSA", headers={"kid": kid})

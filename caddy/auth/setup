@@ -4,3 +4,10 @@ header -Remote-*
 handle @auth_api {
     reverse_proxy {$AUTH_UPSTREAM::4401}
 }
+# Paskia-served well-known endpoints: OIDC discovery and WebAuthn Related
+# Origin Requests (must reach paskia even when other /.well-known/* files
+# are served statically)
+@auth_wellknown path /.well-known/openid-configuration /.well-known/webauthn
+handle @auth_wellknown {
+    reverse_proxy {$AUTH_UPSTREAM::4401}
+}

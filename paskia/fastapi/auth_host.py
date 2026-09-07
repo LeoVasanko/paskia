@@ -3,6 +3,7 @@
 from fastapi import Request, Response
 from fastapi.responses import RedirectResponse
 
+from paskia.domains import current_domain
 from paskia.util import hostutil, passphrase
 
 
@@ -65,15 +66,19 @@ def should_redirect_auth_path_to_root(path: str) -> bool:
     return bool(token and "/" not in token and passphrase.is_well_formed(token))
 
 
-def redirect_to_root_on_auth_host(request: Request, cur: str, path: str) -> Response:
+def redirect_to_root_on_auth_host(request: Request, host: str, path: str) -> Response:
     """Create a redirect response to root path on the same host."""
     new_path = path[5:] or "/"
-    return RedirectResponse(f"{request.url.scheme}://{cur}{new_path}", 307)
+    return RedirectResponse(f"{request.url.scheme}://{host}{new_path}", 307)
 
 
 async def redirect_middleware(request: Request, call_next):
-    """Middleware to handle auth host redirects."""
-    cfg = hostutil.dedicated_auth_host()
+    """Middleware to handle auth host redirects.
+
+    Only the current domain's *own* auth host triggers redirects; a domain
+    without one serves its UI under /auth/ on its own hosts.
+    """
+    cfg = current_domain().own_auth_host
     if not cfg:
         return await call_next(request)
 
@@ -91,7 +96,7 @@ async def redirect_middleware(request: Request, call_next):
             return await call_next(request)
         return redirect_to_auth_host(request, cfg, path)
     else:
-        # On auth host: force UI endpoints at root
+        # On auth host: force UI endpoints at root (cfg keeps any port)
         if should_redirect_auth_path_to_root(path):
-            return redirect_to_root_on_auth_host(request, cur, path)
+            return redirect_to_root_on_auth_host(request, cfg, path)
         return await call_next(request)

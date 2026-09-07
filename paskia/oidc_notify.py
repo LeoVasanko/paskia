@@ -3,6 +3,10 @@ OIDC Back-Channel Logout notifications.
 
 When sessions are deleted (logout, admin, expiry), this module notifies
 any OIDC clients that have a backchannel_logout_uri configured.
+
+Notifications run without request context, so the issuer comes from the
+session itself (``Session.issuer``, stamped at session creation/refresh);
+the signing key is instance-global.
 """
 
 import asyncio
@@ -13,7 +17,6 @@ import httpx
 
 from paskia import db
 from paskia.util import oidjwt
-from paskia.util.runtime import config as runtime_config
 
 _logger = logging.getLogger(__name__)
 
@@ -21,16 +24,10 @@ _logger = logging.getLogger(__name__)
 _TIMEOUT = httpx.Timeout(10.0, connect=5.0)
 
 
-def _issuer() -> str:
-    """Derive issuer URL from config (same base as discovery document)."""
-    cfg = runtime_config()
-    return cfg.site_url if cfg else "https://localhost"
-
-
 def _collect_oidc_sessions(
     session_keys: list[str],
-) -> list[tuple[str, str, UUID, UUID | None]]:
-    """Collect (backchannel_logout_uri, sid, client_uuid, user_uuid) for OIDC sessions.
+) -> list[tuple[str, str, str, UUID, UUID | None]]:
+    """Collect (logout_uri, issuer, sid, client_uuid, user_uuid).
 
     Must be called before the sessions are deleted from the database.
     Returns only sessions whose client has a backchannel_logout_uri configured.
@@ -44,9 +41,15 @@ def _collect_oidc_sessions(
         client = data.oidc.clients.get(session.client_uuid)
         if not client or not client.backchannel_logout_uri:
             continue
-        sid = session.key
+        issuer = session.issuer or f"https://{session.host}"
         notifications.append(
-            (client.backchannel_logout_uri, sid, session.client_uuid, session.user_uuid)
+            (
+                client.backchannel_logout_uri,
+                issuer,
+                session.key,
+                session.client_uuid,
+                session.user_uuid,
+            )
         )
     return notifications
 
@@ -77,21 +80,20 @@ async def _send_logout_token(
 
 
 async def notify(
-    notifications: list[tuple[str, str, UUID, UUID | None]],
+    notifications: list[tuple[str, str, str, UUID, UUID | None]],
 ) -> None:
     """Send back-channel logout tokens to all collected endpoints.
 
     Args:
-        notifications: list of (backchannel_logout_uri, sid, client_uuid, user_uuid)
-            as returned by _collect_oidc_sessions.
+        notifications: list of (backchannel_logout_uri, issuer, sid,
+            client_uuid, user_uuid) as returned by _collect_oidc_sessions.
     """
     if not notifications:
         return
 
-    issuer = _issuer()
     async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
         tasks = []
-        for uri, sid, client_uuid, user_uuid in notifications:
+        for uri, issuer, sid, client_uuid, user_uuid in notifications:
             token = oidjwt.create_logout_token(
                 issuer=issuer,
                 audience=str(client_uuid),

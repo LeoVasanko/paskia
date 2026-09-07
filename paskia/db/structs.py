@@ -237,6 +237,10 @@ class User(msgspec.Struct, dict=True, omit_defaults=True, kw_only=True):
         """Get credential IDs for this user (for WebAuthn exclude lists)."""
         return [c.credential_id for c in self.credentials]
 
+    def credential_ids_for(self, rp_id: str) -> list[bytes]:
+        """Get credential IDs registered under a specific domain's rp-id."""
+        return [c.credential_id for c in self.credentials if c.rp_id == rp_id]
+
     @property
     def sessions(self) -> list[Session]:
         """Get all sessions for this user."""
@@ -290,8 +294,12 @@ class Credential(msgspec.Struct, dict=True):
     """Credential (passkey) data structure.
 
     Mutable fields: sign_count, last_used, last_verified
-    Immutable fields: credential_id, user, aaguid, public_key, created_at
+    Immutable fields: credential_id, user, aaguid, public_key, created_at, rp_id
     uuid is derived from created_at using uuid7.
+
+    rp_id is the domain the passkey was registered under. With Related Origin
+    Requests it is always the domain's canonical rp-id, regardless of which
+    origin the registration ceremony ran on.
     """
 
     credential_id: bytes  # Long binary ID from the authenticator
@@ -300,6 +308,7 @@ class Credential(msgspec.Struct, dict=True):
     public_key: bytes
     sign_count: int
     created_at: datetime
+    rp_id: str
     last_used: datetime | None = None
     last_verified: datetime | None = None
 
@@ -341,6 +350,7 @@ class Credential(msgspec.Struct, dict=True):
         aaguid: UUID,
         public_key: bytes,
         sign_count: int,
+        rp_id: str,
         created_at: datetime | None = None,
     ) -> Credential:
         """Create a new Credential with auto-generated uuid7."""
@@ -353,6 +363,7 @@ class Credential(msgspec.Struct, dict=True):
             public_key=public_key,
             sign_count=sign_count,
             created_at=now,
+            rp_id=rp_id,
             last_used=now,
             last_verified=now,
         )
@@ -363,8 +374,8 @@ class Credential(msgspec.Struct, dict=True):
 class Session(msgspec.Struct, dict=True, omit_defaults=True):
     """Session data structure.
 
-    Mutable fields: validated (updated on session refresh)
-    Immutable fields: user_uuid, credential_uuid, host, ip, user_agent, client_uuid
+    Mutable fields: host, ip, user_agent, validated, issuer (update_session)
+    Immutable fields: user_uuid, credential_uuid, client_uuid, rp_id
     key is the hashed db_key, stored in the dict key, not in the struct.
 
     If client_uuid is set, this is an OIDC session.
@@ -380,6 +391,8 @@ class Session(msgspec.Struct, dict=True, omit_defaults=True):
     user_agent: str
     validated: datetime
     client_uuid: UUID | None = msgspec.field(name="client", default=None)
+    rp_id: str | None = None  # Owning domain (needed when no request context)
+    issuer: str | None = None  # OIDC issuer URL this session was created under
 
     def __post_init__(self):
         if not hasattr(self, "key"):
@@ -394,14 +407,6 @@ class Session(msgspec.Struct, dict=True, omit_defaults=True):
     def credential(self) -> Credential:
         """Get the Credential object for this session."""
         return db.data().credentials[self.credential_uuid]
-
-    def metadata(self) -> dict:
-        """Return session metadata for backwards compatibility."""
-        return {
-            "ip": self.ip,
-            "user_agent": self.user_agent,
-            "validated": self.validated.isoformat(),
-        }
 
     def store(self, last_seen: datetime) -> None:
         """Store this session in the database and record a visit.
@@ -429,11 +434,15 @@ class Session(msgspec.Struct, dict=True, omit_defaults=True):
         user_agent: str,
         validated: datetime,
         client: UUID | None = None,
+        rp_id: str | None = None,
+        issuer: str | None = None,
     ) -> Session:
         """Create a new Session with the provided key.
 
         Args:
             key: The hashed session key (derived from secret via hash_secret)
+            rp_id: Owning domain's rp-id (used when no request context exists)
+            issuer: OIDC issuer URL (scheme + host) for OIDC sessions
 
         Returns:
             Session object with key set
@@ -452,6 +461,8 @@ class Session(msgspec.Struct, dict=True, omit_defaults=True):
             user_agent=user_agent,
             validated=validated,
             client_uuid=client,
+            rp_id=rp_id,
+            issuer=issuer,
         )
         session.key = key
         return session
@@ -601,14 +612,50 @@ class OIDC(msgspec.Struct, dict=True):
     key: bytes | None = None
 
 
-class Config(msgspec.Struct, omit_defaults=True):
-    """Stored configuration for the instance."""
+class OriginEntry(msgspec.Struct, omit_defaults=True):
+    """Extra properties of one allowed origin within a domain.
 
-    rp_id: str
+    Stored as the dict value for an origin key; plain ``True`` instead of an
+    object means presence only, nothing more to store.
+    """
+
+    auth_host: bool = False  # This site hosts the account/admin interface
+
+
+class DomainConfig(msgspec.Struct, omit_defaults=True):
+    """Configuration for one domain (one WebAuthn rp-id).
+
+    ``origins`` is a single table of sites that may sign in with this
+    domain's passkeys, classified by the rp-id: entries within the rp-id
+    domain are in-domain sign-in sites, entries outside it are related
+    origins (WebAuthn Related Origin Requests — individual hosts only,
+    no wildcards). Keys are hosts without the https:// scheme
+    ("app.example.com"), wildcard patterns under the rp-id following the
+    shell-glob convention ("**.example.com" — the base domain and its
+    subdomains at any depth; "*.example.com" — exactly one subdomain
+    level; https only, any scheme and port under localhost), or full
+    origins ("http://localhost:8080", "https://app2.com"). An empty dict
+    means nothing is allowed — list sites explicitly. Ordering carries no
+    meaning — display order is decided by the UI.
+    """
+
     rp_name: str | None = None
-    auth_host: str | None = None
-    origins: list[str] | None = None
-    listen: list[str] | None = None
+    origins: dict[str, bool | OriginEntry] = {}
+
+
+class Config(msgspec.Struct, omit_defaults=True):
+    """Stored configuration for the instance.
+
+    Domains are keyed by rp-id and shared by the whole administrative
+    instance: organizations and users are global across rp-ids.
+    """
+
+    domains: dict[str, DomainConfig] = msgspec.field(
+        default_factory=lambda: {
+            "localhost": DomainConfig(origins={"**.localhost": True})
+        }
+    )
+    listen: list[str] | None = None  # Process-global listen endpoints
 
 
 # -------------------------------------------------------------------------
@@ -619,7 +666,7 @@ class Config(msgspec.Struct, omit_defaults=True):
 class DB(msgspec.Struct, dict=True, omit_defaults=False):
     """In-memory database. Access fields directly for reads."""
 
-    config: Config = msgspec.field(default_factory=lambda: Config(rp_id="localhost"))
+    config: Config = msgspec.field(default_factory=Config)
     permissions: dict[UUID, Permission] = {}
     orgs: dict[UUID, Org] = {}
     roles: dict[UUID, Role] = {}
@@ -627,8 +674,9 @@ class DB(msgspec.Struct, dict=True, omit_defaults=False):
     credentials: dict[UUID, Credential] = {}
     sessions: dict[str, Session] = {}
     reset_tokens: dict[str, ResetToken] = {}
-    # OIDC provider data
-    oidc: OIDC = msgspec.field(default_factory=lambda: OIDC())
+    # OIDC provider data: one instance-global provider (single signing key
+    # and client set); each request Host acts as an issuer alias.
+    oidc: OIDC = msgspec.field(default_factory=OIDC)
 
     def __post_init__(self):
         # Optional store reference for non-global DB instances (e.g. tests).
@@ -659,7 +707,8 @@ class DB(msgspec.Struct, dict=True, omit_defaults=False):
 
         Args:
             session_secret: The session secret (cookie value) - will be hashed for lookup
-            host: Optional host for binding/validation and domain-scoped permissions
+            host: The request host; sessions are host-bound and domain-scoped
+                permissions are filtered by it
 
         Returns:
             SessionContext if valid, None if session not found, expired, or host mismatch
@@ -675,10 +724,8 @@ class DB(msgspec.Struct, dict=True, omit_defaults=False):
         if s.client_uuid is not None:
             return None
 
-        # Validate host matches (sessions are always created with a host)
-        normalized_input = host
-        if s.host != normalized_input:
-            # Session bound to different host
+        # Sessions are host-bound
+        if s.host != host:
             return None
 
         try:
@@ -689,8 +736,8 @@ class DB(msgspec.Struct, dict=True, omit_defaults=False):
         except KeyError:
             return None
 
-        # Effective permissions: role's permissions that the org can grant
-        # Also filter by domain if host is provided
+        # Effective permissions: role's permissions that the org can grant,
+        # filtered by domain restriction
         org_perm_uuids = {p.uuid for p in org.permissions}
 
         effective_perms = []
@@ -701,8 +748,7 @@ class DB(msgspec.Struct, dict=True, omit_defaults=False):
                 p = self.permissions[perm_uuid]
             except KeyError:
                 continue
-            # Check domain restriction (normalized_input already has port stripped)
-            if p.domain is not None and p.domain != normalized_input:
+            if p.domain is not None and p.domain != host:
                 continue
             effective_perms.append(p)
 

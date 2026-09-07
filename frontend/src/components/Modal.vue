@@ -1,7 +1,10 @@
 <template>
   <div class="dialog-overlay" @click="$emit('close')">
-    <div ref="dialog" :class="['modal-panel', panelClass]" @keydown="handleDialogKeydown" @click.stop>
-      <slot />
+    <div class="modal-wrap">
+      <div ref="dialog" :class="['modal-panel', panelClass]" @keydown="handleDialogKeydown" @click.stop>
+        <slot />
+      </div>
+      <slot name="attached" />
     </div>
   </div>
 </template>

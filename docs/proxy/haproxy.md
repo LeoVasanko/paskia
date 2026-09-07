@@ -123,4 +123,4 @@ The `Remote-*` success-headers glob already copies the `Remote-Public` header th
 - The Lua script strips the request body from the auth subrequest, so Paskia's `/auth/api/forward` will only see the headers.
 - HAProxy variables are limited to alphanumeric characters, dots, and underscores, but the script already normalizes header names for you (e.g. `Remote-User` becomes `req.auth_response_header.remote_user`). The `Remote-*` glob pattern in the success-headers argument handles this automatically.
 - The auth backend must be reachable without TLS. If you need TLS to Paskia, run a local TCP forwarder or use HAProxy's Lua HTTP support directly (not covered by this script).
-- If you use a dedicated authentication host (`--auth-host`), route `auth.example.com` to the Paskia backend and start Paskia with `--auth-host auth.example.com` instead of exposing `/auth/` on every site.
+- If you use a dedicated authentication host (the domain's auth-host setting), route `auth.example.com` to the Paskia backend instead of exposing `/auth/` on every site.

@@ -1,20 +1,17 @@
 """
 Bootstrap module for passkey authentication system.
 
-This module handles initial system setup when a new database is created,
-including creating default admin user, organization, permissions, and
-generating a reset link for initial admin setup.
-
-The actual database seeding is performed by the module-level kanta bootstrap
-callback defined in :mod:`paskia.db.bootstrap` and registered during
-:func:`paskia.db.lifecycle.init`.
+The initial database seeding (admin user, organization, permissions,
+registration reset token) is performed by ``paskia init`` via
+:func:`paskia.db.bootstrap.bootstrap`. This module provides the serve-time
+check that re-prints a registration link when the admin user still has no
+passkey on any configured domain.
 """
 
 import logging
 
-from paskia import authsession, db
+from paskia import authsession, db, domains
 from paskia.db.bootstrap import log_reset_link
-from paskia.db.structs import Config
 
 logger = logging.getLogger(__name__)
 
@@ -32,14 +29,14 @@ def _configure_logger() -> None:
 _configure_logger()
 
 
-def _log_reset_link(passphrase: str, message: str | None = None) -> str:
-    """Log a reset link message and return the URL."""
-    return log_reset_link(passphrase, message)
-
-
 async def check_admin_credentials() -> bool:
     """
     Check if the admin user needs credentials and create a reset link if needed.
+
+    With global users, the admin may hold passkeys under any configured
+    domain — the check passes if the admin has a credential for at least
+    one of them. Otherwise a reset link is printed for the first domain
+    (sorted by rp-id).
 
     Returns:
         bool: True if a reset link was created, False if admin already has credentials
@@ -67,12 +64,15 @@ async def check_admin_credentials() -> bool:
         if not admin_users:
             return False
 
-        # Check first admin user for credentials
+        # Check first admin user for credentials on any configured domain
         admin_user = admin_users[0]
+        reg = domains.registry()
+        configured = sorted(d.rp_id for d in reg.domains)
 
-        if not admin_user.credential_ids:
-            # Admin exists but has no credentials, create reset link
-            logger.info("⚠️  Admin user has no credentials!")
+        if not any(admin_user.credential_ids_for(rp_id) for rp_id in configured):
+            # Admin exists but has no credential on any domain
+            target = reg.get(configured[0])
+            logger.info("⚠️  Admin user has no credentials on %s!", target.rp_id)
 
             expiry = authsession.reset_expires()
             token = db.create_reset_token(
@@ -80,7 +80,7 @@ async def check_admin_credentials() -> bool:
                 expiry=expiry,
                 token_type="admin registration",
             )
-            _log_reset_link(token)
+            log_reset_link(target.reset_link_url(token))
             return True
 
         return False
@@ -89,20 +89,11 @@ async def check_admin_credentials() -> bool:
         return False
 
 
-async def bootstrap_if_needed(config: Config | None = None) -> bool:
-    """
-    Check if admin needs credentials and create a reset link if needed.
-
-    Database bootstrapping itself is now handled automatically during
-    ``db.init()`` via the registered kanta bootstrap callback. This function
-    remains as a post-init hook for credential checks.
-
-    Args:
-        config: Kept for backwards compatibility; config is now applied during
-            ``db.init()``.
+async def bootstrap_if_needed() -> bool:
+    """Run the serve-time admin credential check.
 
     Returns:
-        bool: Always returns False (bootstrapping is performed during init).
+        bool: Always returns False (bootstrapping is performed by ``paskia init``).
     """
     await check_admin_credentials()
     return False

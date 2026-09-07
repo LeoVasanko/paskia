@@ -9,9 +9,8 @@ from datetime import UTC, datetime
 import uuid7
 
 from paskia.authsession import reset_expires
-from paskia.db.structs import DB, Config, Org, Permission, ResetToken, Role, User
+from paskia.db.structs import DB, OIDC, Config, Org, Permission, ResetToken, Role, User
 from paskia.util.crypto import secret_key
-from paskia.util.hostutil import reset_link_url
 
 _reset_link_logger = logging.getLogger("paskia.reset_link")
 
@@ -34,13 +33,12 @@ ADMIN_RESET_MESSAGE = """
 """
 
 
-def log_reset_link(passphrase: str, message: str | None = None) -> str:
+def log_reset_link(url: str, message: str | None = None) -> str:
     """Log a reset link message and return the URL."""
-    reset_link = reset_link_url(passphrase)
     if message:
         _reset_link_logger.info(message)
-    _reset_link_logger.info(ADMIN_RESET_MESSAGE, reset_link)
-    return reset_link
+    _reset_link_logger.info(ADMIN_RESET_MESSAGE, url)
+    return url
 
 
 def bootstrap(
@@ -147,8 +145,8 @@ def bootstrap(
     if config is not None:
         data.config = config
 
-    # Generate OIDC signing key
-    data.oidc.key = secret_key()
+    # Generate the instance-global OIDC signing key
+    data.oidc = OIDC(key=secret_key())
 
     # Store all bootstrapped objects in the live data object
     data.permissions[perm_admin_uuid] = perm_admin

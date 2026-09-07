@@ -5,6 +5,7 @@ Database lifecycle: initialization and maintenance.
 import asyncio
 import logging
 import os
+import re
 import signal
 from datetime import UTC, datetime
 from pathlib import Path
@@ -17,24 +18,13 @@ from kanta.exceptions import DatabaseError
 import paskia.db.operations as _ops
 from paskia import oidc_notify
 from paskia.authsession import EXPIRES
-from paskia.db.bootstrap import bootstrap, log_reset_link
 from paskia.db.paths import db_file_path
-from paskia.db.structs import DB
-from paskia.util.runtime import config as runtime_config
 
 logger = logging.getLogger(__name__)
 
-
-runtime = runtime_config()
-if runtime is None:
-    raise RuntimeError("PASKIA_CONFIG must be defined before importing db.lifecycle")
-
-kanta = Kanta(
-    str(db_file_path(rp_id=runtime.config.rp_id, create_root=False)),
-    _ops._db,
-    migrations="paskia.db.migrations",
-)
-kanta.ctx.rp_id = runtime.config.rp_id
+# The combined database lives at a fixed CWD-relative path; no runtime
+# configuration is needed to locate it.
+kanta = Kanta(str(db_file_path()), _ops._db)
 _ops._db._store = kanta
 
 
@@ -52,11 +42,13 @@ def _lookup_uuid_in_state(state: dict | None, uuid_str: str) -> str | None:
                 return display_name
 
     # OIDC clients use "name" instead of "display_name".
-    client = state.get("oidc", {}).get("clients", {}).get(uuid_str)
-    if isinstance(client, dict):
-        name = client.get("name")
-        if isinstance(name, str) and name:
-            return name
+    oidc_state = state.get("oidc", {})
+    if isinstance(oidc_state, dict):
+        client = oidc_state.get("clients", {}).get(uuid_str)
+        if isinstance(client, dict):
+            name = client.get("name")
+            if isinstance(name, str) and name:
+                return name
 
     return None
 
@@ -94,6 +86,10 @@ def _resolve_uuid_label(
     return None
 
 
+# The OIDC signing key is stored at oidc.key.
+_OIDC_KEY_PATH = re.compile(r"^oidc\.key$")
+
+
 @kanta.logfmt
 def format_log_uuid(
     value: Any,
@@ -105,7 +101,7 @@ def format_log_uuid(
     # Censor sensitive OIDC key material regardless of value type, but only
     # when formatting the value: path components are passed with the component
     # itself as value and must stay visible ("oidc.key = <hidden>").
-    if (path == "oidc.key" or path.endswith(".oidc.key")) and value != "key":
+    if _OIDC_KEY_PATH.fullmatch(path) and value != "key":
         return "<hidden>"
 
     if not isinstance(value, str):
@@ -122,17 +118,12 @@ def terminate(error: DatabaseError) -> None:
     os.kill(os.getpid(), signal.SIGTERM)
 
 
-@kanta.bootstrap
-def bootstrap_db(data: DB) -> None:
-    reset_passphrase = bootstrap(data, config=runtime.config)
-    log_reset_link(reset_passphrase, "✅ Bootstrap completed!")
-
-
 async def init():
     """Load database from JSONL file using kanta.
 
-    If the database file is empty, the configured bootstrap callback seeds it
-    with default permissions, organization, role, admin user and a reset token.
+    The database must already exist and be initialized (see ``paskia
+    init``); the serve command's startup checks guarantee this before the
+    lifespan runs.
     """
     rootpath = Path(kanta.filename).parent
     try:

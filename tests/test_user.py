@@ -15,7 +15,6 @@ from urllib.parse import urlsplit
 import httpx
 import pytest
 
-from paskia.db.paths import db_file_path, users_root_path
 from tests.conftest import auth_headers, create_test_image_bytes
 
 
@@ -93,8 +92,6 @@ class TestUserAvatar:
         monkeypatch,
     ):
         """Uploading a WebP avatar should store and expose the canonical URL."""
-        monkeypatch.setenv("PASKIA_DB", str(tmp_path / "test-avatar-db.paskiadb"))
-
         upload_bytes = create_test_image_bytes()
 
         response = await client.put(
@@ -138,8 +135,6 @@ class TestUserAvatar:
         monkeypatch,
     ):
         """Avatar uploads must already be browser-prepared WebP."""
-        monkeypatch.setenv("PASKIA_DB", str(tmp_path / "test-avatar-db.paskiadb"))
-
         response = await client.put(
             f"/auth/api/user/{test_user.uuid}/profile.webp",
             files={
@@ -165,8 +160,6 @@ class TestUserAvatar:
         monkeypatch,
     ):
         """Deleting avatar should clear the user avatar URL."""
-        monkeypatch.setenv("PASKIA_DB", str(tmp_path / "test-avatar-db.paskiadb"))
-
         await client.put(
             f"/auth/api/user/{test_user.uuid}/profile.webp",
             files={"file": ("avatar.webp", create_test_image_bytes(), "image/webp")},
@@ -201,30 +194,6 @@ class TestUserAvatar:
             headers={**auth_headers(regular_session_token), "Host": "localhost:4401"},
         )
         assert response.status_code == 403
-
-
-def test_paskia_db_legacy_file_is_migrated_to_root_dir(tmp_path, monkeypatch):
-    legacy_path = tmp_path / "legacy.paskiadb"
-    legacy_bytes = b'{"v":0}\n'
-    legacy_path.write_bytes(legacy_bytes)
-
-    monkeypatch.setenv("PASKIA_DB", str(legacy_path))
-
-    db_path = db_file_path(create_root=True)
-
-    assert legacy_path.is_dir()
-    assert db_path == legacy_path / "main.db"
-    assert db_path.read_bytes() == legacy_bytes
-
-
-def test_paskia_db_root_uses_users_directory(tmp_path, monkeypatch):
-    root_path = tmp_path / "instance-root"
-    monkeypatch.setenv("PASKIA_DB", str(root_path))
-
-    users_path = users_root_path(create_root=True)
-
-    assert users_path == root_path / "users"
-    assert users_path.parent == root_path
 
 
 class TestUserLogoutAll:

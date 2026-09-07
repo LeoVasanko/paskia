@@ -4,10 +4,10 @@ from fastapi import Body, FastAPI, Query, Request
 
 from paskia import db
 from paskia.db import Permission as PermDC
+from paskia.domains import registry
 from paskia.fastapi import authz
 from paskia.fastapi.admin.errors import install_error_handlers
 from paskia.fastapi.session import AUTH_COOKIE
-from paskia.globals import passkey
 from paskia.util import hostutil, permutil, querysafe
 
 app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
@@ -16,7 +16,12 @@ install_error_handlers(app)
 
 
 def _validate_permission_domain(domain: str | None) -> None:
-    """Validate that domain is rp_id, a subdomain of it, or an OIDC client UUID."""
+    """Validate that domain is a configured domain host or an OIDC client UUID.
+
+    Accepted: any domain's rp-id or its subdomain, a related-origin hostname
+    of any domain, or the UUID of an OIDC client (used for the
+    groups claim).
+    """
     if domain is None:
         return
 
@@ -28,11 +33,11 @@ def _validate_permission_domain(domain: str | None) -> None:
     except ValueError:
         pass
 
-    rp_id = passkey.rp_id
-    if domain == rp_id or domain.endswith(f".{rp_id}"):
+    reg = registry()
+    if reg.resolve(domain) is not None:
         return
     raise ValueError(
-        f"Domain '{domain}' must be '{rp_id}', its subdomain, or an OIDC client UUID"
+        f"Domain '{domain}' must belong to a configured domain or be an OIDC client UUID"
     )
 
 
@@ -161,11 +166,14 @@ async def admin_update_permission(
 
     # Get existing permission
     perm = db.data().permissions.get(permission_uuid)
+    if perm is None:
+        raise ValueError(f"Permission {permission_uuid} not found")
 
-    # Update fields that were provided
+    # Update fields that were provided (omitted domain keeps the existing
+    # restriction; an explicit empty domain clears it)
     new_scope = scope if scope is not None else perm.scope
     new_display_name = display_name if display_name is not None else perm.display_name
-    domain_value = domain if domain else None
+    domain_value = perm.domain if domain is None else domain or None
 
     # Sanity check: prevent changing the auth:admin permission scope
     if perm.scope == "auth:admin" and new_scope != "auth:admin":
@@ -206,6 +214,8 @@ async def admin_delete_permission(
 
     # Get the permission to check its scope
     perm = db.data().permissions.get(permission_uuid)
+    if perm is None:
+        raise ValueError(f"Permission {permission_uuid} not found")
 
     # Sanity check: prevent deleting critical permissions if it would lock out admin
     if perm.scope == "auth:admin":

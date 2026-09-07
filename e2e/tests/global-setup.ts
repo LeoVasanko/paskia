@@ -1,4 +1,4 @@
-import { execSync, spawn } from 'child_process'
+import { execFileSync, spawn, spawnSync } from 'child_process'
 import { join, dirname } from 'path'
 import { existsSync, mkdirSync, rmSync, writeFileSync } from 'fs'
 import { fileURLToPath } from 'url'
@@ -20,55 +20,81 @@ interface TestState {
 /**
  * Global setup for E2E tests.
  *
- * Uses in-memory SQLite database for fast, isolated tests.
- * Captures the bootstrap reset token for initial user registration.
+ * Bootstraps a fresh combined database (paskia.kantadb) with two domains —
+ * localhost (default) and test.localhost — then starts the server with the
+ * test data directory as its working directory. Captures the bootstrap reset
+ * token from 'paskia init' output for initial user registration.
  */
 export default async function globalSetup() {
   console.log('\n🔧 Setting up E2E test environment...\n')
 
-  // Create test data directory for state file
-  if (!existsSync(testDataDir)) {
-    mkdirSync(testDataDir, { recursive: true })
-  }
+  // Start from a clean slate: the test data directory doubles as the server
+  // working directory, so paskia.kantadb and paskia.data/ are created here
+  rmSync(testDataDir, { recursive: true, force: true })
+  mkdirSync(testDataDir, { recursive: true })
 
   // Build the package first
   console.log('  Building package with uv build...')
-  execSync('uv build', { cwd: projectRoot, stdio: 'inherit' })
+  execFileSync('uv', ['build'], { cwd: projectRoot, stdio: 'inherit' })
   console.log('  ✅ Build complete\n')
 
-  console.log('  Starting server with in-memory database...')
   if (COLLECT_COVERAGE) {
     console.log('  📊 Coverage collection enabled for Python backend')
   }
 
   const state: TestState = {}
 
-  // Build server command - with or without coverage
-  const serverArgs = COLLECT_COVERAGE
-    ? [
-        'run', 'coverage', 'run', '--parallel-mode',
-        '-m', 'paskia', '-l', 'localhost:4404',
-        '--rp-id', 'localhost'
-      ]
-    : [
-        'run', 'paskia', '-l', 'localhost:4404',
-        '--rp-id', 'localhost'
-      ]
-
-  // Use a fresh database file for tests
-  const testDbFile = join(testDataDir, 'test.paskiadb')
-
-  if (existsSync(testDbFile)) {
-    console.log('  Removing stale test database...')
-    rmSync(testDbFile, { force: true, recursive: true })
+  // Bootstrap the database: two domains, localhost and test.localhost
+  console.log('  Bootstrapping database with paskia init...')
+  const initResult = spawnSync(
+    'uv',
+    [
+      'run', '--project', projectRoot,
+      'paskia', 'init', '-l', 'localhost:4404', 'localhost',
+    ],
+    { cwd: testDataDir, encoding: 'utf-8' }
+  )
+  const initOutput = `${initResult.stdout}${initResult.stderr}`
+  process.stdout.write(initOutput)
+  if (initResult.status !== 0) {
+    throw new Error(`paskia init failed with exit code ${initResult.status}`)
+  }
+  const addResult = spawnSync(
+    'uv',
+    ['run', '--project', projectRoot, 'paskia', 'init', 'test.localhost'],
+    { cwd: testDataDir, encoding: 'utf-8' }
+  )
+  process.stdout.write(`${addResult.stdout}${addResult.stderr}`)
+  if (addResult.status !== 0) {
+    throw new Error(`paskia init test.localhost failed with exit code ${addResult.status}`)
   }
 
-  // Start the server using Node's spawn
+  // Parse the reset token from init output
+  // Format: http://localhost:4404/auth/{token} where token is dot-separated words
+  const match = initOutput.match(/https?:\/\/localhost(?::\d+)?\/auth\/([a-z]+(?:\.[a-z]+)+)/)
+  if (!match) {
+    throw new Error('Failed to capture reset token from paskia init output')
+  }
+  state.resetToken = match[1]
+  console.log(`\n  ✅ Captured reset token: ${state.resetToken}\n`)
+
+  // Start the server (serve mode: all configuration comes from the database)
+  console.log('  Starting server...')
+  const serverArgs = COLLECT_COVERAGE
+    ? [
+        'run', '--project', projectRoot,
+        'coverage', 'run', '--parallel-mode',
+        '-m', 'paskia', '-l', 'localhost:4404'
+      ]
+    : [
+        'run', '--project', projectRoot,
+        'paskia', '-l', 'localhost:4404'
+      ]
+
   const serverProcess = spawn('uv', serverArgs, {
-    cwd: projectRoot,
+    cwd: testDataDir,
     env: {
       ...process.env,
-      PASKIA_DB: testDbFile,
       COVERAGE_FILE: join(projectRoot, '.coverage'),
     },
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -76,66 +102,38 @@ export default async function globalSetup() {
 
   state.serverPid = serverProcess.pid
 
-  // Capture output to find reset token
-  const resetTokenPromise = new Promise<string>((resolve, reject) => {
-    const timeout = setTimeout(() => {
-      reject(new Error('Timed out waiting for server bootstrap (30s)'))
-    }, 30000)
+  serverProcess.stdout?.on('data', (data: Buffer) => process.stdout.write(data))
+  serverProcess.stderr?.on('data', (data: Buffer) => process.stderr.write(data))
 
-    let output = ''
-
-    const handleData = (data: Buffer) => {
-      const text = data.toString()
-      output += text
-      process.stdout.write(text) // Echo to console
-
-      // Look for the reset token URL in the output
-      // Format: https://localhost/auth/{token} or http://localhost:4404/auth/{token}
-      // where token is word.word.word.word.word (dot separated)
-      const match = output.match(/https?:\/\/localhost(?::\d+)?\/auth\/([a-z]+(?:\.[a-z]+)+)/)
-      if (match) {
-        clearTimeout(timeout)
-        // Wait a bit for server to fully start
-        setTimeout(() => resolve(match[1]), 1000)
-      }
+  serverProcess.on('exit', (code) => {
+    if (code !== 0 && code !== null) {
+      console.error(`Server exited unexpectedly with code ${code}`)
     }
-
-    serverProcess.stdout?.on('data', handleData)
-    serverProcess.stderr?.on('data', handleData)
-
-    serverProcess.on('error', (err) => {
-      clearTimeout(timeout)
-      reject(err)
-    })
-
-    serverProcess.on('exit', (code) => {
-      if (code !== 0 && code !== null) {
-        clearTimeout(timeout)
-        reject(new Error(`Server exited with code ${code}`))
-      }
-    })
   })
 
-  try {
-    state.resetToken = await resetTokenPromise
-    console.log(`\n  ✅ Captured reset token: ${state.resetToken}\n`)
-  } catch (err) {
-    console.error('Failed to capture reset token:', err)
-    serverProcess.kill()
-    throw err
+  // Wait for the server to become ready and fetch the session cookie name
+  console.log('  Waiting for server readiness...')
+  const deadline = Date.now() + 30000
+  let settings: any = null
+  while (Date.now() < deadline) {
+    try {
+      const response = await fetch('http://localhost:4404/auth/api/settings')
+      if (response.ok) {
+        settings = await response.json()
+        break
+      }
+    } catch {
+      // Not up yet
+    }
+    await new Promise(r => setTimeout(r, 250))
   }
-
-  // Fetch session cookie name from server settings
-  try {
-    const response = await fetch('http://localhost:4404/auth/api/settings')
-    const settings = await response.json()
-    state.sessionCookie = settings.session_cookie
-    console.log(`  ✅ Session cookie name: ${state.sessionCookie}\n`)
-  } catch (err) {
-    console.error('Failed to fetch settings:', err)
+  if (!settings) {
     serverProcess.kill()
-    throw err
+    throw new Error('Server did not become ready in time (30s)')
   }
+  state.sessionCookie = settings.session_cookie
+  console.log(`  ✅ Session cookie name: ${state.sessionCookie}`)
+  console.log(`  ✅ Domain: ${settings.rp_id} (${settings.rp_name})\n`)
 
   // Save state for tests
   writeFileSync(stateFile, JSON.stringify(state, null, 2))

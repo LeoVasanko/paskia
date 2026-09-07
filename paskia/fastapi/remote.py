@@ -6,7 +6,7 @@ wants to log in and another device (authenticating) provides the passkey.
 
 Endpoints:
 - /request: Called by the device wanting to be authenticated
-- /pair: Called by the authenticating device to complete the request
+- /permit: Called by the authenticating device to complete the request
 """
 
 import asyncio
@@ -19,6 +19,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from paskia import authcode, db, remoteauth
 from paskia.authcode import CookieCode
 from paskia.authsession import expires
+from paskia.domains import current_domain, registry
 from paskia.fastapi.session import AUTH_COOKIE, infodict
 from paskia.fastapi.wschat import authenticate_and_login
 from paskia.fastapi.wsutil import validate_origin, websocket_error_handler
@@ -94,6 +95,7 @@ async def websocket_remote_auth_request(ws: WebSocket):
             host=host,
             ip=metadata.get("ip") or "",
             user_agent=metadata.get("user_agent") or "",
+            rp_id=current_domain().rp_id,
             action=action,
         )
 
@@ -333,10 +335,13 @@ async def websocket_remote_auth_permit(ws: WebSocket, auth=AUTH_COOKIE):
                     )
 
                 # Create exchange code for the session (don't expose raw secret)
+                # Stamped with the *requesting* device's domain: it redeems the
+                # code on its own host, which dispatches to that domain.
                 exchange_code = authcode.store_cookie(
                     CookieCode(
                         session_key=secret,
                         created=datetime.now(UTC),
+                        rp_id=request.rp_id,
                     )
                 )
 
@@ -440,11 +445,19 @@ async def websocket_remote_auth_permit(ws: WebSocket, auth=AUTH_COOKIE):
 
             request.action = locked_action  # Update local copy with locked value
 
-            # Send device info to the authenticating device
+            # Send device info to the authenticating device, including the
+            # requesting device's domain (may differ from the approver's)
+            requesting_domain = registry().get(request.rp_id)
             await ws.send_json(
                 {
                     "status": "found",
                     "host": request.host,
+                    "rp_id": request.rp_id,
+                    "rp_name": (
+                        requesting_domain.rp_name
+                        if requesting_domain
+                        else request.rp_id
+                    ),
                     "user_agent_pretty": useragent.compact_user_agent(
                         request.user_agent
                     ),

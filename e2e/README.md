@@ -75,18 +75,22 @@ Runs tests with Playwright Inspector for step-by-step debugging.
 
 ```
 e2e/
-├── playwright.config.ts      # Playwright configuration
+├── playwright.config.js      # Playwright configuration
 ├── package.json
 ├── tsconfig.json
 ├── test-data/                # Test database (created at runtime)
-│   └── test.sqlite
+│   └── paskia.kantadb
 └── tests/
-    ├── global-setup.ts       # Creates fresh DB, captures reset token
+    ├── global-setup.ts       # Creates fresh DB (localhost + test.localhost domains), captures reset token
     ├── global-teardown.ts    # Cleanup
-    ├── passkey.spec.ts       # Main E2E tests
+    ├── 10-passkey.spec.ts    # Registration, authentication, session tests
+    ├── 20-api-auth.spec.ts   # API-mode iframe flows (401/403/reauth)
+    ├── 50-multidomain.spec.ts# Multi-domain dispatch, related origins, auth hosts, remote login
+    ├── 99-logout.spec.ts     # Logout (runs last)
     └── fixtures/
         ├── virtual-authenticator.ts  # Virtual authenticator setup
-        └── passkey-helpers.ts        # WebSocket helpers
+        ├── passkey-helpers.ts        # WebSocket helpers
+        └── remote-auth.ts            # Pairing-code remote auth helpers
 ```
 
 ## What's Tested
@@ -106,6 +110,13 @@ e2e/
 - User info retrieval (`/auth/api/user-info`)
 - Logout (`/auth/api/logout`)
 - Invalid/missing token rejection
+
+### Multi-Domain
+- Host-based domain dispatch (`localhost` vs `test.localhost`, 421 for unknown hosts)
+- Related Origin Requests well-known endpoint and admin domain API
+- Per-domain auth hosts (UI at the site root)
+- WebSocket cross-domain rules
+- Cross-domain remote login via pairing code
 
 ## How Virtual Authenticator Works
 
@@ -142,12 +153,12 @@ This creates an in-browser authenticator that:
 ## Limitations
 
 1. **Chromium only**: Virtual authenticator is a Chrome DevTools feature
-2. **No cross-origin**: Tests run on localhost; production-like origins need additional setup
+2. **Multi-domain via `*.localhost`**: Chrome resolves any `*.localhost` hostname to loopback, which the tests use for cross-domain scenarios; non-localhost domains are exercised only via explicit Host headers (Node-side requests)
 3. **Single user per run**: Bootstrap creates one admin user; additional users need admin API
 
 ## Debugging Tips
 
-1. **Check test database**: `e2e/test-data/test.sqlite` persists after tests
+1. **Check test database**: `e2e/test-data/paskia.kantadb` is removed during teardown; comment out the cleanup in `global-teardown.ts` to inspect it after a run
 2. **View server output**: Global setup echoes server bootstrap to console
 3. **Use trace viewer**: `npx playwright show-trace` on failure traces
 

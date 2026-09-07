@@ -9,6 +9,7 @@ from paskia import authcode, db
 from paskia.authcode import CookieCode, OIDCCode
 from paskia.authsession import get_reset, session_ctx
 from paskia.db.structs import Session
+from paskia.domains import current_domain
 from paskia.fastapi import authz, remote
 from paskia.fastapi.session import AUTH_COOKIE, infodict
 from paskia.fastapi.wschat import (
@@ -17,7 +18,6 @@ from paskia.fastapi.wschat import (
     register_chat,
 )
 from paskia.fastapi.wsutil import validate_origin, websocket_error_handler
-from paskia.globals import passkey
 from paskia.util import hostutil, passphrase
 from paskia.util.crypto import hash_secret
 
@@ -28,6 +28,7 @@ def create_exchange_code(session_key: str) -> str:
     cookie_code = CookieCode(
         session_key=session_key,
         created=now,
+        rp_id=current_domain().rp_id,
     )
     return authcode.store_cookie(cookie_code)
 
@@ -55,10 +56,11 @@ async def websocket_register_add(
     """
     origin = validate_origin(ws)
     host = hostutil.normalize_host(origin.split("://", 1)[1])
+    domain = current_domain()
     if reset is not None:
         if not passphrase.is_well_formed(reset):
             raise ValueError(
-                f"The reset link for {passkey.rp_name} is invalid or has expired"
+                f"The reset link for {domain.rp_name} is invalid or has expired"
             )
         s = get_reset(reset)
         user_uuid = s.user_uuid
@@ -75,7 +77,7 @@ async def websocket_register_add(
         stripped = name.strip()
         if stripped:
             user_name = stripped
-    credential_ids = user.credential_ids or None
+    credential_ids = user.credential_ids_for(domain.rp_id) or None
 
     # WebAuthn registration
     credential = await register_chat(ws, user_uuid, user_name, origin, credential_ids)
@@ -123,6 +125,7 @@ async def websocket_authenticate(
 ):
     origin = validate_origin(ws)
     host = origin.split("://", 1)[1]
+    domain = current_domain()
 
     # OIDC mode: validate client before auth
     oidc_client = None
@@ -204,8 +207,6 @@ async def websocket_authenticate(
         cred, new_sign_count = await authenticate_chat(ws)
 
         # Get metadata for session
-        origin = validate_origin(ws)
-        host = origin.split("://", 1)[1]
         normalized_host = hostutil.normalize_host(host)
         metadata = infodict(ws, "oidc_auth")
 
@@ -223,6 +224,8 @@ async def websocket_authenticate(
             user_agent=metadata["user_agent"],
             validated=now,
             client=oidc_client.uuid,
+            rp_id=domain.rp_id,
+            issuer=origin,
         )
         db.oidc_login(
             session=session,

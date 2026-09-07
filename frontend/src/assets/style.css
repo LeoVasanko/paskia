@@ -467,6 +467,61 @@ th {
   font-size: 0.9rem;
 }
 
+/* Runtime diagnostics list: 🔸 markers with a hanging indent, so wrapped
+   lines align with the text rather than under the marker */
+.diag-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.diag-list li {
+  position: relative;
+  padding-left: 1.4em;
+}
+
+.diag-list li + li {
+  margin-top: 0.3em;
+}
+
+.diag-list li::before {
+  content: "🔸";
+  position: absolute;
+  left: 0;
+}
+
+/* Dialog attachment panel (runtime diagnostics, related-origin setup):
+   docked on the right of the dialog, so appearing or disappearing never
+   shifts the dialog itself. On narrow screens it hangs below instead. */
+.attach-panel {
+  position: absolute;
+  top: calc(100% + 0.5rem);
+  left: 0;
+  right: 0;
+  background: var(--color-dialog);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-xl);
+  padding: var(--space-md) var(--space-lg);
+  max-height: 30vh;
+  overflow-y: auto;
+}
+
+.attach-panel > * + * {
+  margin-top: var(--space-md);
+}
+
+@media (min-width: 1200px) {
+  .attach-panel {
+    top: 0;
+    left: calc(100% + 0.75rem);
+    right: auto;
+    /* Never wider than the space right of the centered 500px dialog */
+    width: min(340px, calc(50vw - 286px));
+    max-height: calc(100vh - 3rem);
+  }
+}
+
 .icon-btn {
   background: none;
   border: none;
@@ -574,6 +629,12 @@ th {
   align-items: center;
   justify-content: center;
   padding: 1.5rem;
+}
+
+/* Positions attachments (e.g. the diagnostics panel) relative to the
+   dialog; shrink-wraps the panel in the overlay's flex layout */
+.modal-wrap {
+  position: relative;
 }
 
 .device-dialog,
@@ -802,6 +863,28 @@ th {
   background: var(--color-surface-subtle);
   color: var(--color-text-muted);
   border: 1px solid var(--color-border);
+}
+
+.badge-domain {
+  font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
+  font-size: 0.75rem;
+}
+
+.domain-enroll-notice {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  margin-bottom: 1rem;
+  border: 1px solid var(--color-accent);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-subtle);
+}
+
+.domain-enroll-notice p {
+  margin: 0;
 }
 
 

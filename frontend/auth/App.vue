@@ -37,11 +37,11 @@ function normalizeHost(raw) {
 }
 
 /**
- * Host mode is active when an auth_host is configured AND the current host differs from it.
+ * Host mode is active when an own_auth_host is configured AND the current host differs from it.
  * In host mode, we show a limited profile view with logout and link to full profile.
  */
 const isHostMode = computed(() => {
-  const authHost = store.settings?.auth_host
+  const authHost = store.settings?.own_auth_host
   if (!authHost) return false
   const currentHost = normalizeHost(window.location.host)
   const configuredHost = normalizeHost(authHost)
@@ -99,7 +99,7 @@ onMounted(async () => {
   if (rpName) {
     // In host mode, show "account summary" style title
     // Settings are loaded but isHostMode depends on them, so check here
-    const authHost = store.settings?.auth_host
+    const authHost = store.settings?.own_auth_host
     const inHostMode = authHost && normalizeHost(window.location.host) !== normalizeHost(authHost)
     document.title = inHostMode ? `${rpName} · Account summary` : rpName
   }

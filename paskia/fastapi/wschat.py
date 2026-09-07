@@ -9,9 +9,9 @@ from fastapi import WebSocket
 from paskia import db
 from paskia.authsession import session_ctx
 from paskia.db import Credential, SessionContext
+from paskia.domains import current_domain, registry
 from paskia.fastapi.session import infodict
 from paskia.fastapi.wsutil import validate_origin
-from paskia.globals import passkey
 from paskia.util import hostutil
 
 
@@ -23,6 +23,7 @@ async def register_chat(
     credential_ids: list[bytes] | None = None,
 ):
     """Run WebAuthn registration flow and return the verified credential."""
+    passkey = current_domain().passkey
     options, challenge = passkey.reg_generate_options(
         user_id=user_uuid,
         user_name=user_name,
@@ -42,6 +43,8 @@ async def authenticate_chat(
     Returns:
         tuple of (credential, new_sign_count) where new_sign_count comes from WebAuthn verification
     """
+    domain = current_domain()
+    passkey = domain.passkey
     origin = validate_origin(ws)
     options, challenge = passkey.auth_generate_options(credential_ids=credential_ids)
     await ws.send_json({"optionsJSON": options})
@@ -51,7 +54,7 @@ async def authenticate_chat(
         (
             c
             for c in db.data().credentials.values()
-            if c.credential_id == authcred.raw_id
+            if c.credential_id == authcred.raw_id and c.rp_id == domain.rp_id
         ),
         None,
     )
@@ -77,22 +80,20 @@ async def authenticate_and_login(
     Args:
         ws: The WebSocket connection (used for WebAuthn and origin validation)
         auth: Existing session cookie for re-auth credential restriction
-        session_host: Override host for the new session (defaults to ws origin)
+        session_host: Override host for the new session (defaults to ws origin);
+            must belong to a configured domain
         session_ip: Override IP for the new session (defaults to ws client IP)
         session_user_agent: Override user-agent for the new session (defaults to ws headers)
 
     Returns:
         Tuple of (SessionContext for the authenticated session, session secret)
     """
+    domain = current_domain()
     origin = validate_origin(ws)
     host = origin.split("://", 1)[1]
     normalized_host = hostutil.normalize_host(host)
     if not normalized_host:
         raise ValueError("Host required for session creation")
-    hostname = normalized_host.split(":")[0]
-    rp_id = passkey.rp_id
-    if not (hostname == rp_id or hostname.endswith(f".{rp_id}")):
-        raise ValueError(f"Host must be the same as or a subdomain of {rp_id}")
     metadata = infodict(ws, "auth")
 
     # Get credential IDs if restricting to a user's credentials
@@ -100,7 +101,7 @@ async def authenticate_and_login(
     if auth:
         existing_ctx = session_ctx(auth, host)
         if existing_ctx:
-            credential_ids = existing_ctx.user.credential_ids or None
+            credential_ids = existing_ctx.user.credential_ids_for(domain.rp_id) or None
 
     cred, new_sign_count = await authenticate_chat(ws, credential_ids)
 
@@ -112,12 +113,17 @@ async def authenticate_and_login(
     )
     if not login_host:
         raise ValueError("Host required for session creation")
+    if session_host is not None and registry().resolve(login_host) is None:
+        raise ValueError(f"Host '{login_host}' does not belong to a configured domain")
     login_ip = session_ip if session_ip is not None else metadata["ip"]
     login_user_agent = (
         session_user_agent if session_user_agent is not None else metadata["user_agent"]
     )
 
-    # Create session and update user/credential
+    # Create session and update user/credential; stamp it with the domain of
+    # the session's host (in remote flows the connection domain is the
+    # approver's, but the session belongs to the requesting device's domain)
+    login_domain = registry().resolve(login_host) or domain
     secret = db.login(
         user_uuid=cred.user_uuid,
         credential_uuid=cred.uuid,
@@ -125,6 +131,7 @@ async def authenticate_and_login(
         host=login_host,
         ip=login_ip,
         user_agent=login_user_agent,
+        rp_id=login_domain.rp_id,
     )
 
     # Fetch and return the full session context (using the same host the session was created with)

@@ -4,8 +4,6 @@ FastAPI-specific session management for WebAuthn authentication.
 This module provides FastAPI-specific session management functionality:
 - Extracting client information from FastAPI requests
 - Setting and clearing HTTP-only cookies via FastAPI Response objects
-
-Generic session management functions have been moved to authsession.py
 """
 
 from ipaddress import IPv4Address, IPv6Address

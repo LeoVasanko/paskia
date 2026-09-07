@@ -18,12 +18,12 @@ from uuid import UUID
 import httpx
 import pytest
 
-from paskia import authcode, db
+from paskia import authcode, db, domains
 from paskia.authsession import EXPIRES
 from paskia.db import delete_session
-from paskia.db.structs import Client
+from paskia.db.structs import Client, Config, DomainConfig, OriginEntry
 from paskia.fastapi.api import _REFRESH_INTERVAL
-from paskia.util import avatar, hostutil, oidjwt, permutil
+from paskia.util import avatar, oidjwt, permutil
 from paskia.util.crypto import hash_secret
 from paskia.util.passphrase import generate
 from tests.conftest import auth_headers, create_test_image_bytes, create_test_session
@@ -42,7 +42,7 @@ class TestSettingsEndpoint:
         assert "rp_name" in data
         assert "session_cookie" in data
         assert data["rp_id"] == "localhost"
-        assert data["rp_name"] == "Test RP"
+        assert data["rp_name"] == "localhost"
         assert data["session_cookie"] == "__Host-paskia"
 
     @pytest.mark.asyncio
@@ -69,16 +69,20 @@ class TestAvatarUrls:
         self, tmp_path, monkeypatch
     ):
         """Absolute avatar URLs should preserve /auth/api even with an auth host."""
-        db_root = tmp_path / "test-avatar-db.paskiadb"
-        monkeypatch.setenv("PASKIA_DB", str(db_root))
-        monkeypatch.setattr(
-            hostutil,
-            "api_url",
-            lambda path="": f"https://auth.zi.fi/auth/api/{path.lstrip('/')}",
+        domains.configure(listen=None)
+        domains.init_registry(
+            Config(
+                domains={
+                    "zi.fi": DomainConfig(
+                        origins={"auth.zi.fi": OriginEntry(auth_host=True)}
+                    )
+                }
+            )
         )
 
-        user_uuid = test_uuid = UUID("019c6831-84cf-7b88-b66c-c8165890b7c5")
-        path = db_root / "users" / str(test_uuid) / "profile.webp"
+        # The autouse avatar fixture redirects storage to tmp_path / "users"
+        user_uuid = UUID("019c6831-84cf-7b88-b66c-c8165890b7c5")
+        path = tmp_path / "users" / str(user_uuid) / "profile.webp"
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(b"RIFF1234WEBP")
 
@@ -646,8 +650,6 @@ class TestUserInfoEndpoint:
         monkeypatch,
     ):
         """User info should include the canonical avatar URL when present."""
-        monkeypatch.setenv("PASKIA_DB", str(tmp_path / "test-avatar-db.paskiadb"))
-
         upload = await client.put(
             f"/auth/api/user/{test_user.uuid}/profile.webp",
             files={"file": ("avatar.webp", create_test_image_bytes(), "image/webp")},
@@ -676,8 +678,6 @@ class TestUserInfoEndpoint:
         monkeypatch,
     ):
         """Avatar route should honor If-None-Match for unchanged avatars."""
-        monkeypatch.setenv("PASKIA_DB", str(tmp_path / "test-avatar-db.paskiadb"))
-
         upload = await client.put(
             f"/auth/api/user/{test_user.uuid}/profile.webp",
             files={"file": ("avatar.webp", create_test_image_bytes(), "image/webp")},
@@ -714,8 +714,6 @@ class TestOidcUserInfoEndpoint:
         monkeypatch,
     ):
         """OIDC userinfo should expose picture when profile scope is granted."""
-        monkeypatch.setenv("PASKIA_DB", str(tmp_path / "test-avatar-db.paskiadb"))
-
         upload = await client.put(
             f"/auth/api/user/{test_user.uuid}/profile.webp",
             files={"file": ("avatar.webp", create_test_image_bytes(), "image/webp")},
@@ -776,6 +774,7 @@ class TestSetSessionEndpoint:
             authcode.CookieCode(
                 session_key=session_token,
                 created=datetime.now(UTC),
+                rp_id="localhost",
             )
         )
         response = await client.post(

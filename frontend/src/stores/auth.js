@@ -83,8 +83,8 @@ export const useAuthStore = defineStore('auth', {
       if (!this.userInfo) this.currentView = 'login'
       else this.currentView = 'profile'
     },
-    async loadSettings() {
-      this.settings = await getSettings()
+    async loadSettings(force = false) {
+      this.settings = await getSettings(force)
     },
     async loadUserInfo() {
       try {

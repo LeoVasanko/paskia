@@ -53,6 +53,7 @@
       <!-- Device info display (shown when 3 words match a request) -->
       <div v-else-if="deviceInfo" class="device-info">
         <p class="device-permit-text">Permit {{ deviceInfo.action === 'register' ? 'registration' : 'login' }} to <strong>{{ deviceInfo.host }}</strong></p>
+        <p v-if="crossDomainNotice" class="device-meta domain-notice">on <strong>{{ deviceInfo.rp_name || deviceInfo.rp_id }}</strong><template v-if="deviceInfo.rp_name"> ({{ deviceInfo.rp_id }})</template></p>
         <p class="device-meta">{{ deviceInfo.user_agent_pretty || '—' }}</p>
 
         <p v-if="error" class="error-message">{{ error }}</p>
@@ -120,6 +121,13 @@ const autocompleteHint = ref('')
 // Watch deviceInfo and emit visibility change
 watch(deviceInfo, (newVal) => {
   emit('deviceInfoVisible', !!newVal)
+})
+
+const crossDomainNotice = computed(() => {
+  const info = deviceInfo.value
+  if (!info?.rp_id) return false
+  const ownRpId = settings.value?.rp_id
+  return ownRpId ? info.rp_id !== ownRpId : true
 })
 
 const hasInvalidWord = ref(false)
@@ -613,7 +621,9 @@ async function lookupDeviceInfo() {
         host: res.host,
         user_agent_pretty: res.user_agent_pretty,
         client_ip: res.client_ip,
-        action: res.action || 'login'
+        action: res.action || 'login',
+        rp_id: res.rp_id || null,
+        rp_name: res.rp_name || null
       }
       lastLookedUpCode = currentCode
       nextTick(() => { submitBtnRef.value?.focus() })
@@ -935,6 +945,12 @@ defineExpose({ reset, deny, code, handleInput, loading, error })
   font-size: 0.8rem;
   color: var(--color-text-muted);
   font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
+}
+
+.domain-notice {
+  color: var(--color-text);
+  font-family: inherit;
+  font-size: 0.9rem;
 }
 
 .error-message {

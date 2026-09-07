@@ -22,7 +22,7 @@ import pytest
 import pytest_asyncio
 import uuid7
 
-from paskia import db
+from paskia import db, domains
 from paskia.db import (
     Credential,
     Org,
@@ -37,10 +37,7 @@ from paskia.db import (
     create_user,
 )
 from paskia.db.operations import DB
-from paskia.util import hostutil
 from paskia.util.crypto import hash_secret
-from paskia.util.runtime import clear_config_cache
-from paskia.util.runtime import config as runtime_config
 from tests.conftest import auth_headers, create_test_image_bytes, create_test_session
 
 # -------------------- Additional Fixtures --------------------
@@ -91,6 +88,7 @@ async def second_org_credential(test_db: DB, second_org_user: User) -> Credentia
         aaguid=UUID("00000000-0000-0000-0000-000000000000"),
         public_key=os.urandom(64),
         sign_count=0,
+        rp_id="localhost",
     )
     create_credential(credential)
     return credential
@@ -145,6 +143,7 @@ async def org_admin_credential(test_db: DB, org_admin_user: User) -> Credential:
         aaguid=UUID("00000000-0000-0000-0000-000000000000"),
         public_key=os.urandom(64),
         sign_count=0,
+        rp_id="localhost",
     )
     create_credential(credential)
     return credential
@@ -253,8 +252,6 @@ class TestAdminOrganizations:
         monkeypatch,
     ):
         """Admin org payload should include canonical avatar URLs for listed users."""
-        monkeypatch.setenv("PASKIA_DB", str(tmp_path / "test-avatar-db.paskiadb"))
-
         upload = await client.put(
             f"/auth/api/user/{test_user.uuid}/profile.webp",
             files={"file": ("avatar.webp", create_test_image_bytes(), "image/webp")},
@@ -948,8 +945,6 @@ class TestAdminUsersInOrg:
         monkeypatch,
     ):
         """Admin should be able to upload avatar for a managed user."""
-        monkeypatch.setenv("PASKIA_DB", str(tmp_path / "test-admin-avatar-db.paskiadb"))
-
         response = await client.put(
             f"/auth/api/user/{test_user.uuid}/profile.webp",
             files={"file": ("avatar.webp", create_test_image_bytes(), "image/webp")},
@@ -1794,37 +1789,59 @@ class TestOrgAdminAuthExceptions:
         assert response.status_code == 403
 
 
-class TestServerConfig:
-    """Tests for GET/PATCH /auth/api/admin/server-config/ runtime updates."""
-
-    @pytest.fixture(scope="function")
-    def restore_runtime_config(self):
-        """Restore PASKIA_CONFIG env and cache after a test mutates runtime."""
-        original = os.environ["PASKIA_CONFIG"]
-        yield
-        os.environ["PASKIA_CONFIG"] = original
-        clear_config_cache()
+class TestDomains:
+    """Tests for the domain management API (/auth/api/admin/domains/)."""
 
     async def _set_auth_host(self, client, session_token, test_user, test_credential):
-        """Configure an auth host via PATCH, as the admin UI would."""
+        """Configure an auth host on the localhost domain, as the admin UI would."""
         r = await client.patch(
-            "/auth/api/admin/server-config/",
+            "/auth/api/admin/domains/localhost",
             json={
                 "rp_name": "",
-                "auth_host": "auth.localhost",
-                "origins": ["auth.localhost", "localhost"],
+                "origins": {
+                    "auth.localhost": {"auth_host": True},
+                    "localhost": True,
+                },
             },
             headers={**auth_headers(session_token), "Host": "localhost:4401"},
         )
         assert r.status_code == 200, r.text
-        assert db.data().config.auth_host == "https://auth.localhost"
-        assert hostutil.dedicated_auth_host() == "auth.localhost"
-        assert hostutil.auth_site_url() == "https://auth.localhost/"
+        domain_cfg = db.data().config.domains["localhost"]
+        assert domains.auth_host_url(domain_cfg) == "https://auth.localhost"
+        domain = domains.registry().get("localhost")
+        assert domain.own_auth_host == "auth.localhost"
+        assert domain.auth_site_url == "https://auth.localhost/"
         # Session for requests coming from the auth host (sessions are host-bound)
         _, token = create_test_session(
             test_user.uuid, test_credential.uuid, host="auth.localhost"
         )
         return {**auth_headers(token), "Host": "auth.localhost"}
+
+    @pytest.mark.asyncio
+    async def test_list_domains(self, client: httpx.AsyncClient, session_token: str):
+        r = await client.get(
+            "/auth/api/admin/domains/",
+            headers={**auth_headers(session_token), "Host": "localhost:4401"},
+        )
+        assert r.status_code == 200, r.text
+        data = r.json()
+        assert len(data) == 1
+        domain = data[0]
+        assert domain["rp_id"] == "localhost"
+        assert domain["origins"] == {"**.localhost": True}
+        assert "related" not in domain
+        assert domain["auth_host"] is None
+        assert domain["site_url"] == "http://localhost:4401"
+
+    @pytest.mark.asyncio
+    async def test_domains_require_master_admin(
+        self, client: httpx.AsyncClient, regular_session_token: str
+    ):
+        r = await client.get(
+            "/auth/api/admin/domains/",
+            headers={**auth_headers(regular_session_token), "Host": "localhost:4401"},
+        )
+        assert r.status_code in (401, 403)
 
     @pytest.mark.asyncio
     async def test_remove_auth_host_updates_runtime(
@@ -1833,41 +1850,41 @@ class TestServerConfig:
         session_token: str,
         test_user,
         test_credential,
-        restore_runtime_config,
     ):
-        """Removing auth_host must clear it from runtime config and URLs."""
+        """Removing the auth host mark must clear it from runtime config and URLs."""
         headers = await self._set_auth_host(
             client, session_token, test_user, test_credential
         )
 
         # The dialog still lists the old auth host among origins, so it is sent back
         r = await client.patch(
-            "/auth/api/admin/server-config/",
+            "/auth/api/admin/domains/localhost",
             json={
                 "rp_name": "",
-                "auth_host": "",
-                "origins": ["auth.localhost", "localhost"],
+                "origins": {"auth.localhost": True, "localhost": True},
             },
             headers=headers,
         )
         assert r.status_code == 200, r.text
-        assert db.data().config.auth_host is None
+        domain_cfg = db.data().config.domains["localhost"]
+        assert domains.auth_host_url(domain_cfg) is None
 
-        rt = runtime_config()
-        assert rt.config.auth_host is None
-        assert rt.site_path == "/auth/"
-        assert "auth.localhost" not in rt.site_url
-        assert hostutil.dedicated_auth_host() is None
-        assert "auth.localhost" not in hostutil.auth_site_url()
+        domain = domains.registry().get("localhost")
+        assert domain.own_auth_host is None
+        assert domain.ui_base_path == "/auth/"
+        # Site URL derivation is stateless: with the auth host mark removed,
+        # the exact rp-id origin becomes the site URL.
+        assert domain.auth_site_url == "https://localhost/auth/"
 
         # GET and settings reflect the cleared state
         r = await client.get(
-            "/auth/api/admin/server-config/",
+            "/auth/api/admin/domains/",
             headers={**auth_headers(session_token), "Host": "localhost:4401"},
         )
-        assert r.json()["auth_host"] == ""
+        assert r.json()[0]["origins"] == {"auth.localhost": True, "localhost": True}
         r = await client.get("/auth/api/settings")
         assert r.json()["auth_host"] is None
+        assert r.json()["own_auth_host"] is None
         assert r.json()["ui_base_path"] == "/auth/"
 
         # Middleware no longer redirects to the removed auth host
@@ -1879,28 +1896,261 @@ class TestServerConfig:
         assert "auth.localhost" not in r.headers.get("location", "")
 
     @pytest.mark.asyncio
-    async def test_remove_auth_host_without_origins_falls_back_to_rp_id(
+    async def test_remove_auth_host_without_origins_falls_back(
+        self,
+        client: httpx.AsyncClient,
+        session_token: str,
+    ):
+        """Emptying a domain's origins table must not keep the removed auth
+        host in derived URLs. Only possible on a domain other than the one
+        in use — the lockout guard refuses it there."""
+        headers = {**auth_headers(session_token), "Host": "localhost:4401"}
+        r = await client.post(
+            "/auth/api/admin/domains/",
+            json={
+                "rp_id": "example.com",
+                "origins": {
+                    "auth.example.com": {"auth_host": True},
+                    "app.example.com": True,
+                },
+            },
+            headers=headers,
+        )
+        assert r.status_code == 200, r.text
+        domain = domains.registry().get("example.com")
+        assert domain.own_auth_host == "auth.example.com"
+        assert "auth.example.com" in domain.site_url
+
+        r = await client.patch(
+            "/auth/api/admin/domains/example.com",
+            json={"rp_name": "", "origins": {}},
+            headers=headers,
+        )
+        assert r.status_code == 200, r.text
+
+        domain = domains.registry().get("example.com")
+        assert domain.own_auth_host is None
+        assert domain.ui_base_path == "/auth/"
+        assert "auth.example.com" not in domain.site_url
+        assert "auth.example.com" not in domain.auth_site_url
+
+    @pytest.mark.asyncio
+    async def test_create_and_delete_domain(
+        self, client: httpx.AsyncClient, session_token: str
+    ):
+        headers = {**auth_headers(session_token), "Host": "localhost:4401"}
+        r = await client.post(
+            "/auth/api/admin/domains/",
+            json={
+                "rp_id": "example.com",
+                "rp_name": "Example",
+                "origins": {"app.example.com": True, "unrelated-site.com": True},
+            },
+            headers=headers,
+        )
+        assert r.status_code == 200, r.text
+
+        r = await client.get("/auth/api/admin/domains/", headers=headers)
+        domains_list = {domain["rp_id"]: domain for domain in r.json()}
+        assert set(domains_list) == {"localhost", "example.com"}
+        created = domains_list["example.com"]
+        assert created["rp_name"] == "Example"
+        # In-domain and related origins live in one table; classification
+        # is derived from the rp-id
+        assert created["origins"] == {
+            "app.example.com": True,
+            "unrelated-site.com": True,
+        }
+
+        r = await client.delete("/auth/api/admin/domains/example.com", headers=headers)
+        assert r.status_code == 200, r.text
+        assert "example.com" not in db.data().config.domains
+        assert domains.registry().get("example.com") is None
+
+    @pytest.mark.asyncio
+    async def test_create_domain_validation(
+        self, client: httpx.AsyncClient, session_token: str
+    ):
+        headers = {**auth_headers(session_token), "Host": "localhost:4401"}
+
+        # rp_id is required
+        r = await client.post("/auth/api/admin/domains/", json={}, headers=headers)
+        assert r.status_code == 400
+
+        # Duplicate rp-id
+        r = await client.post(
+            "/auth/api/admin/domains/", json={"rp_id": "localhost"}, headers=headers
+        )
+        assert r.status_code == 400
+
+        # Invalid rp-id
+        r = await client.post(
+            "/auth/api/admin/domains/", json={"rp_id": "not a domain!"}, headers=headers
+        )
+        assert r.status_code == 400
+
+        # An auth host must be within the rp-id domain
+        r = await client.post(
+            "/auth/api/admin/domains/",
+            json={
+                "rp_id": "example.com",
+                "origins": {"auth.other.com": {"auth_host": True}},
+            },
+            headers=headers,
+        )
+        assert r.status_code == 400
+
+        # Related origin host may not collide across domains
+        r = await client.post(
+            "/auth/api/admin/domains/",
+            json={"rp_id": "example.com", "origins": {"shared-app.com": True}},
+            headers=headers,
+        )
+        assert r.status_code == 200
+        r = await client.post(
+            "/auth/api/admin/domains/",
+            json={"rp_id": "other.com", "origins": {"shared-app.com": True}},
+            headers=headers,
+        )
+        assert r.status_code == 400
+
+        # Cross-domain entries are related origins — accepted in the same table
+        r = await client.post(
+            "/auth/api/admin/domains/",
+            json={"rp_id": "another.com", "origins": {"elsewhere.com": True}},
+            headers=headers,
+        )
+        assert r.status_code == 200
+
+        # Plain '*' is rejected — wildcards must be explicit ('**.another.com')
+        r = await client.post(
+            "/auth/api/admin/domains/",
+            json={"rp_id": "star.com", "origins": {"*": True}},
+            headers=headers,
+        )
+        assert r.status_code == 400
+
+    @pytest.mark.asyncio
+    async def test_delete_domain_guards(
+        self, client: httpx.AsyncClient, session_token: str, test_credential
+    ):
+        headers = {**auth_headers(session_token), "Host": "localhost:4401"}
+
+        # Cannot delete the last domain
+        r = await client.delete("/auth/api/admin/domains/localhost", headers=headers)
+        assert r.status_code == 400
+
+        # Unknown domain
+        r = await client.delete("/auth/api/admin/domains/nope.com", headers=headers)
+        assert r.status_code == 400
+
+        # A domain with credentials still registered under it cannot be deleted
+        r = await client.post(
+            "/auth/api/admin/domains/", json={"rp_id": "example.com"}, headers=headers
+        )
+        assert r.status_code == 200
+        cred = Credential.create(
+            credential_id=secrets.token_bytes(32),
+            user=test_credential.user_uuid,
+            aaguid=UUID("00000000-0000-0000-0000-000000000000"),
+            public_key=secrets.token_bytes(64),
+            sign_count=0,
+            rp_id="example.com",
+        )
+        create_credential(cred)
+        r = await client.delete("/auth/api/admin/domains/example.com", headers=headers)
+        assert r.status_code == 400
+
+    @pytest.mark.asyncio
+    async def test_update_domain_refuses_self_lockout(
+        self, client: httpx.AsyncClient, session_token: str
+    ):
+        """An allow-list excluding the admin's current host is refused."""
+        headers = {**auth_headers(session_token), "Host": "localhost:4401"}
+
+        # Allow-list without the current host and no auth host → lockout
+        r = await client.patch(
+            "/auth/api/admin/domains/localhost",
+            json={"rp_name": "", "origins": {"auth.localhost": True}},
+            headers=headers,
+        )
+        assert r.status_code == 400
+        assert "lock you out" in r.text
+
+        # Emptying the origins table entirely is likewise a lockout
+        r = await client.patch(
+            "/auth/api/admin/domains/localhost",
+            json={"rp_name": "", "origins": {}},
+            headers=headers,
+        )
+        assert r.status_code == 400
+        assert "lock you out" in r.text
+
+        # Allow-list including the current host is fine
+        r = await client.patch(
+            "/auth/api/admin/domains/localhost",
+            json={"rp_name": "", "origins": {"localhost:4401": True}},
+            headers=headers,
+        )
+        assert r.status_code == 200, r.text
+
+        # An allow-list without the current host is also fine when an auth
+        # host is set: ceremonies move there (and it is always allowed).
+        # Done last: with an auth host set, the API here routes differently.
+        r = await client.patch(
+            "/auth/api/admin/domains/localhost",
+            json={
+                "rp_name": "",
+                "origins": {"auth.localhost": {"auth_host": True}},
+            },
+            headers=headers,
+        )
+        assert r.status_code == 200, r.text
+
+    @pytest.mark.asyncio
+    async def test_delete_current_domain_refused(
+        self, client: httpx.AsyncClient, session_token: str
+    ):
+        headers = {**auth_headers(session_token), "Host": "localhost:4401"}
+        r = await client.post(
+            "/auth/api/admin/domains/", json={"rp_id": "example.com"}, headers=headers
+        )
+        assert r.status_code == 200
+        # Deleting the domain in use is refused even if it has no credentials
+        r = await client.delete("/auth/api/admin/domains/localhost", headers=headers)
+        assert r.status_code == 400
+        assert "currently using" in r.text
+        # Deleting another domain while authenticated here is fine
+        r = await client.delete("/auth/api/admin/domains/example.com", headers=headers)
+        assert r.status_code == 200, r.text
+
+    @pytest.mark.asyncio
+    async def test_no_cross_domain_auth_host_fallback(
         self,
         client: httpx.AsyncClient,
         session_token: str,
         test_user,
         test_credential,
-        restore_runtime_config,
     ):
-        """With no origins left, site_url must not keep the removed auth host."""
+        """A domain without its own auth host reports none — there is no
+        cross-domain fallback to another domain's auth host."""
         headers = await self._set_auth_host(
             client, session_token, test_user, test_credential
         )
-
-        r = await client.patch(
-            "/auth/api/admin/server-config/",
-            json={"rp_name": "", "auth_host": "", "origins": []},
-            headers=headers,
+        r = await client.post(
+            "/auth/api/admin/domains/", json={"rp_id": "example.com"}, headers=headers
         )
-        assert r.status_code == 200, r.text
+        assert r.status_code == 200
 
-        rt = runtime_config()
-        assert rt.config.auth_host is None
-        assert rt.site_path == "/auth/"
-        assert "auth.localhost" not in rt.site_url
-        assert "auth.localhost" not in hostutil.auth_site_url()
+        # Settings on the example.com host report no auth host
+        r = await client.get("/auth/api/settings", headers={"Host": "example.com"})
+        assert r.status_code == 200
+        assert r.json()["rp_id"] == "example.com"
+        assert r.json()["auth_host"] is None
+        assert r.json()["own_auth_host"] is None
+
+        # The localhost domain still reports its own auth host
+        r = await client.get("/auth/api/settings", headers={"Host": "auth.localhost"})
+        assert r.status_code == 200
+        assert r.json()["auth_host"] == "auth.localhost"
+        assert r.json()["own_auth_host"] == "auth.localhost"

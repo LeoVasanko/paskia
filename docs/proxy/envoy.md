@@ -161,7 +161,7 @@ See [perm argument](../api/perm.md) and [max_age argument](../api/max-age.md) fo
 
 ## WebSocket support for `/auth/`
 
-If you use a dedicated authentication host (`--auth-host`), route `auth.example.com` to the Paskia cluster and you do not need the `/auth/` bypass above. Otherwise, make sure the `/auth/` route keeps the `Upgrade` and `Connection` headers so passkey WebSocket endpoints work. The default Envoy router handles `Upgrade` headers when the client requests them.
+If you use a dedicated authentication host (the domain's auth-host setting), route `auth.example.com` to the Paskia cluster and you do not need the `/auth/` bypass above. Otherwise, make sure the `/auth/` route keeps the `Upgrade` and `Connection` headers so passkey WebSocket endpoints work. The default Envoy router handles `Upgrade` headers when the client requests them.
 
 ## Public access
 

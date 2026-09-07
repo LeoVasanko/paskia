@@ -41,3 +41,87 @@ export const hostIP = ip => {
     return ip
   }
 }
+
+// Display-time ordering of a domain's configured origins (the stored
+// object is unordered): the auth host first (flagged), then in-domain
+// entries (exact rp-id, then hierarchical), then related origins — hosts
+// outside the rp-id domain — hierarchically. An empty origins object
+// allows nothing and shows as an empty list.
+
+// Hierarchical origin comparison: split off scheme/port, compare hostnames
+// label by label from the TLD down, parents before their subdomains and a
+// wildcard label ('**' any depth, '*' one level — in that order) after all
+// concrete labels at the same level. Entries on the same host tie-break by
+// scheme (https first) and numeric port.
+function originParts(key) {
+  let s = key.toLowerCase().replace(/\/+$/, '')
+  let scheme = ''
+  const sm = s.match(/^([a-z][a-z0-9+.-]*):\/\//)
+  if (sm) { scheme = sm[1]; s = s.slice(sm[0].length) }
+  let port = ''
+  const pm = s.match(/:(\d+)$/)
+  if (pm) { port = pm[1]; s = s.slice(0, -pm[0].length) }
+  const labels = s.split('.').reverse()
+  return { labels, scheme, port }
+}
+
+export function compareOrigins(a, b) {
+  const A = originParts(a), B = originParts(b)
+  for (let i = 0; i < Math.max(A.labels.length, B.labels.length); i++) {
+    const la = A.labels[i], lb = B.labels[i]
+    if (la === undefined) return -1
+    if (lb === undefined) return 1
+    if (la === lb) continue
+    const wa = la === '*' || la === '**'
+    const wb = lb === '*' || lb === '**'
+    if (wa && wb) return la === '**' ? -1 : 1
+    if (wa) return 1
+    if (wb) return -1
+    const c = la.localeCompare(lb)
+    if (c) return c
+  }
+  if (A.scheme !== B.scheme) {
+    if (A.scheme === 'https') return -1
+    if (B.scheme === 'https') return 1
+    return A.scheme.localeCompare(B.scheme)
+  }
+  if (A.port && B.port) return Number(A.port) - Number(B.port)
+  return A.port.localeCompare(B.port)
+}
+
+// An origins-table entry outside the rp-id domain is a related origin
+// (WebAuthn ROR). Wildcards ('*.' or '**.') are never related — they are
+// only valid under the rp-id.
+function isRelatedKey(rpId, key) {
+  if (key.startsWith('*.') || key.startsWith('**.')) return false
+  try {
+    const hostname = new URL(key.includes('://') ? key : 'https://' + key).hostname
+    return !!hostname && hostname !== rpId && !hostname.endsWith('.' + rpId)
+  } catch {
+    return false
+  }
+}
+
+export function originDisplayEntries(domain) {
+  const origins = domain.origins || {}
+  const keys = Object.keys(origins)
+  const authKey = keys.find(k => origins[k] !== true && origins[k]?.auth_host)
+  const inDomain = []
+  const related = []
+  for (const k of keys) {
+    if (k === authKey) continue
+    const bucket = isRelatedKey(domain.rp_id, k) ? related : inDomain
+    bucket.push(k)
+  }
+  inDomain.sort((a, b) => {
+    if (a === domain.rp_id) return -1
+    if (b === domain.rp_id) return 1
+    return compareOrigins(a, b)
+  })
+  related.sort(compareOrigins)
+  const rows = []
+  if (authKey) rows.push({ key: authKey, auth: true })
+  for (const k of inDomain) rows.push({ key: k, auth: false })
+  for (const k of related) rows.push({ key: k, auth: false, related: true })
+  return rows
+}

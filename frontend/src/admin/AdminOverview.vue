@@ -1,18 +1,20 @@
 <script setup>
 import { computed, ref } from 'vue'
 import { getDirection, navigateButtonRow, focusPreferred, focusAtIndex } from '@/utils/keynav'
-import { formatDate } from '@/utils/helpers'
+import { formatDate, originDisplayEntries } from '@/utils/helpers'
 
 const props = defineProps({
   info: Object,
   orgs: Array,
   permissions: Array,
   oidcClients: Array,
+  domains: Array,
+  currentRpId: { type: String, default: '' },
   permissionSummary: Object,
   navigationDisabled: { type: Boolean, default: false }
 })
 
-const emit = defineEmits(['createOrg', 'openOrg', 'updateOrg', 'deleteOrg', 'toggleOrgPermission', 'openDialog', 'deletePermission', 'renamePermissionDisplay', 'createOidcClient', 'openOidcClient', 'deleteOidcClient', 'openServerConfig', 'navigateOut'])
+const emit = defineEmits(['createOrg', 'openOrg', 'updateOrg', 'deleteOrg', 'toggleOrgPermission', 'openDialog', 'deletePermission', 'renamePermissionDisplay', 'createOidcClient', 'openOidcClient', 'deleteOidcClient', 'createDomain', 'openDomain', 'deleteDomain', 'navigateOut'])
 
 // Template refs for navigation
 const orgActionsRef = ref(null)
@@ -36,6 +38,11 @@ function domainDisplay(domain) {
   if (!domain) return '—'
   return oidcClientNames.value[domain] || domain
 }
+
+// Domains display in alphabetical rp-id order.
+const sortedDomains = computed(() =>
+  [...(props.domains || [])].sort((a, b) => a.rp_id.localeCompare(b.rp_id))
+)
 
 // Map OIDC client UUIDs to their group permissions (sorted by scope)
 const clientGroups = computed(() => {
@@ -425,14 +432,47 @@ defineExpose({ focusFirstElement })
     </table>
   </div>
 
-  <div v-if="isMasterAdmin" class="server-options-section">
+  <div v-if="isMasterAdmin" class="domains-section">
     <div class="section-header">
-      <h2>Server</h2>
+      <h2>Domains</h2>
       <p class="section-description">
-        Configure core server settings such as the display name, authentication host, and allowed origins.
+        The domain names (rp-ids) served, along with hosts belonging to them. Each domain has its own passkeys, and each host will only accept passkeys from its own domain. To let several <em>different</em> domain names share the same passkeys, open the domain and configure related domains (WebAuthn Related Origins). Alternatively create entirely separate domains, or combine the two modes. Each domain's own origins may use wildcards; related origins are individual hosts only, at most five per domain.
+      </p>
+      <p class="section-description">
+        Related origins are your choice when you wish to keep existing credentials working on a few alternative domains. Configure separate domains only when there is more separation, or a need for wildcard hosts. Note that users are shared and remote logins remain possible across domains.
       </p>
     </div>
-    <button @click="$emit('openServerConfig')">⚙ Server Options</button>
+    <div>
+      <button @click="$emit('createDomain')">+ Add Domain</button>
+    </div>
+    <table class="org-table">
+      <thead>
+        <tr>
+          <th>Domain (rp-id)</th>
+          <th>Allowed Origins</th>
+          <th class="center"></th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr v-if="!domains || domains.length === 0">
+          <td colspan="3" class="center muted">No domains configured</td>
+        </tr>
+        <tr v-for="domain in sortedDomains" :key="domain.rp_id">
+          <td class="perm-name-cell">
+            <div class="perm-title">
+              <a :href="'#domain:' + domain.rp_id" @click.prevent="$emit('openDomain', domain)">{{ domain.rp_name || domain.rp_id }}</a>
+            </div>
+            <div class="perm-id-info">
+              <span class="id-text">{{ domain.rp_id }}</span>
+            </div>
+          </td>
+          <td class="domain-origins"><span v-for="(e, i) in originDisplayEntries(domain)" :key="e.key">{{ i ? ', ' : '' }}{{ e.key }}{{ e.auth ? '🔑' : '' }}{{ e.related ? '🔗' : '' }}</span></td>
+          <td class="center">
+            <button v-if="domain.rp_id !== currentRpId" @click="$emit('deleteDomain', domain)" class="icon-btn delete-icon" aria-label="Delete domain" title="Delete domain">❌</button>
+          </td>
+        </tr>
+      </tbody>
+    </table>
   </div>
 </template>
 
@@ -459,7 +499,9 @@ defineExpose({ focusFirstElement })
 .oidc-clients-section .section-header { display: flex; flex-direction: column; gap: 0.4rem; margin-bottom: var(--space-md); }
 .client-groups { font-size: 0.85rem; color: var(--color-text-muted); max-width: 200px; font-family: var(--font-mono, monospace); }
 
-/* Server Options Section */
-.server-options-section { margin-top: var(--space-2xl); }
-.server-options-section .section-header { display: flex; flex-direction: column; gap: 0.4rem; margin-bottom: var(--space-md); }
+/* Domains Section */
+.domains-section { margin-top: var(--space-2xl); }
+.domains-section .section-header { display: flex; flex-direction: column; gap: 0.4rem; margin-bottom: var(--space-md); }
+.domain-origins { font-family: var(--font-mono, monospace); font-size: 0.85rem; }
+.domains-section .perm-title { display: flex; align-items: center; gap: 0.5rem; }
 </style>

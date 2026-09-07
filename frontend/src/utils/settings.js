@@ -1,15 +1,19 @@
 let _settingsPromise = null
 let _settings = null
+let _requestGen = 0
 
 export function getSettingsCached() { return _settings }
 
-export async function getSettings() {
+export async function getSettings(force = false) {
+  if (force) { _settings = null; _settingsPromise = null; _requestGen++ }
   if (_settings) return _settings
   if (_settingsPromise) return _settingsPromise
+  const gen = _requestGen
+  const stale = () => getSettings() // superseded by a force reset: defer to the fresh state
   _settingsPromise = fetch('/auth/api/settings')
     .then(r => (r.ok ? r.json() : {}))
-    .then(obj => { _settings = obj || {}; return _settings })
-    .catch(() => { _settings = {}; return _settings })
+    .then(obj => gen === _requestGen ? (_settings = obj || {}) : stale())
+    .catch(() => gen === _requestGen ? (_settings = {}) : stale())
   return _settingsPromise
 }
 

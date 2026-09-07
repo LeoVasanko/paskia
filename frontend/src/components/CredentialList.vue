@@ -32,6 +32,7 @@
           </div>
           <h4 class="item-title">{{ getCredentialAuthName(credential) }}</h4>
           <div class="item-actions">
+            <span v-if="credential.rp_id && settings?.rp_id && credential.rp_id !== settings.rp_id" class="badge badge-domain" :title="`Passkey registered for ${credential.rp_id}`">{{ credential.rp_id }}</span>
             <span v-if="credential.is_current_session && !hoveredCredentialUuid && !hoveredSessionCredentialUuid" class="badge badge-current">Current</span>
             <span v-else-if="hoveredCredentialUuid === credential.credential" class="badge badge-current">Selected</span>
             <span v-else-if="hoveredSessionCredentialUuid === credential.credential" class="badge badge-current">Linked</span>
@@ -61,8 +62,13 @@
 </template>
 
 <script setup>
+import { onMounted, ref } from 'vue'
 import { formatDate } from '@/utils/helpers'
 import { navigateGrid, handleEscape, handleDeleteKey, getDirection } from '@/utils/keynav'
+import { getSettings } from '@/utils/settings'
+
+const settings = ref(null)
+onMounted(async () => { settings.value = await getSettings() })
 
 const props = defineProps({
   credentials: { type: Array, default: () => [] },

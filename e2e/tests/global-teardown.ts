@@ -59,11 +59,13 @@ export default async function globalTeardown() {
     rmSync(stateFile, { force: true })
   }
 
-  // Clean up test database
-  const testDbFile = join(testDataDir, 'test.paskiadb')
-  if (existsSync(testDbFile)) {
-    console.log('  Removing test database...')
-    rmSync(testDbFile, { force: true, recursive: true })
+  // Clean up test database and auxiliary data
+  for (const name of ['paskia.kantadb', 'paskia.data']) {
+    const p = join(testDataDir, name)
+    if (existsSync(p)) {
+      console.log(`  Removing ${name}...`)
+      rmSync(p, { force: true, recursive: true })
+    }
   }
 
   // Generate Python coverage report if coverage was collected

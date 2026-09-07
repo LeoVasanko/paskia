@@ -81,7 +81,7 @@ auth.example.com {
 }
 ```
 
-Remember to specify `paskia serve --auth-host auth.example.com` to restrict the authentication services to this domain.
+Remember to set the auth host for the domain in the admin panel's Domains section to restrict the authentication services to this domain.
 
 Note that we still reserve `/auth/` on each site for logout page and any APIs your application may require, while full user profile and global options are only available on the auth host.
 

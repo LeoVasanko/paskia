@@ -6,12 +6,16 @@ import asyncio
 import json
 import os
 import shutil
+import subprocess
 import sys
 from contextlib import suppress
 from pathlib import Path
 from urllib.parse import urlparse
 
 import tracerite
+
+from paskia.db.legacy import find_legacy_databases
+from paskia.db.paths import db_file_path
 
 # Import utilities from scripts/fastapi-vue (not a package, so we adjust sys.path)
 sys.path.insert(0, str(Path(__file__).with_name("fastapi-vue")))
@@ -135,6 +139,41 @@ async def run_caddy(
     return proc
 
 
+def _split_multi(values: list[str] | None) -> list[str]:
+    """Split repeatable/comma-separated CLI values into a flat list."""
+    result = []
+    for value in values or []:
+        result.extend(part.strip() for part in value.split(",") if part.strip())
+    return result
+
+
+def ensure_database(rp_ids: list[str], args: argparse.Namespace, listen: str) -> None:
+    """Bootstrap paskia.kantadb via 'paskia init' when no database exists.
+
+    Domain options are init-only; 'paskia' (serve) reads all configuration
+    from the database. A legacy *.paskiadb database must be converted with
+    'paskia migrate' first.
+    """
+    if db_file_path().exists():
+        return
+    if find_legacy_databases():
+        raise SystemExit(
+            "Legacy *.paskiadb database found — run 'paskia migrate' to "
+            "convert it before starting the dev server."
+        )
+
+    for i, rp_id in enumerate(rp_ids):
+        cmd = [sys.executable, "-m", "paskia", "init", rp_id]
+        if i == 0:
+            if args.rp_name:
+                cmd.append(args.rp_name)
+            cmd.append(f"--listen={listen}")
+        logger.info(">>> paskia init %s", rp_id)
+        proc = subprocess.run(cmd, check=False)  # noqa: S603
+        if proc.returncode != 0:
+            raise SystemExit(proc.returncode)
+
+
 async def run_devserver(args: argparse.Namespace, remaining: list[str]) -> None:
     """Run the development server with all components."""
     reporoot = Path(__file__).parent.parent
@@ -146,39 +185,23 @@ async def run_devserver(args: argparse.Namespace, remaining: list[str]) -> None:
     viteurl, npm_install, vite = setup_vite(args.listen, DEFAULT_VITE_PORT)
     backurl, paskia = setup_cli("paskia", args.backend, DEFAULT_DEV_PORT)
 
-    # Build paskia command with options
-    paskia.extend(["--rp-id", args.rp_id])
-    if args.auth_host:
-        paskia.extend(["--auth-host", args.auth_host])
-    if args.origins:
-        for origin in args.origins:
-            paskia.extend(["--origin", origin])
+    rp_ids = _split_multi(args.rp_id) or ["localhost"]
+    ensure_database(rp_ids, args, listen=backurl.removeprefix("http://"))
+
+    # Serve: no domain options — all configuration lives in the database
     paskia.extend(remaining)
 
     # Set environment for subprocesses
     os.environ["PASKIA_VITE_URL"] = viteurl
     os.environ["PASKIA_BACKEND_URL"] = backurl
     os.environ["PASKIA_DEV"] = "1"
-    if args.auth_host:
-        os.environ["PASKIA_AUTH_HOST"] = args.auth_host
 
     async with ProcessGroup() as pg:
         # Start Caddy first if requested (needs to bind ports)
         if args.caddy:
             caddy_origins = []
-            if args.auth_host:
-                auth_host = args.auth_host
-                if "://" not in auth_host:
-                    auth_host = f"https://{auth_host}"
-                caddy_origins.append(auth_host)
-                caddy_origins.append(f"https://{args.rp_id}")
-            if args.origins:
-                for origin in args.origins:
-                    if "://" not in origin:
-                        origin = f"https://{origin}"
-                    caddy_origins.append(origin)
-            if not caddy_origins:
-                caddy_origins.append(f"https://{args.rp_id}")
+            for rp_id in rp_ids:
+                caddy_origins.append(f"https://{rp_id}")
             seen: set = set()
             caddy_origins = [x for x in caddy_origins if not (x in seen or seen.add(x))]
             caddy_proc = await run_caddy(caddy_origins, viteurl, backurl)
@@ -209,11 +232,15 @@ def main():
         help=f"FastAPI (default: localhost:{DEFAULT_DEV_PORT})",
     )
     parser.add_argument("--caddy", action="store_true", help="Run Caddy as HTTPS proxy")
-    parser.add_argument("--rp-id", default="localhost", help="Relying Party ID")
     parser.add_argument(
-        "--origin", action="append", dest="origins", help="Allowed origin(s)"
+        "--rp-id",
+        action="append",
+        help="Relying Party ID(s) for first-run bootstrap (default: localhost). "
+        "Repeatable and comma-separated.",
     )
-    parser.add_argument("--auth-host", help="Dedicated auth host")
+    parser.add_argument(
+        "--rp-name", help="Relying Party name of the first domain (bootstrap only)"
+    )
     args, remaining = parser.parse_known_args()
 
     with suppress(KeyboardInterrupt):

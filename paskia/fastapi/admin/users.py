@@ -5,6 +5,7 @@ from fastapi import Body, FastAPI, HTTPException, Request
 from paskia import aaguid as aaguid_mod
 from paskia import db
 from paskia.authsession import reset_expires
+from paskia.domains import current_domain
 from paskia.fastapi import authz
 from paskia.fastapi.admin.errors import install_error_handlers
 from paskia.fastapi.response import MsgspecResponse
@@ -122,7 +123,7 @@ async def admin_create_user_registration_link(
         token_type=token_type,
         ctx=ctx,
     )
-    url = hostutil.reset_link_url(token)
+    url = current_domain().reset_link_url(token)
     return MsgspecResponse(
         ApiCreateLinkResponse(
             url=url,

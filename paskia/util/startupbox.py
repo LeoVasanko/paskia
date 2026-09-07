@@ -14,7 +14,10 @@ from paskia.util.constants import DEFAULT_PORT, DEVMODE
 from paskia.util.hostutil import format_endpoint
 
 if TYPE_CHECKING:
-    from paskia.util.runtime import RuntimeConfig
+    from paskia.domains import DomainRegistry
+
+from paskia.db.structs import OriginEntry
+from paskia.domains import is_related_key, origin_url
 
 BOX_WIDTH = 60  # Inner width (excluding box chars)
 
@@ -48,13 +51,17 @@ def bottom() -> str:
     return "┗" + "━" * (BOX_WIDTH + 2) + "┛\n"
 
 
-def print_startup_config(runtime: RuntimeConfig) -> None:
-    """Print server configuration on startup."""
+def print_startup_config(
+    registry: DomainRegistry, listen: list[str] | None = None
+) -> None:
+    """Print server configuration on startup (one section per domain)."""
     # Key graphic with yellow shading (bright for highlights, dark for body)
     y = YELLOW  # Bright golden yellow for main body
     b = BRIGHT_YELLOW  # Brightest yellow for highlights/edges
     w = BRIGHT_WHITE  # Bold white for URL
     r = RESET
+
+    domains = sorted(registry.domains, key=lambda d: d.rp_id)
 
     lines = [top()]
     lines.append(line(f" {b}▄▄▄▄▄{r}"))
@@ -63,16 +70,12 @@ def print_startup_config(runtime: RuntimeConfig) -> None:
     lines.append(
         line(
             f"{b}█{y}     {b}█{y}▀▀▀▀{b}█{y}▀▀{b}█{y}▀▀{b}█{r}    {w}"
-            + runtime.site_url
-            + runtime.site_path
+            + domains[0].site_url
+            + domains[0].site_path
             + r
         )
     )
     lines.append(line(f" {y}▀▀▀▀▀{r}"))
-
-    # Format auth host section
-    if runtime.config.auth_host:
-        lines.append(line(f"Auth Host:      {runtime.config.auth_host}"))
 
     # Show frontend URL if in dev mode
     if DEVMODE:
@@ -80,26 +83,30 @@ def print_startup_config(runtime: RuntimeConfig) -> None:
 
     # Format listen endpoints (dev mode only uses the first endpoint)
 
-    endpoints = list(parse_endpoints(runtime.config.listen, DEFAULT_PORT))
+    endpoints = list(parse_endpoints(listen, DEFAULT_PORT))
     if DEVMODE:
         endpoints = endpoints[:1]  # server.run reload=True uses only one
     parts = [format_endpoint(ep) for ep in endpoints]
     lines.append(line(f"Backend:        {' '.join(parts)}"))
 
-    # Relying Party line (omit name if same as id)
-    rp_id = runtime.config.rp_id
-    rp_name = runtime.config.rp_name
-    suffix = f" ({rp_name})" if rp_name and rp_name != rp_id else ""
-    lines.append(line(f"Relying Party:  {rp_id}{suffix}"))
-
-    # Format origins section
-    allowed = runtime.config.origins
-    if allowed:
-        lines.append(line("Permitted Origins:"))
-        for origin in sorted(allowed):
-            lines.append(line(f"  - {origin}"))
-    else:
-        lines.append(line(f"Origin:         {rp_id} and all subdomains allowed"))
+    for domain in domains:
+        # Domain line (omit name if same as id)
+        rp_name = domain.rp_name
+        suffix = f" ({rp_name})" if rp_name and rp_name != domain.rp_id else ""
+        header = "Domain:         " if len(domains) > 1 else "Relying Party:  "
+        lines.append(line(f"{header}{domain.rp_id}{suffix}"))
+        if len(domains) > 1:
+            lines.append(line(f"  URL:          {domain.site_url}{domain.site_path}"))
+        for key, props in sorted(domain.config.origins.items()):
+            marker = (
+                " (auth host)"
+                if isinstance(props, OriginEntry) and props.auth_host
+                else ""
+            )
+            label = "Related:" if is_related_key(domain.rp_id, key) else "Origin:"
+            lines.append(line(f"  {label:<14}{origin_url(key)}{marker}"))
+        if not domain.config.origins:
+            lines.append(line("  Origins:      (none configured)"))
 
     lines.append(bottom())
     stderr.write("".join(lines))

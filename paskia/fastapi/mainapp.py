@@ -1,27 +1,26 @@
 import asyncio
 import logging
-import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-import msgspec
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import FileResponse, RedirectResponse
 from kanta.logging import configure_logging as configure_kanta_logging
 
-from paskia import authcode, db, remoteauth
+from paskia import authcode, db, domains, remoteauth
 from paskia.bootstrap import bootstrap_if_needed
 from paskia.db.background import start_background, stop_background
 from paskia.db.lifecycle import kanta
 from paskia.fastapi import admin, api, auth_host, oid, ws
 from paskia.fastapi.admin.adminapp import adminapp
+from paskia.fastapi.dispatch import DispatchMiddleware
 
 # Import frontend instance
 from paskia.fastapi.front import frontend
 from paskia.fastapi.session import AUTH_COOKIE
-from paskia.util import hostutil, passphrase, vitedev
+from paskia.util import passphrase, vitedev
 from paskia.util.constants import DEVMODE
-from paskia.util.runtime import RuntimeConfig
+from paskia.util.runtime import serve_config
 
 # Configure custom logging
 configure_kanta_logging()
@@ -32,19 +31,22 @@ _EXAMPLES_DIR = Path(__file__).parent.parent.parent / "examples"
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):  # pragma: no cover - startup path
-    """Application lifespan to ensure globals (DB, passkey) are initialized in each process.
+    """Application lifespan: open the combined database and build the domain registry.
 
-    Configuration is passed via PASKIA_CONFIG JSON env variable (set by the CLI entrypoint)
-    so that uvicorn reload / multiprocess workers inherit the settings.
-    All keys are guaranteed to exist; values are already normalized by __main__.py.
+    Process-global serve parameters (listen endpoints) are passed via the
+    PASKIA_CONFIG JSON env variable (set by the CLI entrypoint) so that
+    uvicorn reload / multiprocess workers derive site URLs the same way.
+    Domain configuration is read from the database.
     """
-    runtime = msgspec.json.decode(os.environ["PASKIA_CONFIG"], type=RuntimeConfig)
+    cfg = serve_config()
+    domains.configure(listen=cfg.listen if cfg else None)
 
     await asyncio.to_thread(
         Path(kanta.filename).parent.mkdir, parents=True, exist_ok=True
     )
     async with kanta:
         try:
+            domains.init_registry(db.data().config)
             await remoteauth.init()
             await authcode.start()
         except ValueError as e:
@@ -52,11 +54,7 @@ async def lifespan(app: FastAPI):  # pragma: no cover - startup path
             # Re-raise to fail fast
             raise
 
-        # Bootstrap and persist config now that the full DB is loaded
-        await bootstrap_if_needed(config=runtime.config)
-        if runtime.save:
-            db.update_config(runtime.config)
-
+        await bootstrap_if_needed()
         await frontend.load()
         await start_background()
         yield
@@ -78,6 +76,10 @@ app = FastAPI(
 
 # Apply redirections to auth-host if configured (deny access to restricted endpoints, remove /auth/)
 app.middleware("http")(auth_host.redirect_middleware)
+
+# Domain dispatch must be the outermost application middleware: everything
+# below it (including the auth-host redirects) uses the current domain.
+app.add_middleware(DispatchMiddleware)
 
 app.mount("/auth/api/admin/", admin.app)
 app.mount("/auth/api/", api.app)
@@ -124,6 +126,20 @@ async def openid_configuration(request: Request):
     }
 
 
+@app.get("/.well-known/webauthn")
+async def webauthn_related_origins(request: Request):
+    """WebAuthn Related Origin Requests discovery document.
+
+    Served on the domain's rp-id site; lists the domain's related origins
+    (other domains) that may assert this rp-id. 404 when the domain has no
+    related origins.
+    """
+    related = request.state.domain.related_origins
+    if not related:
+        raise HTTPException(status_code=404)
+    return {"origins": related}
+
+
 @app.get("/auth/restricted/iframe")
 @app.get("/auth/restricted/oidc")
 async def restricted_view(request: Request):
@@ -149,7 +165,9 @@ async def frontapp(request: Request, response: Response, auth=AUTH_COOKIE):
 @app.get("/admin", include_in_schema=False)
 @app.get("/auth/admin", include_in_schema=False)
 async def admin_root_redirect():
-    return RedirectResponse(f"{hostutil.ui_base_path()}admin/", status_code=307)
+    return RedirectResponse(
+        f"{domains.current_domain().ui_base_path}admin/", status_code=307
+    )
 
 
 @app.get("/admin/", include_in_schema=False)

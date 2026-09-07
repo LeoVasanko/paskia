@@ -73,8 +73,3 @@ async def stop_background():
         except asyncio.CancelledError:
             pass
         _background_task = None
-
-
-# Aliases for backwards compatibility
-start_cleanup = start_background
-stop_cleanup = stop_background

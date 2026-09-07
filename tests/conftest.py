@@ -12,12 +12,12 @@ in the database to test authenticated endpoints.
 from __future__ import annotations
 
 import asyncio
-import json
 import os
 import secrets
 import tempfile
 from collections.abc import AsyncGenerator
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from uuid import UUID
 
 import httpx
@@ -25,22 +25,8 @@ import pytest
 import pytest_asyncio
 from kanta import Kanta
 
-# Keep runtime initialization invariant aligned with production:
-# db.lifecycle requires PASKIA_CONFIG at import time.
-os.environ.setdefault(
-    "PASKIA_CONFIG",
-    json.dumps(
-        {
-            "config": {"rp_id": "localhost", "rp_name": "localhost"},
-            "site_url": "http://localhost:4401",
-            "site_path": "/auth/",
-            "save": False,
-        }
-    ),
-)
-
 import paskia.db.operations as ops_db
-from paskia import globals as paskia_globals
+from paskia import domains
 from paskia.authsession import reset_expires
 from paskia.config import SESSION_LIFETIME
 from paskia.db import (
@@ -56,11 +42,14 @@ from paskia.db import (
 )
 from paskia.db.bootstrap import bootstrap
 from paskia.db.operations import DB
-from paskia.db.structs import Session
+from paskia.db.structs import Config, DomainConfig, Session
 from paskia.fastapi.mainapp import app
 from paskia.fastapi.session import AUTH_COOKIE_NAME
-from paskia.sansio import Passkey
+from paskia.util import avatar
 from paskia.util.crypto import hash_secret
+
+TEST_RP_ID = "localhost"
+TEST_LISTEN = ["localhost:4401"]
 
 
 @pytest.fixture(scope="session")
@@ -71,6 +60,19 @@ def event_loop():
     loop.close()
 
 
+@pytest.fixture(autouse=True)
+def _avatar_tmp_root(tmp_path, monkeypatch):
+    """Redirect avatar storage to a per-test temporary directory."""
+    root = tmp_path / "users"
+
+    def users_root(create_root: bool = False) -> Path:
+        if create_root:
+            root.mkdir(parents=True, exist_ok=True)
+        return root
+
+    monkeypatch.setattr(avatar, "users_root_path", users_root)
+
+
 @pytest_asyncio.fixture(scope="function")
 async def test_db() -> AsyncGenerator[DB]:
     """Create a temporary JSONL database for testing using kanta.
@@ -79,15 +81,11 @@ async def test_db() -> AsyncGenerator[DB]:
     - auth:admin and auth:org:admin permissions
     - A default organization with Administration role
     - An admin user with the Administration role
+    - The localhost domain configuration (with its OIDC provider)
     """
     with tempfile.NamedTemporaryFile(suffix=".jsonl", delete=True) as f:
         db = DB()
-        kanta = Kanta(
-            f.name,
-            db,
-            migrations="paskia.db.migrations",
-        )
-        kanta.ctx.rp_id = "test.example.com"
+        kanta = Kanta(f.name, db)
 
         # Register bootstrap callback so kanta seeds the empty DB during open()
         @kanta.bootstrap(action="bootstrap")
@@ -96,6 +94,11 @@ async def test_db() -> AsyncGenerator[DB]:
                 data,
                 org_name="Test Organization",
                 admin_name="Test Admin",
+                config=Config(
+                    domains={
+                        TEST_RP_ID: DomainConfig(origins={f"**.{TEST_RP_ID}": True})
+                    }
+                ),
             )
 
         await kanta.open()
@@ -107,25 +110,10 @@ async def test_db() -> AsyncGenerator[DB]:
 
 
 @pytest_asyncio.fixture(scope="function")
-async def passkey_instance() -> Passkey:
-    """Override the module-level passkey instance for testing."""
-    pk = Passkey(
-        rp_id="localhost",
-        rp_name="Test RP",
-        origins=["http://localhost:4401"],
-    )
-    original = {
-        "rp_id": paskia_globals.passkey.rp_id,
-        "rp_name": paskia_globals.passkey.rp_name,
-        "allowed_origins": paskia_globals.passkey.allowed_origins,
-    }
-    paskia_globals.passkey.rp_id = pk.rp_id
-    paskia_globals.passkey.rp_name = pk.rp_name
-    paskia_globals.passkey.allowed_origins = pk.allowed_origins
-    yield pk
-    paskia_globals.passkey.rp_id = original["rp_id"]
-    paskia_globals.passkey.rp_name = original["rp_name"]
-    paskia_globals.passkey.allowed_origins = original["allowed_origins"]
+async def domain_registry(test_db: DB) -> domains.DomainRegistry:
+    """Install the domain registry built from the test database config."""
+    domains.configure(listen=TEST_LISTEN)
+    return domains.init_registry(test_db.config)
 
 
 @pytest_asyncio.fixture(scope="function")
@@ -192,6 +180,7 @@ async def test_credential(test_db: DB, test_user: User) -> Credential:
         aaguid=UUID("00000000-0000-0000-0000-000000000000"),
         public_key=os.urandom(64),
         sign_count=0,
+        rp_id=TEST_RP_ID,
     )
     create_credential(credential)
     return credential
@@ -206,6 +195,7 @@ async def regular_credential(test_db: DB, regular_user: User) -> Credential:
         aaguid=UUID("00000000-0000-0000-0000-000000000000"),
         public_key=os.urandom(64),
         sign_count=0,
+        rp_id=TEST_RP_ID,
     )
     create_credential(credential)
     return credential
@@ -247,15 +237,9 @@ async def reset_token(test_db: DB, test_user: User, test_credential: Credential)
 
 @pytest_asyncio.fixture(scope="function")
 async def client(
-    test_db: DB, passkey_instance: Passkey
+    test_db: DB, domain_registry: domains.DomainRegistry
 ) -> AsyncGenerator[httpx.AsyncClient]:
-    """Create an async test client for the FastAPI app.
-
-    Note: We import the app inside the fixture to ensure globals are
-    initialized first.
-    """
-    # Import app after globals are set
-
+    """Create an async test client for the FastAPI app."""
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(
         transport=transport,
@@ -283,6 +267,7 @@ def create_test_session(
     ip: str = "127.0.0.1",
     user_agent: str = "pytest",
     duration: timedelta | None = None,
+    rp_id: str = TEST_RP_ID,
 ) -> tuple[str, str]:
     """Create a test session. Returns (key, token) tuple.
 
@@ -309,6 +294,7 @@ def create_test_session(
         ip=ip,
         user_agent=user_agent,
         validated=now,
+        rp_id=rp_id,
     )
     if session.key in ops_db._db.sessions:
         raise ValueError("Session already exists")

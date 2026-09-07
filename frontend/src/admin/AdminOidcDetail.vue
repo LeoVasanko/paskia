@@ -6,6 +6,7 @@ import { useAuthStore } from '@/stores/auth'
 const props = defineProps({
   client: Object,
   permissions: Array,
+  domains: Array,
   isNew: { type: Boolean, default: false },
   navigationDisabled: { type: Boolean, default: false }
 })
@@ -29,7 +30,17 @@ const clientSecret = ref(null)
 
 // Computed
 const clientId = computed(() => props.client?.client_id || props.client?.uuid || '')
-const discoveryUrl = computed(() => authSitePath('/.well-known/openid-configuration'))
+// One discovery URL per domain (the OIDC provider is instance-global;
+// any configured host works — the RP must use its chosen one consistently)
+const discoveryUrls = computed(() => {
+  const origins = new Set()
+  for (const d of props.domains || []) {
+    const url = d.site_url && new URL(d.site_url)
+    if (url) origins.add(url.origin)
+  }
+  if (!origins.size) origins.add(new URL(authStore.settings.auth_site_url).origin)
+  return [...origins].sort().map(o => `${o}/.well-known/openid-configuration`)
+})
 const iconUrl = computed(() => authSitePath('/favicon.ico'))
 
 // Groups (permissions) scoped to this client
@@ -147,8 +158,14 @@ defineExpose({ focusFirstElement })
             <span v-else class="small muted">(only stored in hashed form)</span>
           </dd>
 
-          <dt>Auto Discovery URL</dt>
-          <dd><output @click="copyText(discoveryUrl, 'OpenID Connect Auto Discovery URL')" title="Click to copy">{{ discoveryUrl }}</output></dd>
+          <dt class="discovery-dt">Auto Discovery URL
+            <span v-if="discoveryUrls.length > 1" class="small muted">Any one — pick the site your users should log in on, and use it consistently.</span>
+          </dt>
+          <dd class="discovery-dd">
+            <span class="discovery-urls">
+              <output v-for="url in discoveryUrls" :key="url" @click="copyText(url, 'OpenID Connect Auto Discovery URL')" title="Click to copy">{{ url }}</output>
+            </span>
+          </dd>
 
           <dt>Icon URL</dt>
           <dd>
@@ -255,6 +272,29 @@ defineExpose({ focusFirstElement })
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  min-width: 0;
+}
+
+.discovery-dt {
+  white-space: normal;
+  max-width: 20em;
+}
+
+.discovery-dt .small {
+  display: block;
+  font-weight: normal;
+}
+
+.discovery-dd {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.25rem;
+}
+
+.discovery-urls {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
   min-width: 0;
 }
 

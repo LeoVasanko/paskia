@@ -8,8 +8,6 @@ This module provides a unified interface for WebAuthn operations including:
 """
 
 import json
-import re
-from urllib.parse import urlparse
 from uuid import UUID
 
 from webauthn import (
@@ -36,7 +34,8 @@ from webauthn.helpers.structs import (
     UserVerificationRequirement,
 )
 
-from paskia.db import Credential
+from paskia.db.structs import Credential
+from paskia.util import hostutil
 
 
 class Passkey:
@@ -47,6 +46,7 @@ class Passkey:
         rp_id: str,
         rp_name: str | None = None,
         origins: list[str] | None = None,
+        related_origins: list[str] | None = None,
         supported_pub_key_algs: list[COSEAlgorithmIdentifier] | None = None,
     ):
         """
@@ -55,58 +55,119 @@ class Passkey:
         Args:
             rp_id: Your security domain (e.g. "example.com")
             rp_name: The relying party display name (e.g. "Example App"). May be shown in authenticators.
-            origins: List of allowed origin URLs (e.g. ["https://app.example.com", "https://auth.example.com"]).
-                    Each must be a subdomain or same as rp_id. If not provided, any subdomain of rp_id is allowed.
+            origins: Allow-list of sign-in site origins within the rp-id domain
+                    (e.g. ["https://app.example.com"]); wildcard patterns
+                    follow the shell-glob convention: "**.example.com" matches
+                    the base domain and its subdomains at any depth, while
+                    "*.example.com" matches exactly one subdomain level —
+                    over https only, except under localhost
+                    ("**.localhost"), which matches any scheme and any port.
+                    Exact entries match scheme, host and port. An empty list
+                    (the default) allows nothing — pass ["**.{rp-id}"] to
+                    allow the whole domain.
+            related_origins: Origins on unrelated domains that may assert this
+                    rp-id (WebAuthn Related Origin Requests). Always additive.
             supported_pub_key_algs: List of supported COSE algorithms (default is EDDSA, ECDSA_SHA_256, RSASSA_PKCS1_v1_5_SHA_256).
 
         Raises:
-            ValueError: If any origin domain doesn't match or isn't a subdomain of rp_id.
+            ValueError: If rp_id is not a valid domain, an origin is malformed,
+                    an allow-list origin is outside the rp-id domain, or a
+                    related origin is inside it.
         """
         self.rp_id = rp_id
-        self._validate_rp_id(rp_id)
+        hostutil.validate_rp_id(rp_id)
         self.rp_name = rp_name or rp_id
-        self.allowed_origins: set[str] | None = None
-        if origins:
-            # Validate and deduplicate origins into a set for O(1) lookups
-            for o in origins:
-                self._validate_origin(o, rp_id)
-            self.allowed_origins = set(origins)
+        self.allowed_origins: set[str] = set()
+        for o in origins or []:
+            if hostutil.is_wildcard_pattern(o):
+                hostname = hostutil.origin_hostname(o)
+                if hostname and not hostutil.is_valid_hostname(hostname):
+                    raise ValueError(f"Origin '{o}' has a malformed hostname")
+            else:
+                self._validate_origin_url(o)
+                hostname = hostutil.origin_hostname(o)
+            if not hostname or not hostutil.is_subdomain(hostname, rp_id):
+                raise ValueError(
+                    f"Origin '{o}' is outside the rp-id domain '{rp_id}' — "
+                    "pass it as a related origin instead"
+                )
+            self.allowed_origins.add(o)
+        self.related_origins: set[str] = set()
+        for o in related_origins or []:
+            if hostutil.is_wildcard_pattern(o):
+                raise ValueError(
+                    f"Related origin '{o}' is a wildcard — related origins "
+                    "(ROR) must be listed individually"
+                )
+            self._validate_origin_url(o)
+            hostname = hostutil.origin_hostname(o)
+            if hostutil.is_subdomain(hostname, rp_id):
+                raise ValueError(
+                    f"Related origin '{o}' is within the rp-id domain '{rp_id}' — "
+                    "subdomains need no related origin entry"
+                )
+            self.related_origins.add(o)
         self.supported_pub_key_algs = supported_pub_key_algs or [
             COSEAlgorithmIdentifier.EDDSA,
             COSEAlgorithmIdentifier.ECDSA_SHA_256,
             COSEAlgorithmIdentifier.RSASSA_PKCS1_v1_5_SHA_256,
         ]
 
-    def _validate_rp_id(self, rp_id: str) -> None:
-        """Validate that rp_id is a valid domain name."""
-        if not rp_id:
-            raise ValueError("rp_id cannot be empty")
-        # Allow localhost, or domain-like strings
-        if rp_id == "localhost":
-            return
-        # Regex for valid domain: letters, digits, hyphens, dots, but not starting/ending with hyphen, etc.
-        # Simplified: alphanumeric, dots, hyphens
-        if not re.match(
-            r"^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$",
-            rp_id,
-        ):
-            raise ValueError(f"rp_id '{rp_id}' is not a valid domain name")
-
-    def _validate_origin(self, origin: str, rp_id: str) -> None:
-        """Validate an origin URL against the rp_id."""
-        hostname = urlparse(origin).hostname
+    @staticmethod
+    def _validate_origin_url(origin: str) -> None:
+        """Validate that an origin URL is well-formed (has a valid hostname)."""
+        hostname = hostutil.origin_hostname(origin)
         if not hostname:
             raise ValueError(f"Invalid origin URL: no hostname found in '{origin}'")
+        if not hostutil.is_valid_hostname(hostname):
+            raise ValueError(f"Invalid origin URL: malformed hostname in '{origin}'")
 
-        if hostname == rp_id or hostname.endswith(f".{rp_id}"):
-            return
+    def _origin_in_subtree(self, origin: str) -> bool:
+        """Check whether an origin's hostname is the rp-id or its subdomain."""
+        hostname = hostutil.origin_hostname(origin)
+        return bool(hostname) and hostutil.is_subdomain(hostname, self.rp_id)
 
-        raise ValueError(
-            f"Origin domain '{hostname}' must be the same as or a subdomain of rp_id '{rp_id}'"
-        )
+    def _allowlisted(self, origin: str) -> bool:
+        """Check an in-domain origin against the allow-list.
+
+        An entry matches exactly. A wildcard pattern matches hostnames
+        under its base: '**.example.com' covers the base domain itself and
+        subdomains at any depth, while '*.example.com' covers exactly one
+        subdomain level (neither the apex nor deeper levels) — the
+        shell-glob convention, analogous to permission scope wildcards.
+        Wildcards match over https only, except under localhost
+        ('**.localhost'), which matches any scheme and any port.
+        """
+        if origin in self.allowed_origins:
+            return True
+        hostname = hostutil.origin_hostname(origin)
+        for entry in self.allowed_origins:
+            base = hostutil.wildcard_base(entry)
+            if not base or not hostname:
+                continue
+            if entry.startswith("**."):
+                matched = hostutil.is_subdomain(hostname, base)
+            else:
+                # Exactly one subdomain level below the base
+                matched = (
+                    hostname.endswith(f".{base}")
+                    and "." not in hostname[: -len(base) - 1]
+                )
+            if not matched:
+                continue
+            if hostutil.is_subdomain(base, "localhost"):
+                return True  # localhost: any scheme, any port
+            if origin.startswith("https://"):
+                return True  # Wildcard patterns match https origins only
+        return False
 
     def validate_origin(self, origin: str) -> str:
         """Validate that origin is allowed and return it.
+
+        An in-domain origin (rp-id or subdomain) must match a listed origin
+        or wildcard pattern. An origin outside the rp-id domain is valid
+        only when explicitly listed as a related origin (Related Origin
+        Requests).
 
         Args:
             origin: The origin URL to validate (from WebSocket request header)
@@ -115,13 +176,15 @@ class Passkey:
             The validated origin URL
 
         Raises:
-            ValueError: If origin is not in the allowed list (when origins are configured)
-                       or if origin is not a valid subdomain of rp_id
+            ValueError: If origin is not allowed
         """
-        self._validate_origin(origin, self.rp_id)
-        if self.allowed_origins is not None and origin not in self.allowed_origins:
-            raise ValueError(f"Origin '{origin}' is not in the allowed origins list")
-        return origin
+        self._validate_origin_url(origin)
+        if self._origin_in_subtree(origin):
+            if self._allowlisted(origin):
+                return origin
+        elif origin in self.related_origins:
+            return origin
+        raise ValueError(f"Origin '{origin}' is not allowed for rp_id '{self.rp_id}'")
 
     ### Registration Methods ###
 
@@ -197,6 +260,7 @@ class Passkey:
             aaguid=UUID(registration.aaguid),
             public_key=registration.credential_public_key,
             sign_count=registration.sign_count,
+            rp_id=self.rp_id,
         )
 
     ### Authentication Methods ###

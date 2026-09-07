@@ -1,47 +1,33 @@
-from __future__ import annotations
+"""Filesystem paths for paskia persistence.
 
-import os
-import shutil
+The combined database is a single kanta JSONL file at the fixed
+CWD-relative path ``paskia.kantadb``. Auxiliary user files (avatars) live
+under ``paskia.data/``. The deployment is selected by the current working
+directory; there is deliberately no environment override.
+"""
+
 from pathlib import Path
 
-
-def db_root_path(*, rp_id: str = "localhost") -> Path:
-    """Return the configured persistence root directory."""
-    return Path(os.environ.get("PASKIA_DB", f"{rp_id}.paskiadb"))
+DB_FILENAME = "paskia.kantadb"
+DATA_DIRNAME = "paskia.data"
 
 
-def db_file_path(*, rp_id: str = "localhost", create_root: bool = False) -> Path:
-    """Return the JSONL database file path under the persistence root."""
-    root = db_root_path(rp_id=rp_id)
+def db_file_path() -> Path:
+    """Return the combined database file path."""
+    return Path(DB_FILENAME)
 
-    if root.is_file():
-        _migrate_legacy_db_file(root)
 
+def data_root_path(create_root: bool = False) -> Path:
+    """Return the root directory for auxiliary files (avatars etc.)."""
+    root = Path(DATA_DIRNAME)
     if create_root:
         root.mkdir(parents=True, exist_ok=True)
+    return root
 
-    return root / "main.db"
 
-
-def users_root_path(*, rp_id: str = "localhost", create_root: bool = False) -> Path:
+def users_root_path(create_root: bool = False) -> Path:
     """Return the filesystem root for persisted user files."""
-    root = db_root_path(rp_id=rp_id)
-
-    if root.is_file():
-        _migrate_legacy_db_file(root)
-
+    root = data_root_path(create_root=create_root) / "users"
     if create_root:
         root.mkdir(parents=True, exist_ok=True)
-
-    return root / "users"
-
-
-def _migrate_legacy_db_file(legacy_path: Path) -> None:
-    """Upgrade a legacy single-file database path into a directory root."""
-    temp_root = legacy_path.parent / f".{legacy_path.name}.migrating"
-    shutil.rmtree(temp_root, ignore_errors=True)
-    temp_root.unlink(missing_ok=True)
-
-    temp_root.mkdir(parents=True)
-    legacy_path.replace(temp_root / "main.db")
-    temp_root.rename(legacy_path)
+    return root

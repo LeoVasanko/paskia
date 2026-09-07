@@ -10,24 +10,14 @@ from uuid import UUID
 from fastapi import HTTPException, UploadFile
 
 from paskia.db.paths import users_root_path
-from paskia.util import hostutil
+from paskia.domains import current_domain
 
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024
 
 
-def media_root() -> Path:
-    """Return the filesystem root for auxiliary media files."""
-    return users_root_path(create_root=True)
-
-
-def avatars_root() -> Path:
-    """Return the filesystem root for stored avatar images."""
-    return media_root()
-
-
 def avatar_path(user_uuid: UUID) -> Path:
     """Return the avatar file path for a user."""
-    return avatars_root() / str(user_uuid) / "profile.webp"
+    return users_root_path(create_root=True) / str(user_uuid) / "profile.webp"
 
 
 def avatar_public_path(user_uuid: UUID) -> str:
@@ -46,12 +36,7 @@ def avatar_url(user_uuid: UUID) -> str | None:
     """Return the absolute public avatar URL for a user, or None."""
     if not avatar_path(user_uuid).is_file():
         return None
-    return hostutil.api_url(f"user/{user_uuid}/profile.webp")
-
-
-def current_avatar_url(user_uuid: UUID) -> str | None:
-    """Return the current absolute avatar URL for a user UUID."""
-    return avatar_url(user_uuid)
+    return current_domain().api_url(f"user/{user_uuid}/profile.webp")
 
 
 def remove_avatar_file(user_uuid: UUID) -> None:

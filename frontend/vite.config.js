@@ -6,8 +6,12 @@ import { existsSync, renameSync, mkdirSync } from 'node:fs'
 import sirv from 'sirv'
 import fastapiVue from './vite-plugin-fastapi.js'
 
-// Auth host mode: when set, clients accessing the auth host get /auth/ at / and /auth/admin/ at /admin/
-const authHost = process.env.PASKIA_AUTH_HOST
+// Auth host mode: when set, clients accessing an auth host get /auth/ at / and /auth/admin/ at /admin/
+// Comma-separated list of bare hostnames (one per domain with a dedicated auth host)
+const authHosts = (process.env.PASKIA_AUTH_HOST || '')
+  .split(',')
+  .map(h => h.trim().replace(/^https?:\/\//, '').split(':')[0].split('/')[0])
+  .filter(Boolean)
 
 export default defineConfig(({ command }) => ({
   appType: 'mpa',
@@ -17,6 +21,7 @@ export default defineConfig(({ command }) => ({
       "/auth/api",
       "/auth/ws",
       "/.well-known/openid-configuration",
+      "/.well-known/webauthn",
       // Passphrase links: /auth/word1.word2.word3.word4.word5
       "^/auth/[a-z]+\\.[a-z]+\\.[a-z]+\\.[a-z]+\\.[a-z]+$",
       // Passphrase links: /word1.word2.word3.word4.word5
@@ -25,13 +30,13 @@ export default defineConfig(({ command }) => ({
     vue(),
     // Auth host routing: rewrite paths when accessing dedicated auth host
     // Must run before serve-examples to handle / correctly
-    authHost && {
+    authHosts.length && {
       name: 'auth-host-routing',
       configureServer(server) {
         server.middlewares.use((req, _res, next) => {
           const host = req.headers.host?.split(':')[0]
           // Check if request is coming to the auth host
-          if (host === authHost) {
+          if (authHosts.includes(host)) {
             // Only rewrite specific paths that should map to /auth/*
             // Rewrite / and /index.html to /auth/
             if (req.url === '/' || req.url === '/index.html') {
@@ -67,7 +72,7 @@ export default defineConfig(({ command }) => ({
         server.middlewares.use((req, _res, next) => {
           // Skip redirect to examples on auth host (handled by auth-host-routing)
           const host = req.headers.host?.split(':')[0]
-          if (authHost && host === authHost) {
+          if (authHosts.includes(host)) {
             next()
             return
           }

@@ -5,11 +5,11 @@ from fastapi import FastAPI, Request
 from paskia import db
 from paskia.fastapi import authz
 from paskia.fastapi.admin import (
+    domains,
     oidc_clients,
     orgs,
     permissions,
     roles,
-    server_config,
     users,
 )
 from paskia.fastapi.admin.errors import install_error_handlers
@@ -38,7 +38,7 @@ app.mount("/orgs", orgs.app)
 app.mount("/roles", roles.app)
 app.mount("/users", users.app)
 app.mount("/permissions", permissions.app)
-app.mount("/server-config", server_config.app)
+app.mount("/domains", domains.app)
 
 
 def master_admin(ctx) -> bool:
@@ -94,7 +94,7 @@ async def admin_info(request: Request, auth=AUTH_COOKIE):
     perms = db.data().permissions.values() if master_admin(ctx) else ctx.org.permissions
     perms_dict = {p.uuid: ApiPermission.from_db(p) for p in perms}
 
-    # OIDC Clients (master admin only)
+    # OIDC Clients (master admin only) — the instance-global provider
     oidc_clients_dict = {}
     if master_admin(ctx):
         clients = sorted(db.data().oidc.clients.values(), key=lambda c: c.uuid)

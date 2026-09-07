@@ -137,13 +137,11 @@ async def admin_remove_org_permission(
         auth, ["auth:admin"], host=request.headers.get("host"), match=permutil.has_all
     )
 
-    db.remove_permission_from_org(org_uuid, permission_uuid, ctx=ctx)
-
-    # Guard rail: prevent removing auth:admin from your own org if it would lock you out
+    # Guard rail: prevent removing auth:admin from your own org (lockout)
     perm = db.data().permissions.get(permission_uuid)
-    if perm and perm.scope == "auth:admin" and ctx.org.uuid == org_uuid:
-        # Check if any other org grants auth:admin that we're a member of
-        # (we only know our current org, so this effectively means we can't remove it from our own org)
+    if perm is None:
+        raise ValueError(f"Permission {permission_uuid} not found")
+    if perm.scope == "auth:admin" and ctx.org.uuid == org_uuid:
         raise ValueError(
             "Cannot remove auth:admin from your own organization. "
             "This would lock you out of admin access."

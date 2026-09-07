@@ -2,11 +2,15 @@
 
 OpenID Connect 1.0 provider enabling third-party apps to authenticate users via passkey. Also supports native cookie-based authentication.
 
+## Domains (multi rp-id)
+
+The OIDC provider is instance-global: one signing key (`oidc.key` in the transaction log) and one client set for the whole instance, usable through every configured domain. Discovery, keys, token and userinfo endpoints resolve the issuer from the request host (domain dispatch), so every configured host is an issuer alias sharing the one key. `Session.issuer` records the issuing origin (scheme included, stamped from the WS Origin) so refresh and back-channel logout produce the right `iss`; `Session.rp_id` records the owning domain for display. `CookieCode` is stamped with the session's rp-id and verified at redemption; `OIDCCode` is not, since the provider is instance-global.
+
 ## Data Models
 
 **User** — Added: `email`, `preferred_username`
 
-**Session** — Added: `client_uuid` (None = native, set = OIDC)
+**Session** — Added: `client_uuid` (None = native, set = OIDC), `issuer` (origin that issued the session), `rp_id` (owning domain, display only)
 - `key: bytes` — hashed DB key, never stored raw
 - `secret` → `hash_secret("session", secret)` → DB lookup
 - OIDC `sid` → `base64url.encode(hash_secret("oidc", session.key))`
@@ -15,21 +19,24 @@ OpenID Connect 1.0 provider enabling third-party apps to authenticate users via 
 
 ## Auth Codes (In-Memory Only)
 
-60-second lifetime, auto-cleaned:
+60-second lifetime, auto-cleaned. Two separate stores keep the OIDC and cookie flows isolated:
 
 ```python
-from paskia.authcode import AuthCode, OIDC, codes
+from paskia.authcode import CookieCode, OIDCCode, store_cookie, store_oidc
 
-class AuthCode(msgspec.Struct):
+class OIDCCode(msgspec.Struct):
     session_key: str       # Session DB key
     created: datetime
-    oidc: OIDC | None      # Only for OIDC mode
+    redirect_uri, scope: str
+    nonce, code_challenge: str | None   # PKCE S256 when provided
 
-class OIDC(msgspec.Struct):
-    redirect_uri, scope, nonce, code_challenge, code_challenge_method: str
+class CookieCode(msgspec.Struct):
+    session_key: str
+    created: datetime
+    rp_id: str             # domain the code was issued in; checked at redemption
 ```
 
-Usage: `code = authcode.store(AuthCode(...))` → later `codes.pop(code, None)`
+Usage: `code = store_oidc(OIDCCode(...))` → later popped from `oidc_codes` / `cookie_codes`.
 
 ## Authorization Flows
 
@@ -89,4 +96,4 @@ Discovery: `backchannel_logout_supported: true`
 
 **Created:** [paskia/authcode.py](paskia/authcode.py), [paskia/util/crypto.py](paskia/util/crypto.py), [paskia/fastapi/oid.py](paskia/fastapi/oid.py)
 
-**Modified:** [paskia/db/structs.py](paskia/db/structs.py), [paskia/db/operations.py](paskia/db/operations.py), [paskia/fastapi/ws.py](paskia/fastapi/ws.py), [paskia/fastapi/api.py](paskia/fastapi/api.py), [paskia/globals.py](paskia/globals.py), [paskia/fastapi/mainapp.py](paskia/fastapi/mainapp.py)
+**Modified:** [paskia/db/structs.py](paskia/db/structs.py), [paskia/db/operations.py](paskia/db/operations.py), [paskia/fastapi/ws.py](paskia/fastapi/ws.py), [paskia/fastapi/api.py](paskia/fastapi/api.py), [paskia/domains.py](paskia/domains.py), [paskia/fastapi/mainapp.py](paskia/fastapi/mainapp.py)

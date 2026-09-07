@@ -1,7 +1,7 @@
 """
 Database for WebAuthn passkey authentication.
 
-Read operations: Access _db directly, use build_* helpers to get public structs.
+Read operations: Access _db directly.
 Context lookup: _db.session_ctx() returns full SessionContext with effective permissions.
 Write operations: Functions that validate and commit, or raise ValueError.
 """
@@ -18,9 +18,10 @@ from paskia.config import SESSION_LIFETIME
 from paskia.db.structs import (
     DB,
     Client,
-    Config,
     Credential,
+    DomainConfig,
     Org,
+    OriginEntry,
     Permission,
     ResetToken,
     Role,
@@ -37,7 +38,7 @@ _logger = logging.getLogger(__name__)
 _UNSET = object()
 
 # Global database instance (empty until init() loads data)
-_db = DB(config=Config(rp_id="uninitialized.invalid"))
+_db = DB()
 
 
 def _store():
@@ -74,12 +75,6 @@ def is_username_taken(username: str, exclude_uuid: UUID | None = None) -> bool:
 # -------------------------------------------------------------------------
 # Write operations (validate, modify, commit or raise ValueError)
 # -------------------------------------------------------------------------
-
-
-def update_config(config: Config) -> None:
-    """Update the stored configuration."""
-    with _transaction("update_config"):
-        _db.config = config
 
 
 def create_permission(perm: Permission, *, ctx: SessionContext | None = None) -> None:
@@ -462,6 +457,7 @@ def update_session(
     ip: str | None = None,
     user_agent: str | None = None,
     validated: datetime | None = None,
+    issuer: str | None = None,
     *,
     ctx: SessionContext | None = None,
 ) -> None:
@@ -478,11 +474,8 @@ def update_session(
             s.user_agent = user_agent
         if validated is not None:
             s.validated = validated
-
-
-def set_session_host(key: str, host: str, *, ctx: SessionContext | None = None) -> None:
-    """Set the host for a session (first-time binding)."""
-    update_session(key, host=host, ctx=ctx)
+        if issuer is not None:
+            s.issuer = issuer
 
 
 def delete_session(
@@ -553,14 +546,6 @@ def create_reset_token(
     return passphrase
 
 
-def delete_reset_token(key: bytes, *, ctx: SessionContext | None = None) -> None:
-    """Delete a reset token."""
-    if key not in _db.reset_tokens:
-        raise ValueError("Reset token not found")
-    with _transaction("delete_reset_token", ctx):
-        _db.reset_tokens[key].delete()
-
-
 # -------------------------------------------------------------------------
 # Composite operations (used by app code)
 # -------------------------------------------------------------------------
@@ -574,6 +559,7 @@ def login(
     ip: str,
     user_agent: str,
     duration: timedelta = SESSION_LIFETIME,
+    rp_id: str | None = None,
 ) -> str:
     """Update user/credential on login and create session in a single transaction.
 
@@ -581,7 +567,7 @@ def login(
     - user.last_seen, user.visits
     - credential.sign_count, credential.last_used
     Creates:
-    - new session
+    - new session (stamped with rp_id when provided)
 
     Returns the generated session token.
     """
@@ -604,6 +590,7 @@ def login(
         ip=ip,
         user_agent=user_agent,
         validated=now,
+        rp_id=rp_id,
     )
     user_str = str(user_uuid)
     with _transaction("login", user=user_str):
@@ -677,6 +664,7 @@ def create_credential_session(
         ip=ip,
         user_agent=user_agent,
         validated=now,
+        rp_id=credential.rp_id,
     )
     user_str = str(user_uuid)
     with _transaction("create_credential_session", user=user_str):
@@ -701,6 +689,59 @@ def create_credential_session(
             if reset_token:
                 reset_token.delete()
     return token
+
+
+# -------------------------------------------------------------------------
+# Domain operations
+# -------------------------------------------------------------------------
+
+
+def create_domain(
+    rp_id: str, domain: DomainConfig, *, ctx: SessionContext | None = None
+) -> None:
+    """Add a new domain (rp-id) to the stored configuration.
+
+    The caller must validate the resulting combined configuration.
+    """
+    if rp_id in _db.config.domains:
+        raise ValueError(f"Domain {rp_id} already exists")
+    with _transaction("admin:create_domain", ctx):
+        _db.config.domains[rp_id] = domain
+
+
+def update_domain(
+    rp_id: str,
+    *,
+    rp_name: str | None,
+    origins: dict[str, bool | OriginEntry],
+    ctx: SessionContext | None = None,
+) -> None:
+    """Replace a domain's rp_name and origins table (wholesale).
+
+    The rp-id itself is immutable: credentials are stamped with it, so
+    changing it would orphan them — delete and recreate the domain instead.
+    The caller must validate the resulting combined configuration.
+    """
+    domain = _db.config.domains.get(rp_id)
+    if domain is None:
+        raise ValueError(f"Domain {rp_id} not found")
+    with _transaction("admin:update_domain", ctx):
+        domain.rp_name = rp_name
+        domain.origins = origins
+
+
+def delete_domain(rp_id: str, *, ctx: SessionContext | None = None) -> None:
+    """Delete a domain. Refused for the last domain or while credentials remain."""
+    if rp_id not in _db.config.domains:
+        raise ValueError(f"Domain {rp_id} not found")
+    if len(_db.config.domains) <= 1:
+        raise ValueError("Cannot delete the last remaining domain")
+    if any(c.rp_id == rp_id for c in _db.credentials.values()):
+        raise ValueError(
+            f"Cannot delete domain {rp_id}: credentials still registered under it"
+        )
+    with _transaction("admin:delete_domain", ctx):
+        del _db.config.domains[rp_id]
 
 
 # -------------------------------------------------------------------------

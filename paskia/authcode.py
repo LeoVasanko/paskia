@@ -24,6 +24,8 @@ class OIDCCode(msgspec.Struct):
     """An OIDC authorization code pending token exchange.
 
     PKCE uses S256 only when provided (verified at token exchange).
+    Codes are redeemable at any host of the instance — the OIDC provider
+    is instance-global.
     """
 
     session_key: str
@@ -35,10 +37,17 @@ class OIDCCode(msgspec.Struct):
 
 
 class CookieCode(msgspec.Struct):
-    """A cookie exchange code for setting session cookie after WebSocket auth."""
+    """A cookie exchange code for setting session cookie after WebSocket auth.
+
+    rp_id binds the code to the domain it was issued in; the redemption
+    endpoint (dispatched by Host) must match. This is what allows a
+    remote-auth approver on one domain to mint a code for the requesting
+    device's domain without the code being usable on the wrong domain.
+    """
 
     session_key: str
     created: datetime
+    rp_id: str
 
 
 # Separate stores for each code type

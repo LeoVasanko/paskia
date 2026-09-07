@@ -17,10 +17,10 @@ from fastapi.security import HTTPBearer
 from paskia import authcode, db
 from paskia._version import __version__
 from paskia.authsession import EXPIRES, get_reset, session_ctx
+from paskia.domains import current_domain
 from paskia.fastapi import authz, session, user
 from paskia.fastapi.response import MsgspecResponse
 from paskia.fastapi.session import AUTH_COOKIE, AUTH_COOKIE_NAME, get_client_ip
-from paskia.globals import passkey as global_passkey
 from paskia.util import hostutil, htmlutil, passphrase, permutil, userinfo
 from paskia.util.apistructs import (
     ApiCheckUserResponse,
@@ -300,15 +300,15 @@ async def forward_authentication(
 
 @app.get("/settings")
 async def get_settings():
-    pk = global_passkey
-    base_path = hostutil.ui_base_path()
+    domain = current_domain()
     return MsgspecResponse(
         ApiSettings(
-            rp_id=pk.rp_id,
-            rp_name=pk.rp_name,
-            ui_base_path=base_path,
-            auth_host=hostutil.dedicated_auth_host(),
-            auth_site_url=hostutil.auth_site_url(),
+            rp_id=domain.rp_id,
+            rp_name=domain.rp_name,
+            ui_base_path=domain.ui_base_path,
+            auth_host=domain.own_auth_host,
+            own_auth_host=domain.own_auth_host,
+            auth_site_url=domain.auth_site_url,
             session_cookie=AUTH_COOKIE_NAME,
             version=__version__,
         ),
@@ -399,7 +399,6 @@ async def api_set_session(
     if not auth or not auth.credentials:
         raise HTTPException(400, "Bearer token required")
 
-    # Verify host is provided
     host = hostutil.normalize_host(request.headers.get("host", ""))
     if not host:
         raise HTTPException(400, "Host header required")
@@ -407,10 +406,11 @@ async def api_set_session(
     a = authcode.consume_cookie(auth.credentials)
     if not a:
         raise HTTPException(401, "Code expired or already used")
+    if a.rp_id != current_domain().rp_id:
+        raise HTTPException(401, "Code was issued for a different domain")
 
     secret = a.session_key
 
-    # Verify the session exists
     ctx = session_ctx(secret, host)
     if not ctx:
         raise HTTPException(401, f"Session not found on {host}")

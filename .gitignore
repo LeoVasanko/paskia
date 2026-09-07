@@ -6,6 +6,8 @@ dist/
 package-lock.json
 paskia.sqlite
 *.paskiadb
+*.converted-bak
+*.kantadb
 *.data
 /paskia/frontend-build
 /paskia/_version.py

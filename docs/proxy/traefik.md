@@ -92,7 +92,7 @@ authResponseHeaders:
 
 The `/auth/` router above forwards all authentication UI, API, and WebSocket traffic to Paskia. Because this router does **not** use the `paskia-auth` middleware, users can reach the login page and profile UI without being authenticated first. Traefik handles WebSocket upgrades automatically when the client requests them.
 
-If you are using a dedicated authentication host instead of `/auth/`, create a separate router for `auth.example.com` pointing to the Paskia service and start Paskia with `--auth-host auth.example.com`.
+If you are using a dedicated authentication host instead of `/auth/`, create a separate router for `auth.example.com` pointing to the Paskia service and set the domain's auth host in the admin panel's Domains section.
 
 ## Adjusting requirements
 

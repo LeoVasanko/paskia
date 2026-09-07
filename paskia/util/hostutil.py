@@ -1,63 +1,67 @@
-"""Utilities for determining the auth UI host and base URLs."""
+"""Utilities for host/origin normalization and validation."""
 
+import re
 from urllib.parse import urlparse, urlsplit
 
-from paskia.util.runtime import clear_config_cache
-from paskia.util.runtime import config as runtime_config
+_RP_ID_RE = re.compile(
+    r"^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$"
+)
 
 
-def _cfg():
-    return runtime_config()
+def validate_rp_id(rp_id: str) -> None:
+    """Validate that rp_id is a valid domain name (or localhost)."""
+    if not rp_id:
+        raise ValueError("rp_id cannot be empty")
+    if rp_id == "localhost":
+        return
+    if not _RP_ID_RE.match(rp_id):
+        raise ValueError(f"rp_id '{rp_id}' is not a valid domain name")
 
 
-def is_root_mode() -> bool:
-    cfg = _cfg()
-    return cfg is not None and cfg.config.auth_host is not None
+def is_valid_hostname(hostname: str) -> bool:
+    """Check hostname shape: dot-separated alphanumeric/hyphen labels —
+    no empty labels, so no leading/trailing or double dots ('.localhost',
+    'localhost.', 'a..b.com' are all malformed)."""
+    return bool(_RP_ID_RE.match(hostname))
 
 
-def dedicated_auth_host() -> str | None:
-    """Return configured auth_host netloc, or None."""
-    cfg = _cfg()
-    auth_host = cfg.config.auth_host if cfg else None
-    if not auth_host:
-        return None
-
-    parsed = urlparse(auth_host if "://" in auth_host else f"//{auth_host}")
-    return parsed.netloc or parsed.path or None
+def is_wildcard_pattern(value: str) -> bool:
+    """Check whether an origins entry is a wildcard pattern like
+    '*.example.com' (one subdomain level) or '**.example.com' (the base
+    domain and any depth of subdomains)."""
+    return value.startswith("*.") or value.startswith("**.")
 
 
-def ui_base_path() -> str:
-    return "/" if is_root_mode() else "/auth/"
-
-
-def api_url(path: str = "") -> str:
-    """Return an absolute URL under the canonical /auth/api/ prefix."""
-    cfg = _cfg()
-    base = cfg.site_url if cfg else "https://localhost"
-    if not path:
-        return f"{base}/auth/api/"
-    normalized = path.lstrip("/")
-    return f"{base}/auth/api/{normalized}"
-
-
-def auth_site_url() -> str:
-    """Return the base URL for the auth site UI (computed at startup)."""
-    cfg = _cfg()
-    if cfg:
-        return cfg.site_url + cfg.site_path
-    return "https://localhost/auth/"
-
-
-def reset_link_url(token: str) -> str:
-    """Generate a reset link URL for the given token."""
-    return f"{auth_site_url()}{token}"
+def wildcard_base(pattern: str) -> str | None:
+    """Base domain of a wildcard pattern; None if not a wildcard."""
+    if pattern.startswith("**."):
+        return pattern[3:].rstrip(".") or None
+    if pattern.startswith("*."):
+        return pattern[2:].rstrip(".") or None
+    return None
 
 
 def normalize_origin(origin: str) -> str:
-    """Normalize an origin URL by adding https:// if no scheme is present, removing trailing slashes."""
+    """Normalize an origin URL by adding https:// if no scheme is present, removing trailing slashes.
+
+    Wildcard patterns ('*.example.com', '**.example.com') pass through
+    unchanged — they are allow-list entries, not concrete origins.
+    """
+    if is_wildcard_pattern(origin):
+        return origin.rstrip("/.")
     if "://" not in origin:
         return f"https://{origin}"
     return origin.rstrip("/")
+
+
+def origin_hostname(origin: str) -> str | None:
+    """Extract the lowercase hostname from an origin URL, if well-formed.
+
+    For wildcard patterns the base domain is returned.
+    """
+    if base := wildcard_base(origin):
+        return base.lower()
+    return urlparse(origin).hostname
 
 
 def is_subdomain(sub: str, domain: str) -> bool:
@@ -69,48 +73,14 @@ def is_subdomain(sub: str, domain: str) -> bool:
     return sub_parts[-len(domain_parts) :] == domain_parts
 
 
-def validate_auth_host(auth_host: str, rp_id: str) -> None:
-    """Validate that auth_host is a subdomain of rp_id.
-
-    Raises ValueError on invalid auth_host.
-    """
+def auth_host_netloc(auth_host: str) -> str | None:
+    """Return the host[:port] part of a configured auth host URL."""
     parsed = urlparse(auth_host if "://" in auth_host else f"//{auth_host}")
-    host = parsed.hostname or parsed.path
-    if not host:
-        raise ValueError(f"Invalid auth-host: '{auth_host}'")
-    if not is_subdomain(host, rp_id):
-        raise ValueError(
-            f"auth-host '{auth_host}' is not a subdomain of rp-id '{rp_id}'"
-        )
-
-
-def normalize_auth_host_and_origins(
-    auth_host: str | None, origins: list[str] | None
-) -> tuple[str | None, list[str] | None]:
-    """Normalize auth_host and origins, matching CLI startup behavior.
-
-    - Adds https:// to auth_host if no scheme present, strips trailing slashes
-    - Validates auth_host is a well-formed subdomain (caller provides rp_id via validate_auth_host)
-    - Inserts auth_host as first origin if both are specified and not already present
-    - Deduplicates origins while preserving order
-    """
-    if auth_host:
-        if "://" not in auth_host:
-            auth_host = f"https://{auth_host}"
-        auth_host = auth_host.rstrip("/")
-        if origins is not None and auth_host not in origins:
-            origins.insert(0, auth_host)
-    if origins:
-        origins = list(dict.fromkeys(origins))
-    return auth_host, origins
-
-
-def reload_config() -> None:
-    clear_config_cache()
+    return parsed.netloc or parsed.path or None
 
 
 def normalize_host(raw_host: str | None) -> str | None:
-    """Normalize a Host header, stripping port numbers for consistent matching."""
+    """Normalize a Host header, stripping port numbers and trailing dots."""
     if not raw_host:
         return None
     candidate = raw_host.strip()
@@ -127,7 +97,7 @@ def normalize_host(raw_host: str | None) -> str | None:
     else:
         # Strip port from host:port
         netloc = netloc.rsplit(":", 1)[0]
-    return netloc.lower() or None
+    return netloc.lower().rstrip(".") or None
 
 
 def format_endpoint(ep: dict) -> str:

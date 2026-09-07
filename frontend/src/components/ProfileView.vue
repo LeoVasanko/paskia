@@ -54,6 +54,10 @@
         <p class="section-description">Ideally have at least two passkeys in case you lose one. More than one user can be registered on the same device, giving you a choice at login. <a href="https://bitwarden.com/pricing/" target="_blank" rel="noopener noreferrer">Bitwarden</a> can sync one passkey to all your devices. Other secure options include <b>local passkeys</b>, as well as hardware keys such as <a href="https://www.yubico.com" target="_blank" rel="noopener noreferrer">YubiKey</a>. Cloud sync via Google, Microsoft or iCloud is discouraged.</p>
       </div>
       <div class="section-body">
+        <div v-if="missingDomainPasskey" class="domain-enroll-notice">
+          <p>You don't have a passkey for <strong>{{ rpName }}</strong> ({{ authStore.settings.rp_id }}) yet. Add one to log in here directly.</p>
+          <button @click="addNewCredential" class="btn-primary">Add Passkey for {{ authStore.settings.rp_id }}</button>
+        </div>
         <CredentialList
           ref="credentialList"
           :credentials="credentials"
@@ -410,6 +414,11 @@ const hasMultipleSessions = computed(() => Object.keys(sessions.value).length > 
 const credentials = computed(() =>
   Object.entries(authStore.userInfo.credentials).map(([uuid, c]) => ({ ...c, credential: uuid }))
 )
+const missingDomainPasskey = computed(() => {
+  const rpId = authStore.settings?.rp_id
+  if (!rpId) return false
+  return !credentials.value.some(c => c.rp_id === rpId)
+})
 const useWideLayout = computed(() => {
   // Check if any single site has more than 8 sessions
   const groups = {}

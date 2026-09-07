@@ -36,10 +36,11 @@ Paskia includes set of login, reauthentication and forbidden dialogs that it can
 Install [UV](https://docs.astral.sh/uv/getting-started/installation/) and run:
 
 ```sh
-uvx paskia --rp-id example.com
+uvx paskia init example.com
+uvx paskia
 ```
 
-On the first run it downloads the software and prints a registration link for the Admin. The server starts on [localhost:4401](http://localhost:4401), serving authentication for `*.example.com`. For local testing, leave out `--rp-id`.
+The first command bootstraps the database and prints a registration link for the Admin. The second starts the server on [localhost:4401](http://localhost:4401), serving authentication for `*.example.com`. For local testing, leave out the rp-id (defaults to `localhost`).
 
 For production you need a web server such as [Caddy](https://caddyserver.com/) to serve HTTPS on your actual domain names and proxy requests to Paskia and your backend apps (see documentation below).
 
@@ -51,22 +52,24 @@ uv tool install paskia
 
 ## Configuration
 
-You will need to specify your main domain to which all passkeys will be tied as rp-id. Use your main domain even if Paskia is not running there. All other options are optional.
+Bootstrapping is done once with `paskia init`; after that, `paskia` serves all configured domains from the database `paskia.kantadb` in the current directory. Domain configuration (rp-name, auth host, origins) is managed via the admin web interface, including adding further domains (rp-ids).
 
 ```text
-paskia [options]
+paskia init [rp-id] [rp-name] [options]  # one-time bootstrap; with an existing
+                                         # database, adds the rp-id (or renames it)
+paskia migrate [rp-id]                   # convert a legacy {rp-id}.paskiadb database
+paskia [-l endpoint]                     # serve
 ```
 
-| Option | Description | Default |
+| init option | Description | Default |
 |--------|-------------|---------|
-| -l, --listen *endpoint* | Listen address: *host*:*port*, :*port* (all interfaces), or */path.sock* | **localhost:4401** |
-| --rp-id *domain* | Main/top domain for passkeys | **localhost** |
-| --rp-name *"text"* | Branding name for the entire system (passkey auth, login dialog). | Same as rp-id |
-| --origin *url* | Only sites listed can login (repeatable) | rp-id and all subdomains |
-| --auth-host *url* | Dedicated authentication site, e.g. **auth.example.com** | Use **/auth/** path on each site |
-| --save | Save current options to database | (only --rp-id required on further invocations) |
+| -l, --listen *endpoint* | Listen address: *host*:*port*, :*port* (all interfaces), or */path.sock* (stored in the database) | **localhost:4401** |
+| *rp-id* (positional) | Main/top domain for passkeys | **localhost** |
+| *rp-name* (positional) | Branding name of the domain (passkey auth, login dialog) | Same as rp-id |
 
-To clear a stored setting, pass an empty value like `--auth-host=`. The database is stored in `{rp-id}.paskiadb` folder in current directory. This can be overridden by environment `PASKIA_DB` if needed.
+Origins, auth hosts and related domains are configured afterwards in the admin panel's Domains section.
+
+The `paskia` serve command accepts only `--listen` (overriding the stored value) and never converts databases: with no `paskia.kantadb` it tells you to run `paskia init`, or `paskia migrate` when a legacy `{rp-id}.paskiadb` database is present. `paskia migrate` converts the legacy database; with several candidates, the positional rp-id selects one by name and the rest are left in place.
 
 ## Tutorial: From Local Testing to Production
 
@@ -74,13 +77,14 @@ This section walks you through a complete example, from running Paskia locally t
 
 ### Step 1: Production Configuration
 
-For a real deployment, configure Paskia with your domain name (rp-id). This enables SSO setup for that domain and any subdomains.
+For a real deployment, bootstrap Paskia with your domain name (rp-id). This enables SSO setup for that domain and any subdomains.
 
 ```sh
-uvx paskia --rp-id=example.com --rp-name="Example Corp"
+uvx paskia init example.com "Example Corp"
+uvx paskia
 ```
 
-This binds passkeys to the rp-id, allowing them to be used there or on any subdomain of it. The `--rp-name` is the branding shown in UI and registered with passkeys for everything on your domain (rp id). On the first run, you'll see a registration link—use it to create your Admin account. You may enter your real name here for a more suitable account name.
+This binds passkeys to the rp-id, allowing them to be used there or on any subdomain of it. The rp-name is the branding shown in UI and registered with passkeys for everything on your domain (rp id). Init prints a registration link—use it to create your Admin account. You may enter your real name here for a more suitable account name.
 
 ### Step 2: Set Up Caddy
 
@@ -177,20 +181,20 @@ curl -LsSf https://astral.sh/uv/install.sh | sudo env UV_INSTALL_DIR=/usr/local/
 Create a systemd unit:
 
 ```sh
-sudo systemctl edit --force --full paskia@.service
+sudo systemctl edit --force --full paskia.service
 ```
 
 Paste the following and save:
 
 ```ini
 [Unit]
-Description=Paskia for %i
+Description=Paskia
 
 [Service]
 Type=simple
 User=paskia
 WorkingDirectory=/srv/paskia
-ExecStart=uvx paskia@latest --rp-id=%i
+ExecStart=uvx paskia@latest
 
 [Install]
 WantedBy=multi-user.target
@@ -199,7 +203,7 @@ WantedBy=multi-user.target
 Run the service and view log:
 
 ```sh
-sudo systemctl enable --now paskia@example.com && sudo journalctl -n30 -ocat -fu paskia@example.com
+sudo systemctl enable --now paskia && sudo journalctl -n30 -ocat -fu paskia
 ```
 
 ### Optional: Dedicated Authentication Site
@@ -214,7 +218,15 @@ auth.example.com {
 
 Now all authentication happens at `auth.example.com` instead of `/auth/` paths on your apps. Your existing protected sites continue to work as before but they just forward to the dedicated site for user profile and other such functionality.
 
-Enter your auth site domain on Admin / Server Options panel or use `--auth-host=auth.example.com` when starting the server.
+Set the auth host in the admin panel's Domains section.
+
+## Multiple Domains and Related Origins
+
+One Paskia instance can serve several domains (rp-ids) from the same database: users, orgs and permissions are shared, while passkeys are registered per domain. The master admin adds domains in the admin panel's Domains section; no restart is needed.
+
+A domain can also let *other* domain names use its passkeys via WebAuthn [Related Origin Requests](https://passkeys.dev/docs/advanced/related-origins/) — list them in the domain's allowed origins (they show as related domains), and paskia serves the required `/.well-known/webauthn` declaration on the domain's main site. In-domain entries of the same list restrict which sites of the domain's own name may authenticate (a new domain defaults to `**.{domain}` — the apex and all subdomains over https).
+
+See [Multi-Site documentation](docs/MultiSite.md) for details.
 
 
 ## Further Documentation

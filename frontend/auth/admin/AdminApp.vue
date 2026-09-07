@@ -17,7 +17,7 @@ import { apiJson, SessionValidator, settings as paskiaSettings } from 'paskia'
 import { updateThemeFromSession } from '@/utils/theme'
 import { uuidv7 } from 'uuidv7'
 import { getDirection } from '@/utils/keynav'
-import { goBack } from '@/utils/helpers'
+import { originDisplayEntries } from '@/utils/helpers'
 
 const info = ref(null)
 const loading = ref(true)
@@ -28,6 +28,7 @@ const error = ref(null)
 const orgs = ref([])
 const permissions = ref([])
 const oidcClients = ref([])
+const domains = ref([])
 const currentOrgId = ref(null) // UUID of selected org for detail view
 const currentUserId = ref(null) // UUID for user detail view
 const currentOidcId = ref(null) // UUID for OIDC client detail view
@@ -174,6 +175,16 @@ async function loadAdminData() {
   oidcClients.value = Object.entries(data.oidc_clients).map(([uuid, c]) => ({ uuid, ...c }))
 }
 
+// Domain list is master-admin only; callers guard on isMasterAdmin
+async function loadDomains() {
+  try {
+    domains.value = await apiJson('/auth/api/admin/domains/')
+  } catch (e) {
+    console.warn('Unable to load domains', e)
+    domains.value = []
+  }
+}
+
 // Helper to get users for a role as sorted array of [uuid, user]
 function roleUsers(org, roleUuid) {
   return Object.entries(org.users)
@@ -207,6 +218,7 @@ function clearSensitiveState() {
   orgs.value = []
   permissions.value = []
   oidcClients.value = []
+  domains.value = []
   userDetail.value = null
   editingOidcClient.value = null
   authenticated.value = false
@@ -236,6 +248,7 @@ async function load() {
     await loadAdminData()
     // If we get here, user has admin access - now fetch user info for display
     await loadUserInfo()
+    if (isMasterAdmin.value) await loadDomains()
 
     if (!isMasterAdmin.value && isOrgAdmin.value && orgs.value.length === 1) {
       if (!window.location.hash || window.location.hash === '#overview') {
@@ -452,31 +465,48 @@ function resetOidcSecret(clientId) {
   if (editingOidcClient.value?.client_id === clientId) {
     editingOidcClient.value = { ...editingOidcClient.value, client_secret }
   }
-  // Also update dialog if open (for backwards compatibility)
-  if (dialog.value.type === 'oidc-edit' && dialog.value.data?.client_id === clientId) {
-    dialog.value.data.client_secret = client_secret
-  }
 }
 
 function createPermissionForClient(clientId) {
   openDialog('perm-create', { display_name: '', scope: '', domain: clientId })
 }
 
-async function openServerConfig() {
-  try {
-    const config = await apiJson('/auth/api/admin/server-config')
-    // Strip https:// scheme from stored origins and auth_host for editing
-    const origins = (config.origins || []).map(o => o.replace(/^https:\/\//, ''))
-    const auth_host = (config.auth_host || '').replace(/^https:\/\//, '')
-    openDialog('server-config', {
-      rp_name: config.rp_name || '',
-      auth_host,
-      origins,
-      originValidation: origins.map(() => null),
-    })
-  } catch (e) {
-    authStore.showMessage(e.message || 'Failed to load server configuration', 'error')
-  }
+function createDomain() {
+  openDialog('domain-edit', {
+    isNew: true,
+    rp_id: '',
+    rp_name: '',
+    auth_host: '',
+    origins: [],
+    originValidation: [],
+    wellKnownCheck: null,
+  })
+}
+
+function openDomain(domain) {
+  // One combined list for editing, in display order: in-domain sites and
+  // related origins, classified by hostname against the rp-id.
+  const rows = originDisplayEntries(domain)
+  openDialog('domain-edit', {
+    isNew: false,
+    rp_id: domain.rp_id,
+    rp_name: domain.rp_name || '',
+    auth_host: rows.find(r => r.auth)?.key || '',
+    origins: rows.map(r => r.key),
+    originValidation: rows.map(() => null),
+    wellKnownCheck: null,
+  })
+}
+
+function deleteDomain(domain) {
+  openDialog('confirm', {
+    message: `Delete domain "${domain.rp_id}"? This is refused while any passkeys remain registered for it.`,
+    action: async () => {
+      await apiJson(`/auth/api/admin/domains/${domain.rp_id}`, { method: 'DELETE' })
+      authStore.showMessage(`Domain "${domain.rp_id}" deleted.`, 'success', 2500)
+      await loadDomains()
+    }
+  })
 }
 
 function deleteOidcClient(client) {
@@ -875,50 +905,38 @@ async function submitDialog() {
           authStore.showMessage(e.message || 'Failed to create permission', 'error')
         })
       return // Don't call closeDialog() again
-    } else if (t === 'oidc-edit') {
-      const { client_id, client_secret, isNew } = dialog.value.data
-      const name = dialog.value.data.name?.trim()
-      const uris = dialog.value.data.redirect_uris?.trim()
-      if (!name) throw new Error('Client name required')
+    } else if (t === 'domain-edit') {
+      const d = dialog.value.data
+      const rp_id = d.rp_id?.trim().toLowerCase()
+      if (!rp_id) throw new Error('Domain (rp-id) required')
+      const rp_name = d.rp_name?.trim() || ''
+      const auth_host = d.auth_host?.trim().toLowerCase() || ''
+      // One origins object holds in-domain sites and related origins
+      // (ROR) together; the server classifies each key against the rp-id.
+      // Keys are stored lowercased, without the https:// scheme.
+      const keyOf = o => o.replace(/^https:\/\//i, '').replace(/\/+$/, '').toLowerCase()
+      const origins = {}
+      for (const o of d.origins || []) {
+        const key = keyOf(o.trim())
+        if (!key) continue
+        origins[key] = key === auth_host ? { auth_host: true } : true
+      }
 
-      const redirect_uris = uris ? uris.split('\n').map(u => u.trim()).filter(u => u) : []
-
-      // Close dialog immediately, then perform async operation
       closeDialog()
-
-      const req = client_secret
-        ? sha256Hex(client_secret).then(secret_hash => isNew
-            ? apiJson('/auth/api/admin/oidc-clients', { method: 'POST', body: { client_id, secret_hash, name, redirect_uris } })
-            : apiJson(`/auth/api/admin/oidc-clients/${client_id}`, { method: 'PATCH', body: { name, redirect_uris, secret_hash } }))
-        : apiJson(`/auth/api/admin/oidc-clients/${client_id}`, { method: 'PATCH', body: { name, redirect_uris } })
+      const req = d.isNew
+        ? apiJson('/auth/api/admin/domains/', { method: 'POST', body: { rp_id, rp_name, origins } })
+        : apiJson(`/auth/api/admin/domains/${rp_id}`, { method: 'PATCH', body: { rp_name, origins } })
       req
         .then(() => {
-          authStore.showMessage(`OIDC client "${name}" ${isNew ? 'created' : 'updated'}.`, 'success', 2500)
-          loadAdminData()
-        })
-        .catch(e => {
-          authStore.showMessage(e.message || `Failed to ${isNew ? 'create' : 'update'} OIDC client`, 'error')
-        })
-      return // Don't call closeDialog() again
-    } else if (t === 'server-config') {
-      const rp_name = dialog.value.data.rp_name?.trim() || ''
-      const auth_host = dialog.value.data.auth_host?.trim() || ''
-      // Origins are stored as-is (hostnames); backend normalizes with https://
-      const origins = dialog.value.data.origins
-        .map(o => o.trim())
-        .filter(o => o)
-
-      closeDialog()
-      apiJson('/auth/api/admin/server-config', { method: 'PATCH', body: { rp_name, auth_host, origins } })
-        .then(() => {
-          authStore.showMessage('Server configuration updated.', 'success', 2500)
+          authStore.showMessage(`Domain "${rp_id}" ${d.isNew ? 'created' : 'updated'}.`, 'success', 2500)
+          loadDomains()
           // Reload settings to reflect rp_name changes
-          authStore.loadSettings().then(() => {
+          authStore.loadSettings(true).then(() => {
             if (authStore.settings?.rp_name) document.title = authStore.settings.rp_name + ' Admin'
           })
         })
         .catch(e => {
-          authStore.showMessage(e.message || 'Failed to update server configuration', 'error')
+          authStore.showMessage(e.message || 'Failed to save domain', 'error')
         })
       return // Don't call closeDialog() again
     } else if (t === 'confirm') {
@@ -973,6 +991,8 @@ async function submitDialog() {
                   :orgs="orgs"
                   :permissions="permissions"
                   :oidc-clients="oidcClients"
+                  :domains="domains"
+                  :current-rp-id="authStore.settings?.rp_id || ''"
                   :navigation-disabled="hasActiveModal"
                   :permission-summary="permissionSummary"
                   @create-org="createOrg"
@@ -986,7 +1006,9 @@ async function submitDialog() {
                   @create-oidc-client="createOidcClient"
                   @open-oidc-client="openOidcClient"
                   @delete-oidc-client="deleteOidcClient"
-                  @open-server-config="openServerConfig"
+                  @create-domain="createDomain"
+                  @open-domain="openDomain"
+                  @delete-domain="deleteDomain"
                   @navigate-out="handlePanelNavigateOut"
                 />
 
@@ -1029,6 +1051,7 @@ async function submitDialog() {
                   ref="adminOidcDetailRef"
                   :client="editingOidcClient"
                   :permissions="permissions"
+                  :domains="domains"
                   :is-new="editingOidcClient.isNew"
                   :navigation-disabled="hasActiveModal"
                   @save="handleOidcSave"
@@ -1047,11 +1070,8 @@ async function submitDialog() {
     <AdminDialogs
       :dialog="dialog"
       :permission-id-pattern="PERMISSION_ID_PATTERN"
-      :settings="authStore.settings"
       @submit-dialog="submitDialog"
       @close-dialog="closeDialog"
-      @reset-oidc-secret="resetOidcSecret"
-      @create-permission-for-client="createPermissionForClient"
     />
   </div>
 </template>

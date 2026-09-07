@@ -1,7 +1,8 @@
 """API response utilities using msgspec for JSON serialization.
 
 msgspec handles UUID and datetime conversion automatically.
-API structs inherit from db structs with kw_only=True to add uuid/key fields.
+Some API structs inherit from db structs with kw_only=True to add uuid/key
+fields; others are standalone response shapes.
 """
 
 from __future__ import annotations
@@ -12,7 +13,7 @@ from uuid import UUID
 import msgspec
 
 from paskia import db
-from paskia.db.structs import Credential, Org, Permission, Role, User
+from paskia.db.structs import Credential, Org, OriginEntry, Permission, Role, User
 from paskia.util import useragent
 
 # -------------------------------------------------------------------------
@@ -161,15 +162,38 @@ class ApiOrgResponse(msgspec.Struct, kw_only=True):
 
 
 class ApiSettings(msgspec.Struct):
-    """Settings response struct."""
+    """Settings response struct (per the domain the request was dispatched to).
+
+    auth_host is the domain's own dedicated auth host (None when the
+    domain has none); own_auth_host is the same value, kept as a separate
+    field for clients that switched to it.
+    """
 
     rp_id: str
     rp_name: str
     ui_base_path: str
     auth_host: str | None
+    own_auth_host: str | None
     auth_site_url: str
     session_cookie: str
     version: str
+
+
+class ApiDomain(msgspec.Struct):
+    """Domain entry in the admin domain list response.
+
+    origins mirrors the stored configuration: an object keyed by host or
+    wildcard pattern (https:// omitted), values True or an object with
+    extra properties (auth_host). Entries outside the rp-id domain are
+    related origins.
+    """
+
+    rp_id: str
+    rp_name: str
+    origins: dict[str, bool | OriginEntry]
+    site_url: str
+    auth_site_url: str
+    auth_host: str | None
 
 
 class ApiTokenInfo(msgspec.Struct, omit_defaults=True):

@@ -173,4 +173,4 @@ The auth check then always returns 204 (except reauth with `max_age`, which stil
 
 - The auth request is `GET` by default. Since the `forward-auth` plugin does not forward the request body unless `request_method` is set to `POST`, the default `GET` is the right choice for Paskia.
 - Hop-by-hop headers are handled by APISIX when it builds the auth request, so no extra configuration is needed for `Connection`/`Upgrade`.
-- If Paskia is running on a different host, replace `localhost:4401` with the Paskia service address. For a dedicated authentication host (`--auth-host`), route `auth.example.com` to Paskia instead of `/auth/`.
+- If Paskia is running on a different host, replace `localhost:4401` with the Paskia service address. For a dedicated authentication host (the domain's auth-host setting), route `auth.example.com` to Paskia instead of `/auth/`.

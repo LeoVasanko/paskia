@@ -39,6 +39,7 @@ class RemoteAuthRequest:
     host: str  # The host where the session should be created
     ip: str  # IP of the requesting device
     user_agent: str  # User agent of the requesting device
+    rp_id: str  # Domain of the requesting device (session/exchange codes are stamped with it)
     action: str = "login"  # "login" or "register"
     locked: bool = False  # True once the authenticating device has entered the code
     # Callback to notify the requesting device when auth completes
@@ -113,6 +114,7 @@ class RemoteAuthManager:
         host: str,
         ip: str,
         user_agent: str,
+        rp_id: str,
         action: str = "login",
     ) -> tuple[str, datetime]:
         """Create a new remote auth request.
@@ -143,6 +145,7 @@ class RemoteAuthManager:
                 host=host,
                 ip=ip,
                 user_agent=user_agent,
+                rp_id=rp_id,
                 action=action,
             )
 

@@ -72,8 +72,14 @@ E.g. Org admin cannot see anything of the other orgs that he has no admin access
 | PATCH | /auth/api/admin/oidc-clients/{uuid} | Update OIDC client | 200/401/403 |
 | PATCH | /auth/api/admin/oidc-clients/{uuid}/reset-secret | Reset client secret | 200/401/403 |
 | DELETE | /auth/api/admin/oidc-clients/{uuid} | Delete OIDC client | 200/401/403 |
-| GET | /auth/api/admin/server-config/ | Get server config | 200/401/403 |
-| PATCH | /auth/api/admin/server-config/ | Update server config | 200/401/403 |
+| GET | /auth/api/admin/domains/ | List domains (rp-ids) with derived URLs | 200/401/403 |
+| POST | /auth/api/admin/domains/ | Create domain `{rp_id, rp_name?, origins?, related?}` | 200/400/401/403 |
+| PATCH | /auth/api/admin/domains/{rp_id} | Update domain rp_name/origins/related | 200/400/401/403 |
+| DELETE | /auth/api/admin/domains/{rp_id} | Delete domain (refused while credentials remain) | 200/400/401/403 |
+
+Domain endpoints require the `auth:admin` permission; writes additionally require recent authentication (5 minutes). Changes are validated cross-domain and apply immediately.
+
+`origins` is a single object keyed by all of the domain's sign-in sites. Entries *within* the rp-id domain are in-domain sites: bare hosts, wildcards under the rp-id following the shell-glob convention (`**.example.com` covers the apex and subdomains at any depth, `*.example.com` exactly one subdomain level — https only, any scheme and port under localhost; plain `*` is not accepted), or full origins when not https. Entries *outside* the rp-id domain are related origins that may assert this domain's rp-id (WebAuthn Related Origin Requests, max 5, no wildcards); those are published at `/.well-known/webauthn` on the rp-id host. An empty object allows nothing of the domain itself. A value of `true` marks presence; `{"auth_host": true}` additionally marks an in-domain entry as the domain's authentication host.
 
 ### WebSockets: /auth/ws/*
 
@@ -86,7 +92,9 @@ E.g. Org admin cannot see anything of the other orgs that he has no admin access
 
 These are for internal use only, but are documented here because they are the core piece in all passkey operations.
 
-### Auth host mode (--auth-host)
+### Auth host mode (dedicated auth site)
+
+A domain may configure a dedicated authentication host (auth-host, a subdomain of the rp-id) via the Domains admin panel.
 
 #### On the auth host:
 - The Web UI is served at site root instead of /auth/* (that redirects to root paths)
@@ -98,4 +106,12 @@ These are for internal use only, but are documented here because they are the co
 - /auth/api/* is served normally.
 - /auth/api/user/*, /auth/api/admin/*, and /auth/ws/* don't exist.
 
-The WebSocket connections are directed to auth host, and must have an allowed origin corresponding to the host where the user is logging in, that the session is tied with.
+The WebSocket connections are directed to the auth host, and must have an allowed origin corresponding to the host where the user is logging in, that the session is tied with.
+
+#### Auth hosts and other domains
+
+Auth hosts are strictly per-domain: a domain without its own auth host uses its own hosts for the WebSocket flows, and `/auth/api/settings` reports `auth_host` (and the identical `own_auth_host`) as null. One domain's auth host never serves another domain implicitly. To consolidate logins on one host, mark that host as the auth host on each domain that should use it (possible when the host lies under each domain's rp-id, i.e. nested rp-ids); dispatch resolves a shared host to the best-matching (longest rp-id suffix) domain.
+
+### Related Origin Requests: /.well-known/webauthn
+
+`GET /.well-known/webauthn` returns `{"origins": [...]}` listing the domain's related origins (configured origins on domains unrelated to the rp-id), per WebAuthn Related Origin Requests. Browsers fetch this from the rp-id domain when an unrelated origin runs a ceremony with this domain's rp-id. Returns 404 when the domain has no related origins. If the rp-id's main site is hosted elsewhere, serve the JSON statically there (copy it from this instance).

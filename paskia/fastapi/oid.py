@@ -21,13 +21,18 @@ from fastapi.responses import JSONResponse
 from fastapi.security import HTTPBearer
 
 from paskia import authcode, db
-from paskia.db.structs import Session
+from paskia.db.structs import OIDC, Session
 from paskia.util import avatar, oidjwt
 from paskia.util.crypto import hash_secret
 
 _logger = logging.getLogger(__name__)
 
 app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
+
+
+def _provider() -> OIDC:
+    """Return the instance-global OIDC provider state."""
+    return db.data().oidc
 
 
 @app.get("/keys")
@@ -148,7 +153,7 @@ async def token(
     except ValueError:
         return JSONResponse({"error": "invalid_client"}, status_code=401)
 
-    client = db.data().oidc.clients.get(client_uuid)
+    client = _provider().clients.get(client_uuid)
     if not client or not client.verify_secret(client_secret):
         return JSONResponse({"error": "invalid_client"}, status_code=401)
 
@@ -260,9 +265,6 @@ async def _handle_refresh_token(
     - Validates session exists and belongs to client
     - Extends session expiry (24h sliding window)
     - Issues new access_token and id_token
-
-    Note: ip and user_agent are NOT updated because the refresh request
-    comes from the OIDC client's backend, not the end user's browser.
     """
     if not refresh_token_value:
         return JSONResponse(
@@ -297,6 +299,7 @@ async def _handle_refresh_token(
     db.update_session(
         session.key,
         validated=now,
+        issuer=_get_issuer(request),
     )
 
     _logger.info("OIDC session refreshed: %s", session.key)
@@ -361,7 +364,7 @@ def _build_token_response(
         name=user.display_name,
         preferred_username=user.preferred_username,
         email=user.email,
-        picture=avatar.current_avatar_url(user.uuid),
+        picture=avatar.avatar_url(user.uuid),
         groups=groups or None,
         auth_time=auth_time,
     )
@@ -416,7 +419,7 @@ async def userinfo(
     except ValueError:
         raise HTTPException(401, "Invalid token (invalid aud format)")
 
-    if not db.data().oidc.clients.get(client_uuid):
+    if not _provider().clients.get(client_uuid):
         raise HTTPException(401, "Invalid token (unknown client)")
 
     # Get user
@@ -449,7 +452,7 @@ async def userinfo(
         response["name"] = user.display_name
         if user.preferred_username:
             response["preferred_username"] = user.preferred_username
-        picture = avatar.current_avatar_url(user.uuid)
+        picture = avatar.avatar_url(user.uuid)
         if picture:
             response["picture"] = picture
 
@@ -504,7 +507,7 @@ async def backchannel_logout(
     if aud:
         try:
             client_uuid = UUID(aud)
-            if not db.data().oidc.clients.get(client_uuid):
+            if not _provider().clients.get(client_uuid):
                 return JSONResponse(
                     {
                         "error": "invalid_request",
@@ -556,7 +559,7 @@ async def backchannel_logout(
                 {"error": "invalid_request", "error_description": "Invalid sub claim"},
                 status_code=400,
             )
-        # Find and delete matching sessions
+        # Find and delete matching OIDC sessions for this user/client
         sessions_to_delete = [
             s
             for s in db.data().sessions.values()
