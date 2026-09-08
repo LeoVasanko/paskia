@@ -17,7 +17,8 @@ from paskia.util.hostutil import format_endpoint, wildcard_base
 if TYPE_CHECKING:
     from paskia.domains import DomainRegistry
 
-BOX_WIDTH = 60  # Inner width (excluding box chars)
+BOX_WIDTH = 80  # Maximum inner width (excluding box chars)
+URL_COL = 22  # Column where header URLs start (past the logo graphic)
 
 # ANSI color codes
 RESET = "\033[0m"
@@ -25,43 +26,68 @@ YELLOW = "\033[38;5;184m"  # Bright yellow (6x6x6 cube, r=4 g=4)
 BRIGHT_YELLOW = "\033[38;5;226m"  # Brightest yellow (6x6x6 cube)
 BRIGHT_WHITE = "\033[1;37m"  # Bold bright white
 
+_TOKENS = re.compile(r"\033\[[0-9;]*m|.")
+
 
 def _visible_len(text: str) -> int:
     """Calculate visible length of text, ignoring ANSI escape codes."""
     return len(re.sub(r"\033\[[0-9;]*m", "", text))
 
 
-def line(text: str = "") -> str:
+def _truncate(text: str, width: int) -> str:
+    """Cut text to at most `width` visible chars, keeping ANSI codes intact."""
+    if _visible_len(text) <= width:
+        return text
+    out = []
+    visible = 0
+    for tok in _TOKENS.findall(text):
+        if tok.startswith("\033"):
+            out.append(tok)
+        elif visible < width - 1:
+            out.append(tok)
+            visible += 1
+        else:
+            break
+    return "".join(out) + "…" + RESET
+
+
+def line(text: str = "", width: int = BOX_WIDTH) -> str:
     """Format a line inside the box with proper padding, truncating if needed."""
-    visible = _visible_len(text)
-    if visible > BOX_WIDTH:
-        text = text[: BOX_WIDTH - 1] + "…"
-        visible = BOX_WIDTH
-    padding = BOX_WIDTH - visible
+    text = _truncate(text, width)
+    padding = width - _visible_len(text)
     return f"┃ {text}{' ' * padding} ┃\n"
 
 
-def top() -> str:
-    return "┏" + "━" * (BOX_WIDTH + 2) + "┓\n"
+def top(width: int = BOX_WIDTH) -> str:
+    return "┏" + "━" * (width + 2) + "┓\n"
 
 
-def bottom() -> str:
-    return "┗" + "━" * (BOX_WIDTH + 2) + "┛\n"
+def bottom(width: int = BOX_WIDTH) -> str:
+    return "┗" + "━" * (width + 2) + "┛\n"
 
 
-def _signin_summary(in_domain: list[str]) -> str:
-    """One-line summary of a domain's in-domain sign-in sites."""
-    phrases = []
-    for key in sorted(in_domain):
-        if base := wildcard_base(key):
-            phrase = (
-                f"{base} and all subdomains"
-                if key.startswith("**.")
-                else f"subdomains of {base}"
-            )
-        else:
-            phrase = origin_url(key)
-        phrases.append(phrase)
+def _compact_url(url: str) -> str:
+    """Bare host for https URLs; scheme and port kept for plain http."""
+    stripped = url.removeprefix("https://")
+    if "://" in stripped:
+        scheme, rest = stripped.split("://", 1)
+        return f"{scheme}://{rest.split('/')[0]}"
+    return stripped.split("/")[0]
+
+
+def _origin_phrase(key: str, rp_id: str) -> str:
+    """Compact phrase for one origins-table key."""
+    if base := wildcard_base(key):
+        if base == rp_id:
+            return "all subdomains" if key.startswith("**.") else "subdomains"
+        qualifier = "all subdomains of" if key.startswith("**.") else "subdomains of"
+        return f"{qualifier} {base}"
+    return _compact_url(origin_url(key))
+
+
+def _signin_summary(in_domain: list[str], rp_id: str) -> str:
+    """Compact summary of a domain's in-domain sign-in sites."""
+    phrases = [_origin_phrase(key, rp_id) for key in sorted(in_domain)]
     if len(phrases) > 2:
         n = len(phrases) - 1
         return f"{phrases[0]}, +{n} site{'s' if n > 1 else ''}"
@@ -80,53 +106,79 @@ def print_startup_config(
 
     domains = sorted(registry.domains, key=lambda d: d.rp_id)
 
-    lines = [top()]
-    lines.append(line(f" {b}▄▄▄▄▄{r}"))
-    lines.append(line(f"{b}█{y}     {b}█{r} Paskia " + __version__))
-    lines.append(line(f"{b}█{y}     {b}█{y}▄▄▄▄▄▄▄▄▄▄▄▄{r}"))
-    lines.append(
-        line(
-            f"{b}█{y}     {b}█{y}▀▀▀▀{b}█{y}▀▀{b}█{y}▀▀{b}█{r}    {w}"
-            + domains[0].auth_site_url
-            + r
-        )
-    )
-    lines.append(line(f" {y}▀▀▀▀▀{r}"))
-
-    # Show frontend URL if in dev mode
-    if DEVMODE:
-        lines.append(line(f"Dev Frontend:   {os.environ.get('PASKIA_VITE_URL')}"))
-
     # Format listen endpoints (dev mode only uses the first endpoint)
-
     endpoints = list(parse_endpoints(listen, DEFAULT_PORT))
     if DEVMODE:
         endpoints = endpoints[:1]  # server.run reload=True uses only one
     parts = [format_endpoint(ep) for ep in endpoints]
-    lines.append(line(f"Backend:        {' '.join(parts)}"))
 
-    multi = len(domains) > 1
+    # Header URLs: when a vite dev server is configured, its URL (marked
+    # "vite dev"); otherwise one per configured auth host (a full origin URL,
+    # clickable in terminals). If none are configured, guess one domain
+    # (prefer the shortest https rp_id) and link its /auth/ site path.
+    # Entries are pre-styled: bold for the URL, plain for any marker.
+    vite_url = os.environ.get("PASKIA_VITE_URL") if DEVMODE else None
+    if vite_url:
+        header_urls = [f"{w}{vite_url}{r} (vite dev)"]
+    else:
+        header_urls = [
+            f"{w}{url}{r}" for d in domains if (url := auth_host_url(d.config))
+        ]
+        if not header_urls:
+            guess = min(
+                domains,
+                key=lambda d: (
+                    not d.site_url.startswith("https://"),
+                    len(d.rp_id),
+                    d.rp_id,
+                ),
+            )
+            header_urls = [f"{w}{guess.auth_site_url}{r}"]
+
+    rows = []
+    # Logo lines 4-5 carry the first two header URLs; further URLs go on
+    # blank-gutter lines beneath the graphic, all at the same column.
+    logo = [
+        f" {b}▄▄▄▄▄{r}",
+        f"{b}█{y}     {b}█{r} Paskia {__version__} @ {' '.join(parts)}",
+        f"{b}█{y}     {b}█{y}▄▄▄▄▄▄▄▄▄▄▄▄{r}",
+        f"{b}█{y}     {b}█{y}▀▀▀▀{b}█{y}▀▀{b}█{y}▀▀{b}█{r}",
+        f" {y}▀▀▀▀▀{r}",
+    ]
+    for i, text in enumerate(logo):
+        url = header_urls[i - 3] if 3 <= i < 3 + len(header_urls) else None
+        if url is None:
+            rows.append(text)
+        else:
+            pad = " " * max(URL_COL - _visible_len(text), 1)
+            rows.append(f"{text}{pad}{url}")
+    for url in header_urls[2:]:
+        rows.append(f"{' ' * URL_COL}{url}")
+
     for domain in domains:
-        # Domain line (omit name if same as id); the rows beneath it belong
-        # to the domain by position, so they carry no labels of their own.
+        # One compact line per domain; overlong lines are capped at render.
         rp_name = domain.rp_name
         suffix = f" ({rp_name})" if rp_name and rp_name != domain.rp_id else ""
-        lines.append(line(f"Domain:         {domain.rp_id}{suffix}"))
-        if multi:
-            lines.append(line(f"  {domain.auth_site_url}"))
-        in_domain, related = partition_origins(domain.rp_id, domain.config.origins)
-        # The auth host is already presented as the domain's URL, so it is
-        # not counted among the sign-in sites.
-        auth_url = auth_host_url(domain.config)
-        in_domain = [k for k in in_domain if origin_url(k) != auth_url]
+        head = f"{w}{domain.rp_id}{r}{suffix}"
         if not domain.config.origins:
-            lines.append(line("  (none — no site may sign in)"))
-        elif in_domain:
-            lines.append(line(f"  {_signin_summary(in_domain)}"))
-        # Related origins are few (capped) and genuinely surprising cross-domain
-        # info, so they are always listed in full.
-        for key in sorted(related):
-            lines.append(line(f"  {origin_url(key)}"))
+            rows.append(f"{head} — no sign-in sites")
+            continue
+        in_domain, related = partition_origins(domain.rp_id, domain.config.origins)
+        parts = []
+        if in_domain:
+            parts.append(_signin_summary(in_domain, domain.rp_id))
+        parts.extend(_compact_url(origin_url(k)) for k in sorted(related))
+        # "with" implies the rp_id itself may sign in (exact key or a full
+        # wildcard); otherwise the origins are a mere list, after a colon.
+        covers_self = any(
+            k == domain.rp_id or k == f"**.{domain.rp_id}" for k in in_domain
+        )
+        sep = " with " if covers_self else ": "
+        rows.append(f"{head}{sep}{' and '.join(parts)}")
 
-    lines.append(bottom())
-    stderr.write("".join(lines))
+    # Size the box to the widest row, capped at BOX_WIDTH.
+    width = min(BOX_WIDTH, max(_visible_len(t) for t in rows))
+    out = [top(width)]
+    out.extend(line(text, width) for text in rows)
+    out.append(bottom(width))
+    stderr.write("".join(out))
