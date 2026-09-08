@@ -171,7 +171,6 @@ def cmd_init(args: argparse.Namespace) -> None:
 
     configure_domains(listen=config.listen)
     registry = build_registry(config)
-    startupbox.print_startup_config(registry, listen=config.listen)
     log_reset_link(
         registry.get(rp_id).reset_link_url(result["passphrase"]),
         "✅ Bootstrap completed!",

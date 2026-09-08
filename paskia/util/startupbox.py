@@ -10,14 +10,12 @@ from typing import TYPE_CHECKING
 from fastapi_vue.hostutil import parse_endpoints
 
 from paskia._version import __version__
+from paskia.domains import auth_host_url, origin_url, partition_origins
 from paskia.util.constants import DEFAULT_PORT, DEVMODE
-from paskia.util.hostutil import format_endpoint
+from paskia.util.hostutil import format_endpoint, wildcard_base
 
 if TYPE_CHECKING:
     from paskia.domains import DomainRegistry
-
-from paskia.db.structs import OriginEntry
-from paskia.domains import is_related_key, origin_url
 
 BOX_WIDTH = 60  # Inner width (excluding box chars)
 
@@ -51,6 +49,25 @@ def bottom() -> str:
     return "┗" + "━" * (BOX_WIDTH + 2) + "┛\n"
 
 
+def _signin_summary(in_domain: list[str]) -> str:
+    """One-line summary of a domain's in-domain sign-in sites."""
+    phrases = []
+    for key in sorted(in_domain):
+        if base := wildcard_base(key):
+            phrase = (
+                f"{base} and all subdomains"
+                if key.startswith("**.")
+                else f"subdomains of {base}"
+            )
+        else:
+            phrase = origin_url(key)
+        phrases.append(phrase)
+    if len(phrases) > 2:
+        n = len(phrases) - 1
+        return f"{phrases[0]}, +{n} site{'s' if n > 1 else ''}"
+    return ", ".join(phrases)
+
+
 def print_startup_config(
     registry: DomainRegistry, listen: list[str] | None = None
 ) -> None:
@@ -70,8 +87,7 @@ def print_startup_config(
     lines.append(
         line(
             f"{b}█{y}     {b}█{y}▀▀▀▀{b}█{y}▀▀{b}█{y}▀▀{b}█{r}    {w}"
-            + domains[0].site_url
-            + domains[0].site_path
+            + domains[0].auth_site_url
             + r
         )
     )
@@ -89,24 +105,28 @@ def print_startup_config(
     parts = [format_endpoint(ep) for ep in endpoints]
     lines.append(line(f"Backend:        {' '.join(parts)}"))
 
+    multi = len(domains) > 1
     for domain in domains:
-        # Domain line (omit name if same as id)
+        # Domain line (omit name if same as id); the rows beneath it belong
+        # to the domain by position, so they carry no labels of their own.
         rp_name = domain.rp_name
         suffix = f" ({rp_name})" if rp_name and rp_name != domain.rp_id else ""
-        header = "Domain:         " if len(domains) > 1 else "Relying Party:  "
-        lines.append(line(f"{header}{domain.rp_id}{suffix}"))
-        if len(domains) > 1:
-            lines.append(line(f"  URL:          {domain.site_url}{domain.site_path}"))
-        for key, props in sorted(domain.config.origins.items()):
-            marker = (
-                " (auth host)"
-                if isinstance(props, OriginEntry) and props.auth_host
-                else ""
-            )
-            label = "Related:" if is_related_key(domain.rp_id, key) else "Origin:"
-            lines.append(line(f"  {label:<14}{origin_url(key)}{marker}"))
+        lines.append(line(f"Domain:         {domain.rp_id}{suffix}"))
+        if multi:
+            lines.append(line(f"  {domain.auth_site_url}"))
+        in_domain, related = partition_origins(domain.rp_id, domain.config.origins)
+        # The auth host is already presented as the domain's URL, so it is
+        # not counted among the sign-in sites.
+        auth_url = auth_host_url(domain.config)
+        in_domain = [k for k in in_domain if origin_url(k) != auth_url]
         if not domain.config.origins:
-            lines.append(line("  Origins:      (none configured)"))
+            lines.append(line("  (none — no site may sign in)"))
+        elif in_domain:
+            lines.append(line(f"  {_signin_summary(in_domain)}"))
+        # Related origins are few (capped) and genuinely surprising cross-domain
+        # info, so they are always listed in full.
+        for key in sorted(related):
+            lines.append(line(f"  {origin_url(key)}"))
 
     lines.append(bottom())
     stderr.write("".join(lines))
