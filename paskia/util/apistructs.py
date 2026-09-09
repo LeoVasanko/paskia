@@ -11,10 +11,10 @@ from datetime import datetime
 from uuid import UUID
 
 import msgspec
+from uarite import uaparse
 
 from paskia import db
 from paskia.db.structs import Credential, Org, OriginEntry, Permission, Role, User
-from paskia.util import useragent
 
 # -------------------------------------------------------------------------
 # API structs - inherit from db structs, add uuid for serialization
@@ -124,7 +124,7 @@ class ApiUserSession(msgspec.Struct, omit_defaults=True):
             credential_uuid=s.credential_uuid,
             host=s.host,
             ip=s.ip,
-            user_agent=useragent.compact_user_agent(s.user_agent),
+            user_agent=uaparse(s.user_agent).pretty,
             validated=s.validated,
             last_renewed=s.validated,
             is_current=s.key == current_key,

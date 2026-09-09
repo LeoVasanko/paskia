@@ -15,6 +15,7 @@ from uuid import UUID
 
 import base64url
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from uarite import uaparse
 
 from paskia import authcode, db, remoteauth
 from paskia.authcode import CookieCode
@@ -23,7 +24,7 @@ from paskia.domains import current_domain, registry
 from paskia.fastapi.session import AUTH_COOKIE, infodict
 from paskia.fastapi.wschat import authenticate_and_login
 from paskia.fastapi.wsutil import validate_origin, websocket_error_handler
-from paskia.util import pow, useragent
+from paskia.util import pow
 
 # Create a FastAPI subapp for remote auth WebSocket endpoints
 app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
@@ -458,9 +459,7 @@ async def websocket_remote_auth_permit(ws: WebSocket, auth=AUTH_COOKIE):
                         if requesting_domain
                         else request.rp_id
                     ),
-                    "user_agent_pretty": useragent.compact_user_agent(
-                        request.user_agent
-                    ),
+                    "user_agent_pretty": uaparse(request.user_agent).pretty,
                     "client_ip": request.ip,
                     "action": request.action,
                     "pow": {
