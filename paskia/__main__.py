@@ -24,6 +24,7 @@ EPILOG = """\
 Examples:
   paskia init example.com "Example Corporation"
   paskia migrate example.com
+  paskia --listen 4402 --save
   paskia
 """
 
@@ -185,6 +186,18 @@ def cmd_migrate(args: argparse.Namespace) -> None:
     print(f"✅ {action} {db_file_path()} (domains: {', '.join(rp_ids)})")
 
 
+def _save_listen(db_path: Path, listen: list[str] | None) -> None:
+    """Persist the listen endpoints to the stored configuration."""
+    kanta = Kanta(str(db_path), DB())
+
+    async def _write() -> None:
+        async with kanta:
+            with kanta.transaction("serve:save_listen"):
+                kanta.data.config.listen = listen
+
+    asyncio.run(_write())
+
+
 def cmd_serve(args: argparse.Namespace) -> None:
     """Open the combined database and serve all configured domains."""
     db_path = db_file_path()
@@ -196,6 +209,10 @@ def cmd_serve(args: argparse.Namespace) -> None:
                 f"({names}) — run 'paskia migrate' to convert."
             )
         raise SystemExit(f"Database {db_path} not found — run 'paskia init' first.")
+
+    if args.save and args.listen is not None:
+        # '--listen ""' clears the stored endpoints (back to the default)
+        _save_listen(db_path, _split_multi(args.listen) or None)
 
     config = _load_stored_config(db_path)
 
@@ -239,6 +256,12 @@ def main():
         epilog=EPILOG,
     )
     _add_listen_option(parser)
+    parser.add_argument(
+        "--save",
+        action="store_true",
+        help="Save --listen to the database for future runs. "
+        "Use --listen \"\" to clear the stored endpoints.",
+    )
 
     init_parser = argparse.ArgumentParser(
         prog="paskia init",

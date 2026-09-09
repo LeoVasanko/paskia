@@ -185,6 +185,22 @@ def test_serve_listen_override_not_persisted(run_cli, tmp_path):
     assert stored_config(tmp_path).listen == ["4402"]
 
 
+def test_serve_listen_save_persists(run_cli, tmp_path):
+    run_cli("init", "--listen", "4402")
+    calls = run_cli("--listen", "4403", "--save")
+
+    assert calls["listen"] == ["4403"]
+    assert stored_config(tmp_path).listen == ["4403"]
+
+
+def test_serve_listen_save_clear(run_cli, tmp_path):
+    """--listen "" --save clears the stored endpoints (back to default)."""
+    run_cli("init", "--listen", "4402")
+    run_cli("--listen", "", "--save")
+
+    assert stored_config(tmp_path).listen is None
+
+
 def test_serve_suggests_migrate_when_legacy_present(run_cli, tmp_path):
     write_legacy_db(tmp_path, legacy.LegacyConfig(rp_id="example.com"))
     with pytest.raises(SystemExit, match="paskia migrate"):
