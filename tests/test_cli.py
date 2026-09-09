@@ -2,7 +2,8 @@
 
 The CLI is split into ``paskia init`` (create the combined paskia.kantadb
 with the initial domain(s)), ``paskia migrate`` (convert a legacy
-``<rp-id>.paskiadb`` database), and bare ``paskia`` (serve the stored
+``<rp-id>.paskiadb`` database, or merge a legacy/current database into an
+existing paskia.kantadb), and bare ``paskia`` (serve the stored
 domains; never migrates).
 """
 
@@ -20,7 +21,7 @@ from kanta import Kanta
 
 from paskia.__main__ import _load_stored_config, main
 from paskia.db import legacy
-from paskia.db.structs import DB, Config
+from paskia.db.structs import DB, Config, DomainConfig
 from paskia.util.runtime import ServeConfig, clear_cache
 
 
@@ -204,6 +205,8 @@ def test_migrate_converts_legacy_database(run_cli, tmp_path):
     config = stored_config(tmp_path)
     assert list(config.domains) == ["example.com"]
     assert config.domains["example.com"].rp_name == "Legacy Name"
+    # Migration transaction is labeled with the migrated rp-id
+    assert b"migrate:cli:example.com" in (tmp_path / "paskia.kantadb").read_bytes()
     # Legacy directory renamed aside, user files moved over
     assert not src_dir.exists()
     assert (tmp_path / "example.com.paskiadb.converted-bak").is_dir()
@@ -242,10 +245,92 @@ def test_migrate_unknown_rp_id(run_cli, tmp_path):
         run_cli("migrate", "nope.com")
 
 
-def test_migrate_refuses_existing_database(run_cli):
+def test_migrate_merges_legacy_into_existing_database(run_cli, tmp_path):
+    """An existing paskia.kantadb is not refused — data is merged in."""
+    run_cli("init", "company.com", "Company")
+    write_legacy_db(tmp_path, legacy.LegacyConfig(rp_id="example.com", rp_name="Ex"))
+
+    run_cli("migrate")
+
+    config = stored_config(tmp_path)
+    assert list(config.domains) == ["company.com", "example.com"]
+    assert config.domains["example.com"].rp_name == "Ex"
+    assert (tmp_path / "example.com.paskiadb.converted-bak").is_dir()
+
+
+def write_kantadb(root: Path, domains: dict, name: str = "paskia.kantadb") -> Path:
+    """Create a current-format database file with the given config domains."""
+    db_file = root / name
+
+    config = Config(
+        domains={rp_id: DomainConfig(rp_name=name_) for rp_id, name_ in domains.items()}
+    )
+
+    async def _write() -> None:
+        new_db = DB()
+        kanta = Kanta(str(db_file), new_db)
+
+        @kanta.bootstrap
+        def _seed(data: DB) -> None:
+            data.config = config
+
+        async with kanta:
+            pass
+
+    asyncio.run(_write())
+    return db_file
+
+
+def test_migrate_merges_kantadb_into_existing_database(run_cli, tmp_path):
+    run_cli("init", "company.com", "Company")
+    src = write_kantadb(tmp_path, {"other.com": "Other"}, name="other.kantadb")
+
+    run_cli("migrate", str(src))
+
+    config = stored_config(tmp_path)
+    assert list(config.domains) == ["company.com", "other.com"]
+    assert config.domains["other.com"].rp_name == "Other"
+    # Current-format sources are left in place
+    assert src.is_file()
+    assert b"migrate:cli:other.com" in (tmp_path / "paskia.kantadb").read_bytes()
+
+
+def test_migrate_merge_label_combines_rp_ids(run_cli, tmp_path):
+    """A multi-domain source merges in one transaction, rp-ids slash-joined."""
+    run_cli("init", "company.com")
+    src = write_kantadb(tmp_path, {"one.com": "One", "two.com": "Two"}, name="x.kantadb")
+
+    run_cli("migrate", str(src))
+
+    assert b"migrate:cli:one.com/two.com" in (tmp_path / "paskia.kantadb").read_bytes()
+
+
+def test_migrate_merges_shared_domain_origins(run_cli, tmp_path):
+    """Same rp-id in both databases: origins union, existing rp-name wins."""
+    run_cli("init", "example.com", "Existing Name")
+    src = write_kantadb(tmp_path, {"example.com": "Incoming Name"}, name="x.kantadb")
+
+    run_cli("migrate", str(src))
+
+    domain = stored_config(tmp_path).domains["example.com"]
+    assert domain.rp_name == "Existing Name"
+    assert set(domain.origins) == {"**.example.com"}
+
+
+def test_migrate_refuses_active_database_as_source(run_cli):
     run_cli("init")
-    with pytest.raises(SystemExit, match="already exists"):
-        run_cli("migrate")
+    with pytest.raises(SystemExit, match="active database"):
+        run_cli("migrate", "paskia.kantadb")
+
+
+def test_migrate_kantadb_to_fresh_target(run_cli, tmp_path):
+    src_dir = tmp_path / "elsewhere"
+    src_dir.mkdir()
+    src = write_kantadb(src_dir, {"other.com": "Other"})
+
+    run_cli("migrate", str(src))
+
+    assert list(stored_config(tmp_path).domains) == ["other.com"]
 
 
 def test_migrate_without_legacy_database(run_cli):

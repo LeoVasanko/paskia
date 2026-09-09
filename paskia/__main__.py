@@ -178,9 +178,11 @@ def cmd_init(args: argparse.Namespace) -> None:
 
 
 def cmd_migrate(args: argparse.Namespace) -> None:
-    """Convert a legacy <rp-id>.paskiadb database to paskia.kantadb."""
-    rp_id = legacy.migrate_legacy_database(args.rp_id)
-    print(f"✅ Converted legacy database to {db_file_path()} (domain: {rp_id})")
+    """Convert or merge a legacy/current database into paskia.kantadb."""
+    merging = db_file_path().exists()
+    rp_ids = legacy.migrate_database(args.source)
+    action = "Merged into existing" if merging else "Converted to"
+    print(f"✅ {action} {db_file_path()} (domains: {', '.join(rp_ids)})")
 
 
 def cmd_serve(args: argparse.Namespace) -> None:
@@ -263,14 +265,18 @@ def main():
 
     migrate_parser = argparse.ArgumentParser(
         prog="paskia migrate",
-        description="Convert a legacy <rp-id>.paskiadb database to paskia.kantadb",
+        description="Convert a legacy <rp-id>.paskiadb database to paskia.kantadb, "
+        "or merge a legacy database / another paskia.kantadb into an existing one",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     migrate_parser.add_argument(
-        "rp_id",
+        "source",
         nargs="?",
-        help="rp-id of the legacy database to convert, selecting "
-        "<rp-id>.paskiadb when several legacy candidates exist.",
+        help="rp-id of the legacy database to convert, or path to a legacy "
+        "<rp-id>.paskiadb directory/file or a current-format paskia.kantadb "
+        "file. When paskia.kantadb already exists, the source data is merged "
+        "into it. Without an argument, a single legacy *.paskiadb candidate "
+        "in the current directory is selected automatically.",
     )
 
     argv = sys.argv[1:]
