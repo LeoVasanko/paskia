@@ -128,9 +128,10 @@ def _legacy_to_db(old: LegacyDB) -> DB:
         origins[origin_key(origin)] = True
     if old.config.auth_host:
         origins[origin_key(old.config.auth_host)] = OriginEntry(auth_host=True)
-    if not origins:
+    if not old.config.origins:
         # Legacy semantics: no origins configured = the whole rp-id domain
-        # allowed. The new format requires explicit entries.
+        # allowed, regardless of a dedicated auth host. The new format
+        # requires explicit entries.
         origins[f"**.{rp_id}"] = True
 
     new_config = Config(

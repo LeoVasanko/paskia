@@ -941,6 +941,22 @@ class TestLegacyConversion:
         config = convert_legacy_database(src_file, tmp_path / "paskia.kantadb")
         assert config.domains["example.com"].origins == {"**.example.com": True}
 
+    def test_convert_auth_host_with_empty_origins_keeps_wildcard(self, tmp_path):
+        """A dedicated auth host with no configured origins still allowed
+        the whole rp-id domain in the legacy format — the auth host must
+        not become the only allowed origin."""
+        src_file = tmp_path / "main.db"
+        asyncio.run(
+            _write_legacy(
+                src_file,
+                LegacyConfig(rp_id="example.com", auth_host="auth.example.com"),
+            )
+        )
+        config = convert_legacy_database(src_file, tmp_path / "paskia.kantadb")
+        origins = config.domains["example.com"].origins
+        assert origins["**.example.com"] is True
+        assert origins["auth.example.com"] == OriginEntry(auth_host=True)
+
 
 # -------------------------------------------------------------------------
 # Transaction log censoring
