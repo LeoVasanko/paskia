@@ -188,11 +188,12 @@ Paste the following and save:
 
 ```ini
 [Unit]
-Description=Paskia
+Description=Paskia authentication system
 
 [Service]
 Type=simple
 User=paskia
+SyslogIdentifier=paskia
 WorkingDirectory=/srv/paskia
 ExecStart=uvx paskia@latest
 
