@@ -38,9 +38,20 @@ export function initThemeFromCache() {
   applyTheme(getCachedTheme())
 }
 
+/** Theme default from the URL hash (restricted iframe/forward pages only) */
+function getHashTheme() {
+  const theme = new URLSearchParams(window.location.hash.slice(1)).get('theme')
+  return theme === 'light' || theme === 'dark' ? theme : ''
+}
+
 /** Update theme from session context (call after login/session load) */
 export function updateThemeFromSession(ctx, animate = false) {
   const theme = ctx?.user?.theme || ''
+  // Always keep the cache in sync with the profile: empty override clears it
+  // so stale values never mask future server-provided themes.
   setCachedTheme(theme)
-  applyTheme(theme, document.documentElement, animate)
+  // Without a profile override, stay consistent with the initial paint: a
+  // theme parameter on the URL (e.g. host page color scheme injected by
+  // paskia-js) remains in effect before the browser/desktop default.
+  applyTheme(theme || getHashTheme(), document.documentElement, animate)
 }
