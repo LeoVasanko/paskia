@@ -1,5 +1,11 @@
 <template>
+  <HostProfileView
+    v-if="authMode === 'profile'"
+    @back="handleBack"
+    @logout="handleLogout"
+  />
   <RestrictedAuth
+    v-else
     :mode="authMode"
     :remote-auth-token="remoteAuthToken"
     :oidc-query-string="oidcQueryString"
@@ -11,6 +17,7 @@
 <script setup>
 import { onMounted, ref } from 'vue'
 import RestrictedAuth from '@/components/RestrictedAuth.vue'
+import HostProfileView from '@/components/HostProfileView.vue'
 
 // Check if this is a remote auth URL: /auth/{token}
 // The token is a 5-word passphrase like "word1.word2.word3.word4.word5"
@@ -45,8 +52,8 @@ let authMode
 if (window.location.pathname === '/auth/restricted/oidc') {
   authMode = 'oidc'
 } else {
-  // Both iframe and forward auth use hash params for mode (forbidden/login/reauth)
-  authMode = ['reauth', 'forbidden'].includes(hashParams.get('mode')) ? hashParams.get('mode') : 'login'
+  // Both iframe and forward auth use hash params for mode (forbidden/login/reauth/profile)
+  authMode = ['reauth', 'forbidden', 'profile'].includes(hashParams.get('mode')) ? hashParams.get('mode') : 'login'
 }
 
 function postToParent(message) {
@@ -71,6 +78,12 @@ function handleAuthenticated(result) {
 function handleBack() {
   postToParent({
     type: 'auth-back'
+  })
+}
+
+function handleLogout() {
+  postToParent({
+    type: 'auth-logout'
   })
 }
 

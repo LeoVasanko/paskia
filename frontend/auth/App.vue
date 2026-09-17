@@ -2,7 +2,14 @@
   <div class="app-shell">
     <StatusMessage />
     <main class="app-main">
-      <HostProfileView v-if="viewState === 'profile' && isHostMode" />
+      <HostProfileView
+        v-if="viewState === 'profile' && isHostMode"
+        :ctx="store.ctx"
+        :user-info="store.userInfo"
+        :settings="store.settings"
+        @back="goBack"
+        @logout="onHostLogout"
+      />
       <ProfileView v-else-if="viewState === 'profile'" />
       <LoadingView v-else-if="viewState === 'loading'" :message="loadingMessage" />
       <AccessDenied v-else-if="viewState === 'terminal'" />
@@ -15,6 +22,7 @@ import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import { apiJson, SessionValidator, settings as paskiaSettings } from 'paskia'
 import { updateThemeFromSession } from '@/utils/theme'
+import { goBack } from '@/utils/helpers'
 import StatusMessage from '@/components/StatusMessage.vue'
 import ProfileView from '@/components/ProfileView.vue'
 import HostProfileView from '@/components/HostProfileView.vue'
@@ -47,6 +55,12 @@ const isHostMode = computed(() => {
   const configuredHost = normalizeHost(authHost)
   return currentHost !== configuredHost
 })
+
+// HostProfileView already posted /auth/api/logout; clear local state and reload.
+function onHostLogout() {
+  sessionStorage.clear()
+  window.location.reload()
+}
 
 function onSessionLost(e) {
   store.userInfo = null
