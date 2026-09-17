@@ -20,6 +20,7 @@ export {
   isAuthIframeOpen,
   hideAuthIframe,
   showAuthIframe,
+  profile,
 } from './overlay'
 
 export { SessionValidator } from './validate'
