@@ -8,6 +8,17 @@
         :root {
             color-scheme: light dark;  /* Automatic themes by browser */
         }
+        .section a, .section button {
+            display: inline-block;
+            padding: 0.2em 0.6em;
+            margin: 1px 4px 1px 0;
+            border: none;
+            background: #ccc8;
+            color: inherit;
+            font: inherit;
+            text-decoration: none;
+            cursor: pointer;
+        }
     </style>
 </head>
 <body>
@@ -20,8 +31,8 @@
         <div class="content">
             <div class="section">
                 <h2>Management Site</h2>
-                <button onclick="window.open('/auth/', '_blank')">👤 User Profile</button>
-                <button onclick="window.open('/auth/admin/', '_blank')">⚙️ Admin Panel</button>
+                <a href="/auth/">👤 User Profile</a>
+                <a href="/auth/admin/">⚙️ Admin Panel</a>
             </div>
 
             <div class="section">
@@ -30,15 +41,16 @@
                 <button onclick="apiCall('/auth/api/user-info', 'GET')">📋 Get User Info</button>
                 <button onclick="apiCall('/auth/api/forward?max_age=10s')">🔄 Reauth (max_age=10s)</button>
                 <button onclick="apiCall('/auth/api/forward?perm=auth:admin')">🛡️ Admin Only</button>
+                <button onclick="profileDemo()">👤 Profile Summary</button>
                 <button onclick="logout()">🚪 Logout</button>
             </div>
 
             <div class="section">
                 <h2>Browser Mode (full page)</h2>
-                <p>Block access to otherwise open site - intended for forward-auth mechanism (Caddy, Nginx):</p>
-                <button onclick="browserNav('/auth/api/forward')">🔐 Basic Auth</button>
-                <button onclick="browserNav('/auth/api/forward?max_age=10s')">🔄 Reauth (max_age=10s)</button>
-                <button onclick="browserNav('/auth/api/forward?perm=auth:admin')">🛡️ Admin Only</button>
+                <p>Block access to otherwise open site - intended for forward-auth mechanism (Caddy, Nginx). If not authenticated, you'll see the login page; after auth, a 204 response (blank page = success). Back returns here:</p>
+                <a href="/auth/api/forward">🔐 Basic Auth</a>
+                <a href="/auth/api/forward?max_age=10s">🔄 Reauth (max_age=10s)</a>
+                <a href="/auth/api/forward?perm=auth:admin">🛡️ Admin Only</a>
             </div>
 
             <pre id="output">Click a button to test...</pre>
@@ -46,7 +58,7 @@
     </div>
 
     <script type="module">
-        import { apiFetch, apiJson, AuthCancelledError } from '/paskia-js/dist/paskia.js'
+        import { apiFetch, apiJson, AuthCancelledError, profile } from '/paskia-js/dist/paskia.js'
 
         const output = document.getElementById('output');
 
@@ -87,11 +99,14 @@
             log('Logged out');
         }
 
-        // Browser mode: open the forward endpoint directly in a new window.
-        window.browserNav = function(url) {
-            log('Opening in new window...\nIf not authenticated, you\'ll see the login page.\nAfter auth, you\'ll see a 204 response (blank page = success).');
-            window.open(url, '_blank');
+        // Profile dialog: resolves 'logout' if the user signed out inside the
+        // frame, 'back' if closed without action.
+        window.profileDemo = async function() {
+            log('Opening profile dialog...');
+            const result = await profile();
+            log(result === 'logout' ? 'Logged out inside the profile dialog' : 'Profile dialog closed (Back)');
         }
+
     </script>
 </body>
 </html>

@@ -65,6 +65,14 @@ export default defineConfig(({ command }) => ({
       }
     },
     {
+      name: 'serve-paskia-js',
+      configureServer(server) {
+        // Serve the locally built paskia-js module for the examples page
+        const serve = sirv(resolve(__dirname, '../paskia-js'), { dev: true })
+        server.middlewares.use('/paskia-js', serve)
+      }
+    },
+    {
       name: 'serve-examples',
       configureServer(server) {
         const examplesDir = resolve(__dirname, '../examples')
