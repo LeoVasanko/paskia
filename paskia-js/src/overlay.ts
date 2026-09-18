@@ -41,15 +41,18 @@ body.paskia-backdrop {
 }
 `
 
-type DialogResult = 'logout' | 'back'
+type DialogResult = 'login' | 'logout' | 'back'
+type DialogKind = 'auth' | 'profile'
 
 let authIframe: HTMLIFrameElement | null = null
 let authPromise: Promise<DialogResult | undefined> | null = null
 let authResolve: ((result?: DialogResult) => void) | null = null
 let authReject: ((error: Error) => void) | null = null
 // Auth flows reject AuthCancelledError on auth-back (callers rely on it to
-// abort request retries); the profile dialog resolves 'back' instead.
-let cancelAsError = true
+// abort request retries) and resolve void on auth-success. The profile dialog
+// never rejects: auth-back resolves 'back', and auth-success (the user logged
+// in while the profile dialog was open) resolves 'login'.
+let dialogKind: DialogKind = 'auth'
 let messageListenerInstalled = false
 let backdropHolders = 0
 
@@ -101,7 +104,7 @@ function handleAuthMessage(event: MessageEvent): void {
     case 'auth-success':
       hideAuthIframe()
       if (authResolve) {
-        authResolve()
+        authResolve(dialogKind === 'profile' ? 'login' : undefined)
         authPromise = null
         authResolve = null
         authReject = null
@@ -110,7 +113,7 @@ function handleAuthMessage(event: MessageEvent): void {
 
     case 'auth-back':
       hideAuthIframe()
-      if (cancelAsError && authReject) {
+      if (dialogKind === 'auth' && authReject) {
         authReject(new AuthCancelledError())
       } else if (authResolve) {
         authResolve('back')
@@ -140,13 +143,13 @@ function ensureMessageListener(): void {
   }
 }
 
-function openIframe(iframeUrl: string, title: string, dialog: boolean, cancelError: boolean): Promise<DialogResult | undefined> {
+function openIframe(iframeUrl: string, title: string, kind: DialogKind): Promise<DialogResult | undefined> {
   injectStyles()
   ensureMessageListener()
 
   if (authPromise) return authPromise
 
-  cancelAsError = cancelError
+  dialogKind = kind
   iframeUrl = withAppTheme(iframeUrl)
 
   if (document.getElementById(AUTH_IFRAME_ID)) {
@@ -167,7 +170,7 @@ function openIframe(iframeUrl: string, title: string, dialog: boolean, cancelErr
 
   authIframe = document.createElement('iframe')
   authIframe.id = AUTH_IFRAME_ID
-  if (dialog) authIframe.classList.add('paskia-dialog')
+  if (kind === 'profile') authIframe.classList.add('paskia-dialog')
   authIframe.title = title
   authIframe.src = iframeUrl
   document.body.appendChild(authIframe)
@@ -201,19 +204,20 @@ function withAppTheme(iframeUrl: string): string {
 }
 
 export function showAuthIframe(iframeUrl: string, title = 'Authentication'): Promise<void> {
-  return openIframe(iframeUrl, title, false, true).then(() => undefined)
+  return openIframe(iframeUrl, title, 'auth').then(() => undefined)
 }
 
 /**
  * Show the minimal profile of the logged-in user in a compact dialog iframe.
  *
- * Unlike the auth flows, this always resolves — 'logout' when the user
- * signed out inside the frame, 'back' when they closed it without action.
+ * Unlike the auth flows, this always resolves — 'login' when the user was
+ * signed out and completed the login flow inside the frame, 'logout' when
+ * they signed out inside the frame, 'back' when they closed it otherwise.
  * The caller decides from context how to react to each (e.g. whether to
  * start a new login attempt with showAuthIframe).
  */
 export function profile(): Promise<DialogResult> {
-  return openIframe('/auth/restricted/iframe#mode=profile', 'Profile', true, false)
+  return openIframe('/auth/restricted/iframe#mode=profile', 'Profile', 'profile')
     .then((result) => result ?? 'back')
 }
 
