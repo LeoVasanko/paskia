@@ -151,7 +151,7 @@ def main() -> None:
 
     print(f"\nBuild completed successfully for version {version}.")
     print("To publish, review the artifacts and run:")
-    print("  uv publish && cd paskia-js && npm publish")
+    print("\nuv publish && cd paskia-js && npm publish")
 
 
 if __name__ == "__main__":
