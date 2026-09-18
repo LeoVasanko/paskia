@@ -190,18 +190,6 @@ def cmd_migrate(args: argparse.Namespace) -> None:
     print(f"✅ {action} {db_file_path()} (domains: {', '.join(rp_ids)})")
 
 
-def _save_listen(db_path: Path, listen: list[str] | None) -> None:
-    """Persist the listen endpoints to the stored configuration."""
-    kanta = Kanta(str(db_path), DB())
-
-    async def _write() -> None:
-        async with kanta:
-            with kanta.transaction("serve:save_listen"):
-                kanta.data.config.listen = listen
-
-    asyncio.run(_write())
-
-
 def cmd_serve(args: argparse.Namespace) -> None:
     """Open the combined database and serve all configured domains."""
     db_path = db_file_path()
@@ -214,14 +202,20 @@ def cmd_serve(args: argparse.Namespace) -> None:
             )
         raise SystemExit(f"Database {db_path} not found — run 'paskia init' first.")
 
-    if args.save and args.listen is not None:
-        # '--listen ""' clears the stored endpoints (back to the default)
-        _save_listen(db_path, _split_multi(args.listen) or None)
-
     config = _load_stored_config(db_path)
 
-    listen = _split_multi(args.listen) or config.listen
-    configure_domains(listen=listen)
+    # Effective serve parameters, teleported to the server process(es); the
+    # app persists the listen endpoints to the database when save is set.
+    cfg = serve_config()
+    cfg.save = bool(args.save and args.listen is not None)
+    if cfg.save:
+        # '--listen ""' clears the stored endpoints (back to the default)
+        cfg.listen = _split_multi(args.listen) or None
+    else:
+        cfg.listen = _split_multi(args.listen) or config.listen
+    teleport()  # Serialize bound config before spawning workers
+
+    configure_domains(listen=cfg.listen)
     try:
         registry = build_registry(config)
     except ValueError as e:
@@ -229,18 +223,16 @@ def cmd_serve(args: argparse.Namespace) -> None:
     # Sanitization warnings (serving is best-effort; fixing the stored config
     # is the admin's job via the admin interface) are logged by build().
 
-    # Pass process-global serve parameters to the server process(es)
-    serve_config().listen = listen
-    teleport()  # Serialize bound config before spawning workers
-
-    startupbox.print_startup_config(registry, listen=listen, default_port=DEFAULT_PORT)
+    startupbox.print_startup_config(
+        registry, listen=cfg.listen, default_port=DEFAULT_PORT
+    )
 
     # Run the server (spawns processes in dev mode)
     # tracerite, access logging and log config are handled by fastapi_vue.server;
     # we print our own startup config box, so disable the built-in one.
     server.run(
         "paskia.fastapi.mainapp:app",
-        listen=listen,
+        listen=cfg.listen,
         default_port=DEFAULT_PORT,
         server_header=False,
         startup_box=None,

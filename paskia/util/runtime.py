@@ -2,9 +2,10 @@
 
 Domain configuration lives in the database (``Config.domains``); the
 ``PASKIA_CONFIG`` environment variable only carries the effective listen
-endpoints so that child processes (uvicorn reload / workers) derive site
-URLs the same way the parent did. The CLI entry point mutates the bound
-object before ``server.run()`` calls ``teleport()`` to pass it on.
+endpoints and whether to persist them, so that child processes (uvicorn
+reload / workers) derive site URLs the same way the parent did. The CLI
+entry point mutates the bound object before ``server.run()`` calls
+``teleport()`` to pass it on.
 """
 
 import msgspec
@@ -15,6 +16,7 @@ class ServeConfig(msgspec.Struct):
     """Process-global serve parameters."""
 
     listen: list[str] | None = None
+    save: bool = False  # Persist listen to the stored config on startup
 
 
 def serve_config() -> ServeConfig:

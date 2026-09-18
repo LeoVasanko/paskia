@@ -29,10 +29,12 @@ _EXAMPLES_DIR = Path(__file__).parent.parent.parent / "examples"
 async def lifespan(app: FastAPI):  # pragma: no cover - startup path
     """Application lifespan: open the combined database and build the domain registry.
 
-    Process-global serve parameters (listen endpoints) are passed via the
-    PASKIA_CONFIG JSON env variable (set by the CLI entrypoint) so that
-    uvicorn reload / multiprocess workers derive site URLs the same way.
-    Domain configuration is read from the database.
+    Process-global serve parameters (listen endpoints, save flag) are passed
+    via the PASKIA_CONFIG JSON env variable (set by the CLI entrypoint) so
+    that uvicorn reload / multiprocess workers derive site URLs the same
+    way. With the save flag set, the listen endpoints are persisted here —
+    the CLI never opens the database read-write. Domain configuration is
+    read from the database.
     """
     cfg = serve_config()
     domains.configure(listen=cfg.listen)
@@ -41,6 +43,9 @@ async def lifespan(app: FastAPI):  # pragma: no cover - startup path
         Path(kanta.filename).parent.mkdir, parents=True, exist_ok=True
     )
     async with kanta:
+        if cfg.save:
+            with kanta.transaction("serve:save_listen"):
+                db.data().config.listen = cfg.listen
         try:
             domains.init_registry(db.data().config)
             await remoteauth.init()

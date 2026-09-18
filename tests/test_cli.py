@@ -172,6 +172,7 @@ def test_serve_uses_stored_config(run_cli, tmp_path):
     assert calls["listen"] is None  # stored listen (None) used
     serve = msgspec.json.decode(os.environ["PASKIA_CONFIG"].encode(), type=ServeConfig)
     assert serve.listen is None
+    assert serve.save is False
 
 
 def test_serve_listen_override_not_persisted(run_cli, tmp_path):
@@ -181,24 +182,33 @@ def test_serve_listen_override_not_persisted(run_cli, tmp_path):
     assert calls["listen"] == ["4403"]
     serve = msgspec.json.decode(os.environ["PASKIA_CONFIG"].encode(), type=ServeConfig)
     assert serve.listen == ["4403"]
+    assert serve.save is False
     # Stored config keeps the original listen value
     assert stored_config(tmp_path).listen == ["4402"]
 
 
 def test_serve_listen_save_persists(run_cli, tmp_path):
+    """--save teleports the save flag; the app persists, the CLI is read-only."""
     run_cli("init", "--listen", "4402")
     calls = run_cli("--listen", "4403", "--save")
 
     assert calls["listen"] == ["4403"]
-    assert stored_config(tmp_path).listen == ["4403"]
+    serve = msgspec.json.decode(os.environ["PASKIA_CONFIG"].encode(), type=ServeConfig)
+    assert serve.listen == ["4403"]
+    assert serve.save is True
+    # The CLI itself does not write the database
+    assert stored_config(tmp_path).listen == ["4402"]
 
 
 def test_serve_listen_save_clear(run_cli, tmp_path):
-    """--listen "" --save clears the stored endpoints (back to default)."""
+    """--listen "" --save teleports a clear (back to default) for the app."""
     run_cli("init", "--listen", "4402")
     run_cli("--listen", "", "--save")
 
-    assert stored_config(tmp_path).listen is None
+    serve = msgspec.json.decode(os.environ["PASKIA_CONFIG"].encode(), type=ServeConfig)
+    assert serve.listen is None
+    assert serve.save is True
+    assert stored_config(tmp_path).listen == ["4402"]
 
 
 def test_serve_suggests_migrate_when_legacy_present(run_cli, tmp_path):
