@@ -1,7 +1,9 @@
 <template>
   <div class="view-root host-profile" data-view="host-profile">
     <div class="surface surface--tight">
-      <header class="view-header center">
+      <!-- Heading/lede belong to the standalone page; in the dialog the host
+           page already provides the surrounding context. -->
+      <header v-if="!inIframe" class="view-header center">
         <h1>{{ headingTitle }}</h1>
         <p class="view-lede">{{ subheading }}</p>
       </header>
@@ -55,8 +57,7 @@
               Full Profile
             </button>
           </div>
-          <p v-if="isRemoteAuthSite" class="note"><strong>Logout</strong> from {{ currentHost }}, or access your <strong>Full Profile</strong> at {{ authSiteHost }} (you may need to sign in again).</p>
-          <p v-else class="note"><strong>Logout</strong> from {{ currentHost }}, or open your <strong>Full Profile</strong>.</p>
+          <p v-if="!inIframe" class="note"><strong>Logout</strong> from {{ currentHost }}, or view your <strong>Full Profile</strong> at {{ authSiteHost }} (you may need to sign in again).</p>
         </div>
       </section>
     </div>
@@ -118,11 +119,6 @@ const subheading = computed(() => {
 })
 
 const authSiteHost = computed(() => settingsData.value?.auth_host || '')
-// Normalize for comparison (lowercase, strip default ports), matching App.vue
-const normalizeHost = (raw) => (raw || '').trim().toLowerCase().replace(/:80$/, '').replace(/:443$/, '')
-const isRemoteAuthSite = computed(() => {
-  return !!authSiteHost.value && normalizeHost(authSiteHost.value) !== normalizeHost(currentHost)
-})
 const authSiteUrl = computed(() => {
   // Fall back to the current host when no separate auth host is configured;
   // the full profile is at ui_base_path either way.
