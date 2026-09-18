@@ -1,14 +1,14 @@
-# Paskia
-
 ![Screenshot](https://git.zi.fi/leovasanko/paskia/raw/main/docs/screenshots/forbidden-light.webp)
 
-JavaScript utilities for [Paskia authentication system](https://git.zi.fi/leovasanko/paskia) integration into web apps.
+# Paskia
+
+JavaScript utilities for integrating the [Paskia authentication system](https://git.zi.fi/leovasanko/paskia) into web apps.
 
 ## Installation
 
-### NPM
+### npm
 
-No framework dependencies. Works with any framework (Vue, React, Svelte, etc.) or vanilla JS. Typescript typing included.
+No framework dependencies. Works with Vue, React, Svelte, vanilla JavaScript and other frontend stacks. TypeScript types are included.
 
 ```sh
 npm install paskia
@@ -20,7 +20,7 @@ import { ... } from 'paskia'
 
 ### Plain JavaScript
 
-Fetch the module directly from a CDN, or [download](https://cdn.jsdelivr.net/npm/paskia@latest/dist/paskia.js) first and host yourself. No Node needed.
+Import directly from a CDN, or [download](https://cdn.jsdelivr.net/npm/paskia@latest/dist/paskia.js) and host it yourself. No Node.js is required.
 
 ```html
 <script type="module">
@@ -28,91 +28,102 @@ Fetch the module directly from a CDN, or [download](https://cdn.jsdelivr.net/npm
 </script>
 ```
 
-## Features
+## Authentication
 
-### Session Validation
+### API requests
 
-Refresh session and track its validity with automatic polling. Pauses on lack of user activity to avoid useless traffic and to allow session expiry even when the page is left open but idle. This monitors that the same account stays logged in but doesn't do any permission checks.
+`apiFetch` wraps `fetch` with Paskia authentication handling, while `apiJson` adds automatic JSON request/response handling. Both support request timeouts. For the same JSON and timeout handling without prompting the user for authentication, use `fetchJson`.
+
+```js
+import { apiJson, apiFetch } from 'paskia'
+
+const data = await apiJson('/api/endpoint', {
+  method: 'POST',
+  body: { key: 'value' }
+})
+
+const response = await apiFetch('/api/endpoint')
+```
+
+With `apiJson`, a provided `body` is JSON-encoded with the appropriate content type and the response is parsed as JSON.
+
+When the server requests authentication, the API call pauses while the appropriate Paskia dialog is shown and retries after successful authentication.
+
+> Paskia uses `401` and `403` responses to trigger the appropriate **login**, **reauthentication** or **access denied** flow. The backend supplies the authentication URL and context; see the main Paskia documentation for the full response protocol.
+
+### Account and Profile
+
+`profile()` provides a single dialog for an application's login/profile button that allows the user to sign in, view who they are and sign out without ever leaving the page.
+
+```js
+import { profile } from 'paskia'
+
+const result = await profile()
+if (result !== 'back')  // Refresh application state
+```
+
+When signed out, it presents the login flow and returns `'login'` on success. When signed in, it shows the profile and returns `'logout'` after logout. `'back'` is returned when the dialog is closed without an expected session change.
+
+Authentication and profile dialogs follow the user's theme override when set in profile, otherwise the host page's light/dark `color-scheme` to remain in the application's color scheme, then the browser/OS preference.
+
+### Lower-level Authentication
+
+`apiFetch` and `apiJson` call `showAuthIframe()` internally. Applications using plain `fetch` or `fetchJson` can call it directly with an authentication URL returned by the backend:
+
+```js
+import { showAuthIframe } from 'paskia'
+
+await showAuthIframe(data.auth.iframe)
+```
+
+## Session Validation
+
+`SessionValidator` periodically checks that the active Paskia session is still valid and still belongs to the user your application currently has loaded. Validation also refreshes the session to avoid expiry during use.
 
 ```js
 import { SessionValidator } from 'paskia'
 
 const validator = new SessionValidator(
-  () => currentUser?.uuid,  // getter for current user ID that we track
-  (error) => handleSessionLost(error)  // callback when session is lost
+  () => currentUser?.uuid,  // User ID currently known by your app
+  error => handleSessionLost(error)
 )
 
-validator.start()  // call at your app startup/login
-validator.stop()   // stop the system (optional)
+validator.start()
+validator.stop()
 ```
 
-### API Fetch Utilities
+The first callback is read on each check, so a logout, expired session or switch to another account invalidates the session your app is currently using. Polling pauses while the user is inactive, avoiding unnecessary traffic and allowing idle sessions to expire.
 
-Enhanced fetch functions with automatic error handling and authentication retry:
+## Timeout Settings
 
-```js
-import { apiJson, apiFetch } from 'paskia'
-
-// JSON API calls with automatic auth handling
-const data = await apiJson('/api/endpoint', { method: 'POST', body: { key: 'value' } })
-
-// Raw fetch with auth handling
-const response = await apiFetch('/api/endpoint')
-```
-
-When a 401/403 response includes an auth iframe URL, the request automatically pauses, displays the authentication UI, and retries upon success. In case this is not needed, use standard `fetch` or our `fetchJson`.
-
-The JSON variants set headers automatically, with body and response in JSON.
-
-### Timeout Settings
-
-Paskia exports a mutable settings object for defaults used by fetch/auth/session validation timers. Default values shown below.
+Paskia exports mutable defaults for network and session timers:
 
 ```js
 import { settings } from 'paskia'
 
-// General fetch timeout used by apiFetch/apiJson/fetchJson when no timeout is passed
-settings.fetch_ms = 10000
-
-// Fetch timeout used by SessionValidator (/auth/api/validate is fast)
-settings.auth_ms = 1000
-
-// SessionValidator polling and idle timers
-settings.poll_ms = 60000
-settings.idle_ms = 300000
+settings.fetch_ms = 10000   // apiFetch, apiJson and fetchJson timeout
+settings.auth_ms = 1000     // Session validation request timeout
+settings.poll_ms = 60000    // Session validation interval
+settings.idle_ms = 300000   // Inactivity before validation pauses
 ```
 
-You can still override timeout per request:
+Request timeout can also be overridden per call:
 
 ```js
-await apiJson('/api/upload', { method: 'POST', body: data, timeout: 30000 })
+await apiJson('/api/upload', {
+  method: 'POST',
+  body: data,
+  timeout: 30000
+})
 ```
 
-### Authentication Overlay
+## Shared Blur Backdrop
 
-Normally you use apiJson/apiFetch and they handle this automatically. If you need to wire it yourself, on a 401/403 response that includes `auth.iframe`, call `showAuthIframe(...)` and then retry the original request.
+A shared backdrop provides consistent UX across your application, avoiding different things stacking with their own backdrops and dialogs in unexpected manner.
 
-The backend returns 401/403 responses with the correct URL for proper user feedback. Alternatively you may use `/auth/restricted/iframe#mode=login`, `mode=reauth` or `mode=forbidden` to trigger the UX flow you need.
+Paskia dialogs use a shared blurred backdrop at z-index `1099` and the authentication iframe at `9999`. Application dialogs can use `1100`–`9998` to appear between them.
 
-```js
-import { showAuthIframe, AuthCancelledError } from 'paskia'
-
-const response = await fetch('/api/protected')
-if (response.status === 401 || response.status === 403) {
-  const data = await response.json()
-  if (data.auth?.iframe) {
-    await showAuthIframe(data.auth.iframe)  // Raises AuthCancelledError if the user cancels
-  }
-}
-```
-
-This resolves after the user authenticates (possibly with another account than previously), and you should usually retry the original API request. Note that successful authentication doesn't guarantee that the user still has rights to what originally failed.
-
-### Shared Blur Backdrop
-
-The authentication dialog displays with a blur backdrop (z-index 1099). The auth iframe uses z-index 9999. Your app dialogs should use z-index 1100–9998 to appear above the backdrop but below authentication.
-
-The backdrop is also reusable/refcounted, so you can keep consistent visuals for your own dialogs:
+The same refcounted backdrop can be used by application UI:
 
 ```js
 import { holdGlobalBackdrop, releaseGlobalBackdrop } from 'paskia'
@@ -125,31 +136,26 @@ try {
 }
 ```
 
-The backdrop only disappears after all holders have released it.
+It disappears after all holders release it, also avoiding awkward fade/appear animations when changing between multiple dialogs.
 
 ## Error Handling
 
-### AuthCancelledError (apiFetch, apiJson, showAuthIframe)
+### `AuthCancelledError`
 
-If the user clicks Back in the authentication dialog, refusing to authenticate, `AuthCancelledError` is risen (as a response to postMessage from the iframe). The dialog closes as expected and it is up to the app how to continue from there.
+`apiFetch`, `apiJson` and `showAuthIframe` raise `AuthCancelledError` when the user cancels required authentication with Back or Escape. This means the user does not wish to authenticate, and should not be asked again.
 
-- Do nothing if the app can continue despite the failed operation (no UI notification needed)
-- Display a simple Access Denied page with suggestion/button to reload the page to try again
+Continue without the failed operation when possible, or show an appropriate terminal view when authentication is required to continue.
 
-Do not retry automatically.
-
-### UI feedback
-
-A set of small utilities are available for determining whether the user needs a notification and to format the error message.
+When the error is a direct result of a user action, we don't want to show an additional message for that, while in other situations we should. Helpers determine whether an error needs user notification and provide a suitable message:
 
 ```js
 import { getUserFriendlyErrorMessage, shouldShowErrorToast } from 'paskia'
 
 try {
   await apiJson('/api/action')
-} catch (e) {
-  if (shouldShowErrorToast(e)) {
-    your.message.display(getUserFriendlyErrorMessage(e))
+} catch (error) {
+  if (shouldShowErrorToast(error)) {
+    your.message.display(getUserFriendlyErrorMessage(error))
   }
 }
 ```
