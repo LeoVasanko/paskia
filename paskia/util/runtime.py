@@ -2,14 +2,13 @@
 
 Domain configuration lives in the database (``Config.domains``); the
 ``PASKIA_CONFIG`` environment variable only carries the effective listen
-endpoints so that child processes (uvicorn reload / workers) can derive
-site URLs the same way the parent did.
+endpoints so that child processes (uvicorn reload / workers) derive site
+URLs the same way the parent did. The CLI entry point mutates the bound
+object before ``server.run()`` calls ``teleport()`` to pass it on.
 """
 
-import os
-from functools import lru_cache
-
 import msgspec
+from fastapi_vue import env
 
 
 class ServeConfig(msgspec.Struct):
@@ -18,19 +17,11 @@ class ServeConfig(msgspec.Struct):
     listen: list[str] | None = None
 
 
-@lru_cache(maxsize=1)
-def _load() -> ServeConfig | None:
-    raw = os.getenv("PASKIA_CONFIG")
-    if not raw:
-        return None
-    return msgspec.json.decode(raw.encode(), type=ServeConfig)
-
-
-def serve_config() -> ServeConfig | None:
-    """Return cached serve configuration loaded from PASKIA_CONFIG."""
-    return _load()
+def serve_config() -> ServeConfig:
+    """Return the serve configuration bound to PASKIA_CONFIG."""
+    return env(ServeConfig, name="CONFIG")
 
 
 def clear_cache() -> None:
-    """Clear cached serve configuration; next serve_config() reloads."""
-    _load.cache_clear()
+    """Drop the bound configuration; next serve_config() re-decodes."""
+    env._bindings.pop("CONFIG", None)  # noqa: SLF001

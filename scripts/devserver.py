@@ -10,6 +10,7 @@ import subprocess
 import sys
 from contextlib import suppress
 from pathlib import Path
+from subprocess import CalledProcessError
 from urllib.parse import urlparse
 
 import tracerite
@@ -68,10 +69,13 @@ def build_caddyfile(origins: list[str], viteurl: str, backurl: str) -> str:
     return "\n".join(caddyfile_parts)
 
 
-async def run_caddy(
-    origins: list[str], viteurl: str, backurl: str
-) -> asyncio.subprocess.Process:
-    """Start Caddy as HTTPS reverse proxy, wait for ready signal."""
+async def run_caddy(origins: list[str], viteurl: str, backurl: str) -> None:
+    """Run Caddy as HTTPS reverse proxy for the group's lifetime.
+
+    Waits for the ready signal, then drains stderr until Caddy exits or the
+    task is cancelled (ProcessGroup shutdown), terminating Caddy on exit.
+    Raises CalledProcessError if Caddy dies, cancelling the group.
+    """
     caddy_path = shutil.which("caddy")
     if not caddy_path:
         logger.warning("Caddy not found. Install it to use --caddy option.")
@@ -86,57 +90,56 @@ async def run_caddy(
         stdin=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )
-    proc.stdin.write(caddyfile.encode())
-    await proc.stdin.drain()
-    proc.stdin.close()
+    try:
+        proc.stdin.write(caddyfile.encode())
+        await proc.stdin.drain()
+        proc.stdin.close()
 
-    # Wait for ready signal or failure
-    while True:
-        if proc.returncode is not None:
-            remaining = await proc.stderr.read()
-            for line in remaining.decode().splitlines():
-                if line:
-                    logger.info("caddy: %s", line)
-            logger.warning("Caddy startup failed (exit code %d)", proc.returncode)
-            raise SystemExit(1)
-
-        line = await proc.stderr.readline()
-        if not line:
-            continue
-
-        decoded = line.decode().rstrip()
-        if "serving initial configuration" in decoded:
-            break
-
-        # Parse and show errors during startup
-        if decoded:
-            try:
-                log = json.loads(decoded)
-                level = log.get("level", "")
-                if level in ("error", "fatal", "warn"):
-                    logger.warning("caddy: %s", log.get("msg", decoded))
-            except json.JSONDecodeError:
-                if "error" in decoded.lower() or "fatal" in decoded.lower():
-                    logger.warning("caddy: %s", decoded)
-
-    # Start background task to drain stderr
-    async def drain_caddy_stderr():
+        # Wait for ready signal or failure
         while True:
+            if proc.returncode is not None:
+                await log_caddy_stderr(proc.stderr, starting=True)
+                logger.warning("Caddy startup failed (exit code %d)", proc.returncode)
+                raise CalledProcessError(proc.returncode, cmd)
+
             line = await proc.stderr.readline()
             if not line:
-                break
-            decoded = line.decode().rstrip()
-            if decoded:
-                try:
-                    log = json.loads(decoded)
-                    level = log.get("level", "")
-                    if level in ("error", "fatal", "warn"):
-                        logger.warning("caddy: %s", log.get("msg", decoded))
-                except json.JSONDecodeError:
-                    pass  # Ignore non-JSON output after startup
+                continue
 
-    asyncio.create_task(drain_caddy_stderr())
-    return proc
+            decoded = line.decode().rstrip()
+            if "serving initial configuration" in decoded:
+                break
+
+            log_caddy_line(decoded, starting=True)
+
+        # Drain stderr until Caddy exits
+        await proc.wait()
+        await log_caddy_stderr(proc.stderr)
+        raise CalledProcessError(proc.returncode, cmd)
+    finally:
+        with suppress(ProcessLookupError):
+            proc.terminate()
+        await proc.wait()
+
+
+def log_caddy_line(decoded: str, *, starting: bool = False) -> None:
+    """Log one Caddy stderr line (JSON during/after startup)."""
+    if not decoded:
+        return
+    try:
+        log = json.loads(decoded)
+        level = log.get("level", "")
+        if level in ("error", "fatal", "warn"):
+            logger.warning("caddy: %s", log.get("msg", decoded))
+    except json.JSONDecodeError:
+        if starting and ("error" in decoded.lower() or "fatal" in decoded.lower()):
+            logger.warning("caddy: %s", decoded)
+
+
+async def log_caddy_stderr(stream: asyncio.StreamReader, *, starting: bool = False) -> None:
+    """Drain and log remaining Caddy stderr."""
+    while line := await stream.readline():
+        log_caddy_line(line.decode().rstrip(), starting=starting)
 
 
 def _split_multi(values: list[str] | None) -> list[str]:
@@ -204,22 +207,25 @@ async def run_devserver(args: argparse.Namespace, remaining: list[str]) -> None:
                 caddy_origins.append(f"https://{rp_id}")
             seen: set = set()
             caddy_origins = [x for x in caddy_origins if not (x in seen or seen.add(x))]
-            caddy_proc = await run_caddy(caddy_origins, viteurl, backurl)
-            pg._procs.append(caddy_proc)
-            pg._cmds[caddy_proc.pid] = "caddy"
+            pg.create_task(run_caddy(caddy_origins, viteurl, backurl))
 
+        pg.create_task(check_ports_free(viteurl, backurl))
         npm_proc = await pg.spawn(*npm_install, cwd=frontend_path)
-        await check_ports_free(viteurl, backurl)
-        await pg.spawn(*paskia)
+        await pg.spawn(*paskia, vital=True)
         await pg.wait(
             npm_proc, ready(backurl, path="/auth/api/settings?from=devserver.py")
         )
-        await pg.spawn(*vite, cwd=frontend_path)
+        await pg.spawn(*vite, cwd=frontend_path, vital=True)
 
 
 def main():
     tracerite.load()
-    parser = argparse.ArgumentParser(add_help=False)
+    parser = argparse.ArgumentParser(
+        add_help=False,
+        description="Run Vite and FastAPI development servers",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=HELP_EPILOG,
+    )
     parser.add_argument(
         "-l",
         "--listen",
@@ -243,8 +249,12 @@ def main():
     )
     args, remaining = parser.parse_known_args()
 
-    with suppress(KeyboardInterrupt):
+    try:
         asyncio.run(run_devserver(args, remaining))
+    except* KeyboardInterrupt:
+        pass  # user stopped the devserver: normal exit
+    except* subprocess.SubprocessError, RuntimeError:
+        raise SystemExit(1) from None  # logged in devutil already; exit 1
 
 
 HELP_EPILOG = """

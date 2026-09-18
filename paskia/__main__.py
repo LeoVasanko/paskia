@@ -5,8 +5,8 @@ import os
 import sys
 from pathlib import Path
 
-import msgspec
-from fastapi_vue import server
+from fastapi_vue import env, server, teleport
+from fastapi_vue.logging import setup_logging
 from kanta import Kanta
 
 from paskia.db import legacy
@@ -17,8 +17,12 @@ from paskia.domains import build as build_registry
 from paskia.domains import configure as configure_domains
 from paskia.domains import validate_config
 from paskia.util import hostutil, startupbox
-from paskia.util.constants import DEFAULT_PORT, DEVMODE
-from paskia.util.runtime import ServeConfig
+from paskia.util.runtime import serve_config
+
+# Keep the literal value here: fastapi-vue-setup reads DEFAULT_PORT from
+# this module on upgrades. The app-side shared copy is paskia.util.constants.
+DEFAULT_PORT = 4401
+os.environ["FASTAPI_VUE"] = "PASKIA"
 
 EPILOG = """\
 Examples:
@@ -226,11 +230,10 @@ def cmd_serve(args: argparse.Namespace) -> None:
     # is the admin's job via the admin interface) are logged by build().
 
     # Pass process-global serve parameters to the server process(es)
-    os.environ["PASKIA_CONFIG"] = msgspec.json.encode(
-        ServeConfig(listen=listen)
-    ).decode()
+    serve_config().listen = listen
+    teleport()  # Serialize bound config before spawning workers
 
-    startupbox.print_startup_config(registry, listen=listen)
+    startupbox.print_startup_config(registry, listen=listen, default_port=DEFAULT_PORT)
 
     # Run the server (spawns processes in dev mode)
     # tracerite, access logging and log config are handled by fastapi_vue.server;
@@ -241,13 +244,13 @@ def cmd_serve(args: argparse.Namespace) -> None:
         default_port=DEFAULT_PORT,
         server_header=False,
         startup_box=None,
-        reload=Path(__file__).parent if DEVMODE else False,
+        reload=Path(__file__).parent if env.dev else False,
     )
 
 
 def main():
-    # Configure logging to remove the "ERROR:root:" prefix
-    logging.basicConfig(level=logging.INFO, format="%(message)s", force=True)
+    # Full logging setup (tracerite, formatting) before any CLI output
+    setup_logging()
 
     parser = argparse.ArgumentParser(
         prog="paskia",

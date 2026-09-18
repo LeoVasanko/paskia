@@ -2,24 +2,21 @@
 
 from __future__ import annotations
 
-import os
 import re
-from sys import stderr
 from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 
+from fastapi_vue import env
 from fastapi_vue.hostutil import parse_endpoints
+from fastapi_vue.server import print_startup_box
 
-from paskia._version import __version__
 from paskia.domains import auth_host_url, origin_url, partition_origins
 from paskia.util import hostutil
-from paskia.util.constants import DEFAULT_PORT, DEVMODE
-from paskia.util.hostutil import format_endpoint, wildcard_base
+from paskia.util.hostutil import wildcard_base
 
 if TYPE_CHECKING:
     from paskia.domains import DomainRegistry
 
-BOX_WIDTH = 80  # Maximum inner width (excluding box chars)
 URL_COL = 22  # Column where header URLs start (past the logo graphic)
 
 # ANSI color codes
@@ -28,44 +25,10 @@ YELLOW = "\033[38;5;184m"  # Bright yellow (6x6x6 cube, r=4 g=4)
 BRIGHT_YELLOW = "\033[38;5;226m"  # Brightest yellow (6x6x6 cube)
 BRIGHT_WHITE = "\033[1;37m"  # Bold bright white
 
-_TOKENS = re.compile(r"\033\[[0-9;]*m|.")
-
 
 def _visible_len(text: str) -> int:
     """Calculate visible length of text, ignoring ANSI escape codes."""
     return len(re.sub(r"\033\[[0-9;]*m", "", text))
-
-
-def _truncate(text: str, width: int) -> str:
-    """Cut text to at most `width` visible chars, keeping ANSI codes intact."""
-    if _visible_len(text) <= width:
-        return text
-    out = []
-    visible = 0
-    for tok in _TOKENS.findall(text):
-        if tok.startswith("\033"):
-            out.append(tok)
-        elif visible < width - 1:
-            out.append(tok)
-            visible += 1
-        else:
-            break
-    return "".join(out) + "…" + RESET
-
-
-def line(text: str = "", width: int = BOX_WIDTH) -> str:
-    """Format a line inside the box with proper padding, truncating if needed."""
-    text = _truncate(text, width)
-    padding = width - _visible_len(text)
-    return f"┃ {text}{' ' * padding} ┃\n"
-
-
-def top(width: int = BOX_WIDTH) -> str:
-    return "┏" + "━" * (width + 2) + "┓\n"
-
-
-def bottom(width: int = BOX_WIDTH) -> str:
-    return "┗" + "━" * (width + 2) + "┛\n"
 
 
 def _compact_url(url: str) -> str:
@@ -135,7 +98,10 @@ def _signin_summary(in_domain: list[str], rp_id: str) -> str:
 
 
 def print_startup_config(
-    registry: DomainRegistry, listen: list[str] | None = None
+    registry: DomainRegistry,
+    listen: list[str] | None = None,
+    *,
+    default_port: int,
 ) -> None:
     """Print server configuration on startup (one section per domain)."""
     # Key graphic with yellow shading (bright for highlights, dark for body)
@@ -146,18 +112,15 @@ def print_startup_config(
 
     domains = sorted(registry.domains, key=lambda d: d.rp_id)
 
-    # Format listen endpoints (dev mode only uses the first endpoint)
-    endpoints = list(parse_endpoints(listen, DEFAULT_PORT))
-    if DEVMODE:
-        endpoints = endpoints[:1]  # server.run reload=True uses only one
-    parts = [format_endpoint(ep) for ep in endpoints]
+    # Endpoints as bound, passed to fastapi_vue for the {listen} field
+    endpoints = list(parse_endpoints(listen, default_port))
 
     # Header URLs: when a vite dev server is configured, its URL (marked
     # "vite dev"); otherwise one per configured auth host (a full origin URL,
     # clickable in terminals). If none are configured, guess one domain
     # (prefer the shortest https rp_id) and link its /auth/ site path.
     # Entries are pre-styled: bold for the URL, plain for any marker.
-    vite_url = os.environ.get("PASKIA_VITE_URL") if DEVMODE else None
+    vite_url = env.vite_url if env.dev else None
     if vite_url:
         header_urls = [f"{w}{vite_url}{r} (vite dev)"]
     else:
@@ -178,9 +141,10 @@ def print_startup_config(
     rows = []
     # Logo lines 4-5 carry the first two header URLs; further URLs go on
     # blank-gutter lines beneath the graphic, all at the same column.
+    # @VERSION@/@LISTEN@ are filled in by fastapi_vue's print_startup_box.
     logo = [
         f" {b}▄▄▄▄▄{r}",
-        f"{b}█{y}     {b}█{r} Paskia {__version__} @ {' '.join(parts)}",
+        f"{b}█{y}     {b}█{r} Paskia @VERSION@ @ @LISTEN@",
         f"{b}█{y}     {b}█{y}▄▄▄▄▄▄▄▄▄▄▄▄{r}",
         f"{b}█{y}     {b}█{y}▀▀▀▀{b}█{y}▀▀{b}█{y}▀▀{b}█{r}",
         f" {y}▀▀▀▀▀{r}",
@@ -196,7 +160,7 @@ def print_startup_config(
         rows.append(f"{' ' * URL_COL}{url}")
 
     for domain in domains:
-        # One compact line per domain; overlong lines are capped at render.
+        # One compact line per domain.
         rp_name = domain.rp_name
         suffix = f" ({rp_name})" if rp_name and rp_name != domain.rp_id else ""
         head = f"{w}{domain.rp_id}{r}{suffix}"
@@ -204,21 +168,22 @@ def print_startup_config(
             rows.append(f"{head} — no sign-in sites")
             continue
         in_domain, related = partition_origins(domain.rp_id, domain.config.origins)
-        parts = []
+        phrases = []
         if in_domain:
-            parts.append(_signin_summary(in_domain, domain.rp_id))
-        parts.extend(_compact_url(origin_url(k)) for k in sorted(related))
+            phrases.append(_signin_summary(in_domain, domain.rp_id))
+        phrases.extend(_compact_url(origin_url(k)) for k in sorted(related))
         # "with" implies the rp_id itself may sign in (exact key or a full
         # wildcard); otherwise the origins are a mere list, after a colon.
         covers_self = any(
             k == domain.rp_id or k == f"**.{domain.rp_id}" for k in in_domain
         )
         sep = " with " if covers_self else ": "
-        rows.append(f"{head}{sep}{' and '.join(parts)}")
+        rows.append(f"{head}{sep}{' and '.join(phrases)}")
 
-    # Size the box to the widest row, capped at BOX_WIDTH.
-    width = min(BOX_WIDTH, max(_visible_len(t) for t in rows))
-    out = [top(width)]
-    out.extend(line(text, width) for text in rows)
-    out.append(bottom(width))
-    stderr.write("".join(out))
+    # fastapi_vue prints the box: version from package metadata, listen
+    # addresses as bound (localhost expanded to both loopbacks). Braces in
+    # our content (e.g. an rp-name) are escaped before template formatting.
+    text = "\n".join(rows)
+    text = text.replace("{", "{{").replace("}", "}}")
+    text = text.replace("@VERSION@", "{version}").replace("@LISTEN@", "{listen}")
+    print_startup_box(text, "paskia.fastapi.mainapp:app", endpoints)

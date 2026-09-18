@@ -98,15 +98,3 @@ def normalize_host(raw_host: str | None) -> str | None:
         # Strip port from host:port
         netloc = netloc.rsplit(":", 1)[0]
     return netloc.lower().rstrip(".") or None
-
-
-def format_endpoint(ep: dict) -> str:
-    """Format an endpoint dict to a listen string (e.g. 'unix:/path' or 'host:port')."""
-    if uds := ep.get("uds"):
-        return f"unix:{uds}"
-    host = ep["host"]
-    port = ep["port"]
-    # Bracket IPv6 addresses
-    if ":" in host:
-        host = f"[{host}]"
-    return f"{host}:{port}"

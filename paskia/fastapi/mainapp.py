@@ -5,7 +5,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import FileResponse, RedirectResponse
-from kanta.logging import configure_logging as configure_kanta_logging
+from fastapi_vue import env
 
 from paskia import authcode, db, domains, remoteauth
 from paskia.bootstrap import bootstrap_if_needed
@@ -19,11 +19,7 @@ from paskia.fastapi.dispatch import DispatchMiddleware
 from paskia.fastapi.front import frontend
 from paskia.fastapi.session import AUTH_COOKIE
 from paskia.util import passphrase, vitedev
-from paskia.util.constants import DEVMODE
 from paskia.util.runtime import serve_config
-
-# Configure custom logging
-configure_kanta_logging()
 
 # Path to examples/index.html when running from source tree
 _EXAMPLES_DIR = Path(__file__).parent.parent.parent / "examples"
@@ -39,7 +35,7 @@ async def lifespan(app: FastAPI):  # pragma: no cover - startup path
     Domain configuration is read from the database.
     """
     cfg = serve_config()
-    domains.configure(listen=cfg.listen if cfg else None)
+    domains.configure(listen=cfg.listen)
 
     await asyncio.to_thread(
         Path(kanta.filename).parent.mkdir, parents=True, exist_ok=True
@@ -68,7 +64,7 @@ app = FastAPI(
     docs_url=None,
     redoc_url=None,
     openapi_url=None,
-    debug=DEVMODE,
+    debug=env.dev,
 )
 
 # WebSocket and HTTP access logging is handled by fastapi_vue's ASGI middleware;

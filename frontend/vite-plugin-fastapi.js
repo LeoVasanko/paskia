@@ -8,11 +8,11 @@
  * - Disables Vite's screen clearing on startup
  *
  * Options:
- *   paths - Array of paths to proxy (default: ["/api"])
+ *   paths - Array of paths to proxy (default: ['/api'])
  */
 
-export default function fastapiVue({ paths = ["/api"] } = {}) {
-  const backendUrl = process.env.PASKIA_BACKEND_URL || "http://localhost:4402"
+export default function fastapiVue({ paths = ['/api'] } = {}) {
+  const backendUrl = process.env.PASKIA_BACKEND_URL || 'http://localhost:4402'
 
   // Build proxy configuration for each path
   const proxy = {}
@@ -25,12 +25,12 @@ export default function fastapiVue({ paths = ["/api"] } = {}) {
   }
 
   return {
-    name: "vite-plugin-fastapi-paskia",
+    name: 'vite-plugin-fastapi-paskia',
     config: () => ({
       clearScreen: false,
       server: { proxy },
       build: {
-        outDir: "../paskia/frontend-build",
+        outDir: '../paskia/frontend-build',
         emptyOutDir: true,
       },
     }),
