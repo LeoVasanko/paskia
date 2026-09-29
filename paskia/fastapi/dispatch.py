@@ -63,6 +63,11 @@ class DispatchMiddleware:
         host = _header(scope, "host")
         host_domain = registry.resolve(host)
         if host_domain is None:
+            # The sync endpoint is server-to-server and token-gated: the
+            # satellite may reach us via an address outside our domains.
+            if scope.get("path") == "/auth/api/sync/ws" and registry.domains:
+                await self._dispatch(scope, receive, send, registry.domains[0])
+                return
             await send({"type": "websocket.close", "code": _WS_CLOSE_POLICY_VIOLATION})
             return
 

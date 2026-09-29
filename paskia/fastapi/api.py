@@ -14,7 +14,7 @@ from fastapi import (
 from fastapi.responses import JSONResponse
 from fastapi.security import HTTPBearer
 
-from paskia import authcode, db
+from paskia import authcode, db, satellite
 from paskia._version import __version__
 from paskia.authsession import EXPIRES, get_reset, session_ctx
 from paskia.domains import current_domain
@@ -122,8 +122,9 @@ async def validate_token(
     if auth and renew:
         consumed = datetime.now(UTC) - ctx.session.validated
         if not timedelta(0) < consumed < _REFRESH_INTERVAL:
-            db.update_session(
+            satellite.refresh_session(
                 ctx.session.key,
+                request.headers.get("host"),
                 ip=get_client_ip(request),
                 user_agent=request.headers.get("user-agent"),
                 validated=datetime.now(UTC),
@@ -162,16 +163,16 @@ async def check_user(
 
     No session cookie is read or written. Caller authentication is not required.
     """
-    data = db.data()
+    host = hostutil.normalize_host(request.headers.get("host"))
+    data = satellite.store_for_host(host)
     try:
         u = data.users[user_uuid]
-        role = u.role
-        org = role.org
+        role = data.roles[u.role_uuid]
+        org = data.orgs[role.org_uuid]
     except KeyError:
         raise HTTPException(status_code=404, detail="User not found")
 
-    host = hostutil.normalize_host(request.headers.get("host"))
-    org_perm_uuids = {p.uuid for p in org.permissions}
+    org_perm_uuids = {p.uuid for p in data.permissions.values() if org.uuid in p.orgs}
 
     effective_perms = []
     for perm_uuid in role.permission_set:
@@ -212,7 +213,7 @@ def _remote_headers(ctx) -> dict[str, str]:
         "Remote-Session-Expires": (
             (ctx.session.validated + EXPIRES).isoformat().replace("+00:00", "Z")
         ),
-        "Remote-Credential": str(ctx.session.credential),
+        "Remote-Credential": str(ctx.credential.uuid),
     }
 
 
@@ -311,6 +312,7 @@ async def get_settings():
             auth_site_url=domain.auth_site_url,
             session_cookie=AUTH_COOKIE_NAME,
             version=__version__,
+            remote=domain.remote is not None,
         ),
         headers={"Access-Control-Allow-Origin": "*", "Vary": "Origin"},
     )
@@ -351,8 +353,10 @@ async def api_user_info(
 
 
 @app.get("/token-info")
-async def token_info(credentials=Depends(bearer_auth)):
+async def token_info(request: Request, credentials=Depends(bearer_auth)):
     """Get reset/device-add token info. Pass token via Bearer header."""
+    if (proxied := await satellite.forward_request(request)) is not None:
+        return proxied
     if not credentials or not credentials.credentials:
         raise HTTPException(401, "Bearer token required")
     token = credentials.credentials
@@ -375,6 +379,10 @@ async def token_info(credentials=Depends(bearer_auth)):
 
 @app.post("/logout")
 async def api_logout(request: Request, response: Response, auth=AUTH_COOKIE):
+    if (proxied := await satellite.forward_request(request)) is not None:
+        if auth and proxied.status_code == 200:
+            satellite.evict_session(auth, request.headers.get("host"))
+        return proxied
     if not auth:
         return {"message": "Already logged out"}
     host = request.headers.get("host")
@@ -398,6 +406,11 @@ async def api_set_session(
     """
     if not auth or not auth.credentials:
         raise HTTPException(400, "Bearer token required")
+
+    if (proxied := await satellite.forward_request(request)) is not None:
+        # The exchange code lives in the remote's RAM; redeem it there. The
+        # session itself reaches the replica via the sync channel.
+        return proxied
 
     host = hostutil.normalize_host(request.headers.get("host", ""))
     if not host:

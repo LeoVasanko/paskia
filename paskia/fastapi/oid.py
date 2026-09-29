@@ -20,7 +20,7 @@ from fastapi import Depends, FastAPI, Form, HTTPException, Request
 from fastapi.responses import JSONResponse
 from fastapi.security import HTTPBearer
 
-from paskia import authcode, db
+from paskia import authcode, db, satellite
 from paskia.db.structs import OIDC, Session
 from paskia.util import avatar, oidjwt
 from paskia.util.crypto import hash_secret
@@ -28,6 +28,14 @@ from paskia.util.crypto import hash_secret
 _logger = logging.getLogger(__name__)
 
 app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
+
+
+@app.middleware("http")
+async def proxy_remote_domain(request: Request, call_next):
+    """OIDC key material and sessions stay on the remote; proxy everything."""
+    if (proxied := await satellite.forward_request(request)) is not None:
+        return proxied
+    return await call_next(request)
 
 
 def _provider() -> OIDC:

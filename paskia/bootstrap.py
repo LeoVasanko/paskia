@@ -67,7 +67,10 @@ async def check_admin_credentials() -> bool:
         # Check first admin user for credentials on any configured domain
         admin_user = admin_users[0]
         reg = domains.registry()
-        configured = sorted(d.rp_id for d in reg.domains)
+        # Remote domains hold their credentials on the remote instance
+        configured = sorted(d.rp_id for d in reg.domains if d.remote is None)
+        if not configured:
+            return False
 
         if not any(admin_user.credential_ids_for(rp_id) for rp_id in configured):
             # Admin exists but has no credential on any domain

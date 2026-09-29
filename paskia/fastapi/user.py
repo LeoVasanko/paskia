@@ -11,7 +11,7 @@ from fastapi import (
 )
 from fastapi.responses import FileResponse, JSONResponse
 
-from paskia import db
+from paskia import db, satellite
 from paskia.authsession import (
     delete_credential,
     expires,
@@ -25,6 +25,19 @@ from paskia.util import avatar
 from paskia.util.apistructs import ApiCreateLinkResponse
 
 app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
+
+
+@app.middleware("http")
+async def proxy_remote_domain(request: Request, call_next):
+    """Profile and avatar data live on the remote for remote domains.
+
+    A remote domain's auth host normally resolves to the remote itself;
+    if traffic for it reaches the satellite anyway (misrouted DNS), the
+    satellite forwards rather than writing to its local database.
+    """
+    if (proxied := await satellite.forward_request(request)) is not None:
+        return proxied
+    return await call_next(request)
 
 
 def _can_manage_avatar(ctx, target_user) -> bool:

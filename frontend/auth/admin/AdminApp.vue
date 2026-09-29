@@ -480,6 +480,7 @@ function createDomain() {
     origins: [],
     originValidation: [],
     wellKnownCheck: null,
+    remote: null,
   })
 }
 
@@ -495,6 +496,8 @@ function openDomain(domain) {
     origins: rows.map(r => r.key),
     originValidation: rows.map(() => null),
     wellKnownCheck: null,
+    // The sync token is write-only: an empty field keeps the stored one
+    remote: domain.remote ? { ...domain.remote, token: '' } : null,
   })
 }
 
@@ -923,9 +926,19 @@ async function submitDialog() {
       }
 
       closeDialog()
+      // remote is replaced wholesale when present; null clears it, an
+      // absent key (create without remote) leaves it unset.
+      const remote = d.remote?.url?.trim()
+        ? {
+            url: d.remote.url.trim().replace(/\/+$/, ''),
+            token: d.remote.token || '',
+            cache_ttl: Number(d.remote.cache_ttl) || 60,
+            refresh_interval: Number(d.remote.refresh_interval) || 300,
+          }
+        : null
       const req = d.isNew
-        ? apiJson('/auth/api/admin/domains/', { method: 'POST', body: { rp_id, rp_name, origins } })
-        : apiJson(`/auth/api/admin/domains/${rp_id}`, { method: 'PATCH', body: { rp_name, origins } })
+        ? apiJson('/auth/api/admin/domains/', { method: 'POST', body: { rp_id, rp_name, origins, ...(remote ? { remote } : {}) } })
+        : apiJson(`/auth/api/admin/domains/${rp_id}`, { method: 'PATCH', body: { rp_name, origins, remote } })
       req
         .then(() => {
           authStore.showMessage(`Domain "${rp_id}" ${d.isNew ? 'created' : 'updated'}.`, 'success', 2500)

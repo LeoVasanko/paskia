@@ -9,7 +9,7 @@ from uuid import UUID
 import msgspec
 import uuid7
 
-from paskia import db
+from paskia import db, syncfeed
 from paskia.util import passphrase as passphrase_util
 from paskia.util.crypto import hash_secret
 
@@ -51,6 +51,7 @@ class Permission(msgspec.Struct, dict=True, omit_defaults=True):
     def store(self) -> None:
         """Store this permission in the database. Must be called inside a transaction."""
         db.data().permissions[self.uuid] = self
+        syncfeed.emit("permissions", str(self.uuid), self)
 
     def delete(self) -> None:
         """Delete this permission and remove it from all roles.
@@ -59,8 +60,10 @@ class Permission(msgspec.Struct, dict=True, omit_defaults=True):
         """
         _data = db.data()
         for role in _data.roles.values():
-            role.permissions.pop(self.uuid, None)
+            if role.permissions.pop(self.uuid, None) is not None:
+                syncfeed.emit("roles", str(role.uuid), role)
         del _data.permissions[self.uuid]
+        syncfeed.emit("permissions", str(self.uuid), None)
 
     @classmethod
     def create(
@@ -103,6 +106,7 @@ class Org(msgspec.Struct, dict=True):
     def store(self) -> None:
         """Store this organization in the database. Must be called inside a transaction."""
         db.data().orgs[self.uuid] = self
+        syncfeed.emit("orgs", str(self.uuid), self)
 
     def delete(self) -> None:
         """Delete this org and cascade to roles, users. Remove from permissions.
@@ -111,12 +115,16 @@ class Org(msgspec.Struct, dict=True):
         """
         _data = db.data()
         for p in _data.permissions.values():
-            p.orgs.pop(self.uuid, None)
+            if p.orgs.pop(self.uuid, None) is not None:
+                syncfeed.emit("permissions", str(p.uuid), p)
         for role in self.roles:
             for user in role.users:
                 del _data.users[user.uuid]
+                syncfeed.emit("users", str(user.uuid), None)
             del _data.roles[role.uuid]
+            syncfeed.emit("roles", str(role.uuid), None)
         del _data.orgs[self.uuid]
+        syncfeed.emit("orgs", str(self.uuid), None)
 
     @classmethod
     def create(cls, display_name: str, created_at: datetime | None = None) -> Org:
@@ -170,10 +178,12 @@ class Role(msgspec.Struct, dict=True, omit_defaults=True):
     def store(self) -> None:
         """Store this role in the database. Must be called inside a transaction."""
         db.data().roles[self.uuid] = self
+        syncfeed.emit("roles", str(self.uuid), self)
 
     def delete(self) -> None:
         """Delete this role from the database. Must be called inside a transaction."""
         del db.data().roles[self.uuid]
+        syncfeed.emit("roles", str(self.uuid), None)
 
     @classmethod
     def create(
@@ -254,6 +264,7 @@ class User(msgspec.Struct, dict=True, omit_defaults=True, kw_only=True):
     def store(self) -> None:
         """Store this user in the database. Must be called inside a transaction."""
         db.data().users[self.uuid] = self
+        syncfeed.emit("users", str(self.uuid), self)
 
     def delete(self) -> None:
         """Delete this user and cascade to credentials, sessions, reset tokens.
@@ -263,11 +274,14 @@ class User(msgspec.Struct, dict=True, omit_defaults=True, kw_only=True):
         _data = db.data()
         for cred in self.credentials:
             del _data.credentials[cred.uuid]
+            syncfeed.emit("credentials", str(cred.uuid), None)
         for sess in self.sessions:
             del _data.sessions[sess.key]
+            syncfeed.emit("sessions", sess.key, None)
         for token in self.reset_tokens:
             del _data.reset_tokens[token.key]
         del _data.users[self.uuid]
+        syncfeed.emit("users", str(self.uuid), None)
 
     @classmethod
     def create(
@@ -331,6 +345,7 @@ class Credential(msgspec.Struct, dict=True):
     def store(self) -> None:
         """Store this credential in the database. Must be called inside a transaction."""
         db.data().credentials[self.uuid] = self
+        syncfeed.emit("credentials", str(self.uuid), self)
 
     def delete(self) -> None:
         """Delete this credential and all its sessions.
@@ -340,7 +355,9 @@ class Credential(msgspec.Struct, dict=True):
         _data = db.data()
         for sess in self.sessions:
             del _data.sessions[sess.key]
+            syncfeed.emit("sessions", sess.key, None)
         del _data.credentials[self.uuid]
+        syncfeed.emit("credentials", str(self.uuid), None)
 
     @classmethod
     def create(
@@ -418,10 +435,13 @@ class Session(msgspec.Struct, dict=True, omit_defaults=True):
         _data.sessions[self.key] = self
         _data.users[self.user_uuid].last_seen = last_seen
         _data.users[self.user_uuid].visits += 1
+        syncfeed.emit("sessions", self.key, self)
+        syncfeed.emit("users", str(self.user_uuid), _data.users[self.user_uuid])
 
     def delete(self) -> None:
         """Delete this session from the database. Must be called inside a transaction."""
         del db.data().sessions[self.key]
+        syncfeed.emit("sessions", self.key, None)
 
     @classmethod
     def create(
@@ -622,6 +642,21 @@ class OriginEntry(msgspec.Struct, omit_defaults=True):
     auth_host: bool = False  # This site hosts the account/admin interface
 
 
+class RemoteConfig(msgspec.Struct, omit_defaults=True):
+    """Upstream paskia instance backing a remote (satellite-served) domain.
+
+    The satellite keeps a RAM-only read replica of the remote's tables and
+    answers session-dependent reads locally; mutations are forwarded. The
+    token authenticates the sync channel (the remote reads accepted tokens
+    from its PASKIA_SYNC_TOKENS environment, never from its database).
+    """
+
+    url: str  # e.g. "https://auth.example.com"
+    token: str = ""
+    cache_ttl: int = 60  # staleness bound (seconds) while the sync channel is down
+    refresh_interval: int = 300  # full re-sync cadence (seconds)
+
+
 class DomainConfig(msgspec.Struct, omit_defaults=True):
     """Configuration for one domain (one WebAuthn rp-id).
 
@@ -641,6 +676,7 @@ class DomainConfig(msgspec.Struct, omit_defaults=True):
 
     rp_name: str | None = None
     origins: dict[str, bool | OriginEntry] = {}
+    remote: RemoteConfig | None = None
 
 
 class Config(msgspec.Struct, omit_defaults=True):
@@ -728,17 +764,21 @@ class DB(msgspec.Struct, dict=True, omit_defaults=False):
         if s.host != host:
             return None
 
+        # Look up via this instance's own tables: a DB must be
+        # self-contained so that read replicas work unchanged.
         try:
-            user = s.user
-            role = user.role
-            org = role.org
-            credential = s.credential
+            user = self.users[s.user_uuid]
+            role = self.roles[user.role_uuid]
+            org = self.orgs[role.org_uuid]
+            credential = self.credentials[s.credential_uuid]
         except KeyError:
             return None
 
         # Effective permissions: role's permissions that the org can grant,
         # filtered by domain restriction
-        org_perm_uuids = {p.uuid for p in org.permissions}
+        org_perm_uuids = {
+            p.uuid for p in self.permissions.values() if org.uuid in p.orgs
+        }
 
         effective_perms = []
         for perm_uuid in role.permission_set:

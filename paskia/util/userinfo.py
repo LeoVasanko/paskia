@@ -1,6 +1,6 @@
 """User information formatting and retrieval logic."""
 
-from paskia import aaguid, db
+from paskia import aaguid, satellite
 from paskia.db import SessionContext
 from paskia.util import avatar, hostutil
 from paskia.util.apistructs import (
@@ -43,8 +43,14 @@ async def build_user_info(
     ctx: SessionContext | None = None,
 ) -> ApiUserDetail:
     """Build user info struct for authenticated users."""
-    user = db.data().users[user_uuid]
+    data = satellite.store_for_host(request_host)
+    user = data.users[user_uuid]
     normalized_host = hostutil.normalize_host(request_host)
+
+    user_sessions = [s for s in data.sessions.values() if s.user_uuid == user_uuid]
+    user_credentials = [
+        c for c in data.credentials.values() if c.user_uuid == user_uuid
+    ]
 
     sessions = {
         s.key: ApiUserSession.from_db(
@@ -52,15 +58,15 @@ async def build_user_info(
             current_key=session_key,
             normalized_host=normalized_host,
         )
-        for s in user.sessions
+        for s in user_sessions
     }
 
     return ApiUserDetail(
         user=ApiUser.from_db(user, avatar_url=avatar.avatar_browser_url(user.uuid)),
-        credentials={c.uuid: c for c in user.credentials},
+        credentials={c.uuid: c for c in user_credentials},
         aaguid_info={
             k: ApiAaguidInfo(**v)
-            for k, v in aaguid.filter(c.aaguid for c in user.credentials).items()
+            for k, v in aaguid.filter(c.aaguid for c in user_credentials).items()
         },
         sessions=sessions,
         permissions={p.uuid: ApiPermission.from_db(p) for p in ctx.permissions}

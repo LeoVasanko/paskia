@@ -14,13 +14,14 @@ domain are in-domain, entries outside it are related.
 
 from __future__ import annotations
 
+import asyncio
 import contextvars
 import logging
 import os
 
 from fastapi_vue.hostutil import parse_endpoints
 
-from paskia.db.structs import Config, DomainConfig, OriginEntry
+from paskia.db.structs import Config, DomainConfig, OriginEntry, RemoteConfig
 from paskia.sansio import Passkey
 from paskia.util import hostutil
 from paskia.util.constants import DEFAULT_PORT
@@ -100,6 +101,11 @@ class Domain:
     @property
     def rp_name(self) -> str:
         return self.passkey.rp_name
+
+    @property
+    def remote(self) -> RemoteConfig | None:
+        """Upstream config when this domain is served as a satellite."""
+        return self.config.remote
 
     @property
     def own_auth_host(self) -> str | None:
@@ -207,6 +213,10 @@ def validate_config(
 
     for rp_id, domain in config.domains.items():
         hostutil.validate_rp_id(rp_id)
+        if domain.remote is not None and not domain.remote.url.startswith(
+            ("https://", "http://")
+        ):
+            raise ValueError(f"Domain '{rp_id}': remote URL must be an http(s) URL")
 
         domain_auth_host: str | None = None
         related_count = 0
@@ -273,6 +283,11 @@ def validate_config(
                 f"Domain '{rp_id}' has {related_count} related origins "
                 f"(maximum {related_origin_cap})"
             )
+        if domain.remote is not None and domain_auth_host is None:
+            raise ValueError(
+                f"Domain '{rp_id}' is remote — it must mark an auth host "
+                "(profile, admin and sign-in pages live there)"
+            )
 
     rp_ids = set(config.domains)
     for hn, owner in auth_hosts.items():
@@ -282,6 +297,21 @@ def validate_config(
             raise ValueError(
                 f"auth-host '{hn}' collides with a related origin of "
                 f"domain '{related_hosts[hn]}'"
+            )
+
+    # Several domains may share one remote instance (and its replica), but
+    # then its settings must be identical — a conflict would otherwise be
+    # resolved silently and arbitrarily.
+    remotes: dict[str, tuple[str, RemoteConfig]] = {}
+    for rp_id, domain in config.domains.items():
+        if domain.remote is None:
+            continue
+        prior = remotes.setdefault(domain.remote.url, (rp_id, domain.remote))
+        if prior[1] != domain.remote:
+            raise ValueError(
+                f"Domains '{prior[0]}' and '{rp_id}' share remote "
+                f"'{domain.remote.url}' with conflicting settings — a shared "
+                "remote must have one configuration"
             )
 
 
@@ -302,6 +332,7 @@ def sanitize_config(
         warnings.append(msg)
 
     domains: dict[str, DomainConfig] = {}
+    remotes_seen: dict[str, RemoteConfig] = {}
     for rp_id, domain in config.domains.items():
         try:
             hostutil.validate_rp_id(rp_id)
@@ -363,6 +394,28 @@ def sanitize_config(
                     auth_seen = True
             origins[key] = props
 
+        if domain.remote is not None:
+            if not domain.remote.url.startswith(("https://", "http://")):
+                warn(f"Domain '{rp_id}': invalid remote URL — remote dropped")
+                remote = None
+            else:
+                remote = domain.remote
+                prior = remotes_seen.setdefault(remote.url, remote)
+                if prior != remote:
+                    warn(
+                        f"Domain '{rp_id}': remote '{remote.url}' settings "
+                        "conflict with another domain's — aligned to the "
+                        "first configuration"
+                    )
+                    remote = prior
+                if not auth_seen:
+                    warn(
+                        f"Domain '{rp_id}': remote domain without an auth host — "
+                        "profile, admin and sign-in pages have nowhere to live"
+                    )
+        else:
+            remote = None
+
         related = sorted(k for k in origins if is_related_key(rp_id, k))
         if len(related) > related_origin_cap:
             warn(
@@ -372,7 +425,9 @@ def sanitize_config(
             for key in related[related_origin_cap:]:
                 del origins[key]
 
-        domains[rp_id] = DomainConfig(rp_name=domain.rp_name, origins=origins)
+        domains[rp_id] = DomainConfig(
+            rp_name=domain.rp_name, origins=origins, remote=remote
+        )
 
     if not domains:
         raise ValueError("No servable domain in the stored configuration")
@@ -461,6 +516,46 @@ def _derive_site(
 
 _registry: DomainRegistry | None = None
 _listen: list[str] | None = None
+_rebuild_listeners: list = []
+_rebuild_tasks: set[asyncio.Task] = set()
+
+
+def add_rebuild_listener(fn) -> None:
+    """Register fn(registry), called after every init_registry rebuild."""
+    _rebuild_listeners.append(fn)
+
+
+def remove_rebuild_listener(fn) -> None:
+    if fn in _rebuild_listeners:
+        _rebuild_listeners.remove(fn)
+
+
+def _rebuild_done(task: asyncio.Task) -> None:
+    _rebuild_tasks.discard(task)
+    if not task.cancelled() and (exc := task.exception()) is not None:
+        logger.error("Registry rebuild listener failed: %s", exc)
+
+
+def _notify_rebuild(reg: DomainRegistry) -> None:
+    """Run rebuild listeners; schedule coroutines on the running loop.
+
+    Every serving context (lifespan, admin rebuild, tests) runs a loop.
+    Task references are held until completion so listeners are neither
+    garbage-collected mid-run nor silently failing.
+    """
+    for fn in _rebuild_listeners:
+        result = fn(reg)
+        if not asyncio.iscoroutine(result):
+            continue
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            result.close()
+            logger.warning("Rebuild listener %r skipped: no running event loop", fn)
+            continue
+        task = loop.create_task(result)
+        _rebuild_tasks.add(task)
+        task.add_done_callback(_rebuild_done)
 
 
 def configure(*, listen: list[str] | None = None) -> None:
@@ -501,6 +596,7 @@ def init_registry(config: Config) -> DomainRegistry:
     """Build and install the global registry from a combined configuration."""
     global _registry
     _registry = build(config)
+    _notify_rebuild(_registry)
     return _registry
 
 

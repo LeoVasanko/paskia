@@ -464,6 +464,7 @@ defineExpose({ focusFirstElement })
             </div>
             <div class="perm-id-info">
               <span class="id-text">{{ domain.rp_id }}</span>
+              <span v-if="domain.remote" class="id-text" :title="`Served from remote ${domain.remote.url} (satellite mode)`">🛰 {{ domain.remote.url }}</span>
             </div>
           </td>
           <td class="domain-origins"><span v-for="(e, i) in originDisplayEntries(domain)" :key="e.key">{{ i ? ', ' : '' }}{{ e.key }}{{ e.auth ? '🔑' : '' }}{{ e.related ? '🔗' : '' }}</span></td>

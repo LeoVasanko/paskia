@@ -12,7 +12,7 @@ immediately.
 from fastapi import Body, FastAPI, Request
 
 from paskia import db, domains
-from paskia.db.structs import Config, DomainConfig, OriginEntry
+from paskia.db.structs import Config, DomainConfig, OriginEntry, RemoteConfig
 from paskia.fastapi import authz
 from paskia.fastapi.admin.errors import install_error_handlers
 from paskia.fastapi.response import MsgspecResponse
@@ -27,6 +27,14 @@ install_error_handlers(app)
 
 
 def _domain_to_api(domain: domains.Domain) -> ApiDomain:
+    remote = domain.config.remote
+    if remote is not None:
+        # The sync token is a bearer secret: never echoed back
+        remote = RemoteConfig(
+            url=remote.url,
+            cache_ttl=remote.cache_ttl,
+            refresh_interval=remote.refresh_interval,
+        )
     return ApiDomain(
         rp_id=domain.rp_id,
         rp_name=domain.rp_name,
@@ -34,6 +42,28 @@ def _domain_to_api(domain: domains.Domain) -> ApiDomain:
         site_url=domain.site_url,
         auth_site_url=domain.auth_site_url,
         auth_host=domain.own_auth_host,
+        remote=remote,
+    )
+
+
+def _normalize_remote(
+    value, existing: RemoteConfig | None = None
+) -> RemoteConfig | None:
+    """Parse a remote object from the admin UI (raises on malformed).
+
+    An absent/empty token keeps the previously stored one — the token is
+    write-only over the API.
+    """
+    if value is None:
+        return None
+    if not isinstance(value, dict) or not isinstance(value.get("url"), str):
+        raise ValueError("remote must be an object with a url")
+    token = str(value.get("token") or "") or (existing.token if existing else "")
+    return RemoteConfig(
+        url=value["url"].rstrip("/"),
+        token=token,
+        cache_ttl=max(1, int(value.get("cache_ttl") or 60)),
+        refresh_interval=max(30, int(value.get("refresh_interval") or 300)),
     )
 
 
@@ -123,6 +153,7 @@ async def admin_create_domain(
     new = DomainConfig(
         rp_name=(payload.get("rp_name") or "").strip() or None,
         origins=_normalize_origins_map(payload.get("origins")),
+        remote=_normalize_remote(payload.get("remote")),
     )
 
     config = db.data().config
@@ -156,9 +187,15 @@ async def admin_update_domain(
     if rp_id not in config.domains:
         raise ValueError(f"Domain {rp_id} not found")
 
+    current_remote = config.domains[rp_id].remote
     updated = DomainConfig(
         rp_name=(payload.get("rp_name") or "").strip() or None,
         origins=_normalize_origins_map(payload.get("origins")),
+        remote=(
+            _normalize_remote(payload["remote"], existing=current_remote)
+            if "remote" in payload
+            else current_remote
+        ),
     )
     would_be = Config(
         domains={k: updated if k == rp_id else v for k, v in config.domains.items()},
@@ -171,6 +208,7 @@ async def admin_update_domain(
         rp_id,
         rp_name=updated.rp_name,
         origins=updated.origins,
+        remote=updated.remote,
         ctx=ctx,
     )
     _rebuild_registry()

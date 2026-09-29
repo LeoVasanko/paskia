@@ -7,11 +7,11 @@ from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import FileResponse, RedirectResponse
 from fastapi_vue import env
 
-from paskia import authcode, db, domains, remoteauth
+from paskia import authcode, db, domains, remoteauth, satellite
 from paskia.bootstrap import bootstrap_if_needed
 from paskia.db.background import start_background, stop_background
 from paskia.db.lifecycle import kanta
-from paskia.fastapi import admin, api, auth_host, oid, ws
+from paskia.fastapi import admin, api, auth_host, oid, sync, ws
 from paskia.fastapi.admin.adminapp import adminapp
 from paskia.fastapi.dispatch import DispatchMiddleware
 
@@ -50,6 +50,7 @@ async def lifespan(app: FastAPI):  # pragma: no cover - startup path
             domains.init_registry(db.data().config)
             await remoteauth.init()
             await authcode.start()
+            await satellite.manager.start()
         except ValueError as e:
             logging.error(f"⚠️ {e}")
             # Re-raise to fail fast
@@ -60,6 +61,7 @@ async def lifespan(app: FastAPI):  # pragma: no cover - startup path
         await start_background()
         yield
         await stop_background()
+        await satellite.manager.stop()
         await authcode.stop()
 
 
@@ -83,6 +85,7 @@ app.middleware("http")(auth_host.redirect_middleware)
 app.add_middleware(DispatchMiddleware)
 
 app.mount("/auth/api/admin/", admin.app)
+app.mount("/auth/api/sync", sync.app)
 app.mount("/auth/api/", api.app)
 app.mount("/auth/ws/", ws.app)
 app.mount("/auth/oidc/", oid.app)

@@ -14,7 +14,15 @@ import msgspec
 from uarite import uaparse
 
 from paskia import db
-from paskia.db.structs import Credential, Org, OriginEntry, Permission, Role, User
+from paskia.db.structs import (
+    Credential,
+    Org,
+    OriginEntry,
+    Permission,
+    RemoteConfig,
+    Role,
+    User,
+)
 
 # -------------------------------------------------------------------------
 # API structs - inherit from db structs, add uuid for serialization
@@ -177,6 +185,7 @@ class ApiSettings(msgspec.Struct):
     auth_site_url: str
     session_cookie: str
     version: str
+    remote: bool = False  # this instance satellite-serves the domain
 
 
 class ApiDomain(msgspec.Struct):
@@ -194,6 +203,7 @@ class ApiDomain(msgspec.Struct):
     site_url: str
     auth_site_url: str
     auth_host: str | None
+    remote: RemoteConfig | None = None
 
 
 class ApiTokenInfo(msgspec.Struct, omit_defaults=True):

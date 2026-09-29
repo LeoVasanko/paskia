@@ -24,8 +24,15 @@ EXPIRES = SESSION_LIFETIME
 
 
 def session_ctx(auth: str, host: str | None = None):
-    """Get session context with normalized host."""
-    return db.data().session_ctx(auth, hostutil.normalize_host(host))
+    """Get session context with normalized host.
+
+    The store is dispatched by host: remote domains read their replica.
+    """
+    from paskia import satellite  # noqa: PLC0415  (import cycle)
+
+    return satellite.store_for_host(host).session_ctx(
+        auth, hostutil.normalize_host(host)
+    )
 
 
 def expires() -> datetime:

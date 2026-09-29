@@ -13,7 +13,7 @@ from uuid import UUID
 
 import uuid7
 
-from paskia import oidc_notify
+from paskia import oidc_notify, syncfeed
 from paskia.config import SESSION_LIFETIME
 from paskia.db.structs import (
     DB,
@@ -23,6 +23,7 @@ from paskia.db.structs import (
     Org,
     OriginEntry,
     Permission,
+    RemoteConfig,
     ResetToken,
     Role,
     Session,
@@ -103,6 +104,7 @@ def update_permission(
         _db.permissions[uuid].scope = scope
         _db.permissions[uuid].display_name = display_name
         _db.permissions[uuid].domain = domain
+        syncfeed.emit("permissions", str(uuid), _db.permissions[uuid])
 
 
 def delete_permission(uuid: UUID, *, ctx: SessionContext | None = None) -> None:
@@ -155,6 +157,7 @@ def update_org_name(
         raise ValueError(f"Organization {uuid} not found")
     with _transaction("admin:update_org_name", ctx):
         _db.orgs[uuid].display_name = display_name
+        syncfeed.emit("orgs", str(uuid), _db.orgs[uuid])
 
 
 def delete_org(uuid: UUID, *, ctx: SessionContext | None = None) -> None:
@@ -180,6 +183,9 @@ def add_permission_to_org(
 
     with _transaction("admin:add_permission_to_org", ctx):
         _db.permissions[permission_uuid].orgs[org_uuid] = True
+        syncfeed.emit(
+            "permissions", str(permission_uuid), _db.permissions[permission_uuid]
+        )
 
 
 def remove_permission_from_org(
@@ -197,6 +203,9 @@ def remove_permission_from_org(
 
     with _transaction("admin:remove_permission_from_org", ctx):
         _db.permissions[permission_uuid].orgs.pop(org_uuid, None)
+        syncfeed.emit(
+            "permissions", str(permission_uuid), _db.permissions[permission_uuid]
+        )
 
 
 def create_role(role: Role, *, ctx: SessionContext | None = None) -> None:
@@ -220,6 +229,7 @@ def update_role_name(
         raise ValueError(f"Role {uuid} not found")
     with _transaction("admin:update_role_name", ctx):
         _db.roles[uuid].display_name = display_name
+        syncfeed.emit("roles", str(uuid), _db.roles[uuid])
 
 
 def add_permission_to_role(
@@ -235,6 +245,7 @@ def add_permission_to_role(
         raise ValueError(f"Permission {permission_uuid} not found")
     with _transaction("admin:add_permission_to_role", ctx):
         _db.roles[role_uuid].permissions[permission_uuid] = True
+        syncfeed.emit("roles", str(role_uuid), _db.roles[role_uuid])
 
 
 def remove_permission_from_role(
@@ -248,6 +259,7 @@ def remove_permission_from_role(
         raise ValueError(f"Role {role_uuid} not found")
     with _transaction("admin:remove_permission_from_role", ctx):
         _db.roles[role_uuid].permissions.pop(permission_uuid, None)
+        syncfeed.emit("roles", str(role_uuid), _db.roles[role_uuid])
 
 
 def delete_role(uuid: UUID, *, ctx: SessionContext | None = None) -> None:
@@ -302,6 +314,7 @@ def update_user_display_name(
             slug = slugify_name(display_name)
             if slug and not is_username_taken(slug, exclude_uuid=uuid):
                 user.preferred_username = slug
+        syncfeed.emit("users", str(uuid), user)
 
 
 def update_user_info(
@@ -380,6 +393,7 @@ def update_user_info(
             user.preferred_username = preferred_username
         if telephone is not _UNSET:
             user.telephone = telephone
+        syncfeed.emit("users", str(uuid), user)
 
 
 def update_user_role(
@@ -395,6 +409,7 @@ def update_user_role(
         raise ValueError(f"Role {role_uuid} not found")
     with _transaction("admin:update_user_role", ctx):
         _db.users[uuid].role_uuid = role_uuid
+        syncfeed.emit("users", str(uuid), _db.users[uuid])
 
 
 def delete_user(uuid: UUID, *, ctx: SessionContext | None = None) -> None:
@@ -429,6 +444,7 @@ def update_credential_sign_count(
         _db.credentials[uuid].sign_count = sign_count
         if last_used:
             _db.credentials[uuid].last_used = last_used
+        syncfeed.emit("credentials", str(uuid), _db.credentials[uuid])
 
 
 def delete_credential(
@@ -476,6 +492,7 @@ def update_session(
             s.validated = validated
         if issuer is not None:
             s.issuer = issuer
+        syncfeed.emit("sessions", key, s)
 
 
 def delete_session(
@@ -598,6 +615,9 @@ def login(
         # Update credential
         _db.credentials[credential_uuid].sign_count = sign_count
         _db.credentials[credential_uuid].last_used = now
+        syncfeed.emit(
+            "credentials", str(credential_uuid), _db.credentials[credential_uuid]
+        )
     return token
 
 
@@ -625,6 +645,9 @@ def oidc_login(
         # Update credential
         _db.credentials[credential_uuid].sign_count = sign_count
         _db.credentials[credential_uuid].last_used = now
+        syncfeed.emit(
+            "credentials", str(credential_uuid), _db.credentials[credential_uuid]
+        )
 
 
 def create_credential_session(
@@ -714,9 +737,10 @@ def update_domain(
     *,
     rp_name: str | None,
     origins: dict[str, bool | OriginEntry],
+    remote: RemoteConfig | None = None,
     ctx: SessionContext | None = None,
 ) -> None:
-    """Replace a domain's rp_name and origins table (wholesale).
+    """Replace a domain's rp_name, origins table and remote (wholesale).
 
     The rp-id itself is immutable: credentials are stamped with it, so
     changing it would orphan them — delete and recreate the domain instead.
@@ -728,6 +752,7 @@ def update_domain(
     with _transaction("admin:update_domain", ctx):
         domain.rp_name = rp_name
         domain.origins = origins
+        domain.remote = remote
 
 
 def delete_domain(rp_id: str, *, ctx: SessionContext | None = None) -> None:

@@ -18,6 +18,71 @@ const title = computed(() =>
 // compares against it, and hosts are case-insensitive)
 const dialogRpId = computed(() => (props.dialog.data?.rp_id || '').trim().toLowerCase())
 
+// --- Remote (satellite) backing ---
+//
+// A remote domain is served from another paskia instance: this one keeps a
+// RAM-only read replica for fast local session checks and forwards
+// mutations. The remote must accept our sync token via its
+// PASKIA_SYNC_TOKENS environment variable. An auth host (the remote's) is
+// required — profile, admin and sign-in pages live there.
+const remoteEnabled = computed({
+  get: () => !!props.dialog.data?.remote,
+  set: on => {
+    const d = props.dialog.data
+    if (!d) return
+    d.remote = on ? { url: '', token: '', cache_ttl: 60, refresh_interval: 300 } : null
+  },
+})
+
+const remoteUrlInvalid = computed(() => {
+  const url = props.dialog.data?.remote?.url?.trim()
+  if (!url) return false
+  return !/^https?:\/\/[^\s/]+/.test(url)
+})
+
+// Remote domains must mark an auth host (the server rejects the save)
+const remoteMissingAuthHost = computed(
+  () => !!props.dialog.data?.remote && !props.dialog.data?.auth_host
+)
+
+// --- Uplink verification ---
+// Fetch the remote's /auth/api/settings (CORS-open), like the origin
+// connectivity probes: proves reachability, that the peer is a paskia
+// instance, and that it serves this very domain authoritatively — not as
+// a satellite itself (nested satellites are not supported). Results are
+// warnings, never submit blockers (the remote may not be deployed yet).
+const uplinkCheck = ref(null) // null|validating|valid|unreachable|mismatch|nested
+let uplinkTimer = null
+let uplinkSeq = 0
+watch(
+  () => [props.dialog.data?.remote?.url, dialogRpId.value],
+  () => {
+    clearTimeout(uplinkTimer)
+    uplinkCheck.value = null
+    const url = props.dialog.data?.remote?.url?.trim().replace(/\/+$/, '')
+    if (!url || remoteUrlInvalid.value) return
+    uplinkTimer = setTimeout(() => checkUplink(url), 600)
+  },
+  { immediate: true }
+)
+
+async function checkUplink(url) {
+  const seq = ++uplinkSeq
+  uplinkCheck.value = 'validating'
+  try {
+    const response = await fetch(`${url}/auth/api/settings`, {
+      headers: { Accept: 'application/json' },
+    })
+    if (seq !== uplinkSeq) return // url/rp-id changed while fetching
+    if (!response.ok) throw new Error('not ok')
+    const data = await response.json()
+    uplinkCheck.value =
+      data.rp_id !== dialogRpId.value ? 'mismatch' : data.remote ? 'nested' : 'valid'
+  } catch {
+    if (seq === uplinkSeq) uplinkCheck.value = 'unreachable'
+  }
+}
+
 // Block submit on hard errors: malformed entries, an over-cap related
 // list (the server rejects the save), a save that would lock the admin
 // out of the domain they are using, or validation still in flight.
@@ -31,6 +96,8 @@ const isValidationInvalid = computed(() => {
   if (relatedEntries.value.length > 5) return true
   if (d.isNew && !isWellFormedDomain(d.rp_id || '')) return true
   if (lockoutWarning.value) return true
+  if (remoteUrlInvalid.value || remoteMissingAuthHost.value) return true
+  if (d.remote && !d.remote.url?.trim()) return true
   return false
 })
 
@@ -377,6 +444,7 @@ function onDocumentClick(e) {
 onMounted(() => document.addEventListener('click', onDocumentClick))
 onBeforeUnmount(() => {
   document.removeEventListener('click', onDocumentClick)
+  clearTimeout(uplinkTimer)
   for (const t of originValidateTimers.values()) clearTimeout(t)
   originValidateTimers.clear()
 })
@@ -515,6 +583,38 @@ function onRemoveOrigin(i) {
     <p class="small muted">
       Only the listed sites may sign in with {{ dialog.data.rp_id }} passkeys. Wildcards may be used: <strong>**.{{ dialog.data.rp_id }}</strong> allows the whole domain, <strong>*.{{ dialog.data.rp_id }}</strong> only a single subdomain level.<template v-if="relatedEntries.length"> 🔗 means related host requiring WebAuthn ROR setup.</template><template v-if="dialog.data.auth_host"> 🔑 is the dedicated Paskia host for all account management.</template>
     </p>
+
+    <div class="origin-label">
+      <label class="remote-toggle">
+        <input type="checkbox" v-model="remoteEnabled" />
+        Remote instance (satellite mode)
+      </label>
+    </div>
+    <template v-if="dialog.data.remote">
+      <label>Remote URL
+        <input v-model="dialog.data.remote.url" placeholder="https://auth.example.com" data-form-type="other" :class="{ 'input-error': remoteUrlInvalid }" />
+      </label>
+      <p v-if="remoteUrlInvalid" class="small error">Must be an http(s) URL.</p>
+      <p v-else-if="uplinkCheck === 'validating'" class="small muted">Checking the uplink…</p>
+      <p v-else-if="uplinkCheck === 'valid'" class="small">✓ Uplink verified — the remote serves this domain authoritatively.</p>
+      <p v-else-if="uplinkCheck === 'unreachable'" class="small">The remote is unreachable — the uplink cannot be verified. Save anyway only if it is not deployed yet.</p>
+      <p v-else-if="uplinkCheck === 'mismatch'" class="small error">The remote does not serve {{ dialogRpId }} — check the URL. Connect directly to the authoritative instance.</p>
+      <p v-else-if="uplinkCheck === 'nested'" class="small error">The remote is itself a satellite for this domain — nested satellites are not supported. Point directly at the authoritative instance.</p>
+      <p v-if="remoteMissingAuthHost" class="small error">A remote domain must mark an auth host above — profile, admin and sign-in pages live there (typically the remote's own site).</p>
+      <label>Sync token
+        <input v-model="dialog.data.remote.token" type="password" placeholder="Token in the remote's PASKIA_SYNC_TOKENS" autocomplete="off" data-form-type="other" />
+      </label>
+      <p class="small muted">Accepted by the remote via its PASKIA_SYNC_TOKENS environment variable.<template v-if="!dialog.data.isNew"> Leave empty to keep the stored token.</template></p>
+      <label>Staleness limit (cache TTL, seconds)
+        <input v-model.number="dialog.data.remote.cache_ttl" type="number" min="1" />
+      </label>
+      <label>Full re-sync interval (seconds)
+        <input v-model.number="dialog.data.remote.refresh_interval" type="number" min="30" />
+      </label>
+      <p class="small muted">
+        Session checks run locally against a RAM replica of the remote (sub-millisecond). If the connection is down longer than the staleness limit, checks fail closed (503).
+      </p>
+    </template>
   </AdminDialog>
 </template>
 
@@ -540,4 +640,7 @@ function onRemoveOrigin(i) {
   border-color: var(--color-error);
   background: var(--color-error-bg, rgba(239, 68, 68, 0.05));
 }
+
+.remote-toggle { display: flex; align-items: center; gap: var(--space-xs); font-weight: 600; font-size: 0.95rem; }
+.remote-toggle input { width: auto; }
 </style>
