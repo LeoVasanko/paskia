@@ -31,7 +31,13 @@ const clientSecret = ref(null)
 // Computed
 const clientId = computed(() => props.client?.client_id || props.client?.uuid || '')
 // One discovery URL per domain (the OIDC provider is instance-global;
-// any configured host works — the RP must use its chosen one consistently)
+// any configured host works — the RP must use its chosen one consistently).
+// Loopback origins are only useful for local development / backend-to-backend
+// calls and don't match a public rp-id, so hide them when a public URL exists.
+function isLoopback(url) {
+  const h = url.hostname
+  return h === 'localhost' || h.endsWith('.localhost') || h === '127.0.0.1' || h === '::1' || h === '[::1]'
+}
 const discoveryUrls = computed(() => {
   const origins = new Set()
   for (const d of props.domains || []) {
@@ -39,7 +45,10 @@ const discoveryUrls = computed(() => {
     if (url) origins.add(url.origin)
   }
   if (!origins.size) origins.add(new URL(authStore.settings.auth_site_url).origin)
-  return [...origins].sort().map(o => `${o}/.well-known/openid-configuration`)
+  let list = [...origins]
+  const publicList = list.filter(o => !isLoopback(new URL(o)))
+  if (publicList.length) list = publicList
+  return list.sort().map(o => `${o}/.well-known/openid-configuration`)
 })
 const iconUrl = computed(() => authSitePath('/favicon.ico'))
 
@@ -158,14 +167,13 @@ defineExpose({ focusFirstElement })
             <span v-else class="small muted">(only stored in hashed form)</span>
           </dd>
 
-          <dt class="discovery-dt">Auto Discovery URL
-            <span v-if="discoveryUrls.length > 1" class="small muted">Any one — pick the site your users should log in on, and use it consistently.</span>
-          </dt>
+          <dt>Auto Discovery URL</dt>
           <dd class="discovery-dd">
             <span class="discovery-urls">
               <output v-for="url in discoveryUrls" :key="url" @click="copyText(url, 'OpenID Connect Auto Discovery URL')" title="Click to copy">{{ url }}</output>
             </span>
           </dd>
+          <p v-if="discoveryUrls.length > 1" class="small muted discovery-hint">Any one — pick the site your users should log in on, and use it consistently.</p>
 
           <dt>Icon URL</dt>
           <dd>
@@ -275,20 +283,15 @@ defineExpose({ focusFirstElement })
   min-width: 0;
 }
 
-.discovery-dt {
-  white-space: normal;
-  max-width: 20em;
-}
-
-.discovery-dt .small {
-  display: block;
-  font-weight: normal;
-}
-
 .discovery-dd {
   flex-direction: column;
   align-items: stretch;
   gap: 0.25rem;
+}
+
+.discovery-hint {
+  grid-column: 1 / -1;
+  margin: 0;
 }
 
 .discovery-urls {
