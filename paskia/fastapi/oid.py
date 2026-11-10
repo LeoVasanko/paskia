@@ -16,18 +16,19 @@ from datetime import UTC, datetime
 from uuid import UUID
 
 import base64url
-from fastapi import Depends, FastAPI, Form, HTTPException, Request
+from fastapi import Depends, Form, HTTPException, Request
 from fastapi.responses import JSONResponse
 from fastapi.security import HTTPBearer
 
 from paskia import authcode, db, satellite
 from paskia.db.structs import OIDC, Session
+from paskia.fastapi.strictapp import strict_app
 from paskia.util import avatar, oidjwt
 from paskia.util.crypto import hash_secret
 
 _logger = logging.getLogger(__name__)
 
-app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
+app = strict_app()
 
 
 @app.middleware("http")

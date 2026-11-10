@@ -11,13 +11,14 @@ import logging
 from datetime import datetime
 
 import msgspec
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import WebSocket, WebSocketDisconnect
 
 from paskia import db, syncfeed
+from paskia.fastapi.strictapp import strict_app
 
 _logger = logging.getLogger(__name__)
 
-app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
+app = strict_app()
 
 
 async def _send(ws: WebSocket, message: dict) -> None:

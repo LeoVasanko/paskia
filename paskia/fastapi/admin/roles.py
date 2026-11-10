@@ -1,14 +1,15 @@
 from uuid import UUID
 
-from fastapi import Body, FastAPI, HTTPException, Request
+from fastapi import Body, HTTPException, Request
 
 from paskia import db
 from paskia.fastapi import authz
 from paskia.fastapi.admin.errors import install_error_handlers
 from paskia.fastapi.session import AUTH_COOKIE
+from paskia.fastapi.strictapp import strict_app
 from paskia.util import permutil
 
-app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
+app = strict_app()
 
 install_error_handlers(app)
 

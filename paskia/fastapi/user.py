@@ -2,7 +2,6 @@ from uuid import UUID
 
 from fastapi import (
     Body,
-    FastAPI,
     File,
     HTTPException,
     Request,
@@ -21,10 +20,11 @@ from paskia.domains import current_domain
 from paskia.fastapi import authz, session
 from paskia.fastapi.response import MsgspecResponse
 from paskia.fastapi.session import AUTH_COOKIE
+from paskia.fastapi.strictapp import strict_app
 from paskia.util import avatar
 from paskia.util.apistructs import ApiCreateLinkResponse
 
-app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
+app = strict_app()
 
 
 @app.middleware("http")

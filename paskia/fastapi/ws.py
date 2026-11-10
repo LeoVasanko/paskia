@@ -3,7 +3,7 @@ from datetime import UTC, datetime
 from urllib.parse import urlencode
 from uuid import UUID
 
-from fastapi import FastAPI, WebSocket
+from fastapi import WebSocket
 
 from paskia import authcode, db
 from paskia.authcode import CookieCode, OIDCCode
@@ -12,6 +12,7 @@ from paskia.db.structs import Session
 from paskia.domains import current_domain
 from paskia.fastapi import authz, remote
 from paskia.fastapi.session import AUTH_COOKIE, infodict
+from paskia.fastapi.strictapp import strict_app
 from paskia.fastapi.wschat import (
     authenticate_and_login,
     authenticate_chat,
@@ -34,7 +35,7 @@ def create_exchange_code(session_key: str) -> str:
 
 
 # Create a FastAPI subapp for WebSocket endpoints
-app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
+app = strict_app()
 
 # Mount the remote auth WebSocket endpoints
 app.mount("/remote-auth", remote.app)

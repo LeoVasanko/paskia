@@ -9,7 +9,7 @@ domain registry is rebuilt after each change so it takes effect
 immediately.
 """
 
-from fastapi import Body, FastAPI, Request
+from fastapi import Body, Request
 
 from paskia import db, domains
 from paskia.db.structs import Config, DomainConfig, OriginEntry, RemoteConfig
@@ -17,11 +17,12 @@ from paskia.fastapi import authz
 from paskia.fastapi.admin.errors import install_error_handlers
 from paskia.fastapi.response import MsgspecResponse
 from paskia.fastapi.session import AUTH_COOKIE
+from paskia.fastapi.strictapp import strict_app
 from paskia.sansio import Passkey
 from paskia.util import hostutil
 from paskia.util.apistructs import ApiDomain
 
-app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
+app = strict_app()
 
 install_error_handlers(app)
 

@@ -5,7 +5,6 @@ from uuid import UUID
 
 from fastapi import (
     Depends,
-    FastAPI,
     HTTPException,
     Query,
     Request,
@@ -21,6 +20,7 @@ from paskia.domains import current_domain
 from paskia.fastapi import authz, session, user
 from paskia.fastapi.response import MsgspecResponse
 from paskia.fastapi.session import AUTH_COOKIE, AUTH_COOKIE_NAME, get_client_ip
+from paskia.fastapi.strictapp import strict_app
 from paskia.util import hostutil, htmlutil, passphrase, permutil, userinfo
 from paskia.util.apistructs import (
     ApiCheckUserResponse,
@@ -36,7 +36,7 @@ from paskia.util.crypto import hash_secret
 
 bearer_auth = HTTPBearer(auto_error=False)
 
-app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
+app = strict_app()
 
 app.mount("/user", user.app)
 
