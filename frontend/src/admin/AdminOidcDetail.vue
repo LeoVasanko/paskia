@@ -60,12 +60,11 @@ const clientGroups = computed(() => {
 })
 
 // Initialize form data from props
-watch(() => props.client, (c) => {
-  if (c) {
-    name.value = c.name || ''
-    redirectUris.value = Array.isArray(c.redirect_uris) ? c.redirect_uris.join('\n') : (c.redirect_uris || '')
-    clientSecret.value = c.client_secret || null
-  }
+watch(() => props.client, (c, previous) => {
+  if (!c || (previous && c.client_id === previous.client_id && c.uuid === previous.uuid)) return
+  name.value = c.name || ''
+  redirectUris.value = Array.isArray(c.redirect_uris) ? c.redirect_uris.join('\n') : (c.redirect_uris || '')
+  clientSecret.value = c.client_secret || null
 }, { immediate: true })
 
 // Copy-to-clipboard helper

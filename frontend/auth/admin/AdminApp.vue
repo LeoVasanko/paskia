@@ -399,8 +399,7 @@ async function toggleRolePermission(role, pid, checked) {
 
 // Permission actions
 async function performPermissionDeletion(permissionUuid) {
-  const params = new URLSearchParams({ permission_uuid: permissionUuid })
-  await apiJson(`/auth/api/admin/permission?${params.toString()}`, { method: 'DELETE' })
+  await apiJson(`/auth/api/admin/permissions/${permissionUuid}`, { method: 'DELETE' })
   await loadAdminData()
 }
 
@@ -535,7 +534,7 @@ async function handleOidcSave(data) {
     if (client_secret) {
       const secret_hash = await sha256Hex(client_secret)
       if (isNew) {
-        await apiJson('/auth/api/admin/oidc-clients', { method: 'POST', body: { client_id, secret_hash, name, redirect_uris } })
+        await apiJson('/auth/api/admin/oidc-clients/', { method: 'POST', body: { client_id, secret_hash, name, redirect_uris } })
       } else {
         await apiJson(`/auth/api/admin/oidc-clients/${client_id}`, { method: 'PATCH', body: { name, redirect_uris, secret_hash } })
       }
@@ -778,7 +777,7 @@ async function submitDialog() {
 
       // Close dialog immediately, then perform async operation
       closeDialog()
-      apiJson('/auth/api/admin/orgs', { method: 'POST', body: { display_name: name, permissions: [] } })
+      apiJson('/auth/api/admin/orgs/', { method: 'POST', body: { display_name: name, permissions: [] } })
         .then(() => {
           authStore.showMessage(`Organization "${name}" created.`, 'success', 2500)
           loadAdminData()
@@ -874,13 +873,12 @@ async function submitDialog() {
         return // No changes
       }
 
-      // Always use PATCH with permission_uuid
-      const params = new URLSearchParams({ permission_uuid: permission.uuid })
+      const params = new URLSearchParams()
       if (newScope !== permission.scope) params.set('scope', newScope)
       if (newDisplay !== permission.display_name) params.set('display_name', newDisplay)
       if (newDomain !== oldDomain) params.set('domain', newDomain || '')
 
-      apiJson(`/auth/api/admin/permission?${params.toString()}`, { method: 'PATCH' })
+      apiJson(`/auth/api/admin/permissions/${permission.uuid}?${params.toString()}`, { method: 'PATCH' })
         .then(() => {
           authStore.showMessage(`Permission "${newDisplay}" updated.`, 'success', 2500)
           loadAdminData()
@@ -896,7 +894,7 @@ async function submitDialog() {
 
       // Close dialog immediately, then perform async operation
       closeDialog()
-      apiJson('/auth/api/admin/permissions', { method: 'POST', body: { scope, display_name, domain: domain || undefined } })
+      apiJson('/auth/api/admin/permissions/', { method: 'POST', body: { scope, display_name, domain: domain || undefined } })
         .then(() => {
           authStore.showMessage(`Permission "${display_name}" created.`, 'success', 2500)
           loadAdminData()
