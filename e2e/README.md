@@ -85,6 +85,7 @@ e2e/
     ├── global-teardown.ts    # Cleanup
     ├── 10-passkey.spec.ts    # Registration, authentication, session tests
     ├── 20-api-auth.spec.ts   # API-mode iframe flows (401/403/reauth)
+    ├── 40-admin.spec.ts      # Admin UI CRUD and permission workflows
     ├── 50-multidomain.spec.ts# Multi-domain dispatch, related origins, auth hosts, remote login
     ├── 99-logout.spec.ts     # Logout (runs last)
     └── fixtures/
@@ -110,6 +111,13 @@ e2e/
 - User info retrieval (`/auth/api/user-info`)
 - Logout (`/auth/api/logout`)
 - Invalid/missing token rejection
+
+### Admin Application
+- Permission creation, editing, deletion, and organization/role grant matrices
+- Organization, role, and user management, including registration links
+- OIDC clients, secret rotation, redirect URIs, and group permissions
+- Domain management and satellite-panel uplink validation
+- HTTP response assertions alongside visible UI state
 
 ### Multi-Domain
 - Host-based domain dispatch (`localhost` vs `test.localhost`, 421 for unknown hosts)

@@ -40,6 +40,7 @@ export default defineConfig({
         ...devices['Desktop Chrome'],
         // Chrome-specific settings for virtual authenticator
         launchOptions: {
+          executablePath: process.env.PLAYWRIGHT_EXECUTABLE_PATH || undefined,
           args: [
             '--enable-features=WebAuthenticationEnterpriseAttestation',
           ],
