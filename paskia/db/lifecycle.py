@@ -86,8 +86,9 @@ def _resolve_uuid_label(
     return None
 
 
-# The OIDC signing key is stored at oidc.key.
-_OIDC_KEY_PATH = re.compile(r"^oidc\.key$")
+# The OIDC signing key is stored at oidc.key; satellite link key material
+# at uplinks/satellite_links.<id>.key.
+_SECRET_KEY_PATH = re.compile(r"^(oidc\.key|(uplinks|satellite_links)\.[^.]+\.key)$")
 
 
 @kanta.logfmt
@@ -98,10 +99,10 @@ def format_log_uuid(
     current: Annotated[dict, "post"] | None = None,
 ) -> Optional[str]:  # noqa: UP045
     """Format UUID values/keys/actor labels and censor secrets in transaction logs."""
-    # Censor sensitive OIDC key material regardless of value type, but only
+    # Censor sensitive key material regardless of value type, but only
     # when formatting the value: path components are passed with the component
     # itself as value and must stay visible ("oidc.key = <hidden>").
-    if _OIDC_KEY_PATH.fullmatch(path) and value != "key":
+    if _SECRET_KEY_PATH.fullmatch(path) and value != "key":
         return "<hidden>"
 
     if not isinstance(value, str):

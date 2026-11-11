@@ -23,11 +23,12 @@ from paskia.db.structs import (
     Org,
     OriginEntry,
     Permission,
-    RemoteConfig,
     ResetToken,
     Role,
+    SatelliteLink,
     Session,
     SessionContext,
+    Uplink,
     User,
 )
 from paskia.util.crypto import hash_secret
@@ -563,6 +564,74 @@ def create_reset_token(
     return passphrase
 
 
+def create_satellite_link(
+    link_id: str,
+    rp_ids: list[str],
+    key: bytes,
+    label: str = "",
+    *,
+    ctx: SessionContext | None = None,
+) -> None:
+    """Commit a link after quantumpipe registration completes."""
+    with _transaction("satellite:register", ctx):
+        _db.satellite_links[link_id] = SatelliteLink(
+            rp_ids=list(rp_ids), key=key, label=label, created=datetime.now(UTC)
+        )
+
+
+def set_satellite_link_scope(
+    link_id: str, rp_ids: list[str], *, ctx: SessionContext | None = None
+) -> None:
+    """Adjust a link's scope; the new domain set is pushed over the live link."""
+    link = _db.satellite_links.get(link_id)
+    if link is None:
+        raise ValueError("Satellite link not found")
+    with _transaction("admin:satellite_link_scope", ctx):
+        link.rp_ids = list(rp_ids)
+
+
+def delete_satellite_link(link_id: str, *, ctx: SessionContext | None = None) -> None:
+    """Revoke a satellite link; its live connections are dropped by the caller."""
+    if link_id not in _db.satellite_links:
+        raise ValueError("Satellite link not found")
+    with _transaction("admin:delete_satellite_link", ctx):
+        del _db.satellite_links[link_id]
+
+
+def create_uplink(
+    uplink_id: str, uplink: Uplink, domains: dict[str, DomainConfig]
+) -> None:
+    """Registration commit on the satellite: store the uplink and the
+    domain set the upstream pushed (already validated by the caller)."""
+    with _transaction("satellite:register"):
+        _db.uplinks[uplink_id] = uplink
+        uplink.uplink_id = uplink_id
+        _db.config.domains.update(domains)
+
+
+def apply_uplink_domains(uplink_id: str, domains: dict[str, DomainConfig]) -> None:
+    """Replace the domain set of an uplink with the upstream's push.
+
+    ``domains`` is the uplink's full accepted set (additions, updates and
+    removals relative to what the config currently holds for the link);
+    validation happens in the caller (satellite.apply_uplink_domains).
+    """
+    with _transaction("satellite:domains"):
+        for rp_id, domain in list(_db.config.domains.items()):
+            if domain.remote is not None and domain.remote.link == uplink_id:
+                del _db.config.domains[rp_id]
+        _db.config.domains.update(domains)
+
+
+def delete_uplink(uplink_id: str) -> None:
+    """Unlink an uplink: drop it and every domain it serves."""
+    with _transaction("satellite:unlink"):
+        _db.uplinks.pop(uplink_id, None)
+        for rp_id, domain in list(_db.config.domains.items()):
+            if domain.remote is not None and domain.remote.link == uplink_id:
+                del _db.config.domains[rp_id]
+
+
 # -------------------------------------------------------------------------
 # Composite operations (used by app code)
 # -------------------------------------------------------------------------
@@ -737,28 +806,39 @@ def update_domain(
     *,
     rp_name: str | None,
     origins: dict[str, bool | OriginEntry],
-    remote: RemoteConfig | None = None,
     ctx: SessionContext | None = None,
 ) -> None:
-    """Replace a domain's rp_name, origins table and remote (wholesale).
+    """Replace a domain's rp_name and origins table (wholesale).
 
     The rp-id itself is immutable: credentials are stamped with it, so
     changing it would orphan them — delete and recreate the domain instead.
-    The caller must validate the resulting combined configuration.
+    The caller must validate the resulting combined configuration. Remote
+    (satellite-served) domains are uplink-managed and never pass through
+    here.
     """
     domain = _db.config.domains.get(rp_id)
     if domain is None:
         raise ValueError(f"Domain {rp_id} not found")
+    if domain.remote is not None:
+        raise ValueError(
+            f"Domain '{rp_id}' is served from an uplink — managed there, "
+            "not by local edits"
+        )
     with _transaction("admin:update_domain", ctx):
         domain.rp_name = rp_name
         domain.origins = origins
-        domain.remote = remote
 
 
 def delete_domain(rp_id: str, *, ctx: SessionContext | None = None) -> None:
-    """Delete a domain. Refused for the last domain or while credentials remain."""
+    """Delete a domain. Refused for the last domain, while credentials
+    remain, or for remote domains (those are uplink-managed — unlink or
+    have the upstream narrow the link's scope)."""
     if rp_id not in _db.config.domains:
         raise ValueError(f"Domain {rp_id} not found")
+    if _db.config.domains[rp_id].remote is not None:
+        raise ValueError(
+            f"Domain '{rp_id}' is served from an uplink — unlink it instead"
+        )
     if len(_db.config.domains) <= 1:
         raise ValueError("Cannot delete the last remaining domain")
     if any(c.rp_id == rp_id for c in _db.credentials.values()):

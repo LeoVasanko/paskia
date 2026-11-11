@@ -9,6 +9,7 @@ from fastapi_vue import env, server, teleport
 from fastapi_vue.logging import setup_logging
 from kanta import Kanta
 
+import paskia.db.operations as ops_db
 from paskia.db import legacy
 from paskia.db.bootstrap import bootstrap, log_reset_link
 from paskia.db.paths import db_file_path
@@ -28,6 +29,7 @@ EPILOG = """\
 Examples:
   paskia init example.com "Example Corporation"
   paskia migrate example.com
+  paskia satellite wss://key@auth.example.com
   paskia --listen 4402 --save
   paskia
 """
@@ -190,6 +192,70 @@ def cmd_migrate(args: argparse.Namespace) -> None:
     print(f"✅ {action} {db_file_path()} (domains: {', '.join(rp_ids)})")
 
 
+def cmd_satellite(args: argparse.Namespace) -> None:
+    """Register this instance as a satellite using an upstream's link URL.
+
+    The one setup step for a satellite-only installation: with no database
+    yet, one is created first (default localhost domain and admin
+    bootstrap, like 'paskia init'). The registration handshake runs right
+    here — the URL's initial key is spent, the permanent link credential
+    and the pushed domains are stored. Afterwards 'paskia' serves the
+    linked domains.
+    """
+    from paskia import satellite  # noqa: PLC0415 (heavy deps: fastapi, websockets)
+
+    db_path = db_file_path()
+    fresh = not db_path.exists()
+    # A Kanta of our own, bound to the global db object so db operations
+    # (register_uplink's commits) write through it — like lifecycle's, but
+    # constructed here so the path follows the current directory.
+    kanta = Kanta(str(db_path), ops_db._db)
+    ops_db._db._store = kanta
+    result = {}
+    if fresh:
+        # Satellite-only bootstrap: default config (localhost domain) and
+        # the standard admin seed.
+        @kanta.bootstrap
+        def _bootstrap(data: DB) -> None:
+            result["passphrase"] = bootstrap(data, config=Config())
+
+    async def _register():
+        try:
+            await kanta.open()
+        except Exception as e:
+            raise SystemExit(
+                f"Could not open {db_path} (is a server running?): {e}"
+            ) from e
+        try:
+            return await satellite.register_uplink(args.url)
+        finally:
+            await kanta.close()
+
+    try:
+        info = asyncio.run(_register())
+    except (ValueError, RuntimeError) as e:
+        raise SystemExit(f"Registration failed: {e}") from e
+
+    domains_list = (
+        ", ".join(info["domains"])
+        or "(none yet — the upstream can scope the link later)"
+    )
+    print(f"🛰  Linked to {info['url']} — serving: {domains_list}")
+    for rp_id, reason in (info.get("rejected") or {}).items():
+        print(f"⚠️  Domain {rp_id} rejected: {reason}")
+    # A successful CLI run means the server was not holding the database
+    # open — the linked domains start serving on the next start.
+    print("Start the server to serve them: paskia")
+    if fresh:
+        print("Created the database.")
+        configure_domains(listen=None)
+        registry = build_registry(_load_stored_config(db_path))
+        log_reset_link(
+            registry.get("localhost").reset_link_url(result["passphrase"]),
+            "Admin registration (for the local admin interface):",
+        )
+
+
 def cmd_serve(args: argparse.Namespace) -> None:
     """Open the combined database and serve all configured domains."""
     db_path = db_file_path()
@@ -255,7 +321,7 @@ def main():
         "--save",
         action="store_true",
         help="Save --listen to the database for future runs. "
-        "Use --listen \"\" to clear the stored endpoints.",
+        'Use --listen "" to clear the stored endpoints.',
     )
 
     init_parser = argparse.ArgumentParser(
@@ -297,11 +363,28 @@ def main():
         "in the current directory is selected automatically.",
     )
 
+    satellite_parser = argparse.ArgumentParser(
+        prog="paskia satellite",
+        description="Register this instance as a satellite of an upstream "
+        "paskia instance, using the link URL minted in the upstream's admin "
+        "interface (Satellites panel). The registration handshake runs "
+        "immediately; afterwards 'paskia' serves the linked domains. With no "
+        "database yet, one is created first — this is the whole setup of a "
+        "satellite-only installation.",
+    )
+    satellite_parser.add_argument(
+        "url",
+        help="The link URL (wss://<key>@<auth-host>) from the upstream's "
+        "Satellites panel. Single-use; valid for 10 minutes from minting.",
+    )
+
     argv = sys.argv[1:]
     if argv and argv[0] == "init":
         cmd_init(init_parser.parse_args(argv[1:]))
     elif argv and argv[0] == "migrate":
         cmd_migrate(migrate_parser.parse_args(argv[1:]))
+    elif argv and argv[0] == "satellite":
+        cmd_satellite(satellite_parser.parse_args(argv[1:]))
     else:
         cmd_serve(parser.parse_args(argv))
 

@@ -324,7 +324,9 @@ def test_migrate_merges_kantadb_into_existing_database(run_cli, tmp_path):
 def test_migrate_merge_label_combines_rp_ids(run_cli, tmp_path):
     """A multi-domain source merges in one transaction, rp-ids slash-joined."""
     run_cli("init", "company.com")
-    src = write_kantadb(tmp_path, {"one.com": "One", "two.com": "Two"}, name="x.kantadb")
+    src = write_kantadb(
+        tmp_path, {"one.com": "One", "two.com": "Two"}, name="x.kantadb"
+    )
 
     run_cli("migrate", str(src))
 

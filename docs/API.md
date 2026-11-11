@@ -76,8 +76,15 @@ E.g. Org admin cannot see anything of the other orgs that he has no admin access
 | POST | /auth/api/admin/domains/ | Create domain `{rp_id, rp_name?, origins?, related?}` | 200/400/401/403 |
 | PATCH | /auth/api/admin/domains/{rp_id} | Update domain rp_name/origins/related | 200/400/401/403 |
 | DELETE | /auth/api/admin/domains/{rp_id} | Delete domain (refused while credentials remain) | 200/400/401/403 |
+| GET | /auth/api/admin/satellites/ | List registered satellite links with live state | 200/401/403 |
+| POST | /auth/api/admin/satellites/ | Mint a satellite registration offer `{rp_ids}` — wss link URL, RAM-only, 10 min, single-use | 200/400/401/403 |
+| PATCH | /auth/api/admin/satellites/{id} | Adjust a link's domain scope (pushed over the live link) | 200/400/401/403 |
+| DELETE | /auth/api/admin/satellites/{id} | Revoke a satellite link (drops its connections) | 200/400/401/403 |
+| GET | /auth/api/admin/uplinks/ | List this instance's uplinks with served domains and live state | 200/401/403 |
+| POST | /auth/api/admin/uplinks/ | Register an uplink from a pasted link URL `{url}` (online handshake) | 200/400/401/403 |
+| DELETE | /auth/api/admin/uplinks/{id} | Unlink an uplink (drops it and its domains) | 200/400/401/403 |
 
-Domain endpoints require the `auth:admin` permission; writes additionally require recent authentication (5 minutes). Changes are validated cross-domain and apply immediately.
+Domain endpoints require the `auth:admin` permission; writes additionally require recent authentication (5 minutes). Changes are validated cross-domain and apply immediately. Remote (satellite-served) domains are uplink-managed and cannot be written here; see [Remote Proxy / Satellite](RemoteProxy.md) for the link model. The same applies to the satellite/uplink endpoints.
 
 `origins` is a single object keyed by all of the domain's sign-in sites. Entries *within* the rp-id domain are in-domain sites: bare hosts, wildcards under the rp-id following the shell-glob convention (`**.example.com` covers the apex and subdomains at any depth, `*.example.com` exactly one subdomain level — https only, any scheme and port under localhost; plain `*` is not accepted), or full origins when not https. Entries *outside* the rp-id domain are related origins that may assert this domain's rp-id (WebAuthn Related Origin Requests, max 5, no wildcards); those are published at `/.well-known/webauthn` on the rp-id host. An empty object allows nothing of the domain itself. A value of `true` marks presence; `{"auth_host": true}` additionally marks an in-domain entry as the domain's authentication host.
 

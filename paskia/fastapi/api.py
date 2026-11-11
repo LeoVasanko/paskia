@@ -163,6 +163,10 @@ async def check_user(
 
     No session cookie is read or written. Caller authentication is not required.
     """
+    if (proxied := await satellite.forward_request(request)) is not None:
+        # User lookups without a session need the user graph, which only
+        # the remote holds.
+        return proxied
     host = hostutil.normalize_host(request.headers.get("host"))
     data = satellite.store_for_host(host)
     try:
@@ -325,6 +329,10 @@ async def api_user_info(
     auth=AUTH_COOKIE,
 ):
     """Get full user profile including credentials and sessions."""
+    if (proxied := await satellite.forward_request(request)) is not None:
+        # The replica holds per-session contexts only, not the user graph —
+        # profile data is answered by the remote.
+        return proxied
     if auth is None:
         raise authz.AuthException(
             status_code=401,

@@ -428,15 +428,14 @@ class Session(msgspec.Struct, dict=True, omit_defaults=True):
     def store(self, last_seen: datetime) -> None:
         """Store this session in the database and record a visit.
 
-        Updates user.last_seen and user.visits. Must be called inside
-        a database transaction.
+        Updates user.last_seen and user.visits (instance-local stats, not
+        replicated). Must be called inside a database transaction.
         """
         _data = db.data()
         _data.sessions[self.key] = self
         _data.users[self.user_uuid].last_seen = last_seen
         _data.users[self.user_uuid].visits += 1
         syncfeed.emit("sessions", self.key, self)
-        syncfeed.emit("users", str(self.user_uuid), _data.users[self.user_uuid])
 
     def delete(self) -> None:
         """Delete this session from the database. Must be called inside a transaction."""
@@ -566,6 +565,49 @@ class ResetToken(msgspec.Struct, dict=True):
         return token, passphrase
 
 
+class SatelliteLink(msgspec.Struct, dict=True, omit_defaults=True):
+    """A registered satellite instance — the upstream side of a link.
+
+    Created by quantumpipe registration (fastapi/sync.py): the one-time
+    registration secret stays RAM-only; ``key`` is this side's persisted
+    composite credential for authenticated, encrypted resumptions.
+
+    ``rp_ids`` is the link's scope: the domains the satellite serves.
+    Adjustable at any time and pushed over the live link — no new
+    cryptographic setup is needed to change it. The sync feed carries only
+    in-scope sessions (each with its identity context) and credentials;
+    the user graph never replicates. Instance-local: never replicated.
+    """
+
+    created: datetime
+    rp_ids: list[str] = []  # the link's scope — adjust freely, pushed live
+    key: bytes = b""  # quantumpipe composite credential
+    label: str = ""  # the satellite's self-reported name (informational)
+
+
+class Uplink(msgspec.Struct, dict=True, omit_defaults=True):
+    """The satellite side of a link: the upstream this instance follows.
+
+    Created by the same registration; ``key`` is this side's quantumpipe
+    composite credential. ``url`` is the upstream's auth host base
+    (http(s)); the sync channel connects to its ``/auth/api/sync/ws``.
+    The domains this uplink serves live in ``config.domains`` marked with
+    ``RemoteConfig(link=<uplink id>)`` — pushed and maintained by the
+    upstream, never edited locally. ``uplink_id`` is the dict key, set on
+    load.
+    """
+
+    url: str  # upstream auth host base, e.g. "https://auth.example.com"
+    created: datetime
+    key: bytes = b""  # quantumpipe composite credential
+    cache_ttl: int = 60  # staleness bound (seconds) while the channel is down
+    refresh_interval: int = 300  # full re-sync cadence (seconds)
+
+    def __post_init__(self):
+        if not hasattr(self, "uplink_id"):
+            self.uplink_id: str = ""
+
+
 # -------------------------------------------------------------------------
 # OIDC Provider structures
 # -------------------------------------------------------------------------
@@ -643,18 +685,18 @@ class OriginEntry(msgspec.Struct, omit_defaults=True):
 
 
 class RemoteConfig(msgspec.Struct, omit_defaults=True):
-    """Upstream paskia instance backing a remote (satellite-served) domain.
+    """Marks a domain as satellite-served via an uplink (a ``db.uplinks``
+    dict key).
 
-    The satellite keeps a RAM-only read replica of the remote's tables and
+    The satellite keeps a RAM-only read replica fed by the uplink and
     answers session-dependent reads locally; mutations are forwarded. The
-    token authenticates the sync channel (the remote reads accepted tokens
-    from its PASKIA_SYNC_TOKENS environment, never from its database).
+    domain's rp-name, origins and auth host are pushed by the upstream and
+    applied verbatim — the satellite only validates them against its local
+    domains. Local edits are rejected; removing the domain means unlinking
+    the uplink or the upstream narrowing the link's scope.
     """
 
-    url: str  # e.g. "https://auth.example.com"
-    token: str = ""
-    cache_ttl: int = 60  # staleness bound (seconds) while the sync channel is down
-    refresh_interval: int = 300  # full re-sync cadence (seconds)
+    link: str = ""
 
 
 class DomainConfig(msgspec.Struct, omit_defaults=True):
@@ -710,6 +752,8 @@ class DB(msgspec.Struct, dict=True, omit_defaults=False):
     credentials: dict[UUID, Credential] = {}
     sessions: dict[str, Session] = {}
     reset_tokens: dict[str, ResetToken] = {}
+    satellite_links: dict[str, SatelliteLink] = {}  # upstream side of links
+    uplinks: dict[str, Uplink] = {}  # satellite side of links
     # OIDC provider data: one instance-global provider (single signing key
     # and client set); each request Host acts as an issuer alias.
     oidc: OIDC = msgspec.field(default_factory=OIDC)
@@ -732,6 +776,8 @@ class DB(msgspec.Struct, dict=True, omit_defaults=False):
             session.key = key
         for key, token in self.reset_tokens.items():
             token.key = key
+        for uplink_id, uplink in self.uplinks.items():
+            uplink.uplink_id = uplink_id
         # OIDC
         for uuid, client in self.oidc.clients.items():
             client.uuid = uuid
@@ -749,13 +795,19 @@ class DB(msgspec.Struct, dict=True, omit_defaults=False):
         Returns:
             SessionContext if valid, None if session not found, expired, or host mismatch
         """
-
         key = hash_secret("cookie", session_secret)
         try:
             s = self.sessions[key]
         except KeyError:
             return None
+        return self.session_ctx_for(s, host)
 
+    def session_ctx_for(self, s: Session, host: str | None) -> SessionContext | None:
+        """Full session context for a session object: host binding, then the
+        user/role/org/credential join with effective permissions. Sync
+        replicas override this to source the identity from the per-session
+        contexts the master pushes instead of local user tables.
+        """
         # OIDC sessions (client_uuid set) are not valid for cookie-based auth
         if s.client_uuid is not None:
             return None

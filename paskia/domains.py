@@ -14,7 +14,6 @@ domain are in-domain, entries outside it are related.
 
 from __future__ import annotations
 
-import asyncio
 import contextvars
 import logging
 import os
@@ -213,10 +212,6 @@ def validate_config(
 
     for rp_id, domain in config.domains.items():
         hostutil.validate_rp_id(rp_id)
-        if domain.remote is not None and not domain.remote.url.startswith(
-            ("https://", "http://")
-        ):
-            raise ValueError(f"Domain '{rp_id}': remote URL must be an http(s) URL")
 
         domain_auth_host: str | None = None
         related_count = 0
@@ -299,21 +294,6 @@ def validate_config(
                 f"domain '{related_hosts[hn]}'"
             )
 
-    # Several domains may share one remote instance (and its replica), but
-    # then its settings must be identical — a conflict would otherwise be
-    # resolved silently and arbitrarily.
-    remotes: dict[str, tuple[str, RemoteConfig]] = {}
-    for rp_id, domain in config.domains.items():
-        if domain.remote is None:
-            continue
-        prior = remotes.setdefault(domain.remote.url, (rp_id, domain.remote))
-        if prior[1] != domain.remote:
-            raise ValueError(
-                f"Domains '{prior[0]}' and '{rp_id}' share remote "
-                f"'{domain.remote.url}' with conflicting settings — a shared "
-                "remote must have one configuration"
-            )
-
 
 def sanitize_config(
     config: Config, *, related_origin_cap: int = DEFAULT_RELATED_ORIGIN_CAP
@@ -332,7 +312,6 @@ def sanitize_config(
         warnings.append(msg)
 
     domains: dict[str, DomainConfig] = {}
-    remotes_seen: dict[str, RemoteConfig] = {}
     for rp_id, domain in config.domains.items():
         try:
             hostutil.validate_rp_id(rp_id)
@@ -395,19 +374,13 @@ def sanitize_config(
             origins[key] = props
 
         if domain.remote is not None:
-            if not domain.remote.url.startswith(("https://", "http://")):
-                warn(f"Domain '{rp_id}': invalid remote URL — remote dropped")
+            if not domain.remote.link:
+                # Never valid (a v1 remote config decodes to this) — degrade
+                # to a plain local domain rather than failing to serve.
+                warn(f"Domain '{rp_id}': remote without an uplink — remote dropped")
                 remote = None
             else:
                 remote = domain.remote
-                prior = remotes_seen.setdefault(remote.url, remote)
-                if prior != remote:
-                    warn(
-                        f"Domain '{rp_id}': remote '{remote.url}' settings "
-                        "conflict with another domain's — aligned to the "
-                        "first configuration"
-                    )
-                    remote = prior
                 if not auth_seen:
                     warn(
                         f"Domain '{rp_id}': remote domain without an auth host — "
@@ -516,46 +489,6 @@ def _derive_site(
 
 _registry: DomainRegistry | None = None
 _listen: list[str] | None = None
-_rebuild_listeners: list = []
-_rebuild_tasks: set[asyncio.Task] = set()
-
-
-def add_rebuild_listener(fn) -> None:
-    """Register fn(registry), called after every init_registry rebuild."""
-    _rebuild_listeners.append(fn)
-
-
-def remove_rebuild_listener(fn) -> None:
-    if fn in _rebuild_listeners:
-        _rebuild_listeners.remove(fn)
-
-
-def _rebuild_done(task: asyncio.Task) -> None:
-    _rebuild_tasks.discard(task)
-    if not task.cancelled() and (exc := task.exception()) is not None:
-        logger.error("Registry rebuild listener failed: %s", exc)
-
-
-def _notify_rebuild(reg: DomainRegistry) -> None:
-    """Run rebuild listeners; schedule coroutines on the running loop.
-
-    Every serving context (lifespan, admin rebuild, tests) runs a loop.
-    Task references are held until completion so listeners are neither
-    garbage-collected mid-run nor silently failing.
-    """
-    for fn in _rebuild_listeners:
-        result = fn(reg)
-        if not asyncio.iscoroutine(result):
-            continue
-        try:
-            loop = asyncio.get_running_loop()
-        except RuntimeError:
-            result.close()
-            logger.warning("Rebuild listener %r skipped: no running event loop", fn)
-            continue
-        task = loop.create_task(result)
-        _rebuild_tasks.add(task)
-        task.add_done_callback(_rebuild_done)
 
 
 def configure(*, listen: list[str] | None = None) -> None:
@@ -596,7 +529,6 @@ def init_registry(config: Config) -> DomainRegistry:
     """Build and install the global registry from a combined configuration."""
     global _registry
     _registry = build(config)
-    _notify_rebuild(_registry)
     return _registry
 
 

@@ -24,6 +24,7 @@ dependencies = [
     "fastapi-vue~=1.7.2",
     "kanta>=0.9.2",
     "uarite>=0.2.1",
+    "quantumpipe>=0.1.0",
 ]
 [dependency-groups]
 dev = [

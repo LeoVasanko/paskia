@@ -236,3 +236,4 @@ See [Multi-Site documentation](docs/MultiSite.md) for details.
 - [Trusted Headers for Backend Apps](https://git.zi.fi/LeoVasanko/paskia/src/branch/main/docs/Headers.md)
 - [Frontend integration](https://git.zi.fi/LeoVasanko/paskia/src/branch/main/docs/Integration.md)
 - [Paskia API](https://git.zi.fi/LeoVasanko/paskia/src/branch/main/docs/API.md)
+- [Remote Proxy / Satellite](https://git.zi.fi/LeoVasanko/paskia/src/branch/main/docs/RemoteProxy.md) — serve domains from a local satellite instance

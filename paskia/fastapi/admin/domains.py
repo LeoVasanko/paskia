@@ -7,13 +7,17 @@ origins on unrelated domains (WebAuthn Related Origin Requests). All
 changes are validated cross-domain before being persisted, and the runtime
 domain registry is rebuilt after each change so it takes effect
 immediately.
+
+Remote (satellite-served) domains are uplink-managed — the upstream pushes
+their configuration; they cannot be created, edited or deleted here. Domain
+changes are pushed live to the satellite links serving them.
 """
 
 from fastapi import Body, Request
 
 from paskia import db, domains
-from paskia.db.structs import Config, DomainConfig, OriginEntry, RemoteConfig
-from paskia.fastapi import authz
+from paskia.db.structs import Config, DomainConfig, OriginEntry
+from paskia.fastapi import authz, sync
 from paskia.fastapi.admin.errors import install_error_handlers
 from paskia.fastapi.response import MsgspecResponse
 from paskia.fastapi.session import AUTH_COOKIE
@@ -28,14 +32,6 @@ install_error_handlers(app)
 
 
 def _domain_to_api(domain: domains.Domain) -> ApiDomain:
-    remote = domain.config.remote
-    if remote is not None:
-        # The sync token is a bearer secret: never echoed back
-        remote = RemoteConfig(
-            url=remote.url,
-            cache_ttl=remote.cache_ttl,
-            refresh_interval=remote.refresh_interval,
-        )
     return ApiDomain(
         rp_id=domain.rp_id,
         rp_name=domain.rp_name,
@@ -43,28 +39,7 @@ def _domain_to_api(domain: domains.Domain) -> ApiDomain:
         site_url=domain.site_url,
         auth_site_url=domain.auth_site_url,
         auth_host=domain.own_auth_host,
-        remote=remote,
-    )
-
-
-def _normalize_remote(
-    value, existing: RemoteConfig | None = None
-) -> RemoteConfig | None:
-    """Parse a remote object from the admin UI (raises on malformed).
-
-    An absent/empty token keeps the previously stored one — the token is
-    write-only over the API.
-    """
-    if value is None:
-        return None
-    if not isinstance(value, dict) or not isinstance(value.get("url"), str):
-        raise ValueError("remote must be an object with a url")
-    token = str(value.get("token") or "") or (existing.token if existing else "")
-    return RemoteConfig(
-        url=value["url"].rstrip("/"),
-        token=token,
-        cache_ttl=max(1, int(value.get("cache_ttl") or 60)),
-        refresh_interval=max(30, int(value.get("refresh_interval") or 300)),
+        remote=domain.config.remote,
     )
 
 
@@ -90,6 +65,22 @@ def _normalize_origins_map(values: dict | None) -> dict[str, bool | OriginEntry]
 def _rebuild_registry() -> None:
     """Rebuild the runtime domain registry from the stored configuration."""
     domains.init_registry(db.data().config)
+
+
+def _check_not_remote(payload: dict, rp_id: str | None = None) -> None:
+    """Remote domains are uplink-managed: created by registering an uplink
+    on the satellite, edited and removed by the upstream's push."""
+    if payload.get("remote") is not None:
+        raise ValueError(
+            "Remote domains are managed by satellite uplinks — register the "
+            "link on the satellite instead (its satellites panel, or the "
+            "'paskia satellite' command)"
+        )
+    if rp_id is not None and db.data().config.domains[rp_id].remote is not None:
+        raise ValueError(
+            f"Domain '{rp_id}' is served from an uplink — managed there, "
+            "not by local edits"
+        )
 
 
 def _check_not_locking_self_out(
@@ -151,10 +142,10 @@ async def admin_create_domain(
     rp_id = (payload.get("rp_id") or "").strip().lower()
     if not rp_id:
         raise ValueError("rp_id is required")
+    _check_not_remote(payload)
     new = DomainConfig(
         rp_name=(payload.get("rp_name") or "").strip() or None,
         origins=_normalize_origins_map(payload.get("origins")),
-        remote=_normalize_remote(payload.get("remote")),
     )
 
     config = db.data().config
@@ -176,7 +167,7 @@ async def admin_update_domain(
     auth=AUTH_COOKIE,
 ):
     """Update a domain's rp_name, origins and related origins (replaced
-    wholesale).
+    wholesale); links serving the domain are pushed the new configuration.
 
     The rp-id itself is immutable: credentials are stamped with it.
     """
@@ -187,16 +178,10 @@ async def admin_update_domain(
     config = db.data().config
     if rp_id not in config.domains:
         raise ValueError(f"Domain {rp_id} not found")
-
-    current_remote = config.domains[rp_id].remote
+    _check_not_remote(payload, rp_id)
     updated = DomainConfig(
         rp_name=(payload.get("rp_name") or "").strip() or None,
         origins=_normalize_origins_map(payload.get("origins")),
-        remote=(
-            _normalize_remote(payload["remote"], existing=current_remote)
-            if "remote" in payload
-            else current_remote
-        ),
     )
     would_be = Config(
         domains={k: updated if k == rp_id else v for k, v in config.domains.items()},
@@ -209,10 +194,10 @@ async def admin_update_domain(
         rp_id,
         rp_name=updated.rp_name,
         origins=updated.origins,
-        remote=updated.remote,
         ctx=ctx,
     )
     _rebuild_registry()
+    sync.refresh_links_serving(rp_id)
     return {"status": "ok"}
 
 
@@ -222,7 +207,8 @@ async def admin_delete_domain(
     request: Request,
     auth=AUTH_COOKIE,
 ):
-    """Delete a domain (refused for the last domain or while credentials remain)."""
+    """Delete a domain (refused for the last domain, remote domains, or
+    while credentials remain); links serving it lose it from their scope."""
     ctx = await authz.verify(
         auth, ["auth:admin"], host=request.headers.get("host"), max_age="5m"
     )
@@ -234,4 +220,5 @@ async def admin_delete_domain(
         )
     db.delete_domain(rp_id, ctx=ctx)
     _rebuild_registry()
+    sync.drop_domain_from_links(rp_id, ctx=ctx)
     return {"status": "ok"}

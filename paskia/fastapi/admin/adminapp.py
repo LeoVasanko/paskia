@@ -10,6 +10,7 @@ from paskia.fastapi.admin import (
     orgs,
     permissions,
     roles,
+    satellites,
     users,
 )
 from paskia.fastapi.admin.errors import install_error_handlers
@@ -40,6 +41,8 @@ app.mount("/roles", roles.app)
 app.mount("/users", users.app)
 app.mount("/permissions", permissions.app)
 app.mount("/domains", domains.app)
+app.mount("/satellites", satellites.links_app)
+app.mount("/uplinks", satellites.uplinks_app)
 
 
 def master_admin(ctx) -> bool:

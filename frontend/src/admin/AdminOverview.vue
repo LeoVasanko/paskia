@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue'
 import { getDirection, navigateButtonRow, focusPreferred, focusAtIndex } from '@/utils/keynav'
 import { formatDate, originDisplayEntries } from '@/utils/helpers'
+import AdminSatellites from './AdminSatellites.vue'
 
 const props = defineProps({
   info: Object,
@@ -14,7 +15,7 @@ const props = defineProps({
   navigationDisabled: { type: Boolean, default: false }
 })
 
-const emit = defineEmits(['createOrg', 'openOrg', 'updateOrg', 'deleteOrg', 'toggleOrgPermission', 'openDialog', 'deletePermission', 'renamePermissionDisplay', 'createOidcClient', 'openOidcClient', 'deleteOidcClient', 'createDomain', 'openDomain', 'deleteDomain', 'navigateOut'])
+const emit = defineEmits(['createOrg', 'openOrg', 'updateOrg', 'deleteOrg', 'toggleOrgPermission', 'openDialog', 'deletePermission', 'renamePermissionDisplay', 'createOidcClient', 'openOidcClient', 'deleteOidcClient', 'createDomain', 'openDomain', 'deleteDomain', 'domainsChanged', 'navigateOut'])
 
 // Template refs for navigation
 const orgActionsRef = ref(null)
@@ -460,21 +461,28 @@ defineExpose({ focusFirstElement })
         <tr v-for="domain in sortedDomains" :key="domain.rp_id">
           <td class="perm-name-cell">
             <div class="perm-title">
-              <a :href="'#domain:' + domain.rp_id" @click.prevent="$emit('openDomain', domain)">{{ domain.rp_name || domain.rp_id }}</a>
+              <a v-if="!domain.remote" :href="'#domain:' + domain.rp_id" @click.prevent="$emit('openDomain', domain)">{{ domain.rp_name || domain.rp_id }}</a>
+              <span v-else>{{ domain.rp_name || domain.rp_id }}</span>
             </div>
             <div class="perm-id-info">
               <span class="id-text">{{ domain.rp_id }}</span>
-              <span v-if="domain.remote" class="id-text" :title="`Served from remote ${domain.remote.url} (satellite mode)`">🛰 {{ domain.remote.url }}</span>
+              <span v-if="domain.remote" class="id-text" title="Satellite-served — its configuration is pushed by the uplink and managed in the Satellites panel">🛰 via uplink</span>
             </div>
           </td>
           <td class="domain-origins"><span v-for="(e, i) in originDisplayEntries(domain)" :key="e.key">{{ i ? ', ' : '' }}{{ e.key }}{{ e.auth ? '🔑' : '' }}{{ e.related ? '🔗' : '' }}</span></td>
           <td class="center">
-            <button v-if="domain.rp_id !== currentRpId" @click="$emit('deleteDomain', domain)" class="icon-btn delete-icon" aria-label="Delete domain" title="Delete domain">❌</button>
+            <button v-if="domain.rp_id !== currentRpId && !domain.remote" @click="$emit('deleteDomain', domain)" class="icon-btn delete-icon" aria-label="Delete domain" title="Delete domain">❌</button>
           </td>
         </tr>
       </tbody>
     </table>
   </div>
+
+  <AdminSatellites
+    v-if="isMasterAdmin"
+    :domains="domains || []"
+    @domains-changed="$emit('domainsChanged')"
+  />
 </template>
 
 <style scoped>

@@ -1,6 +1,6 @@
 # Remote Proxy / Satellite
 
-Paskia can serve a configured domain (rp-id) from a **remote** paskia
+Paskia can serve configured domains (rp-ids) from a **remote** paskia
 instance instead of the local database, so latency-sensitive checks
 (`/auth/api/forward`, `/auth/api/validate`) answer in ~1 ms even when the
 auth server is on another continent. Example: `app2.example.com` runs on
@@ -13,117 +13,170 @@ backend (forward-auth checks) only repoint to the local satellite
 satellite ultimately uses `auth.example.com`.
 
 Status: **implemented**. The feature lives in `paskia/satellite.py`
-(satellite side: replica, sync client, host dispatch, forwarding) and
-`paskia/syncfeed.py` + `paskia/fastapi/sync.py` (remote side: change
-feed and sync WebSocket). The design review comparing the rejected
-alternatives is at the end of this document.
+(satellite side: uplinks, replicas, host dispatch, forwarding) and
+`paskia/syncfeed.py` + `paskia/fastapi/sync.py` (upstream side: change
+feed, registration handshake, sync WebSocket). The design review comparing
+the rejected alternatives is at the end of this document.
 
 ## Configuration
 
-A domain becomes remote in the admin domains UI (master admin, on the
-primary server's auth host — this configuration itself never touches a
-remote): enable *Remote instance* and set the remote URL and sync token.
-In the stored config (`DomainConfig.remote`):
+Setup is a single copy-paste of a **link URL**, and everything else flows
+from it. On the **upstream** (the authoritative instance), open the admin
+*Satellites* panel and use *New satellite link*, choosing the domains the
+satellite will serve. That mints a registration offer and shows one URL:
 
-```json
-"remote": {
-  "url": "https://auth.example.com",
-  "token": "<sync token>",
-  "cache_ttl": 60,
-  "refresh_interval": 300
-}
+```
+wss://<initial-key>@auth.example.com
 ```
 
-- `url` — the remote instance's base URL. The satellite connects to
-  `{url}/auth/api/sync/ws`; the connection is server-to-server and not
-  host-dispatched, so internal addresses work. The admin dialog probes
-  `{url}/auth/api/settings` as you type: it must be reachable, serve this
-  very rp-id, and not be a satellite for it itself (nested satellites are
-  not supported — always point at the authoritative instance). Probe
-  findings are warnings; the server-side validation is authoritative.
-- `token` — bearer token for the sync channel. The **remote accepts tokens
-  via its `PASKIA_SYNC_TOKENS` environment variable** (comma-separated);
-  nothing is stored in the remote's database, and with the variable unset
-  the sync endpoint stays closed. The token is write-only over the admin
-  API (an empty field keeps the stored one).
-- `cache_ttl` — seconds the replica remains trusted after the sync channel
-  goes down; then checks fail closed (503). Set it large (up to the 24 h
-  session lifetime) for fail-open behavior. Minimum 1.
-- `refresh_interval` — seconds between reconnects; every connect starts
-  from a full snapshot, which reconciles any drift. Minimum 30.
+The `wss://` scheme is deliberate: the URL is meant only for a satellite
+to connect to, and browsers refuse to open it. The initial key is held in
+the upstream's RAM only, expires in 10 minutes, and is single-use — losing
+or leaking it just means minting a new one. The permanent credentials are
+created during registration (see *How it works*).
 
-Several domains may share one remote (they share a single replica); their
-remote settings must then be identical — conflicting configurations are
-rejected at validation and aligned with a warning at load.
+On the **satellite**, either:
 
-A remote domain **must mark an auth host** (validated cross-domain and in
-the UI): the profile, admin and sign-in pages live there, so browsers and
-WebSockets go directly to the remote. Other domains on the same satellite
-remain fully local — the multi-domain config mixes both kinds freely.
+- paste the URL in its admin *Satellites* panel under *Uplinks → Add
+  uplink* — registration runs immediately and reports failures inline; or
+- run `paskia satellite <url>` on the satellite host — the whole setup of
+  a satellite-only installation (it creates the database on first run; no
+  local domain or admin site is needed).
+
+That's all: the upstream pushes the link's domain set — rp-id, display
+name and the origins table verbatim, including its auth host — and the
+satellite persists it. The upstream is authoritative: pushed domains are
+validated against the satellite's local configuration (an rp-id already
+served locally, or origins colliding with it, are rejected and reported
+back into the upstream's link list), and remote domains are read-only on
+the satellite — the only satellite-side configuration is linking and
+unlinking.
+
+A link's scope is **adjustable at any time** from the upstream's link list
+(edit which domains it serves): the new set is pushed over the live link —
+register once, no new cryptographic setup. Revoking a link drops the
+satellite's connections; the satellite observes the policy close and
+unlinks its side (its copy of the domains is removed).
+
+A satellite-only instance serves its backend apps on local addresses and
+needs no inbound connectivity at all — the link is an outbound WebSocket
+from the satellite.
+
+In the stored config, a remote domain carries only the link reference:
+
+```json
+"remote": { "link": "<uplink id>" }
+```
+
+and the uplink itself lives in the database's `uplinks` table (the
+upstream URL, its quantumpipe composite `key`, and the local
+tolerance knobs):
+
+- `cache_ttl` (default 60) — seconds the replica remains trusted after
+  the sync channel goes down; then checks fail closed (503). Set it large
+  (up to the 24 h session lifetime) for fail-open behavior.
+- `refresh_interval` (default 300) — seconds between reconnects; every
+  connect starts from a full snapshot, which reconciles any drift.
+
+On the upstream, links live in the `satellite_links` table: the peer's
+`key` bytes, its self-reported label, and the scope (`rp_ids`).
 
 ## How it works
 
-**Dispatch is keyed by host, and only this module knows about stores.**
-`satellite.store_for_host(host)` returns the local DB or the replica of
-the remote backing the host's domain (raising 503 `HTTPException` when
-the replica is unavailable). The session read path (`session_ctx`,
-`authz.verify`, `build_user_info`, `/check`) just passes the host it
+**Registration and the sync channel share one encrypted endpoint** —
+`{upstream}/auth/api/sync/ws`. Quantumpipe performs a mutually
+authenticated hybrid ML-KEM-768 + X25519 exchange and transparently encrypts
+every application frame. The link id is its `link_id` store key. A link URL
+carries that id and a one-time 32-byte registration secret.
+
+Registration offers, handshake state and the rotated credential remain in
+RAM until the exchange completes. The satellite then sends its label, the
+upstream commits the link and pushes its domain set, and the satellite
+validates and commits its own uplink and domains. Quantumpipe's atomic
+credential swap spends the offer; an interrupted exchange before that point
+leaves it available until its normal expiry.
+
+Established links resume with their stored composite credentials. Every
+connection starts with an authoritative `domains` push and acknowledgement,
+followed by encrypted JSON snapshots of the scoped tables, `ready`, then
+live upsert/delete events. The satellite sends `session_refresh`
+write-backs; live `domains` frames push scope or origin changes.
+
+**Dispatch is keyed by host, and only the satellite module knows about
+stores.** `satellite.store_for_host(host)` returns the local DB or the
+replica of the uplink backing the host's domain (raising 503
+`HTTPException` when the replica is unavailable). The session read path
+(`session_ctx`, `authz.verify`, `build_user_info`) just passes the host it
 already has; writes dispatch likewise (`satellite.refresh_session` —
 write-behind for remote, `db.update_session` for local;
 `satellite.evict_session` on logout). `satellite.forward_request(request)`
 returns the proxied response for remote domains or `None` for local ones.
 
-**The replica** is a plain `DB` struct instance in RAM, never persisted.
-On connect the remote sends a snapshot of the replicated tables
-(permissions, orgs, roles, users, credentials, sessions), then live
+**The replica** is a `ReplicaDB` instance in RAM, never persisted, one per
+uplink connection. On connect the upstream sends a snapshot of the scoped
+tables (the link's domains' credentials and sessions), then live
 upsert/delete events emitted from the struct `store()`/`delete()` hooks
-(which also cover cascade deletes) and field-mutating operations. A
-single ordered WebSocket cannot gap; a slow subscriber is dropped and
-resyncs. The feed carries no usable secrets: sessions are keyed by
-`hash_secret` output, credentials carry public keys only, and the OIDC
-signing key is never replicated.
+(which also cover cascade deletes) and field-mutating operations. The feed
+is scoped to the link's rp-ids, and the user graph never leaves the
+upstream: every session upsert carries an embedded `ctx` — the same
+`ApiSessionContext` sent to users — holding the session's user/org/role
+display data and effective permissions, computed for the session's bound
+host. Mutations of users, orgs, roles or permissions are not published;
+instead the upstream eagerly re-pushes the affected sessions with freshly
+computed contexts, so renames and permission revocations take effect
+within ~1 RTT. A single ordered WebSocket cannot gap; a slow subscriber is
+dropped and resyncs. The feed carries no usable secrets: sessions are
+keyed by `hash_secret` output, credentials carry public keys only, and the
+OIDC signing key is never replicated.
 
 ## Endpoint behavior for remote domains
 
 | Endpoint | Handling |
 |---|---|
-| `GET /auth/api/forward`, `GET /check`, `GET /user-info`, `GET /settings` | served from the replica (sub-ms) |
+| `GET /auth/api/forward`, `GET /settings` | served from the replica (sub-ms) |
 | `POST /auth/api/validate` | verified from the replica; the throttled refresh updates the replica and is written back over the sync channel; cookie renewed locally |
-| `POST /auth/api/logout` | proxied to the remote (original Host preserved) and evicted from the replica immediately |
-| `POST /auth/api/set-session`, `GET /token-info` | proxied (the exchange code/reset token lives on the remote); the session arrives via sync event |
-| `/auth/oidc/*` | proxied (signing key and OIDC sessions stay on the remote) |
-| `/auth/ws/*`, `/auth/remote-auth/*`, admin, profile | not served — the auth host requirement means these are reached on the remote directly |
+| `GET /check`, `GET /user-info` | proxied — these need the user graph (per-session contexts do not cover arbitrary user lookups or full profile data) |
+| `POST /auth/api/logout` | proxied to the upstream (original Host preserved) and evicted from the replica immediately |
+| `POST /auth/api/set-session`, `GET /token-info` | proxied (the exchange code/reset token lives on the upstream); the session arrives via sync event |
+| `/auth/oidc/*` | proxied (signing key and OIDC sessions stay on the upstream) |
+| `/auth/ws/*`, `/auth/remote-auth/*`, admin, profile | not served — the auth host requirement means these are reached on the upstream directly |
 
-Proxied calls answer 503 when the remote is unreachable. `/auth/api/settings`
-reports `remote: true` for a satellite-served domain (this is what the admin
-dialog's uplink probe checks). Should a remote domain's auth host be
-misrouted to the satellite anyway, profile/avatar requests
-(`/auth/api/user/*`) are forwarded to the remote rather than answered from
-local storage — the satellite never takes writes for a remote domain.
+Proxied calls answer 503 when the upstream is unreachable.
+`/auth/api/settings` reports `remote: true` for a satellite-served domain.
+Should a remote domain's auth host be misrouted to the satellite anyway,
+profile/avatar requests (`/auth/api/user/*`) are forwarded to the upstream
+rather than answered from local storage — the satellite never takes writes
+for a remote domain.
 
 Freshness hierarchy:
 
 1. Changes made **through** the satellite: immediate (write-behind,
    optimistic eviction).
-2. Changes made **directly on the remote**: a sync event, ~1 network RTT.
+2. Changes made **directly on the upstream**: a sync event, ~1 network
+   RTT.
 3. Channel down: the replica stays authoritative until `cache_ttl` past
    the disconnect (dead-peer detection is bounded by the ~10 s keepalive),
    then 503. Every reconnect starts from a fresh snapshot.
 
-## The remote side
+## The upstream side
 
-Strictly additive and RAM-only: `syncfeed` (a subscriber set fed by the
-commit hooks) and the token-gated `/auth/api/sync/ws` endpoint serving
-snapshot + live events and accepting `session_refresh` write-backs. With
-no satellites connected, the hooks are a no-op.
+Nearly additive: the link table, RAM-only registration offers and the
+`syncfeed` subscriber set fed by the commit hooks, plus the
+`/auth/api/sync/ws` endpoint doing the handshake, serving snapshots and
+live events, pushing domain configuration, and accepting
+`session_refresh` write-backs within the link's scope. With no satellites
+connected, the hooks are a no-op.
 
 ## Trust and caveats
 
-- The satellite host holds a full copy of the remote's auth data in RAM
-  (minus the OIDC key) — treat it as trusted as the remote.
-- Avatars are stored on the remote's disk; `user-info` from a replica
-  reports no avatar URL.
-- OIDC sessions in a replica-backed `user-info` show the client UUID
+- The satellite host holds only its link's domains' sessions (with their
+  identity contexts) and credentials in RAM — it learns the users that
+  actually sign in to those domains, never the directory, and never the
+  OIDC key. Still treat it as trusted: it is authoritative for session
+  checks within `cache_ttl`.
+- Avatars are stored on the upstream's disk; profile data such as
+  `user-info` is proxied to the upstream rather than answered locally.
+- OIDC sessions in a proxied `user-info` show the client UUID
   rather than its name (OIDC clients are not replicated).
 
 ---
@@ -163,7 +216,7 @@ within one RTT instead of at TTL.
 - **Multi-domain uniformity.** Remote backing is a property of a domain
   in the existing registry; local and remote rp-ids coexist in one
   instance. A is a separate component bolted in front of specific URLs.
-- **User simplicity.** Configured once in domain config; A needs
+- **User simplicity.** One link registration per satellite; A needs
   deployment and cache-key discipline per frontend application.
 
 ## What it costs
@@ -174,9 +227,10 @@ within one RTT instead of at TTL.
   contextvar-dependent `db.data()` was rejected: a global accessor whose
   meaning shifts under the caller. Dispatch is instead keyed explicitly
   by the request host.)
-- A sync protocol (snapshot + live events + reconnect reconciliation).
-- A trusted satellite host (full data copy in RAM).
-- Additive remote code (sync endpoint + commit hooks), where A needs
+- A sync protocol (registration handshake, snapshot + live events +
+  reconnect reconciliation, live domain pushes).
+- A trusted satellite host (its link's sessions and credentials in RAM).
+- Additive upstream code (sync endpoint + commit hooks), where A needs
   none.
 - Replica housekeeping (expiry sweeper, write-behind, optimistic
   eviction).

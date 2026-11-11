@@ -70,9 +70,9 @@ def _covered_by_wildcard(key: str, pattern: str) -> bool:
         matched = hostutil.is_subdomain(hostname, base)
     else:
         # '*.base' covers exactly one subdomain level
-        matched = hostname.endswith(f".{base}") and "." not in hostname[
-            : -len(base) - 1
-        ]
+        matched = (
+            hostname.endswith(f".{base}") and "." not in hostname[: -len(base) - 1]
+        )
     if not matched:
         return False
     if hostutil.is_subdomain(base, "localhost"):
@@ -125,7 +125,11 @@ def print_startup_config(
         header_urls = [f"{w}{vite_url}{r} (vite dev)"]
     else:
         header_urls = [
-            f"{w}{url}{r}" for d in domains if (url := auth_host_url(d.config))
+            f"{w}{url}{r}"
+            for d in domains
+            # A satellite-served domain's auth host lives on the upstream —
+            # the header links this instance's own account pages.
+            if d.config.remote is None and (url := auth_host_url(d.config))
         ]
         if not header_urls:
             guess = min(
@@ -164,6 +168,8 @@ def print_startup_config(
         rp_name = domain.rp_name
         suffix = f" ({rp_name})" if rp_name and rp_name != domain.rp_id else ""
         head = f"{w}{domain.rp_id}{r}{suffix}"
+        if domain.remote is not None:
+            head += " 🛰"  # satellite-served via an uplink
         if not domain.config.origins:
             rows.append(f"{head} — no sign-in sites")
             continue
