@@ -231,7 +231,7 @@ test.describe('Admin application E2E', () => {
     await expect(page.getByText('No satellites registered.')).toBeVisible()
     await page.getByRole('button', { name: '+ Add uplink' }).click()
     const form = dialog(page, 'Add uplink')
-    await form.getByLabel('Link URL').fill('wss://invalid@127.0.0.1:1')
+    await form.getByLabel('Link URL').fill('wss://127.0.0.1:1#hurt.siege.right.burden.permit')
     await form.getByRole('button', { name: 'Register' }).click()
     await expect(form.locator('.error')).toBeVisible()
     await form.getByRole('button', { name: 'Cancel' }).click()

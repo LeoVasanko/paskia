@@ -338,7 +338,7 @@ function uplinkStatus(u) {
       <label>Link URL
         <input
           v-model="uplinkDialog.url"
-          placeholder="wss://alpha.bravo.charlie.delta.echo@auth.example.com"
+          placeholder="wss://auth.example.com#hurt.siege.right.burden.permit"
           autocomplete="off"
           data-lpignore="true"
           data-1p-ignore="true"

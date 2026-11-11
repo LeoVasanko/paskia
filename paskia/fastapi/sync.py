@@ -9,7 +9,6 @@ write-backs and domain acknowledgements.
 """
 
 import asyncio
-import base64
 import contextlib
 import logging
 import secrets
@@ -20,10 +19,11 @@ from urllib.parse import urlsplit
 
 import msgspec
 from fastapi import WebSocket, WebSocketDisconnect
-from quantumpipe import ProtocolError, SecSocket, generate_registration_secret
+from quantumpipe import ProtocolError, SecSocket
 
 from paskia import db, syncfeed
 from paskia.fastapi.strictapp import strict_app
+from paskia.util.passphrase import derive_registration_secret, generate
 
 _logger = logging.getLogger(__name__)
 
@@ -95,13 +95,14 @@ class _HandshakeStore(dict):
 def create_offer(rp_ids: list[str], base_url: str) -> str:
     """Mint a RAM-only registration offer; returns the wss link URL."""
     _sweep_offers()
-    link_id = secrets.token_urlsafe(12)
-    secret = generate_registration_secret()
-    _offers[link_id] = _Offer(secret, list(rp_ids), time.monotonic())
-    encoded = base64.urlsafe_b64encode(secret).rstrip(b"=").decode()
+    offer_id = secrets.token_urlsafe(12)
+    secret = generate()
+    _offers[offer_id] = _Offer(
+        derive_registration_secret(secret), list(rp_ids), time.monotonic()
+    )
     parts = urlsplit(base_url)
     scheme = "wss" if parts.scheme == "https" else "ws"
-    return f"{scheme}://{link_id}:{encoded}@{parts.netloc}"
+    return f"{scheme}://{parts.netloc}#{secret}"
 
 
 def links_status() -> dict[str, dict]:
@@ -212,6 +213,7 @@ async def _handshake(sock: SecSocket, store: _HandshakeStore) -> _Connection | N
     if registration.get("type") != "register":
         await sock.close(code=1008)
         return None
+    link_id = secrets.token_urlsafe(12)
     db.create_satellite_link(
         link_id,
         offer.rp_ids,
@@ -254,7 +256,14 @@ async def sync_websocket(ws: WebSocket):
         conn = await _handshake(sock, store)
         if conn is None:
             return
-        await _send(sock, {"type": "domains", "domains": domain_infos(conn.scope)})
+        await _send(
+            sock,
+            {
+                "type": "domains",
+                "link": conn.link_id,
+                "domains": domain_infos(conn.scope),
+            },
+        )
         queue = syncfeed.subscribe(conn.scope)
         _connections[queue] = conn
         for table in syncfeed.TABLES:

@@ -262,14 +262,19 @@ def test_availability_gate():
 # -------------------------------------------------------------------------
 
 
+def _offer_id(secret: bytes) -> str:
+    return next(key for key, offer in sync._offers.items() if offer.secret == secret)
+
+
 def test_parse_link_url():
     url = sync.create_offer([], "https://auth.example.com")
-    base, link_id, secret = satellite.parse_link_url(url)
+    base, secret = satellite.parse_link_url(url)
     assert base == "https://auth.example.com"
-    assert sync._offers[link_id].secret == secret
+    assert url.startswith("wss://auth.example.com#")
+    assert sync._offers[_offer_id(secret)].secret == secret
 
     url = sync.create_offer([], "http://127.0.0.1:4401")
-    base, link_id, secret = satellite.parse_link_url(url)
+    base, secret = satellite.parse_link_url(url)
     assert base == "http://127.0.0.1:4401"
     assert len(secret) == 32
     with pytest.raises(ValueError, match="wss"):
@@ -281,23 +286,26 @@ def test_parse_link_url():
 def test_offer_mint_and_spend(test_db):
     """Offers are RAM-only and spent by the credential's atomic key change."""
     url = sync.create_offer(["example.com"], "https://auth.example.com")
-    _base, link_id, secret = satellite.parse_link_url(url)
-    offer = sync._offers[link_id]
+    _base, secret = satellite.parse_link_url(url)
+    offer_id = _offer_id(secret)
+    offer = sync._offers[offer_id]
     assert offer.rp_ids == ["example.com"]
     store = sync._HandshakeStore()
-    store[link_id] = b"composite credential"
-    assert link_id not in sync._offers
+    store[offer_id] = b"composite credential"
+    assert offer_id not in sync._offers
     assert store.registered_offer is offer
 
     burned_url = sync.create_offer([], "https://auth.example.com")
-    _base, burned_id, _secret = satellite.parse_link_url(burned_url)
+    _base, burned_secret = satellite.parse_link_url(burned_url)
+    burned_id = _offer_id(burned_secret)
     burned_store = sync._HandshakeStore()
     del burned_store[burned_id]
     assert burned_id not in sync._offers
 
     expired = sync.create_offer([], "http://127.0.0.1:4401")
     assert expired.startswith("ws://")
-    _base, expired_id, _secret = satellite.parse_link_url(expired)
+    _base, expired_secret = satellite.parse_link_url(expired)
+    expired_id = _offer_id(expired_secret)
     sync._offers[expired_id].created -= sync.OFFER_TTL + 1
     sync._sweep_offers()
     assert expired_id not in sync._offers
@@ -694,16 +702,15 @@ async def test_admin_satellite_link_lifecycle(client, session_token, test_db):
     )
     assert r.status_code == 200, r.text
 
-    # Mint an offer: a wss URL carrying link id and registration secret
+    # Mint an offer: a wss URL carrying the registration secret in its fragment
     r = await client.post(
         "/auth/api/admin/satellites/", json={"rp_ids": ["example.com"]}, headers=headers
     )
     assert r.status_code == 200, r.text
     body = r.json()
-    assert body["url"].startswith("wss://")
-    assert "@auth.example.com" in body["url"]
-    _base, link_id, secret = satellite.parse_link_url(body["url"])
-    assert sync._offers[link_id].secret == secret
+    assert body["url"].startswith("wss://auth.example.com#")
+    _base, secret = satellite.parse_link_url(body["url"])
+    assert sync._offers[_offer_id(secret)].secret == secret
     assert body["expires_in"] > 0
 
     # Unknown domains and nested scopes are refused

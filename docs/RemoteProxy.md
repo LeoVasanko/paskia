@@ -26,7 +26,7 @@ from it. On the **upstream** (the authoritative instance), open the admin
 satellite will serve. That mints a registration offer and shows one URL:
 
 ```
-wss://<initial-key>@auth.example.com
+wss://auth.example.com#<five.word.registration.secret>
 ```
 
 The `wss://` scheme is deliberate: the URL is meant only for a satellite
@@ -86,13 +86,15 @@ On the upstream, links live in the `satellite_links` table: the peer's
 **Registration and the sync channel share one encrypted endpoint** —
 `{upstream}/auth/api/sync/ws`. Quantumpipe performs a mutually
 authenticated hybrid ML-KEM-768 + X25519 exchange and transparently encrypts
-every application frame. The link id is its `link_id` store key. A link URL
-carries that id and a one-time 32-byte registration secret.
+every application frame. The five-word registration secret is stretched
+with PBKDF2-SHA512 into a 32-byte registration key at offer creation and on
+the connecting satellite; the upstream only handles the derived key.
 
 Registration offers, handshake state and the rotated credential remain in
 RAM until the exchange completes. The satellite then sends its label, the
-upstream commits the link and pushes its domain set, and the satellite
-validates and commits its own uplink and domains. Quantumpipe's atomic
+upstream generates the permanent link id, commits the link and pushes that
+id with its domain set. The satellite validates and commits its own uplink
+and domains. Quantumpipe's atomic
 credential swap spends the offer; an interrupted exchange before that point
 leaves it available until its normal expiry.
 

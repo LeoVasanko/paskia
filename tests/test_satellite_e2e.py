@@ -204,6 +204,7 @@ async def test_live_registration(live_server):
 
     result = await satellite.register_uplink(offer_url)
     link_id = result["link"]
+    assert link_id not in offer_url
     assert result["domains"] == []  # empty scope: register first, scope later
 
     uplink = live.db.uplinks[link_id]
@@ -230,17 +231,17 @@ async def test_live_registration(live_server):
 @pytest.mark.asyncio
 async def test_live_registration_rejections(live_server):
     """Malformed URLs, unknown keys and unreachable hosts store nothing."""
-    secret = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+    secret = "hurt.siege.right.burden.permit"
     with pytest.raises(ValueError, match="wss"):
         await satellite.register_uplink("https://key@auth.example.com")
     with pytest.raises(ValueError, match="key"):
         await satellite.register_uplink("wss://auth.example.com")
     with pytest.raises(RuntimeError, match="rejected"):
         await satellite.register_uplink(
-            f"ws://unknown:{secret}@127.0.0.1:{live_server.port}"
+            f"ws://127.0.0.1:{live_server.port}#{secret}"
         )
     with pytest.raises(RuntimeError, match="unreachable"):
-        await satellite.register_uplink(f"ws://some:{secret}@127.0.0.1:1")
+        await satellite.register_uplink(f"ws://127.0.0.1:1#{secret}")
     assert not live_server.db.uplinks
     assert not live_server.db.satellite_links
 

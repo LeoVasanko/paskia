@@ -1,3 +1,4 @@
+import hashlib
 import secrets
 
 from paskia.util.wordlist import words
@@ -18,3 +19,13 @@ def is_well_formed(passphrase: str, n=N_WORDS, sep=".") -> bool:
     """Check if the passphrase is well-formed according to the regex pattern."""
     p = passphrase.split(sep)
     return len(p) == n and all(w in wset for w in passphrase.split("."))
+
+
+def derive_registration_secret(passphrase: str) -> bytes:
+    return hashlib.pbkdf2_hmac(
+        "sha512",
+        passphrase.encode(),
+        b"paskia satellite registration v1",
+        1_000_000,
+        dklen=32,
+    )

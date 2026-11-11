@@ -29,7 +29,6 @@ cache_ttl gives fail-open behavior bounded by session expiry).
 """
 
 import asyncio
-import base64
 import contextlib
 import logging
 import socket
@@ -63,6 +62,7 @@ from paskia.db.structs import (
 )
 from paskia.util.apistructs import ApiSessionContext
 from paskia.util.crypto import hash_secret
+from paskia.util.passphrase import derive_registration_secret, is_well_formed
 
 _logger = logging.getLogger(__name__)
 
@@ -129,23 +129,16 @@ def ws_url_for(base_url: str) -> str:
     return base_url.replace("http", "ws", 1) + "/auth/api/sync/ws"
 
 
-def parse_link_url(url: str) -> tuple[str, str, bytes]:
-    """Split ``wss://<link-id>:<registration-secret>@<host>`` into its parts."""
+def parse_link_url(url: str) -> tuple[str, bytes]:
+    """Split ``wss://<host>#<five-word-registration-secret>`` into its parts."""
     parts = urlsplit(url.strip())
     if parts.scheme not in ("wss", "ws"):
         raise ValueError(
             "A link URL is a wss:// URL copied from the upstream's satellites panel"
         )
-    link_id = unquote(parts.username or "")
-    encoded = unquote(parts.password or "")
-    if not link_id or not encoded:
-        raise ValueError("The link URL carries no link id or registration key")
-    try:
-        secret = base64.urlsafe_b64decode(encoded + "=" * (-len(encoded) % 4))
-    except ValueError as e:
-        raise ValueError("The link URL has a malformed registration key") from e
-    if len(secret) != 32:
-        raise ValueError("The link URL has a malformed registration key")
+    secret = unquote(parts.fragment)
+    if not is_well_formed(secret):
+        raise ValueError("The link URL carries no valid registration key")
     netloc = parts.hostname or ""
     if not netloc:
         raise ValueError("The link URL carries no host")
@@ -153,7 +146,7 @@ def parse_link_url(url: str) -> tuple[str, str, bytes]:
         netloc = f"{netloc}:{parts.port}"
     scheme = "https" if parts.scheme == "wss" else "http"
     base = urlunsplit((scheme, netloc, parts.path, "", "")).rstrip("/")
-    return base, link_id, secret
+    return base, derive_registration_secret(secret)
 
 
 def _label() -> str:
@@ -254,20 +247,23 @@ def apply_domains_push(
 
 async def register_uplink(url: str) -> dict:
     """Register over quantumpipe, then persist the credential and domains."""
-    base_url, link_id, initial_key = parse_link_url(url)
+    base_url, initial_key = parse_link_url(url)
     if any(u.url == base_url for u in db.data().uplinks.values()):
         raise ValueError(f"Already linked to {base_url} — unlink first to re-register")
     try:
         async with websockets.connect(
             ws_url_for(base_url), ping_interval=5, ping_timeout=5
         ) as ws:
-            store = {link_id: initial_key}
-            sock = SecSocket(ws, store, link_id, ad=b"paskia-sync")
+            store = {"registration": initial_key}
+            sock = SecSocket(ws, store, "registration", ad=b"paskia-sync")
             await sock.connect()
             await sock.send(syncfeed.encode({"type": "register", "label": _label()}))
             pushed = msgspec.json.decode(await sock.receive())
             if pushed.get("type") != "domains":
                 raise RuntimeError("the upstream did not complete the registration")
+            link_id = pushed.get("link") or ""
+            if not link_id:
+                raise RuntimeError("the upstream sent no link id")
             accepted, rejected = _accepted_domains(link_id, pushed.get("domains") or [])
             await sock.send(
                 syncfeed.encode({"type": "domains_ack", "rejected": rejected})
