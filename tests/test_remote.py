@@ -9,7 +9,7 @@ import httpx
 import msgspec
 import pytest
 import pytest_asyncio
-from fastapi import Response
+from fastapi import Request, Response
 
 import paskia.db.operations as ops_db
 from paskia import domains, satellite, syncfeed
@@ -623,15 +623,10 @@ async def test_settings_reports_remote_flag(remote_client):
 
 
 @pytest.mark.asyncio
-async def test_logout_remote_down_returns_503(remote_client, monkeypatch):
+async def test_logout_remote_down_returns_503(remote_client):
     """A transport failure on a proxied call is a deliberate 503, not a 500."""
     client, secret, replica = remote_client
-
-    class Down:
-        async def request(self, *args, **kwargs):
-            raise httpx.ConnectError("down")
-
-    monkeypatch.setitem(satellite._clients, REMOTE_URL, Down())
+    replica.connected = False
     r = await client.post(
         "/auth/api/logout",
         headers={"Host": "app2.example.com", "Cookie": f"{AUTH_COOKIE_NAME}={secret}"},
@@ -657,6 +652,171 @@ async def test_user_api_proxied_on_remote_auth_host(remote_client, monkeypatch):
     )
     assert r.status_code == 200
     assert r.content == b"proxied"
+
+
+@pytest.mark.asyncio
+async def test_satellite_asgi_request_and_response():
+    replica = satellite.UplinkReplica(_uplink())
+    sent = {}
+
+    class Socket:
+        async def send(self, data):
+            sent.update(msgspec.json.decode(data))
+            for message in [
+                {
+                    "type": "http.response.start",
+                    "id": sent["id"],
+                    "status": 201,
+                    "headers": [(b"set-cookie", b"a=1"), (b"set-cookie", b"b=2")],
+                },
+                {
+                    "type": "http.response.body",
+                    "id": sent["id"],
+                    "body": b"first",
+                    "more_body": True,
+                },
+                {"type": "http.response.body", "id": sent["id"], "body": b"second"},
+            ]:
+                replica._receive_asgi(msgspec.json.decode(syncfeed.encode(message)))
+
+    replica._sock = Socket()
+    replica.connected = True
+
+    async def receive():
+        return {"type": "http.request", "body": b"payload", "more_body": False}
+
+    request = Request(
+        {
+            "type": "http",
+            "method": "POST",
+            "scheme": "https",
+            "path": "/auth/api/set-session",
+            "raw_path": b"/auth/api/set-session",
+            "query_string": b"a=1",
+            "headers": [(b"host", b"app2.example.com")],
+            "client": ("127.0.0.1", 1234),
+        },
+        receive,
+    )
+    response = await replica.forward(request)
+
+    assert sent["type"] == "http.request"
+    assert syncfeed.decode_bytes(sent["body"]) == b"payload"
+    assert sent["scope"]["path"] == "/auth/api/set-session"
+    assert syncfeed.decode_bytes(sent["scope"]["query_string"]) == b"a=1"
+    assert [
+        tuple(syncfeed.decode_bytes(value) for value in pair)
+        for pair in sent["scope"]["headers"]
+    ] == [(b"host", b"app2.example.com")]
+    assert response.status_code == 201
+    assert response.body == b"firstsecond"
+    assert response.headers.getlist("set-cookie") == ["a=1", "b=2"]
+
+
+@pytest.mark.asyncio
+async def test_upstream_asgi_scope_and_response_frames(test_db, monkeypatch):
+    domains.configure(listen=["localhost:4401"])
+    domains.init_registry(_remote_domain_config())
+    seen = {}
+
+    async def application(scope, receive, send):
+        seen["scope"] = scope
+        seen["request"] = await receive()
+        await send(
+            {
+                "type": "http.response.start",
+                "status": 200,
+                "headers": [(b"set-cookie", b"a=1"), (b"set-cookie", b"b=2")],
+            }
+        )
+        await send({"type": "http.response.body", "body": b"first", "more_body": True})
+        await send({"type": "http.response.body", "body": b"second"})
+
+    class Socket:
+        def __init__(self):
+            self.messages = []
+
+        async def send(self, data):
+            self.messages.append(msgspec.json.decode(data))
+
+    monkeypatch.setattr(sync, "_asgi_app", application)
+    sock = Socket()
+    conn = sync._Connection(ws=sock, link_id=UPLINK_ID, scope={"example.com"})
+    await sync._run_asgi(
+        {
+            "id": "call-1",
+            "scope": {
+                "method": "POST",
+                "scheme": "https",
+                "path": "/auth/api/logout",
+                "raw_path": b"/auth/api/logout",
+                "query_string": b"a=1",
+                "headers": [(b"host", b"app2.example.com")],
+                "client": ["127.0.0.1", 1234],
+            },
+            "body": b"payload",
+        },
+        conn,
+    )
+
+    scope = seen["scope"]
+    assert scope["paskia.forwarded"] is True
+    assert scope["method"] == "POST"
+    assert scope["query_string"] == b"a=1"
+    assert (b"host", b"app2.example.com") in scope["headers"]
+    assert seen["request"]["body"] == b"payload"
+    assert [m["type"] for m in sock.messages] == [
+        "http.response.start",
+        "http.response.body",
+        "http.response.body",
+    ]
+    assert all(m["id"] == "call-1" for m in sock.messages)
+    assert [
+        tuple(syncfeed.decode_bytes(value) for value in pair)
+        for pair in sock.messages[0]["headers"]
+    ] == [(b"set-cookie", b"a=1"), (b"set-cookie", b"b=2")]
+    assert syncfeed.decode_bytes(
+        sock.messages[1]["body"]
+    ) + syncfeed.decode_bytes(sock.messages[2]["body"]) == b"firstsecond"
+
+
+@pytest.mark.asyncio
+async def test_upstream_asgi_whitelist(test_db, monkeypatch):
+    domains.configure(listen=["localhost:4401"])
+    domains.init_registry(_remote_domain_config())
+    called = False
+
+    async def application(scope, receive, send):
+        nonlocal called
+        called = True
+
+    class Socket:
+        def __init__(self):
+            self.messages = []
+
+        async def send(self, data):
+            self.messages.append(msgspec.json.decode(data))
+
+    monkeypatch.setattr(sync, "_asgi_app", application)
+    for host, path, expected in [
+        ("app2.example.com", "/auth/api/admin/domains/", 403),
+        ("localhost:4401", "/auth/api/check", 421),
+        ("unknown.example.org", "/auth/api/check", 421),
+    ]:
+        sock = Socket()
+        conn = sync._Connection(ws=sock, link_id=UPLINK_ID, scope={"example.com"})
+        await sync._run_asgi(
+            {
+                "id": "rejected",
+                "scope": {
+                    "path": path,
+                    "headers": [(b"host", host.encode())],
+                },
+            },
+            conn,
+        )
+        assert sock.messages[0]["status"] == expected
+    assert called is False
 
 
 # -------------------------------------------------------------------------

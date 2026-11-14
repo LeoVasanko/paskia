@@ -128,3 +128,7 @@ def unsubscribe(queue: asyncio.Queue) -> None:
 
 def encode(message: dict) -> bytes:
     return msgspec.json.encode(message)
+
+
+def decode_bytes(value: bytes | str) -> bytes:
+    return msgspec.convert(value, bytes)

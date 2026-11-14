@@ -73,6 +73,7 @@ app = FastAPI(
     openapi_url=None,
     debug=env.dev,
 )
+sync.set_asgi_app(app)
 
 # WebSocket and HTTP access logging is handled by fastapi_vue's ASGI middleware;
 # extra details are passed via request.state.log_extra (ASGI scope state).

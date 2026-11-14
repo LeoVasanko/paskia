@@ -13,9 +13,9 @@ link creation and unlinking.
 
 This module owns the rest of the feature: it resolves which store serves
 a request host (local DB or an uplink's read replica), dispatches session
-writes (refresh write-behind, logout eviction), and forwards requests the
-satellite cannot answer (exchange-code redemption, OIDC, reset tokens,
-session-less lookups like /check) to the upstream.
+writes (refresh write-behind, logout eviction), and forwards ASGI exchanges
+the satellite cannot answer (exchange-code redemption, OIDC, reset tokens,
+session-less lookups like /check) over the same encrypted link.
 
 A replica is a ReplicaDB instance, never persisted, fed by the sync
 channel (snapshot on connect, then live events) and swept for expired
@@ -33,11 +33,11 @@ import contextlib
 import logging
 import socket
 import time
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from urllib.parse import unquote, urlsplit, urlunsplit
-from uuid import UUID
+from uuid import UUID, uuid4
 
-import httpx
 import msgspec
 import websockets
 from fastapi import HTTPException, Request, Response
@@ -73,6 +73,15 @@ _TABLES = {
 
 _RECONNECT_DELAY = 5
 _SWEEP_INTERVAL = 60
+_FORWARD_TIMEOUT = 15
+
+
+@dataclass
+class _PendingASGI:
+    done: asyncio.Future
+    status: int = 500
+    headers: list[tuple[bytes, bytes]] = field(default_factory=list)
+    body: bytearray = field(default_factory=bytearray)
 
 
 class LinkRevokedError(Exception):
@@ -301,7 +310,10 @@ class UplinkReplica:
         self.last_contact = 0.0  # monotonic time the feed last went down
         self.connected = False
         self._pending_refresh: dict[str, dict] = {}
+        self._pending_asgi: dict[str, _PendingASGI] = {}
         self._refresh_signal = asyncio.Event()
+        self._send_lock = asyncio.Lock()
+        self._sock: SecSocket | None = None
         self._task: asyncio.Task | None = None
         self._sweeper: asyncio.Task | None = None
         self._stopped = True
@@ -333,6 +345,87 @@ class UplinkReplica:
             "user_agent": user_agent,
         }
         self._refresh_signal.set()
+
+    async def _send(self, sock: SecSocket, message: dict) -> None:
+        async with self._send_lock:
+            await sock.send(syncfeed.encode(message))
+
+    def _receive_asgi(self, message: dict) -> None:
+        pending = self._pending_asgi.get(message.get("id", ""))
+        if pending is None or pending.done.done():
+            return
+        mtype = message.get("type")
+        if mtype == "http.response.start":
+            pending.status = message["status"]
+            pending.headers = [
+                (syncfeed.decode_bytes(k), syncfeed.decode_bytes(v))
+                for k, v in message.get("headers", [])
+            ]
+        elif mtype == "http.response.body":
+            pending.body.extend(syncfeed.decode_bytes(message.get("body", b"")))
+            if not message.get("more_body", False):
+                pending.done.set_result(None)
+        elif mtype == "asgi.error":
+            pending.done.set_exception(ConnectionError("Upstream ASGI request failed"))
+
+    def _fail_asgi(self) -> None:
+        for pending in self._pending_asgi.values():
+            if not pending.done.done():
+                pending.done.set_exception(ConnectionError("Uplink disconnected"))
+
+    async def forward(self, request: Request) -> Response:
+        sock = self._sock
+        if not self.connected or sock is None:
+            raise HTTPException(503, "Remote authentication service unavailable")
+        call_id = uuid4().hex
+        pending = _PendingASGI(asyncio.get_running_loop().create_future())
+        self._pending_asgi[call_id] = pending
+        scope = {
+            "type": "http",
+            "asgi": {"version": "3.0"},
+            "http_version": request.scope.get("http_version", "1.1"),
+            "method": request.method,
+            "scheme": request.url.scheme,
+            "path": request.scope["path"],
+            "raw_path": request.scope.get(
+                "raw_path", request.scope["path"].encode()
+            ),
+            "query_string": request.scope.get("query_string", b""),
+            "root_path": "",
+            "headers": [
+                (k, v)
+                for k, v in request.scope.get("headers", [])
+                if k.decode().lower() not in _HOP_BY_HOP
+            ],
+            "client": request.scope.get("client"),
+            "server": None,
+        }
+        try:
+            await self._send(
+                sock,
+                {
+                    "type": "http.request",
+                    "id": call_id,
+                    "scope": scope,
+                    "body": await request.body(),
+                    "more_body": False,
+                },
+            )
+            await asyncio.wait_for(pending.done, _FORWARD_TIMEOUT)
+        except (
+            TimeoutError,
+            ConnectionError,
+            ProtocolError,
+            websockets.exceptions.ConnectionClosed,
+        ) as e:
+            raise HTTPException(503, "Remote authentication service unavailable") from e
+        finally:
+            self._pending_asgi.pop(call_id, None)
+        response = Response(content=bytes(pending.body), status_code=pending.status)
+        response.raw_headers = [
+            (k, v) for k, v in pending.headers if k.decode().lower() not in _HOP_BY_HOP
+        ]
+        return response
 
     async def start(self) -> None:
         self._stopped = False
@@ -401,6 +494,7 @@ class UplinkReplica:
                 if e.code == 1008:
                     raise LinkRevokedError(self.uplink.url) from e
                 raise
+            self._sock = sock
             # Every connection starts with the authoritative domain set.
             pushed = await self._recv(sock)
             if pushed.get("type") != "domains":
@@ -408,7 +502,7 @@ class UplinkReplica:
             rejected, _ = apply_domains_push(
                 self.uplink.uplink_id, pushed.get("domains") or [], replica_db=self.db
             )
-            await sock.send(syncfeed.encode({"type": "domains_ack", "rejected": rejected}))
+            await self._send(sock, {"type": "domains_ack", "rejected": rejected})
 
             sender = asyncio.create_task(self._send_loop(sock))
             staging: ReplicaDB | None = None
@@ -449,10 +543,8 @@ class UplinkReplica:
                             message.get("domains") or [],
                             replica_db=self.db,
                         )
-                        await sock.send(
-                            syncfeed.encode(
-                                {"type": "domains_ack", "rejected": rejected}
-                            )
+                        await self._send(
+                            sock, {"type": "domains_ack", "rejected": rejected}
                         )
                         if changed:
                             return
@@ -462,7 +554,16 @@ class UplinkReplica:
                             staging = None
                         self.connected = True
                         self.last_contact = ready_at = time.monotonic()
+                    elif mtype in (
+                        "http.response.start",
+                        "http.response.body",
+                        "asgi.error",
+                    ):
+                        self._receive_asgi(message)
             finally:
+                if self._sock is sock:
+                    self._sock = None
+                self._fail_asgi()
                 sender.cancel()
                 with contextlib.suppress(asyncio.CancelledError):
                     await sender
@@ -472,7 +573,7 @@ class UplinkReplica:
             self._refresh_signal.clear()
             while self._pending_refresh:
                 _, message = self._pending_refresh.popitem()
-                await sock.send(syncfeed.encode(message))
+                await self._send(sock, message)
             await self._refresh_signal.wait()
 
 
@@ -535,8 +636,6 @@ class SatelliteManager:
         for replica in self.replicas.values():
             await replica.stop()
         self.replicas.clear()
-        for url in list(_clients):
-            await _drop_client(url)
 
     async def sync_uplinks(self) -> None:
         """Start/stop replicas to match the stored uplinks."""
@@ -545,7 +644,6 @@ class SatelliteManager:
             if uplink_id not in wanted:
                 replica = self.replicas.pop(uplink_id)
                 await replica.stop()
-                await _drop_client(replica.uplink.url)
         # Snapshot: a revocation task may mutate the uplinks mid-loop
         for uplink_id, uplink in list(wanted.items()):
             uplink.uplink_id = uplink_id  # fresh objects lack it until load
@@ -563,7 +661,6 @@ class SatelliteManager:
         replica = self.replicas.pop(uplink_id, None)
         if replica is not None:
             await replica.stop()
-            await _drop_client(replica.uplink.url)
         db.delete_uplink(uplink_id)
         domains.init_registry(db.data().config)
 
@@ -623,8 +720,6 @@ def evict_session(auth: str, host: str | None) -> None:
         replica.db.session_contexts.pop(key, None)
 
 
-_TIMEOUT = httpx.Timeout(15.0, connect=5.0)
-
 _HOP_BY_HOP = {
     "connection",
     "keep-alive",
@@ -634,59 +729,17 @@ _HOP_BY_HOP = {
     "trailers",
     "transfer-encoding",
     "upgrade",
-    "content-length",
-    "accept-encoding",
-    "content-encoding",
 }
-
-_clients: dict[str, httpx.AsyncClient] = {}
-
-
-async def _drop_client(url: str) -> None:
-    """Close and forget the forwarding client for an uplink URL."""
-    client = _clients.pop(url, None)
-    if client is not None:
-        await client.aclose()
-
-
-def _uplink_url(domain: domains.Domain) -> str:
-    """The base URL of the uplink backing a remote domain (503 if the
-    config and the uplinks table desynced — a bug, not a local answer)."""
-    uplink = db.data().uplinks.get(domain.remote.link)
-    if uplink is None:
-        raise HTTPException(503, "Remote authentication service unavailable")
-    return uplink.url
 
 
 async def forward_request(request: Request) -> Response | None:
-    """Forward the request to its domain's uplink, or None when local.
-
-    The original Host header is preserved so the upstream dispatches to the
-    same domain (sessions are host-bound). The user's cookie authenticates
-    the forwarded call; the satellite needs no credentials of its own.
-    """
+    """Forward a remote domain's ASGI exchange over its encrypted uplink."""
+    if request.scope.get("paskia.forwarded"):
+        return None
     domain = domains.registry().resolve(request.headers.get("host"))
     if domain is None or domain.remote is None:
         return None
-    url = _uplink_url(domain)
-    client = _clients.get(url)
-    if client is None:
-        client = _clients[url] = httpx.AsyncClient(base_url=url, timeout=_TIMEOUT)
-    try:
-        upstream = await client.request(
-            request.method,
-            request.url.path,
-            params=request.url.query,
-            content=await request.body(),
-            headers={
-                k: v for k, v in request.headers.items() if k.lower() not in _HOP_BY_HOP
-            },
-        )
-    except httpx.TransportError as e:
-        raise HTTPException(503, "Remote authentication service unavailable") from e
-    response = Response(content=upstream.content, status_code=upstream.status_code)
-    # Raw headers to preserve repeated Set-Cookie
-    response.raw_headers = [
-        (k, v) for k, v in upstream.headers.raw if k.decode().lower() not in _HOP_BY_HOP
-    ]
-    return response
+    replica = manager.replicas.get(domain.remote.link)
+    if replica is None:
+        raise HTTPException(503, "Remote authentication service unavailable")
+    return await replica.forward(request)

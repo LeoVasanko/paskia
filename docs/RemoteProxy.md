@@ -113,6 +113,9 @@ already has; writes dispatch likewise (`satellite.refresh_session` —
 write-behind for remote, `db.update_session` for local;
 `satellite.evict_session` on logout). `satellite.forward_request(request)`
 returns the proxied response for remote domains or `None` for local ones.
+Forwarded ASGI exchanges use the encrypted sync WebSocket rather than a
+second HTTPS connection; the upstream applies link-domain and path
+allowlists before invoking the normal FastAPI application.
 
 **The replica** is a `ReplicaDB` instance in RAM, never persisted, one per
 uplink connection. On connect the upstream sends a snapshot of the scoped
@@ -138,12 +141,12 @@ OIDC signing key is never replicated.
 | `GET /auth/api/forward`, `GET /settings` | served from the replica (sub-ms) |
 | `POST /auth/api/validate` | verified from the replica; the throttled refresh updates the replica and is written back over the sync channel; cookie renewed locally |
 | `GET /check`, `GET /user-info` | proxied — these need the user graph (per-session contexts do not cover arbitrary user lookups or full profile data) |
-| `POST /auth/api/logout` | proxied to the upstream (original Host preserved) and evicted from the replica immediately |
+| `POST /auth/api/logout` | proxied over ASGI-in-WebSocket (original Host preserved) and evicted from the replica immediately |
 | `POST /auth/api/set-session`, `GET /token-info` | proxied (the exchange code/reset token lives on the upstream); the session arrives via sync event |
 | `/auth/oidc/*` | proxied (signing key and OIDC sessions stay on the upstream) |
 | `/auth/ws/*`, `/auth/remote-auth/*`, admin, profile | not served — the auth host requirement means these are reached on the upstream directly |
 
-Proxied calls answer 503 when the upstream is unreachable.
+Proxied calls answer 503 when the sync link is unavailable.
 `/auth/api/settings` reports `remote: true` for a satellite-served domain.
 Should a remote domain's auth host be misrouted to the satellite anyway,
 profile/avatar requests (`/auth/api/user/*`) are forwarded to the upstream
@@ -156,18 +159,19 @@ Freshness hierarchy:
    optimistic eviction).
 2. Changes made **directly on the upstream**: a sync event, ~1 network
    RTT.
-3. Channel down: the replica stays authoritative until `cache_ttl` past
-   the disconnect (dead-peer detection is bounded by the ~10 s keepalive),
-   then 503. Every reconnect starts from a fresh snapshot.
+3. Channel down: the replica stays authoritative for local session checks
+   until `cache_ttl` past the disconnect (dead-peer detection is bounded by
+   the ~10 s keepalive), then 503. Forwarded calls require a live link. Every
+   reconnect starts from a fresh snapshot.
 
 ## The upstream side
 
 Nearly additive: the link table, RAM-only registration offers and the
 `syncfeed` subscriber set fed by the commit hooks, plus the
 `/auth/api/sync/ws` endpoint doing the handshake, serving snapshots and
-live events, pushing domain configuration, and accepting
-`session_refresh` write-backs within the link's scope. With no satellites
-connected, the hooks are a no-op.
+live events, pushing domain configuration, accepting `session_refresh`
+write-backs, and dispatching allowlisted ASGI exchanges within the link's
+scope. With no satellites connected, the hooks are a no-op.
 
 ## Trust and caveats
 

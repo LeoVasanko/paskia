@@ -11,10 +11,10 @@ changes and revocation all cross a TCP socket.
 One in-process distortion remains: both sides share the module-level
 database and registry, so the satellite's pushed-domain application is
 arranged to be a no-op (the link's domains are absent from the shared
-config — the satellite registry is synthetic instead), and endpoints the
-satellite *forwards* to the upstream (logout, set-session, OIDC) would
-re-forward and loop here — those paths are covered in test_remote.py with
-a mocked forward_request.
+config — the satellite registry is synthetic instead). Forwarded requests
+carry a loop-prevention marker; token lookup and OIDC key retrieval exercise
+the real ASGI-over-WebSocket path, while other forwarded endpoints use
+mocked forwarding or isolated upstream tests.
 """
 
 import asyncio
@@ -321,6 +321,27 @@ async def test_live_snapshot_and_context_repush(
             live.replica.db.session_contexts[key].user.display_name == "Live Rename"
         ),
     )
+
+
+@pytest.mark.asyncio
+async def test_live_api_forwarded_over_sync_channel(live_remote, test_user):
+    live = live_remote
+    token = ops_db.create_reset_token(
+        user_uuid=test_user.uuid,
+        expiry=datetime.now(UTC) + timedelta(hours=1),
+        token_type="device addition",
+    )
+    r = await live.client.get(
+        "/auth/api/token-info",
+        headers={"Host": APP_HOST, "Authorization": f"Bearer {token}"},
+    )
+    assert r.status_code == 200
+    assert r.json()["token_type"] == "device addition"
+    assert r.json()["display_name"] == "Test Admin"
+
+    r = await live.client.get("/auth/oidc/keys", headers={"Host": APP_HOST})
+    assert r.status_code == 200
+    assert r.json()["keys"]
 
 
 @pytest.mark.asyncio

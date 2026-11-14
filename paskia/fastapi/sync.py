@@ -5,7 +5,7 @@ replaces the one-time registration secret with a composite credential at its
 atomic key-change point; only then is the new link persisted. Established
 links resume with that credential. The application protocol above SecSocket
 starts with a domain push, followed by snapshots, live events, session
-write-backs and domain acknowledgements.
+write-backs, domain acknowledgements, and allowlisted ASGI exchanges.
 """
 
 import asyncio
@@ -19,9 +19,10 @@ from urllib.parse import urlsplit
 
 import msgspec
 from fastapi import WebSocket, WebSocketDisconnect
+from fastapi.responses import PlainTextResponse
 from quantumpipe import ProtocolError, SecSocket
 
-from paskia import db, syncfeed
+from paskia import db, domains, syncfeed
 from paskia.fastapi.strictapp import strict_app
 from paskia.util.passphrase import derive_registration_secret, generate
 
@@ -31,6 +32,20 @@ app = strict_app()
 
 OFFER_TTL = 600  # registration offers live 10 minutes, RAM-only
 _SYNC_AD = b"paskia-sync"
+_FORWARDED_PATHS = {
+    "/auth/api/check",
+    "/auth/api/user-info",
+    "/auth/api/token-info",
+    "/auth/api/logout",
+    "/auth/api/set-session",
+}
+_FORWARDED_PREFIXES = ("/auth/api/user/", "/auth/oidc/")
+_asgi_app = None
+
+
+def set_asgi_app(application) -> None:
+    global _asgi_app
+    _asgi_app = application
 
 
 @dataclass
@@ -49,6 +64,8 @@ class _Connection:
     link_id: str
     scope: set[str]
     rejected: dict[str, str] = field(default_factory=dict)
+    send_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+    requests: set[asyncio.Task] = field(default_factory=set)
 
 
 _offers: dict[str, _Offer] = {}
@@ -174,8 +191,9 @@ def drop_domain_from_links(rp_id: str, *, ctx=None) -> None:
             push_link_domains(link_id)
 
 
-async def _send(sock: SecSocket, message: dict) -> None:
-    await sock.send(syncfeed.encode(message))
+async def _send(conn: _Connection, message: dict) -> None:
+    async with conn.send_lock:
+        await conn.ws.send(syncfeed.encode(message))
 
 
 async def _receive(sock: SecSocket) -> dict:
@@ -223,9 +241,108 @@ async def _handshake(sock: SecSocket, store: _HandshakeStore) -> _Connection | N
     return _Connection(ws=sock, link_id=link_id, scope=set(offer.rp_ids))
 
 
+def _forwarded_scope(message: dict) -> dict:
+    source = message.get("scope") or {}
+    path = source.get("path") or ""
+    return {
+        "type": "http",
+        "asgi": {"version": "3.0"},
+        "http_version": source.get("http_version", "1.1"),
+        "method": source.get("method", "GET"),
+        "scheme": source.get("scheme", "https"),
+        "path": path,
+        "raw_path": syncfeed.decode_bytes(source.get("raw_path", path.encode())),
+        "query_string": syncfeed.decode_bytes(source.get("query_string", b"")),
+        "root_path": "",
+        "headers": [
+            (syncfeed.decode_bytes(k), syncfeed.decode_bytes(v))
+            for k, v in source.get("headers", [])
+        ],
+        "client": source.get("client"),
+        "server": None,
+        "paskia.forwarded": True,
+    }
+
+
+def _forwarded_domain(scope: dict) -> domains.Domain | None:
+    host = next(
+        (
+            value.decode("latin-1")
+            for name, value in scope["headers"]
+            if name.lower() == b"host"
+        ),
+        None,
+    )
+    return domains.registry().resolve(host)
+
+
+def _path_allowed(path: str) -> bool:
+    return path in _FORWARDED_PATHS or path.startswith(_FORWARDED_PREFIXES)
+
+
+async def _run_asgi(message: dict, conn: _Connection) -> None:
+    call_id = message.get("id") or ""
+    started = False
+
+    async def send(asgi_message: dict) -> None:
+        nonlocal started
+        if asgi_message["type"] == "http.response.start":
+            started = True
+        await _send(conn, {**asgi_message, "id": call_id})
+
+    body = b""
+    received = False
+
+    async def receive() -> dict:
+        nonlocal received
+        if not received:
+            received = True
+            return {"type": "http.request", "body": body, "more_body": False}
+        return {"type": "http.disconnect"}
+
+    scope = None
+    try:
+        body = syncfeed.decode_bytes(message.get("body", b""))
+        scope = _forwarded_scope(message)
+        domain = _forwarded_domain(scope)
+        if domain is None or domain.rp_id not in conn.scope:
+            response = PlainTextResponse(
+                "Host outside satellite link scope", status_code=421
+            )
+            await response(scope, receive, send)
+        elif not _path_allowed(scope["path"]):
+            response = PlainTextResponse("Path not allowed for satellites", status_code=403)
+            await response(scope, receive, send)
+        elif _asgi_app is None:
+            raise RuntimeError("ASGI application is not configured")
+        else:
+            await _asgi_app(scope, receive, send)
+    except Exception:
+        _logger.exception("Forwarded ASGI request failed")
+        try:
+            if started or scope is None:
+                await _send(conn, {"type": "asgi.error", "id": call_id})
+            else:
+                response = PlainTextResponse(
+                    "Forwarded request failed", status_code=500
+                )
+                await response(scope, receive, send)
+        except Exception:
+            _logger.debug("Could not report forwarded ASGI failure", exc_info=True)
+
+
+def _start_asgi(message: dict, conn: _Connection) -> None:
+    task = asyncio.create_task(_run_asgi(message, conn))
+    conn.requests.add(task)
+    task.add_done_callback(conn.requests.discard)
+
+
 async def _apply_client_message(message: dict, conn: _Connection) -> None:
     """Satellite → upstream frames, confined to the link's scope."""
     mtype = message.get("type")
+    if mtype == "http.request":
+        _start_asgi(message, conn)
+        return
     if mtype == "domains_ack":
         conn.rejected = message.get("rejected") or {}
         return
@@ -252,12 +369,13 @@ async def sync_websocket(ws: WebSocket):
     store = _HandshakeStore()
     sock = SecSocket(ws, store, ad=_SYNC_AD)
     queue: asyncio.Queue | None = None
+    conn: _Connection | None = None
     try:
         conn = await _handshake(sock, store)
         if conn is None:
             return
         await _send(
-            sock,
+            conn,
             {
                 "type": "domains",
                 "link": conn.link_id,
@@ -268,16 +386,16 @@ async def sync_websocket(ws: WebSocket):
         _connections[queue] = conn
         for table in syncfeed.TABLES:
             await _send(
-                sock,
+                conn,
                 {
                     "type": "snapshot",
                     "table": table,
                     "items": _snapshot_items(table, conn.scope),
                 },
             )
-        await _send(sock, {"type": "ready", "rp_ids": sorted(conn.scope)})
+        await _send(conn, {"type": "ready", "rp_ids": sorted(conn.scope)})
 
-        sender = asyncio.create_task(_pump(sock, queue))
+        sender = asyncio.create_task(_pump(conn, queue))
         try:
             while True:
                 await _apply_client_message(await _receive(sock), conn)
@@ -288,15 +406,20 @@ async def sync_websocket(ws: WebSocket):
     except Exception:
         _logger.exception("Sync WebSocket failed")
     finally:
+        if conn is not None:
+            requests = list(conn.requests)
+            for task in requests:
+                task.cancel()
+            await asyncio.gather(*requests, return_exceptions=True)
         if queue is not None:
             _connections.pop(queue, None)
             syncfeed.unsubscribe(queue)
 
 
-async def _pump(sock: SecSocket, queue: asyncio.Queue) -> None:
+async def _pump(conn: _Connection, queue: asyncio.Queue) -> None:
     try:
         while True:
-            await _send(sock, await queue.get())
+            await _send(conn, await queue.get())
     except (WebSocketDisconnect, RuntimeError, asyncio.CancelledError):
         pass
     except Exception:
