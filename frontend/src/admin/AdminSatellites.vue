@@ -234,7 +234,7 @@ function linkStatus(link) {
       </p>
     </div>
 
-    <div class="actions">
+    <div>
       <button type="button" @click="openLinkDialog(null)">+ Add link</button>
     </div>
     <table v-if="allLinks.length" class="org-table">
@@ -384,9 +384,8 @@ function linkStatus(link) {
 </template>
 
 <style scoped>
-.satellites-section { margin-top: var(--space-2xl); display: flex; flex-direction: column; gap: var(--space-sm); }
+.satellites-section { margin-top: var(--space-2xl); }
 .satellites-section .section-header { display: flex; flex-direction: column; gap: 0.4rem; margin-bottom: var(--space-xs); }
-.satellites-section .actions { display: flex; align-items: center; gap: var(--space-sm); }
 .perm-name-cell { display: flex; flex-direction: column; gap: 0.3rem; }
 .perm-title { font-weight: 600; color: var(--color-heading); }
 .perm-id-info { font-size: 0.8rem; color: var(--color-text-muted); }
