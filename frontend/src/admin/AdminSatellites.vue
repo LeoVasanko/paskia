@@ -1,18 +1,8 @@
 <script setup>
-// Satellites panel: both link roles of this instance.
-//
-// Upstream role ("Satellites" table): other paskia instances registered to
-// serve this instance's domains. Registration is online: mint a link URL
-// (RAM-only, single-use, 10 minutes), the satellite pastes it in its own
-// Satellites panel or runs `paskia satellite <url>`. A link's scope (the
-// domains it serves) is adjustable at any time — the new set is pushed
-// over the live link, no new registration. Revoking a link drops the
-// satellite's connection and its copy of the domains.
-//
-// Satellite role ("Uplinks" table): this instance serving other
-// instances' domains. The only local configuration is the link itself —
-// domains, origins and auth host arrive from the upstream and are
-// read-only here.
+// Links panel: domains served by this instance's satellites and domains this
+// instance serves for another master share one table and one add-link dialog.
+// Link scope is adjustable at any time and pushed over the live connection.
+// Revoking or unlinking drops the connection and the satellite's domains.
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import AdminDialog from './dialogs/AdminDialog.vue'
 import { useAuthStore } from '@/stores/auth'
@@ -73,22 +63,37 @@ const eligibleDomains = computed(() =>
   props.domains.filter(d => !d.remote && d.auth_host)
 )
 
-function copyText(value, label) {
-  navigator.clipboard.writeText(value).then(() => {
-    authStore.showMessage(`${label} copied to clipboard`, 'success', 1500)
-  })
+const allLinks = computed(() => [
+  ...links.value.map(link => ({ ...link, kind: 'master', servedDomains: link.rp_ids })),
+  ...uplinks.value.map(link => ({ ...link, kind: 'satellite', servedDomains: link.domains })),
+])
+
+function managementUrl(value) {
+  const url = new URL(value)
+  if (url.protocol === 'ws:') url.protocol = 'http:'
+  if (url.protocol === 'wss:') url.protocol = 'https:'
+  url.hash = ''
+  url.search = ''
+  return url.toString()
 }
 
-// --- Link dialog (create an offer / adjust scope) ---
-const linkDialog = ref(null) // {id|null, selected:Set, minted:{url,expires_in}|null, busy, error}
+async function copyText(value, label) {
+  await navigator.clipboard.writeText(value)
+  authStore.showMessage(`${label} copied to clipboard`, 'success', 1500)
+}
+
+// --- Link dialog (share / register / adjust scope) ---
+const linkDialog = ref(null) // {id|null, url, selected:Set, busy, errors}
 
 function openLinkDialog(link) {
   linkDialog.value = {
     id: link?.id || null,
-    selected: new Set(link?.rp_ids || []),
-    minted: null,
+    url: '',
+    selected: new Set(link?.rp_ids || eligibleDomains.value.map(d => d.rp_id)),
     busy: false,
     error: '',
+    masterError: '',
+    satelliteError: '',
   }
 }
 
@@ -100,45 +105,34 @@ function toggleScope(rpId) {
   linkDialog.value.selected = s
 }
 
-async function submitLinkDialog() {
+async function shareDomains() {
   const d = linkDialog.value
-  if (!d || d.busy) return
-  if (d.minted) {
-    // The URL is shown — Done dismisses
-    linkDialog.value = null
-    return
-  }
+  if (!d || d.busy || !eligibleDomains.value.length) return
   d.busy = true
-  d.error = ''
+  d.masterError = ''
   try {
-    const rp_ids = [...d.selected]
-    if (d.id) {
-      await apiJson(`/auth/api/admin/satellites/${d.id}`, { method: 'PATCH', body: { rp_ids } })
-      authStore.showMessage('Link scope updated — pushed to the satellite.', 'success', 2500)
-      linkDialog.value = null
-    } else {
-      d.minted = await apiJson('/auth/api/admin/satellites/', { method: 'POST', body: { rp_ids } })
-      mintWatchUntil = Date.now() + 60_000  // watch for the satellite registering
-    }
+    const result = await apiJson('/auth/api/admin/satellites/', {
+      method: 'POST', body: { rp_ids: [...d.selected] },
+    })
+    mintWatchUntil = Date.now() + 60_000
     await refresh()
+    linkDialog.value = null
+    await copyText(result.url, 'Link URL')
   } catch (e) {
-    d.error = e.message || 'Failed'
+    d.masterError = e.message || 'Could not create the link'
   } finally {
     d.busy = false
   }
 }
 
-// --- Uplink dialog (register from a pasted link URL) ---
-const uplinkDialog = ref(null) // {url, busy, error}
-
-async function submitUplinkDialog() {
-  const d = uplinkDialog.value
-  if (!d || d.busy) return
+async function registerUplink() {
+  const d = linkDialog.value
+  if (!d || d.busy || !d.url.trim()) return
   d.busy = true
-  d.error = ''
+  d.satelliteError = ''
   try {
     const result = await apiJson('/auth/api/admin/uplinks/', { method: 'POST', body: { url: d.url } })
-    uplinkDialog.value = null
+    linkDialog.value = null
     const served = result.domains?.length ? result.domains.join(', ') : 'no domains yet'
     authStore.showMessage(`Linked to ${result.url} — serving ${served}.`, 'success', 4000)
     const rejected = Object.entries(result.rejected || {})
@@ -151,7 +145,26 @@ async function submitUplinkDialog() {
     await refresh()
     emit('domains-changed')
   } catch (e) {
-    d.error = e.message || 'Registration failed'
+    d.satelliteError = e.message || 'Registration failed'
+  } finally {
+    d.busy = false
+  }
+}
+
+async function submitLinkDialog() {
+  const d = linkDialog.value
+  if (!d?.id || d.busy) return
+  d.busy = true
+  d.error = ''
+  try {
+    await apiJson(`/auth/api/admin/satellites/${d.id}`, {
+      method: 'PATCH', body: { rp_ids: [...d.selected] },
+    })
+    authStore.showMessage('Link scope updated — pushed to the satellite.', 'success', 2500)
+    linkDialog.value = null
+    await refresh()
+  } catch (e) {
+    d.error = e.message || 'Failed'
   } finally {
     d.busy = false
   }
@@ -203,9 +216,9 @@ function unlinkUplink(uplink) {
   )
 }
 
-function uplinkStatus(u) {
-  if (u.connected) return { icon: '●', text: 'connected', cls: 'status-ok' }
-  if (u.available) return { icon: '◐', text: 'offline — answering from cache', cls: 'status-warn' }
+function linkStatus(link) {
+  if (link.connected) return { icon: '●', text: 'connected', cls: 'status-ok' }
+  if (link.available) return { icon: '◐', text: 'offline — answering from cache', cls: 'status-warn' }
   return { icon: '○', text: 'offline', cls: 'status-bad' }
 }
 </script>
@@ -215,141 +228,146 @@ function uplinkStatus(u) {
     <div class="section-header">
       <h2>Satellites</h2>
       <p class="section-description">
-        A satellite is another paskia instance serving this instance's domains next to the apps that need
-        them — session checks answer locally in a millisecond from a RAM replica kept in sync over a live
-        link. Registration is online: mint a link URL, then paste it in the satellite's own Satellites
-        panel or run <code>paskia satellite &lt;url&gt;</code> on the satellite host.
+        Links let one paskia instance serve another's domains next to the apps that need them — session
+        checks answer locally in a millisecond from a RAM replica kept in sync over a live connection.
+        Create a link URL here, or paste a URL from the authoritative instance.
       </p>
     </div>
 
-    <table v-if="links.length" class="org-table">
+    <div class="actions">
+      <button type="button" @click="openLinkDialog(null)">+ Add link</button>
+    </div>
+    <table v-if="allLinks.length" class="org-table">
       <thead>
         <tr>
-          <th>Satellite</th>
+          <th>Authoritative side</th>
           <th>Serves domains</th>
           <th class="center">Status</th>
           <th class="center"></th>
         </tr>
       </thead>
       <tbody>
-        <tr v-for="link in links" :key="link.id">
+        <tr v-for="link in allLinks" :key="`${link.kind}:${link.id}`">
           <td class="perm-name-cell">
-            <div class="perm-title">{{ link.label || 'satellite' }}</div>
-            <div class="perm-id-info"><span class="id-text">{{ link.id }}</span><span class="muted">·</span><span>{{ formatDate(link.created) }}</span></div>
+            <div v-if="link.kind === 'master'" class="perm-title">This instance (master)</div>
+            <a
+              v-else
+              class="perm-title"
+              :href="managementUrl(link.url)"
+              target="_blank"
+              rel="noopener noreferrer"
+            >{{ managementUrl(link.url) }}</a>
+            <div class="perm-id-info">
+              <template v-if="link.kind === 'master'">
+                <span>{{ link.label || 'satellite' }}</span><span class="muted">·</span>
+              </template>
+              <span class="id-text">{{ link.id }}</span><span class="muted">·</span><span>{{ formatDate(link.created) }}</span>
+            </div>
           </td>
           <td>
-            <span v-if="link.rp_ids.length">{{ link.rp_ids.join(', ') }}</span>
+            <span v-if="link.servedDomains.length">{{ link.servedDomains.join(', ') }}</span>
             <span v-else class="muted">—</span>
             <div v-if="Object.keys(link.rejected || {}).length" class="small error">
               rejected there: {{ Object.entries(link.rejected).map(([r, why]) => `${r} (${why})`).join(', ') }}
             </div>
           </td>
           <td class="center">
-            <span v-if="link.connected" class="status-ok" title="The satellite is connected now">●</span>
-            <span v-else class="muted" title="Not connected">○</span>
+            <span :class="linkStatus(link).cls" :title="linkStatus(link).text">{{ linkStatus(link).icon }}</span>
           </td>
-          <td class="center">
-            <button type="button" class="icon-btn" @click="openLinkDialog(link)" aria-label="Adjust scope" title="Adjust which domains it serves">✏️</button>
-            <button type="button" class="icon-btn delete-icon" @click="revokeLink(link)" aria-label="Revoke link" title="Revoke — the satellite disconnects and unlinks">❌</button>
-          </td>
-        </tr>
-      </tbody>
-    </table>
-    <p v-else class="small muted">No satellites registered.</p>
-    <div class="actions">
-      <button type="button" :disabled="!eligibleDomains.length" @click="openLinkDialog(null)">+ New satellite link</button>
-      <span v-if="!eligibleDomains.length" class="small muted">A domain with an auth host is required first.</span>
-    </div>
-
-    <h3 class="uplinks-title">Uplinks <span class="muted uplinks-hint">— this instance as the satellite</span></h3>
-    <table v-if="uplinks.length" class="org-table">
-      <thead>
-        <tr>
-          <th>Upstream</th>
-          <th>Serving domains</th>
-          <th class="center">Status</th>
-          <th class="center"></th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr v-for="uplink in uplinks" :key="uplink.id">
-          <td class="perm-name-cell">
-            <div class="perm-title">{{ uplink.url }}</div>
-            <div class="perm-id-info"><span class="id-text">{{ uplink.id }}</span><span class="muted">·</span><span>{{ formatDate(uplink.created) }}</span></div>
-          </td>
-          <td>
-            <span v-if="uplink.domains.length">{{ uplink.domains.join(', ') }}</span>
-            <span v-else class="muted">—</span>
-          </td>
-          <td class="center">
-            <span :class="uplinkStatus(uplink).cls" :title="uplinkStatus(uplink).text">{{ uplinkStatus(uplink).icon }}</span>
-          </td>
-          <td class="center">
-            <button type="button" class="icon-btn delete-icon" @click="unlinkUplink(uplink)" aria-label="Unlink" title="Unlink — stop serving its domains">❌</button>
+          <td class="center row-actions">
+            <template v-if="link.kind === 'master'">
+              <button type="button" class="icon-btn" @click="openLinkDialog(link)" aria-label="Adjust scope" title="Adjust which domains it serves">✏️</button>
+              <button type="button" class="icon-btn delete-icon" @click="revokeLink(link)" aria-label="Revoke link" title="Revoke — the satellite disconnects and unlinks">❌</button>
+            </template>
+            <button v-else type="button" class="icon-btn delete-icon" @click="unlinkUplink(link)" aria-label="Unlink" title="Unlink — stop serving its domains">❌</button>
           </td>
         </tr>
       </tbody>
     </table>
-    <div class="actions">
-      <button type="button" @click="uplinkDialog = { url: '', busy: false, error: '' }">+ Add uplink</button>
-    </div>
+    <p v-else class="small muted">No links registered.</p>
 
     <AdminDialog
-      v-if="linkDialog"
-      :title="linkDialog.id ? 'Satellite link scope' : 'New satellite link'"
+      v-if="linkDialog && !linkDialog.id"
+      title="Add link"
+      panel-class="link-dialog-panel"
       :busy="linkDialog.busy"
-      :error="linkDialog.error"
-      :submit-label="linkDialog.minted ? 'Done' : linkDialog.id ? 'Save' : 'Generate link URL'"
-      @submit="submitLinkDialog"
+      bare
       @close="linkDialog = null"
     >
-      <template v-if="!linkDialog.minted">
-        <p class="small muted">
-          Domains this satellite serves. Adjustable later — the new set is pushed over the live link,
-          no new registration.
-        </p>
-        <div class="scope-list">
-          <label v-for="d in eligibleDomains" :key="d.rp_id" class="scope-row">
-            <input type="checkbox" :checked="linkDialog.selected.has(d.rp_id)" @change="toggleScope(d.rp_id)" />
-            <span>{{ d.rp_id }}</span>
+      <div class="link-roles">
+        <section class="link-role">
+          <h4>Master</h4>
+          <template v-if="eligibleDomains.length">
+            <p class="small muted">Create a link on this authoritative instance and paste it on a satellite.</p>
+            <div class="scope-list">
+              <label v-for="d in eligibleDomains" :key="d.rp_id" class="scope-row">
+                <input
+                  type="checkbox"
+                  :checked="linkDialog.selected.has(d.rp_id)"
+                  :disabled="linkDialog.busy"
+                  @change="toggleScope(d.rp_id)"
+                />
+                <span>{{ d.rp_id }}</span>
+              </label>
+            </div>
+            <button
+              type="button"
+              class="btn-primary link-role-action"
+              :disabled="linkDialog.busy"
+              @click="shareDomains"
+            >Share these domains</button>
+          </template>
+          <p v-else class="small muted">
+            Sharing requires a local domain with a designated auth host. On localhost, add the exact
+            development origin including its port in Domains and mark it as the auth host.
+          </p>
+          <p v-if="linkDialog.masterError" class="small error">{{ linkDialog.masterError }}</p>
+        </section>
+
+        <section class="link-role">
+          <h4>Satellite</h4>
+          <p class="small muted">Register this instance with a link created by its master.</p>
+          <label>Link URL
+            <input
+              v-model="linkDialog.url"
+              placeholder="wss://auth.example.com#hurt.siege.right.burden.permit"
+              autocomplete="off"
+              data-lpignore="true"
+              data-1p-ignore="true"
+              data-form-type="other"
+              spellcheck="false"
+              :disabled="linkDialog.busy"
+            />
           </label>
-        </div>
-      </template>
-      <template v-else>
-        <p class="small muted">
-          The link URL — hand it to the satellite (its Satellites panel, or
-          <code>paskia satellite &lt;url&gt;</code>). Valid for {{ Math.round(linkDialog.minted.expires_in / 60) }} minutes,
-          single-use, shown once:
-        </p>
-        <pre class="wellknown-doc" title="Click to copy" tabindex="0" @click="copyText(linkDialog.minted.url, 'Link URL')" @keydown.enter.prevent="copyText(linkDialog.minted.url, 'Link URL')">{{ linkDialog.minted.url }}</pre>
-      </template>
+          <p v-if="linkDialog.satelliteError" class="small error">{{ linkDialog.satelliteError }}</p>
+          <button
+            type="button"
+            class="btn-primary link-role-action"
+            :disabled="linkDialog.busy || !linkDialog.url.trim()"
+            @click="registerUplink"
+          >Connect to master</button>
+        </section>
+      </div>
     </AdminDialog>
 
     <AdminDialog
-      v-if="uplinkDialog"
-      title="Add uplink"
-      :busy="uplinkDialog.busy"
-      :error="uplinkDialog.error"
-      submit-label="Register"
-      :submit-disabled="!uplinkDialog.url.trim()"
-      @submit="submitUplinkDialog"
-      @close="uplinkDialog = null"
+      v-if="linkDialog && linkDialog.id"
+      title="Satellite link scope"
+      :busy="linkDialog.busy"
+      :error="linkDialog.error"
+      submit-label="Save"
+      @submit="submitLinkDialog"
+      @close="linkDialog = null"
     >
-      <label>Link URL
-        <input
-          v-model="uplinkDialog.url"
-          placeholder="wss://auth.example.com#hurt.siege.right.burden.permit"
-          autocomplete="off"
-          data-lpignore="true"
-          data-1p-ignore="true"
-          data-form-type="other"
-          spellcheck="false"
-        />
-      </label>
       <p class="small muted">
-        Minted on the upstream (its Satellites panel → New satellite link). Registration runs now:
-        the domains it covers appear here and in the domains list, managed by the upstream.
+        Domains this satellite serves. Adjusting the selection pushes it over the live link.
       </p>
+      <div class="scope-list">
+        <label v-for="d in eligibleDomains" :key="d.rp_id" class="scope-row">
+          <input type="checkbox" :checked="linkDialog.selected.has(d.rp_id)" @change="toggleScope(d.rp_id)" />
+          <span>{{ d.rp_id }}</span>
+        </label>
+      </div>
     </AdminDialog>
 
     <AdminDialog
@@ -369,19 +387,28 @@ function uplinkStatus(u) {
 .satellites-section { margin-top: var(--space-2xl); display: flex; flex-direction: column; gap: var(--space-sm); }
 .satellites-section .section-header { display: flex; flex-direction: column; gap: 0.4rem; margin-bottom: var(--space-xs); }
 .satellites-section .actions { display: flex; align-items: center; gap: var(--space-sm); }
-.uplinks-title { margin: var(--space-lg) 0 var(--space-xs); font-size: 1.05rem; }
-.uplinks-hint { font-weight: 400; font-size: 0.85rem; }
 .perm-name-cell { display: flex; flex-direction: column; gap: 0.3rem; }
 .perm-title { font-weight: 600; color: var(--color-heading); }
 .perm-id-info { font-size: 0.8rem; color: var(--color-text-muted); }
 .id-text { font-family: var(--font-mono, monospace); }
 .org-table .center { width: 4rem; min-width: 4rem; text-align: center; }
+.org-table .row-actions { width: 5rem; min-width: 5rem; white-space: nowrap; }
+.row-actions .icon-btn { display: inline-flex; vertical-align: middle; }
+.row-actions .icon-btn + .icon-btn { margin-left: 0.25rem; }
 .status-ok { color: var(--color-success, #16a34a); }
 .status-warn { color: var(--color-warning, #d97706); }
 .status-bad { color: var(--color-text-muted); }
-.scope-list { display: flex; flex-direction: column; gap: 0.3rem; }
-.scope-row { display: flex; flex-direction: row; align-items: center; gap: var(--space-xs); }
-.scope-row input { width: auto; }
-.wellknown-doc { margin: 0; padding: var(--space-xs) var(--space-sm); font-size: 0.8rem; background: var(--color-bg-soft, rgba(127,127,127,0.08)); border-radius: 4px; white-space: pre-wrap; word-break: break-all; cursor: pointer; }
+:deep(.link-dialog-panel) { width: min(900px, 92vw); max-width: 900px; }
+.link-roles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-md); align-items: stretch; }
+.link-role { min-width: 0; display: flex; flex-direction: column; gap: var(--space-sm); padding: var(--space-md); border: 1px solid var(--color-border); border-radius: var(--radius-md); background: var(--color-surface-subtle); }
+.link-role h4 { margin: 0; color: var(--color-heading); }
+.link-role-action { align-self: flex-start; margin-top: auto; }
+.scope-list { display: flex; flex-direction: column; gap: 0.3rem; max-height: 14rem; overflow-y: auto; }
+.scope-list label.scope-row { display: flex; flex-direction: row; flex-wrap: nowrap; align-items: center; gap: var(--space-xs); font-weight: 400; }
+.scope-list label.scope-row input[type="checkbox"] { width: auto; flex: 0 0 auto; margin: 0; }
+.scope-list label.scope-row span { min-width: 0; overflow-wrap: anywhere; }
 .error { color: var(--color-error); }
+@media (max-width: 700px) {
+  .link-roles { grid-template-columns: minmax(0, 1fr); }
+}
 </style>

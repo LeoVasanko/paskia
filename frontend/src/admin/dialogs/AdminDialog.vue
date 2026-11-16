@@ -10,6 +10,7 @@ defineProps({
   busy: Boolean,
   error: { type: String, default: '' },
   submitLabel: { type: String, default: 'Save' },
+  panelClass: { type: [String, Array, Object], default: '' },
   // Block submit (e.g. while domain-origin validation has hard errors)
   submitDisabled: Boolean,
   // Name-edit dialogs render their own error message and action buttons
@@ -21,7 +22,7 @@ defineEmits(['submit', 'close'])
 </script>
 
 <template>
-  <Modal @close="$emit('close')">
+  <Modal :panel-class="panelClass" @close="$emit('close')">
     <template #attached>
       <slot name="attached" />
     </template>

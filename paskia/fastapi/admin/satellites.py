@@ -12,6 +12,8 @@ URL (the online handshake runs synchronously here — the same path the
 state, and unlink (drops the uplink and every domain it serves).
 """
 
+from urllib.parse import urlsplit
+
 from fastapi import Body, FastAPI, Request
 
 from paskia import db, domains, satellite
@@ -143,6 +145,29 @@ def _uplink_domains_of(uplink_id: str) -> list[str]:
     )
 
 
+def _host_port(url: str) -> tuple[str, int | None] | None:
+    parts = urlsplit(url)
+    if not parts.hostname:
+        return None
+    port = parts.port or {"http": 80, "https": 443, "ws": 80, "wss": 443}.get(
+        parts.scheme
+    )
+    return parts.hostname.lower().rstrip("."), port
+
+
+def _points_to_self(request: Request, base_url: str) -> bool:
+    local_urls = [f"{request.url.scheme}://{request.headers.get('host', '')}"]
+    for domain in domains.registry().domains:
+        if domain.remote is not None:
+            continue
+        local_urls.append(domain.site_url)
+        if auth_url := domains.auth_host_url(domain.config):
+            local_urls.append(auth_url)
+    return _host_port(base_url) in {
+        endpoint for url in local_urls if (endpoint := _host_port(url)) is not None
+    }
+
+
 @uplinks_app.get("/")
 async def admin_list_uplinks(request: Request, auth=AUTH_COOKIE):
     """List uplinks with the domains they serve and live replica state."""
@@ -177,8 +202,15 @@ async def admin_register_uplink(
     await authz.verify(
         auth, ["auth:admin"], host=request.headers.get("host"), max_age="5m"
     )
+    url = str(payload.get("url") or "")
+    base_url, _ = satellite.parse_link_url(url)
+    if _points_to_self(request, base_url):
+        raise ValueError(
+            "This link points back to this instance. "
+            "A satellite must connect to a different master instance."
+        )
     try:
-        return await satellite.register_uplink(str(payload.get("url") or ""))
+        return await satellite.register_uplink(url)
     except RuntimeError as e:
         raise ValueError(str(e)) from e
 

@@ -988,7 +988,7 @@ async def test_admin_register_uplink_endpoint(client, session_token, monkeypatch
     monkeypatch.setattr(satellite, "register_uplink", fake_register)
     r = await client.post(
         "/auth/api/admin/uplinks/",
-        json={"url": "wss://alpha.bravo.charlie.delta.echo@remote.test"},
+        json={"url": "wss://remote.test#hurt.siege.right.burden.permit"},
         headers=headers,
     )
     assert r.status_code == 200
@@ -999,16 +999,59 @@ async def test_admin_register_uplink_endpoint(client, session_token, monkeypatch
 
     monkeypatch.setattr(satellite, "register_uplink", failing_register)
     r = await client.post(
-        "/auth/api/admin/uplinks/", json={"url": "wss://x@remote.test"}, headers=headers
+        "/auth/api/admin/uplinks/",
+        json={"url": "wss://remote.test#hurt.siege.right.burden.permit"},
+        headers=headers,
     )
     assert r.status_code == 400
     assert "rejected" in r.json()["detail"]
 
-    async def malformed(url):
-        raise ValueError("A link URL is a wss:// URL")
-
-    monkeypatch.setattr(satellite, "register_uplink", malformed)
     r = await client.post(
         "/auth/api/admin/uplinks/", json={"url": "nope"}, headers=headers
     )
     assert r.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_admin_register_uplink_rejects_self(
+    client, session_token, test_db, monkeypatch
+):
+    headers = {
+        "Host": "localhost:4401",
+        "Cookie": f"{AUTH_COOKIE_NAME}={session_token}",
+    }
+    calls = []
+
+    async def fake_register(url):
+        calls.append(url)
+        return {"link": "ln1", "url": url, "domains": [], "rejected": {}}
+
+    monkeypatch.setattr(satellite, "register_uplink", fake_register)
+    ops_db.create_domain(
+        "example.com",
+        DomainConfig(
+            origins={
+                "**.example.com": True,
+                "auth.example.com": OriginEntry(auth_host=True),
+            }
+        ),
+    )
+    domains.init_registry(test_db.config)
+    for url in [
+        "ws://localhost:4401#hurt.siege.right.burden.permit",
+        "wss://auth.example.com#hurt.siege.right.burden.permit",
+    ]:
+        r = await client.post(
+            "/auth/api/admin/uplinks/", json={"url": url}, headers=headers
+        )
+        assert r.status_code == 400
+        assert "different master instance" in r.json()["detail"]
+    assert calls == []
+
+    r = await client.post(
+        "/auth/api/admin/uplinks/",
+        json={"url": "ws://localhost:4402#hurt.siege.right.burden.permit"},
+        headers=headers,
+    )
+    assert r.status_code == 200
+    assert calls == ["ws://localhost:4402#hurt.siege.right.burden.permit"]

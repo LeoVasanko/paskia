@@ -225,15 +225,135 @@ test.describe('Admin application E2E', () => {
     await expect(row).toHaveCount(0)
   })
 
-  test('validates uplink registration input through the satellites panel', async ({ page }) => {
+  test('shows all links with their authoritative side', async ({ page }) => {
+    await openAdmin(page)
+    await page.route('**/auth/api/admin/satellites/', route => route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify([{
+        id: 'master-link', label: 'branch', rp_ids: ['example.com'],
+        connected: true, rejected: {}, created: '2026-01-01T00:00:00Z',
+      }]),
+    }))
+    await page.route('**/auth/api/admin/uplinks/', route => route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify([{
+        id: 'satellite-link', url: 'wss://auth.example.com#secret', domains: ['example.org'],
+        connected: false, available: true, created: '2026-01-01T00:00:00Z',
+      }]),
+    }))
+    await page.reload()
+
+    const table = page.locator('.satellites-section table.org-table')
+    await expect(table).toHaveCount(1)
+    await expect(table.locator('tbody tr')).toHaveCount(2)
+    await expect(table.getByRole('columnheader', { name: 'Authoritative side' })).toBeVisible()
+
+    const masterRow = table.locator('tbody tr').filter({ hasText: 'master-link' })
+    await expect(masterRow).toContainText('This instance (master)')
+    await expect(masterRow).toContainText('example.com')
+    await expect(masterRow.getByRole('link')).toHaveCount(0)
+    const actionLayout = await masterRow.locator('.row-actions button').evaluateAll(buttons =>
+      buttons.map(button => {
+        const box = button.getBoundingClientRect()
+        return { left: box.left, right: box.right, top: box.top }
+      })
+    )
+    expect(actionLayout).toHaveLength(2)
+    expect(actionLayout[0].top).toBeCloseTo(actionLayout[1].top, 0)
+    expect(actionLayout[0].right).toBeLessThan(actionLayout[1].left)
+
+    const satelliteRow = table.locator('tbody tr').filter({ hasText: 'satellite-link' })
+    await expect(satelliteRow).toContainText('example.org')
+    const management = satelliteRow.getByRole('link', { name: 'https://auth.example.com/' })
+    await expect(management).toHaveAttribute('href', 'https://auth.example.com/')
+    await expect(management).toHaveAttribute('target', '_blank')
+    await expect(management).toHaveAttribute('rel', /noopener/)
+    await expect(satelliteRow.locator('[title="offline — answering from cache"]')).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Uplinks', exact: true })).toHaveCount(0)
+  })
+
+  test('presents link roles in boxes and validates registration input', async ({ page }) => {
     await openAdmin(page)
     await expect(page.getByRole('heading', { name: 'Satellites', exact: true })).toBeVisible()
-    await expect(page.getByText('No satellites registered.')).toBeVisible()
-    await page.getByRole('button', { name: '+ Add uplink' }).click()
-    const form = dialog(page, 'Add uplink')
+    await expect(page.getByText('No links registered.')).toBeVisible()
+    await page.getByRole('button', { name: '+ Add link' }).click()
+    const form = dialog(page, 'Add link')
+    await expect(form.locator('.link-role')).toHaveCount(2)
+    await expect(form.getByRole('heading', { name: 'Master', exact: true })).toBeVisible()
+    await expect(form.getByRole('heading', { name: 'Satellite', exact: true })).toBeVisible()
+    await expect(form.getByRole('button', { name: 'Share these domains' })).toHaveCount(0)
+    await expect(form.getByText(/Sharing requires a local domain with a designated auth host/)).toBeVisible()
+    await expect(form.locator('.link-role').first().locator('.scope-list')).toHaveCount(0)
+    await expect(form.locator('.link-role').first().getByText(/Create a link on this authoritative instance/)).toHaveCount(0)
+    await expect(form.locator('.modal-actions')).toHaveCount(0)
+
     await form.getByLabel('Link URL').fill('wss://127.0.0.1:1#hurt.siege.right.burden.permit')
-    await form.getByRole('button', { name: 'Register' }).click()
+    await form.getByRole('button', { name: 'Connect to master' }).click()
     await expect(form.locator('.error')).toBeVisible()
-    await form.getByRole('button', { name: 'Cancel' }).click()
+
+    await form.getByLabel('Link URL').fill('ws://localhost:4404#hurt.siege.right.burden.permit')
+    await form.getByRole('button', { name: 'Connect to master' }).click()
+    await expect(form.locator('.error')).toContainText('different master instance')
+    await page.locator('.dialog-overlay').click({ position: { x: 5, y: 5 } })
+    await expect(form).toHaveCount(0)
+  })
+
+  test('shares checked domains and copies the link', async ({ page }) => {
+    await page.context().grantPermissions(['clipboard-read', 'clipboard-write'])
+    await openAdmin(page)
+    const linkUrl = 'wss://auth.example.com#hurt.siege.right.burden.permit'
+    let sharedDomains: string[] | undefined
+    await page.route('**/auth/api/admin/domains/', route => route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify([{
+        rp_id: 'example.com', rp_name: 'Example',
+        origins: { 'auth.example.com': { auth_host: true } },
+        site_url: 'https://auth.example.com', auth_site_url: 'https://auth.example.com/',
+        auth_host: 'auth.example.com', remote: null,
+      }]),
+    }))
+    await page.route('**/auth/api/admin/satellites/', async route => {
+      if (route.request().method() === 'POST') {
+        sharedDomains = route.request().postDataJSON().rp_ids
+        await route.fulfill({
+          contentType: 'application/json',
+          body: JSON.stringify({ url: linkUrl, expires_in: 600 }),
+        })
+      } else {
+        await route.fulfill({ contentType: 'application/json', body: '[]' })
+      }
+    })
+    await page.reload()
+
+    await page.getByRole('button', { name: '+ Add link' }).click()
+    const form = dialog(page, 'Add link')
+    const checkbox = form.getByLabel('example.com', { exact: true })
+    await expect(checkbox).toBeChecked()
+    const checkboxLayout = await checkbox.evaluate(input => {
+      const row = input.closest('label')!
+      const inputBox = input.getBoundingClientRect()
+      const textBox = row.querySelector('span')!.getBoundingClientRect()
+      return {
+        direction: getComputedStyle(row).flexDirection,
+        inputRight: inputBox.right,
+        textLeft: textBox.left,
+      }
+    })
+    expect(checkboxLayout.direction).toBe('row')
+    expect(checkboxLayout.inputRight).toBeLessThanOrEqual(checkboxLayout.textLeft)
+
+    const cardLayout = await form.locator('.link-role').evaluateAll(cards => cards.map(card => {
+      const box = card.getBoundingClientRect()
+      return { left: box.left, right: box.right, top: box.top }
+    }))
+    expect(cardLayout[0].top).toBeCloseTo(cardLayout[1].top, 0)
+    expect(cardLayout[0].right).toBeLessThanOrEqual(cardLayout[1].left)
+
+    await expect(form.locator('.modal-actions')).toHaveCount(0)
+    await form.getByRole('button', { name: 'Share these domains' }).click()
+    expect(sharedDomains).toEqual(['example.com'])
+    await expect(form).toHaveCount(0)
+    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(linkUrl)
+    await expect(page.getByText('Link URL copied to clipboard', { exact: true })).toBeVisible()
   })
 })
